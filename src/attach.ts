@@ -244,6 +244,7 @@ export function subscribe(
   id: string,
   after: number,
   onEvent: (event: DurableEvent) => void,
+  onPreview?: (preview: { session_id: string; attempt_id: string; text: string }) => void,
 ): Feed {
   let stop!: () => void;
   const done = new Promise<void>((resolve, reject) => {
@@ -266,10 +267,23 @@ export function subscribe(
           const packet = buffer.slice(0, end);
           buffer = buffer.slice(end + 2);
           const data = packet.split('\n').find((line) => line.startsWith('data: '));
-          // Previews have no durable id. Final text comes from committed events.
+          // Previews are separate and never advance the durable event cursor.
           if (data && packet.startsWith('id: ')) {
             try {
               onEvent(JSON.parse(data.slice(6)) as DurableEvent);
+            } catch (error) {
+              req.destroy(error as Error);
+              return;
+            }
+          } else if (data && onPreview && packet.startsWith('event: preview')) {
+            try {
+              const preview = JSON.parse(data.slice(6));
+              if (
+                preview.session_id === id &&
+                typeof preview.attempt_id === 'string' &&
+                typeof preview.text === 'string'
+              )
+                onPreview(preview);
             } catch (error) {
               req.destroy(error as Error);
               return;

@@ -4,6 +4,8 @@ All clients connect to one host-local Salaam service. They share session IDs, ac
 
 ## Terminal and SSH
 
+Bare `sal`, `sal tui`, and `sal attach SESSION_ID` in a TTY open the Salaam TUI. See [controls, themes and recovery](tui.md). `--plain` keeps the line interface; redirected/piped attachment remains scriptable. No UI owns a Pi worker.
+
 ```sh
 sal service start
 sal session create --cwd /absolute/path/to/project
@@ -18,11 +20,12 @@ Ctrl-C or Ctrl-D detaches the interactive attachment. A hard-killed controller's
 For another computer, install the pinned checkout and CLI on the execution host, configure its provider there and start its service. SSH reaches that same host/account and state directory:
 
 ```sh
-ssh -t USER@HOST 'sal attach SESSION_ID --state /absolute/path/to/salaam-state'
+sal remote USER@HOST --remote-bin /absolute/path/to/sal \
+  --session SESSION_ID --state /absolute/path/to/salaam-state
 ssh USER@HOST 'sal session inspect SESSION_ID --state /absolute/path/to/salaam-state'
 ```
 
-Use an absolute installed `sal` path if the remote noninteractive shell does not include its npm bin directory in `PATH`. Workspace and state paths are on the execution host. Copying a state directory to another computer does not connect to its existing worker. This path uses SSH authentication and no public Salaam listener. The combined local demo exercises client switching; an actual cross-machine SSH connection is a separate operator observation.
+Use an absolute installed `sal` path if the remote noninteractive shell does not include its npm bin directory in `PATH`. Workspace and state paths are on the execution host. Copying a state directory to another computer does not connect to its existing worker. This path uses SSH authentication and no public Salaam listener. The opt-in M10 rehearsal exercises actual macOS-to-Linux SSH; named editor GUI acceptance is tracked separately in verification evidence.
 
 ## ACP v1 stdio
 
@@ -34,6 +37,8 @@ Configure an ACP client's agent subprocess command as:
   "args": ["acp", "--state", "/absolute/path/to/salaam-state"]
 }
 ```
+
+Add `--coding` to the adapter arguments to create guarded coding sessions. The service must already be running with `--coding-root`; commands additionally require its proven execution backend. A `session/new` caller may explicitly select `_meta["salaam.dev/coding"]`; load/resume retain the saved session’s original authority.
 
 The service must already be running. The adapter uses newline-delimited UTF-8 JSON-RPC on stdin/stdout; diagnostics use stderr. It negotiates protocol version **1**. Its tested subset follows the official [initialization](https://agentclientprotocol.com/protocol/v1/initialization), [session setup](https://agentclientprotocol.com/protocol/v1/session-setup), [prompt lifecycle](https://agentclientprotocol.com/protocol/v1/prompt-turn), [permission](https://agentclientprotocol.com/protocol/v1/tool-calls) and [stdio transport](https://agentclientprotocol.com/protocol/v1/transports) contracts, checked on 2026-10-17. ACP v2 draft behavior is not advertised.
 
@@ -48,7 +53,7 @@ The service must already be running. The adapter uses newline-delimited UTF-8 JS
 | `session/request_permission` | Presents the exact operation, target/value/version, digest and approval revision; offers allow-once/reject-once   |
 | `session/cancel`             | Explicitly journals cancellation before requesting abort; unknown external outcomes stay unknown                  |
 
-The first adapter sends committed transcript chunks rather than volatile token previews. It advertises no image/audio/embedded-resource prompt capability, additional directories, client terminal/filesystem execution, modes, model selection or dynamic MCP connections. Use `mcpServers: []`; nonempty server lists are rejected. Resource links become prompt references and do not cause the adapter to fetch arbitrary resources. New/load/resume use an absolute `cwd`, matching the saved session directory when reconnecting. The checked-in independent client fixture proves this subset; a named editor's UI is a separate integration observation.
+The adapter sends committed transcript chunks and normalized live tool start/finish updates, deduplicating tool identities when the transcript catches up. Volatile token previews remain TUI-only. It advertises no image/audio/embedded-resource prompt capability, additional directories, client terminal/filesystem execution, modes, model selection or dynamic MCP connections. Use `mcpServers: []`; nonempty server lists are rejected. Resource links become prompt references and do not cause the adapter to fetch arbitrary resources. New/load/resume use an absolute `cwd`, matching the saved session directory when reconnecting. The checked-in independent client fixture proves this subset; a named editor's UI is a separate integration observation.
 
 Loading a running session can observe and answer approvals without taking control. Prompting acquires the normal controller lease and fails if another controller owns it. `_meta: {"salaam.dev/takeover": true}` requests an explicit takeover. Leases renew every five seconds. Losing the ACP process leaves the daemon and current work alive; reconnect to the same session rather than creating another session.
 

@@ -22,6 +22,7 @@ interface Connection {
   lease?: ControlLease;
   client: string;
   seen: Set<string>;
+  liveTools: Set<string>;
   operations: Map<string, string>;
   permissions: Set<string>;
   cursor: number;
@@ -32,7 +33,7 @@ interface Connection {
   failed?: Error;
 }
 /** ACP v1 newline-delimited stdio adapter. The daemon remains the only worker owner. */
-export async function acp(state: string): Promise<void> {
+export async function acp(state: string, options: { coding?: boolean } = {}): Promise<void> {
   const socket = join(state, 'operator.sock');
   const journal = new AcpJournal(state);
   let closed = false,
@@ -94,7 +95,8 @@ export async function acp(state: string): Promise<void> {
             for (const part of parts) {
               if (part.type === 'text' && typeof part.text === 'string')
                 await text(c.id, String(message.role), part.text, item.entry_id);
-              if (part.type === 'toolCall')
+              if (part.type === 'toolCall' && !c.liveTools.has(String(part.id))) {
+                c.liveTools.add(String(part.id));
                 await update(c.id, {
                   sessionUpdate: 'tool_call',
                   toolCallId: String(part.id),
@@ -103,6 +105,7 @@ export async function acp(state: string): Promise<void> {
                   status: 'in_progress',
                   rawInput: part.arguments,
                 });
+              }
             }
           } else if (message.role === 'toolResult')
             await update(c.id, {
@@ -232,6 +235,33 @@ export async function acp(state: string): Promise<void> {
     if (closed) return;
     const feed = subscribe(socket, c.id, c.cursor, (event) => {
       c.cursor = event.seq;
+      if (event.kind === 'tool.started' || event.kind === 'tool.finished') {
+        const p = event.payload as {
+          tool_call_id?: string;
+          parent_tool_call_id?: string;
+          tool?: string;
+          input?: string;
+          failed?: boolean;
+        };
+        if (typeof p.tool_call_id === 'string') {
+          const started = event.kind === 'tool.started';
+          const fresh = !c.liveTools.has(p.tool_call_id);
+          c.liveTools.add(p.tool_call_id);
+          void update(c.id, {
+            sessionUpdate: started && fresh ? 'tool_call' : 'tool_call_update',
+            toolCallId: p.tool_call_id,
+            title: p.tool ?? 'Tool',
+            kind: 'other',
+            status: started ? 'in_progress' : p.failed ? 'failed' : 'completed',
+            ...(started && p.input ? { rawInput: p.input } : {}),
+            ...(p.parent_tool_call_id
+              ? { _meta: { 'salaam.dev/parentToolCallId': p.parent_tool_call_id } }
+              : {}),
+          }).catch((error) => {
+            c.failed = error;
+          });
+        }
+      }
       if (
         [
           'transcript.synced',
@@ -270,6 +300,7 @@ export async function acp(state: string): Promise<void> {
       id,
       client: randomUUID(),
       seen: new Set(),
+      liveTools: new Set(),
       operations: new Map(),
       permissions: new Set(),
       cursor: view.seq,
@@ -333,7 +364,7 @@ export async function acp(state: string): Promise<void> {
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: false, sse: false },
         },
-        agentInfo: { name: 'salaam', version: '0.1.0' },
+        agentInfo: { name: 'salaam', title: 'Salaam', version: '0.1.0' },
         authMethods: [],
       };
     }
@@ -348,9 +379,19 @@ export async function acp(state: string): Promise<void> {
       )
         throw new Error('Use an absolute cwd and no extra MCP servers/directories');
       if (method === 'session/new') {
+        const coding = object(params._meta ?? {})['salaam.dev/coding'] ?? options.coding ?? false;
+        if (typeof coding !== 'boolean') throw new Error('Coding selection must be a boolean.');
+        if (coding) {
+          const health = await call<{ coding_root?: string | null }>(socket, '/v1/health');
+          if (!health.coding_root)
+            throw new Error(
+              'Start the service with --coding-root before creating a coding session.',
+            );
+        }
         const created = await call<{ id: string }>(socket, '/v1/sessions', {
           request_id: randomUUID(),
           cwd,
+          coding,
         });
         await connect(created.id, false, params);
         return { sessionId: created.id };

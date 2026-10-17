@@ -33,7 +33,7 @@ The [observed acceptance run](https://github.com/SuperJackfruitLabs/salaam/actio
 
 ## Coding in the terminal and on a remote host: M9–M12
 
-Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10–M12 remain planned; no delivery dates are assigned.
+Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10 implementation and terminal/SSH/ACP protocol proofs are present; its named Zed GUI acceptance remains pending because the operator desktop is locked. M11–M12 remain planned; no delivery dates are assigned.
 
 The release goal is concrete: start a repository task through `sal`, let the same task continue on an execution host after disconnecting, inspect the diff and actual verification results, answer any approval remotely, and return to an accurate final outcome. A proper TUI is part of this set.
 
@@ -63,6 +63,8 @@ The tools use the managed bridge and ledger. Their authority, workspace identity
 The M9 acceptance demonstrates local client loss and real daemon SIGKILL/replacement while retaining the same command and patch identities. The paired two-machine remote demonstration remains an M10/M12 exit check. Negative cases cover credential/control-socket access, filesystem escape, missing backend, nested/child bypass, disk-full recording failure and cancellation of owned descendants. Readiness may advertise execution only for the backend/profile actually verified.
 
 ### M10: make both operator paths usable
+
+**Current scope:** the Salaam-branded TUI, real PTY recovery/approval/slow-output tests, ACP coding support and a real macOS-to-Linux SSH rehearsal are implemented. See [TUI setup](tui.md) and [verification](verification.md). A protocol client is not named editor evidence: the Zed GUI rehearsal is still pending, so the entire M10 exit matrix is not yet claimed complete.
 
 The TUI is an operator client of the service. First evaluate the pinned Pi terminal component exports for reuse; choose and pin the rendering library after a small PTY spike. Keep the Pi RPC worker and the user interface in separate lifetimes.
 

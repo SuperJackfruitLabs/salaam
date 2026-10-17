@@ -4,6 +4,8 @@ Salaam is a local session service supervising persistent Pi workers. Terminal an
 
 The current implementation covers **M0–M8**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes, usage accounting, explicit task facts, managed checkpoint compaction and an ACP v1 stdio adapter. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
 
+**M10** adds the Salaam terminal interface: bare `sal`, session switching, a multiline composer, live progress, guarded diffs, command output, bound approvals, and SSH attachment. Night and Paper themes use Salaam branding. See [TUI controls and remote setup](docs/tui.md). The named Zed GUI rehearsal is still pending; protocol tests are separate evidence.
+
 ## Run locally
 
 **M9** adds explicit coding sessions with owned workspace revisions, guarded file tools and durable isolated commands. File tools require `--coding-root`; commands also require a proven `--coding-socket` backend. Commands use disposable copies; durable edits use hash-bound patches. See [coding setup, recovery and acceptance](docs/coding.md) and the [execution-boundary contract](docs/execution-boundary.md).
@@ -52,7 +54,7 @@ salaam service stop --state /tmp/salaam-dev
 
 Wait until inspection reports `ready` before running a probe. `service start` detaches the daemon from the calling terminal. Add `--foreground` to run it under a process supervisor. Without `--state`, the default is `~/.local/state/salaam`. Both `salaam` and `sal` are installed executable names for the same CLI. `salaam --help`, `salaam service --help` and `sal --version` work from any directory after setup.
 
-In an attachment, type an instruction and press Enter. Ctrl-D or Ctrl-C detaches; the worker continues. Reattaching restores recent history and follows committed results. One terminal holds a 15-second controller lease, renewed every five seconds. Other terminals can use `--observe`; `--takeover` explicitly revokes the previous controller. After a killed terminal, wait for lease expiry or take over. A lease coordinates clients of the same trusted OS account.
+In the TUI, type an instruction and press Enter. Ctrl+K opens actions, Ctrl+P switches sessions, Ctrl+O reviews approvals and Ctrl+G opens changes. Use `attach --plain` for the older line interface. Ctrl-D or Ctrl-C detaches; the worker continues. Reattaching restores recent history and follows committed results. One terminal holds a 15-second controller lease, renewed every five seconds. Other terminals can use `--observe`; `--takeover` explicitly revokes the previous controller. After a killed terminal, wait for lease expiry or take over. A lease coordinates clients of the same trusted OS account.
 
 Input is flushed to a private local outbox before transmission. A new controller retries pending records with the original request ID. An unknown network response preserves the original request; only a definite revision rejection permits refreshing its revision. Pi slash commands are unavailable as submitted prompts. Definitively rejected input remains in an outbox file ending in `.rejected.json` for inspection.
 

@@ -156,6 +156,15 @@ test('ACP disconnect during a running tool preserves one attempt; resume omits o
       .catch(() => {});
     await until(() => existsSync(join(f.dir, 'probe-entered')), Boolean);
     const attempt = f.service.store.snapshot(session.id).attempts[0]!;
+    await until(
+      () =>
+        a.messages.filter(
+          (m) =>
+            m.params?.update?.sessionUpdate === 'tool_call' &&
+            m.params.update.status === 'in_progress',
+        ),
+      (messages) => messages.length > 0,
+    );
     await a.close();
     expect(f.service.store.attempt(attempt.id).state).toBe('running');
     a = client(f.dir);
