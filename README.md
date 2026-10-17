@@ -2,7 +2,7 @@
 
 Salaam is a local session service supervising persistent Pi workers. Terminal and editor clients will share the same sessions, while Salaam owns task and operation state around Pi's conversation history.
 
-The current implementation covers **M0–M6**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes and usage accounting. The available model route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. This tests the service boundaries without model credentials or live third-party integrations.
+The current implementation covers **M0–M6**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes and usage accounting. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
 
 ## Run locally
 
@@ -11,6 +11,9 @@ Use Node **26.7.0** and npm **11.19.0**. The application uses Node's built-in SQ
 ```sh
 nvm use
 npm ci --ignore-scripts
+npm run setup:cli
+salaam --help
+sal --version
 npm run check
 npm test
 npm run verify:pi
@@ -18,6 +21,10 @@ npm run demo:session
 npm run demo:managed
 npm run demo:children
 ```
+
+`npm run setup:cli` builds the checkout and links both commands into the current Node installation's global npm bin directory. It uses offline linking with dependency lifecycle scripts disabled. The commands follow this checkout; after source changes, run `npm run build`. Repeat setup after moving the checkout or changing the Node installation. No npm publication is involved, and the package remains private.
+
+To run without a global link, use `npm run cli -- --help` or `./bin/salaam.mjs --help`. Remove the global commands with `npm unlink --global @sjl/salaam --ignore-scripts --offline`; saved credentials and service state are retained.
 
 `npm test` and the demo open Unix sockets and supervise subprocesses. They require a host environment permitting those operations. Tests use disposable directories under `/tmp`; no provider credentials or paid requests are involved.
 
@@ -27,18 +34,18 @@ To keep a service running:
 
 ```sh
 npm run build
-node dist/src/cli.js service start --state /tmp/salaam-dev
-node dist/src/cli.js session create --cwd "$PWD" --state /tmp/salaam-dev
-node dist/src/cli.js service status --state /tmp/salaam-dev
-node dist/src/cli.js session inspect SESSION_ID --state /tmp/salaam-dev
-node dist/src/cli.js attach SESSION_ID --state /tmp/salaam-dev
+salaam service start --state /tmp/salaam-dev
+salaam session create --cwd "$PWD" --state /tmp/salaam-dev
+salaam service status --state /tmp/salaam-dev
+salaam session inspect SESSION_ID --state /tmp/salaam-dev
+salaam attach SESSION_ID --state /tmp/salaam-dev
 # In another terminal, observe the same session:
-node dist/src/cli.js attach SESSION_ID --observe --state /tmp/salaam-dev
-node dist/src/cli.js session probe SESSION_ID --state /tmp/salaam-dev
-node dist/src/cli.js service stop --state /tmp/salaam-dev
+salaam attach SESSION_ID --observe --state /tmp/salaam-dev
+salaam session probe SESSION_ID --state /tmp/salaam-dev
+salaam service stop --state /tmp/salaam-dev
 ```
 
-Wait until inspection reports `ready` before running a probe. `service start` detaches the daemon from the calling terminal. Add `--foreground` to run it under a process supervisor. Without `--state`, the default is `~/.local/state/salaam`. Both `sal` and `salaam` executable names are declared for a later packaged installation; direct Node commands work in this checkout.
+Wait until inspection reports `ready` before running a probe. `service start` detaches the daemon from the calling terminal. Add `--foreground` to run it under a process supervisor. Without `--state`, the default is `~/.local/state/salaam`. Both `salaam` and `sal` are installed executable names for the same CLI. `salaam --help`, `salaam service --help` and `sal --version` work from any directory after setup.
 
 In an attachment, type an instruction and press Enter. Ctrl-D or Ctrl-C detaches; the worker continues. Reattaching restores recent history and follows committed results. One terminal holds a 15-second controller lease, renewed every five seconds. Other terminals can use `--observe`; `--takeover` explicitly revokes the previous controller. After a killed terminal, wait for lease expiry or take over. A lease coordinates clients of the same trusted OS account.
 
@@ -47,13 +54,42 @@ Input is flushed to a private local outbox before transmission. A new controller
 For scripted input or explicit recovery:
 
 ```sh
-node dist/src/cli.js session submit SESSION_ID --text 'A new instruction' --state /tmp/salaam-dev
-node dist/src/cli.js session resume SESSION_ID --state /tmp/salaam-dev
-node dist/src/cli.js session continue SESSION_ID --attempt INTERRUPTED_ATTEMPT_ID \
+salaam session submit SESSION_ID --text 'A new instruction' --state /tmp/salaam-dev
+salaam session resume SESSION_ID --state /tmp/salaam-dev
+salaam session continue SESSION_ID --attempt INTERRUPTED_ATTEMPT_ID \
   --text 'Inspect the interrupted result, then follow this new instruction' --state /tmp/salaam-dev
 ```
 
 Service restart expires controller leases and marks prompts already handed toward Pi as `interrupted`. Those prompts are never automatically replayed, even if Pi's transcript contains a final answer. An unresolved interruption holds later queued work. Explicit continuation creates a **new instruction and attempt**, links it to the interruption, and runs before previously queued work. `resume` provisions the same recorded Pi session and dispatches safe queued work after readiness.
+
+## Claude setup
+
+After `npm run setup:cli`, store your key through the hidden terminal prompt:
+
+```sh
+salaam auth set anthropic
+```
+
+The command writes the key to `~/.config/salaam/credentials/anthropic`, with file mode `600` inside a directory with mode `700`. The key is entered at the prompt, so it does not become a shell command or CLI argument. The file is plaintext, protected by OS permissions. `ANTHROPIC_API_KEY` is also supported and takes precedence over this file; unset that environment variable to use the saved key. Salaam does not load `.env` files.
+
+Start a separate persistent state directory for Claude, then create a new session:
+
+```sh
+salaam service start --provider anthropic --state "$HOME/.local/state/salaam-claude"
+salaam service status --state "$HOME/.local/state/salaam-claude"
+sal session create --cwd "$PWD" --state "$HOME/.local/state/salaam-claude"
+sal attach SESSION_ID --state "$HOME/.local/state/salaam-claude"
+```
+
+Replace `SESSION_ID` with the ID returned by creation. A short greeting in the attachment exercises authentication and streaming; it is a real, billable request. Creating a session and checking readiness make no model request and do not prove the account's key or billing is valid.
+
+The default model is `claude-sonnet-5-5`, with low reasoning and a maximum of 4,096 output tokens per request. This initial route also accepts `--model claude-sonnet-4-6`. `--max-output-tokens N` permits 128–8,192; output limits and request budgets do not cap total currency spend. Model metadata and estimated prices come from the pinned Pi catalog. The direct endpoint is fixed to `https://api.anthropic.com`; arbitrary proxies, OAuth/subscription tokens, server tools and model fallback are unsupported. See [Anthropic model IDs](https://platform.claude.com/docs/en/models/overview).
+
+If your API key requires an Anthropic workspace header, add `--workspace-id WORKSPACE_ID` to service startup. This is distinct from `--cwd`. See [Anthropic authentication](https://platform.claude.com/docs/en/manage-claude/authentication). The provider, model, output limit and workspace ID are durably bound to each session. Restart with the same options to resume it. Existing offline sessions retain their offline route; create a new session to use Claude. Starting over an already running daemon with a different route reports a configuration conflict.
+
+Only live workers receive `ANTHROPIC_API_KEY`; other inherited provider credentials and global Pi settings remain excluded. Keys are absent from worker configuration JSON, process arguments, journal events and operator responses. Provider error bodies are replaced with safe status messages before they enter transcripts. Rotating the key requires updating the saved key/environment and restarting the service; no credential value or credential digest is persisted in the journal.
+
+Both SDK and Pi turn retries are disabled, and automatic compaction stays disabled until M7. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage rather than a zero charge. The service validates the final serialized model, output cap, fixed tool inventory and actual task-context frame before each HTTP dispatch. The private bridge currently bounds request bodies to 1 MiB. Existing approval/effect rules and child authority limits apply to Claude turns too. No live filesystem or shell tool is added by this provider integration.
 
 ## Approvals and managed effects
 
@@ -62,10 +98,10 @@ With the default bundle, submit `[review] alpha,beta` to request two concurrent,
 Each approval binds the session, attempt, worker epoch, tool invocation, target, target version, normalized arguments, policy and connector. Approvals expire after five minutes. Inspect the complete operation before deciding; the decision must carry the reviewed digest and approval revision:
 
 ```sh
-node dist/src/cli.js approvals list --session SESSION_ID --state /tmp/salaam-dev
-node dist/src/cli.js approvals inspect APPROVAL_ID --state /tmp/salaam-dev
-node dist/src/cli.js approvals approve APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
-node dist/src/cli.js approvals deny APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
+salaam approvals list --session SESSION_ID --state /tmp/salaam-dev
+salaam approvals inspect APPROVAL_ID --state /tmp/salaam-dev
+salaam approvals approve APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
+salaam approvals deny APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
 ```
 
 Attachments also accept `:approve ID DIGEST REV`, `:deny ID DIGEST REV`, and `:cancel ATTEMPT_ID`; `:help` lists them. Approval decisions are independent of the prompt controller lease: an observer under the trusted OS account can act as an approver. New prompts and cancellation require a controller. The client flushes decisions and cancellations to its outbox before sending, preserving request IDs after lost replies. Changed decisions cannot overwrite an unresolved command. CLI `--request-id` overrides for outbox commands must be UUIDs.
@@ -75,11 +111,11 @@ Pi confirm dialogs carry a unique approval/digest marker and are mapped by worke
 The service commits operation intent before dispatch and rechecks authority and target version. The connector sends an external conditional write (`If-Match`), plus a service-generated idempotency key in lookup mode. A positive receipt must match the action key and normalized arguments. A failed or missing response becomes `outcome_unknown`; it is never automatically resent. A negative status lookup also remains unknown because an earlier request may still arrive. Unknown operations block new work in that session.
 
 ```sh
-node dist/src/cli.js operations inspect OPERATION_ID --state /tmp/salaam-dev
-node dist/src/cli.js operations reconcile OPERATION_ID --state /tmp/salaam-dev
-node dist/src/cli.js operations resolve OPERATION_ID --digest DIGEST --revision N \
+salaam operations inspect OPERATION_ID --state /tmp/salaam-dev
+salaam operations reconcile OPERATION_ID --state /tmp/salaam-dev
+salaam operations resolve OPERATION_ID --digest DIGEST --revision N \
   --outcome succeeded --evidence 'Receipt inspected out of band' --state /tmp/salaam-dev
-node dist/src/cli.js session cancel SESSION_ID --attempt ATTEMPT_ID --takeover --state /tmp/salaam-dev
+salaam session cancel SESSION_ID --attempt ATTEMPT_ID --takeover --state /tmp/salaam-dev
 ```
 
 `reconcile` performs status lookup, with a fresh request ID for each new observation. Recovery automatically attempts lookup for unknown operations using the same connector. Missing/unavailable lookup or a mismatched receipt leaves the operation unknown. `--effect-opaque` models a connector without idempotency or lookup; an uncertain outcome then requires an explicit operator resolution. Resolutions are recorded as **operator attestations**, distinct from verified external receipts; they do not prove a task passed its checks. `failed_definite` is the alternative resolution outcome.
@@ -115,7 +151,7 @@ The [S1 attachment proof](test/proofs/session-attach.test.ts) kills a CLI during
 
 The [S2 approval proof](test/proofs/approval-correlation.test.ts) covers concurrent nested calls, reverse decisions, two sessions, expiry, changed targets, lost decision replies and worker replacement. It also injects unsolicited real Pi confirm replies and proves they cannot authorize a durable operation. The [S3 effect proof](test/proofs/effect-recovery.test.ts) kills services/workers around external acceptance and receipt commits, tests negative/unavailable lookup, opaque connectors, mismatched receipts, target-version races and cancellation. Storage failures deny dispatch.
 
-M7–M8 remain to be built. ACP, durable task facts and real model-provider routing are unavailable. The [S4 child recovery proof](test/proofs/child-result-recovery.test.ts) covers parent/service death, durable redelivery, cancellation and interrupted usage accounting. S1–S4 and S6 have local offline/fixture evidence; S5 remains pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
+M7–M8 remain to be built. ACP and durable task facts remain pending. The guarded Claude route is tested against a local Anthropic-compatible fixture; live account authentication is verified by your first configured request. The [S4 child recovery proof](test/proofs/child-result-recovery.test.ts) covers parent/service death, durable redelivery, cancellation and interrupted usage accounting. S1–S4 and S6 have local offline/fixture evidence; S5 remains pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
 
 ## Local API
 
@@ -169,14 +205,14 @@ The [milestone record](docs/milestones.md) describes scope and evidence. CI is c
 
 Submit `[children] first,second` with the offline provider to run two read-only children in independent Pi processes. `[inbox]` lists the parent's durable inbox. The managed tools are `spawn_child`, `inspect_child` and `consume_child_result`. Spawn binds a step key for the lifetime of the parent session: retries and explicit continuations reuse that child; changed inputs conflict. A new intentional task needs a new step key.
 
-Depth is limited to one, with at most two active children per parent session. Child tool authority is the intersection of the requested tools and the parent's read-only `salaam_probe` grant. Children cannot spawn descendants, request approvals or dispatch effects. All children currently use the same offline provider as the parent. A parent attempt has 16 model requests; spawning reserves 1–8 of these for each child (default two), and each provider admission consumes a request before execution. Reservations remain held conservatively even after completion or interruption. This is a request-count bound, not a dollar or token-spend cap.
+Depth is limited to one, with at most two active children per parent session. Child tool authority is the intersection of the requested tools and the parent's read-only `salaam_probe` grant. Children cannot spawn descendants, request approvals or dispatch effects. All children inherit the same pinned provider route as the parent. A parent attempt has 16 model requests; spawning reserves 1–8 of these for each child (default two), and each provider admission consumes a request before execution. Reservations remain held conservatively even after completion or interruption. This is a request-count bound, not a dollar or token-spend cap.
 
 ```sh
-node dist/src/cli.js session children SESSION_ID --state /tmp/salaam-dev
-node dist/src/cli.js children inspect CHILD_ID --state /tmp/salaam-dev
-node dist/src/cli.js children result CHILD_ID --state /tmp/salaam-dev
-node dist/src/cli.js children ack CHILD_ID --result RESULT_ID --request-id ACK_REQUEST_ID --state /tmp/salaam-dev
-node dist/src/cli.js session usage SESSION_ID --state /tmp/salaam-dev
+salaam session children SESSION_ID --state /tmp/salaam-dev
+salaam children inspect CHILD_ID --state /tmp/salaam-dev
+salaam children result CHILD_ID --state /tmp/salaam-dev
+salaam children ack CHILD_ID --result RESULT_ID --request-id ACK_REQUEST_ID --state /tmp/salaam-dev
+salaam session usage SESSION_ID --state /tmp/salaam-dev
 ```
 
 Result artifacts have a fixed envelope: schema version, child and attempt IDs, final state, text and error. Artifact bytes are flushed first; the attempt outcome, artifact reference, child final state and parent inbox event then commit together. Reading a result does not acknowledge it. Acknowledgment is explicit and idempotent by result ID, including after a lost reply. Model reasoning has at-least-once delivery; an acknowledgment cannot prove exactly-once reasoning.
@@ -185,4 +221,4 @@ Parent worker death leaves children running under the service. A replacement par
 
 Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Real compaction recovery is still M7.
 
-Claude is selected as the first live provider. The current service intentionally still launches the offline route and strips inherited provider credentials from Pi workers. Live routing, guarded Anthropic forwarding and credential setup are a separate integration step. Keep the API key outside Git and chat; no key is required by these tests or demos.
+Claude is the first live provider. The service defaults to offline and passes only the explicitly configured Anthropic key into live workers. Keep the key outside Git and chat; default tests and demos use fixtures.

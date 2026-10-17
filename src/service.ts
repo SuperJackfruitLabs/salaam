@@ -5,7 +5,7 @@ import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
-import { integer, object, ServiceError, string } from './protocol.js';
+import { canonical, integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
 import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
@@ -149,6 +149,7 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
           sessions: sessions.map((x) => ({
             id: x.id,
@@ -371,6 +372,14 @@ export class SalaamService {
             token: string(body.token, 'token', 128),
           });
           const session = this.supervisor.inspect(id);
+          if (
+            session.provider_route &&
+            canonical(session.provider_route) !== canonical(this.supervisor.route)
+          )
+            throw new ServiceError(
+              'provider_route_changed',
+              'Restart the service with this session’s original provider route, or create a new session',
+            );
           if (session.state !== 'ready' && session.state !== 'starting')
             void this.supervisor.start(id).catch(() => {});
           this.send(res, 202, this.supervisor.inspect(id));

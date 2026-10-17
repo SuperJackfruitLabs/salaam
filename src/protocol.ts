@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ProviderRoute } from './provider-config.js';
 
 export const PROTOCOL_VERSION = 1;
 export const CAPABILITIES = [
@@ -50,6 +51,7 @@ export interface Session {
   error: string | null;
   capabilities: string[];
   seq: number;
+  provider_route?: ProviderRoute;
 }
 export interface DurableEvent {
   schema_version: 1;
@@ -158,6 +160,7 @@ export interface Manifest {
   tools: string[];
   active_tools: string[];
   provider: string;
+  route: ProviderRoute;
   context_digest: string;
 }
 export class ServiceError extends Error {

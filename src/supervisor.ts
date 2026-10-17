@@ -20,6 +20,14 @@ import { PiProcess } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import type { ChildWork } from './children.js';
+import {
+  OFFLINE_ROUTE,
+  providerRoute,
+  validateClaudePayload,
+  type ProviderRoute,
+} from './provider-config.js';
+import { loadApiKey, validateApiKey } from './credentials.js';
+import { digest } from './protocol.js';
 
 export interface Launch {
   command: string;
@@ -35,6 +43,8 @@ export interface SupervisorOptions {
   launch?: (launch: Launch) => PiProcess;
   extensionPath?: string;
   effectsEnabled?: boolean;
+  providerRoute?: ProviderRoute;
+  anthropicApiKey?: string;
 }
 interface Worker {
   id: string;
@@ -81,6 +91,8 @@ function groupExists(pid: number): boolean {
 export class Supervisor extends EventEmitter {
   managed?: ManagedWork;
   children?: ChildWork;
+  readonly route: ProviderRoute;
+  private apiKey?: string;
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
   private monitor: NodeJS.Timeout;
@@ -90,6 +102,19 @@ export class Supervisor extends EventEmitter {
     readonly options: SupervisorOptions,
   ) {
     super();
+    this.route = options.providerRoute ?? { ...OFFLINE_ROUTE };
+    // Validate public configuration without trusting programmatic callers.
+    const checked = providerRoute(
+      this.route.provider === 'salaam-proof' ? 'offline' : this.route.provider,
+      this.route.provider === 'anthropic' ? this.route.model : undefined,
+      this.route.provider === 'anthropic' ? this.route.max_tokens : undefined,
+      this.route.workspace_id,
+    );
+    if (canonical(checked) !== canonical(this.route)) throw new Error('Invalid provider route');
+    if (this.route.provider === 'anthropic')
+      this.apiKey = options.anthropicApiKey
+        ? validateApiKey(options.anthropicApiKey)
+        : loadApiKey();
     this.bundle = bundleDigest();
     this.monitor = setInterval(() => {
       for (const worker of this.workers.values())
@@ -149,6 +174,7 @@ export class Supervisor extends EventEmitter {
         'reconciliation_required',
         previous.error ?? 'Session requires reconciliation',
       );
+    this.store.bindRoute(id, this.route);
     const epoch = this.store.allocate(id, this.bootId);
     let accept!: () => void;
     let reject!: (e: Error) => void;
@@ -191,6 +217,7 @@ export class Supervisor extends EventEmitter {
         frame,
         effects: !!this.options.effectsEnabled && !this.children?.owned(id),
         child: !!this.children?.owned(id),
+        route: this.route,
       };
       const args = [
         PI_CLI,
@@ -215,9 +242,9 @@ export class Supervisor extends EventEmitter {
         '--tools',
         workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)).join(','),
         '--provider',
-        'salaam-proof',
+        this.route.provider,
         '--model',
-        'scripted',
+        this.route.model,
       ];
       if (previous.pi_session_file && existsSync(previous.pi_session_file)) {
         const index = args.indexOf('--session-id');
@@ -237,6 +264,7 @@ export class Supervisor extends EventEmitter {
         LANG: process.env.LANG ?? 'en_US.UTF-8',
         PI_CODING_AGENT_DIR: join(workerDir, 'agent'),
         SALAAM_WORKER_CONFIG: JSON.stringify(config),
+        ...(this.apiKey ? { ANTHROPIC_API_KEY: this.apiKey } : {}),
       };
       worker.pi = (this.options.launch ?? ((x) => new PiProcess(x.command, x.args, x.cwd, x.env)))({
         command: process.execPath,
@@ -300,13 +328,20 @@ export class Supervisor extends EventEmitter {
         );
       });
       await Promise.race([handshake, timeout]);
+      await worker.pi.command('set_auto_retry', { enabled: false });
+      await worker.pi.command('set_auto_compaction', { enabled: false });
       const response = await worker.pi.command('get_state');
       const state = object(response.data);
+      if (state.autoCompactionEnabled !== false)
+        throw new Error('Pi automatic compaction is outside the current managed route');
       if (state.sessionId !== id) throw new Error('Pi state has the wrong session identity');
       const file = typeof state.sessionFile === 'string' ? resolve(state.sessionFile) : null;
       if (!file || !file.startsWith(resolve(sessionDir) + '/'))
         throw new Error('Pi session is outside its managed directory');
-      if (object(state.model).provider !== 'salaam-proof' || object(state.model).id !== 'scripted')
+      if (
+        object(state.model).provider !== this.route.provider ||
+        object(state.model).id !== this.route.model
+      )
         throw new Error('Pi selected an unapproved provider route');
       if (worker.invalid) throw new Error(worker.invalid);
       // Pi buffers setup-only entries until there is a conversation. Do not
@@ -390,7 +425,8 @@ export class Supervisor extends EventEmitter {
           capabilities: [...CAPABILITIES],
           tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
           active_tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
-          provider: 'salaam-proof',
+          provider: this.route.provider,
+          route: this.route,
           context_digest: textDigest(w.frame),
         };
         for (const [key, value] of Object.entries(expected))
@@ -481,20 +517,31 @@ export class Supervisor extends EventEmitter {
           this.store.usage.observe(
             id,
             string(body.source_key, 'source_key', 256),
-            'salaam-proof',
-            'scripted',
+            this.route.provider,
+            this.route.model,
             body.usage,
+            this.route.provider === 'anthropic' ? 'estimated' : 'known',
           ),
         );
         return { ok: true };
       }
       if (method === 'model') {
         if (
-          body.provider !== 'salaam-proof' ||
-          body.model !== 'scripted' ||
+          body.provider !== this.route.provider ||
+          body.model !== this.route.model ||
           body.context_digest !== textDigest(w.frame)
         )
           throw new Error('Provider or task context is invalid');
+        if (this.route.provider === 'anthropic') {
+          validateClaudePayload(
+            body.payload,
+            this.route,
+            w.frame,
+            workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
+          );
+          if (body.payload_digest !== digest(body.payload))
+            throw new Error('Claude payload digest changed');
+        }
         this.store.usage.admit(
           id,
           w.attempt,
@@ -549,7 +596,10 @@ export class Supervisor extends EventEmitter {
     }
   }
   inspect(id: string): Session {
-    const state = this.store.session(id);
+    const state = {
+      ...this.store.session(id),
+      provider_route: this.store.providerRoute(id) ?? undefined,
+    };
     const w = this.workers.get(id);
     if (w?.invalid) return { ...state, state: 'unhealthy', capabilities: [], error: w.invalid };
     if (state.state === 'ready' && (!w?.ready || w.stopping))

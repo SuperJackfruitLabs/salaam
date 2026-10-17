@@ -13,13 +13,24 @@ process.stdin.on('data', (data) => {
     const line = buffer.slice(0, index);
     buffer = buffer.slice(index + 1);
     const request = JSON.parse(line);
+    if (request.type === 'set_auto_retry' || request.type === 'set_auto_compaction') {
+      process.stdout.write(
+        JSON.stringify({
+          type: 'response',
+          id: request.id,
+          success: mode !== 'missing-retry-control',
+          error: 'Injected control unavailable',
+        }) + '\n',
+      );
+    }
     if (request.type === 'get_state') {
       const args = process.argv.slice(2);
       const dir = args[args.indexOf('--session-dir') + 1];
       const state = {
+        autoCompactionEnabled: false,
         sessionId: mode === 'wrong-state' ? 'wrong' : c.session,
         sessionFile: `${dir}/${c.session}.jsonl`,
-        model: { provider: 'salaam-proof', id: 'scripted' },
+        model: { provider: c.route.provider, id: c.route.model },
       };
       process.stdout.write(
         JSON.stringify({ type: 'response', id: request.id, success: true, data: state }) + '\n',
@@ -38,7 +49,8 @@ const manifest = {
   capabilities: [...CAPABILITIES],
   tools: workerTools(!!c.effects, !!c.child),
   active_tools: workerTools(!!c.effects, !!c.child),
-  provider: 'salaam-proof',
+  provider: c.route.provider,
+  route: c.route,
   context_digest: textDigest(c.frame),
 };
 const mutations = {
@@ -46,6 +58,8 @@ const mutations = {
   'wrong-bundle': { bundle_digest: 'wrong' },
   'wrong-policy': { policy_digest: 'wrong' },
   'wrong-session': { pi_session_id: 'wrong' },
+  'wrong-provider': { provider: 'anthropic' },
+  'wrong-route': { route: { ...c.route, max_tokens: 777 } },
   'wrong-tools': { tools: ['salaam_probe', 'bypass'] },
   'missing-context': { capabilities: ['persistent-session'] },
   'missing-approvals': { capabilities: CAPABILITIES.filter((x) => x !== 'durable-approvals') },

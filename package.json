@@ -9,8 +9,8 @@
   },
   "packageManager": "npm@11.19.0",
   "bin": {
-    "salaam": "dist/src/cli.js",
-    "sal": "dist/src/cli.js"
+    "salaam": "bin/salaam.mjs",
+    "sal": "bin/salaam.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -24,7 +24,9 @@
     "demo:managed": "npm run build && node scripts/demo-managed.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "demo:children": "npm run build && node scripts/demo-children.mjs"
+    "demo:children": "npm run build && node scripts/demo-children.mjs",
+    "setup:cli": "npm run build && npm link --ignore-scripts --offline --no-audit --no-fund",
+    "cli": "node bin/salaam.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.3.0",

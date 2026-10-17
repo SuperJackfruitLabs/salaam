@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { registerClaude } from './claude-provider.js';
+import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
   createAssistantMessageEventStream,
@@ -10,6 +12,7 @@ import { call } from './transport.js';
 import {
   CAPABILITIES,
   PROTOCOL_VERSION,
+  workerTools,
   textDigest,
   type Approval,
   type Operation,
@@ -25,11 +28,13 @@ interface WorkerConfig {
   frame: string;
   effects?: boolean;
   child?: boolean;
+  route?: ProviderRoute;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
   if (!config) throw new Error('Missing Salaam worker configuration');
   const c = config;
+  const route = c.route ?? { ...OFFLINE_ROUTE };
   const bridge = <T = unknown>(method: string, data: unknown = {}) =>
     call<T>(
       c.socket,
@@ -253,178 +258,185 @@ export default function house(pi: ExtensionAPI): void {
       },
     ],
   }));
-  pi.registerProvider('salaam-proof', {
-    baseUrl: 'http://unused.invalid',
-    apiKey: 'local-fixture',
-    api: 'salaam-scripted',
-    models: [
-      {
-        id: 'scripted',
-        name: 'Salaam offline proof provider',
-        reasoning: false,
-        input: ['text'],
-        contextWindow: 32768,
-        maxTokens: 1024,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      },
-    ],
-    streamSimple(model, context, options) {
-      const stream = createAssistantMessageEventStream();
-      const sourceKey = 'salaam-request:' + randomUUID();
-      const response: AssistantMessage = {
-        role: 'assistant',
-        responseId: sourceKey,
-        content: [],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
-        timestamp: Date.now(),
-        stopReason: 'stop',
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  if (route.provider === 'anthropic')
+    registerClaude(pi, route, c.frame, workerTools(!!c.effects, !!c.child), bridge, fail);
+  else
+    pi.registerProvider('salaam-proof', {
+      baseUrl: 'http://unused.invalid',
+      apiKey: 'local-fixture',
+      api: 'salaam-scripted',
+      models: [
+        {
+          id: 'scripted',
+          name: 'Salaam offline proof provider',
+          reasoning: false,
+          input: ['text'],
+          contextWindow: 32768,
+          maxTokens: 1024,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         },
-      };
-      void (async () => {
-        try {
-          if (options?.signal?.aborted) throw new Error('Aborted');
-          const last = context.messages.at(-1);
-          const frame =
-            last?.role === 'user'
-              ? typeof last.content === 'string'
-                ? last.content
-                : last.content.map((x) => (x.type === 'text' ? x.text : '')).join('')
-              : '';
-          // Check actual outgoing context, not the hook's return or a version in user text.
-          if (frame !== c.frame) throw new Error('Required task context missing');
-          const payload = await options?.onPayload?.({ messages: context.messages }, model);
-          if (
-            payload !== undefined &&
-            JSON.stringify(payload) !== JSON.stringify({ messages: context.messages })
-          )
-            throw new Error('Proof payload replacement is unsupported');
-          await bridge('model', {
-            source_key: sourceKey,
-            context_digest: textDigest(frame),
-            provider: model.provider,
-            model: model.id,
-          });
-          stream.push({ type: 'start', partial: response });
-          const realUser = context.messages.findLastIndex(
-            (x) =>
-              x.role === 'user' &&
-              (typeof x.content === 'string'
-                ? x.content !== c.frame
-                : !x.content.some((p) => p.type === 'text' && p.text === c.frame)),
-          );
-          const hasResult = context.messages
-            .slice(realUser + 1)
-            .some(
+      ],
+      streamSimple(model, context, options) {
+        const stream = createAssistantMessageEventStream();
+        const sourceKey = 'salaam-request:' + randomUUID();
+        const response: AssistantMessage = {
+          role: 'assistant',
+          responseId: sourceKey,
+          content: [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          timestamp: Date.now(),
+          stopReason: 'stop',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        void (async () => {
+          try {
+            if (options?.signal?.aborted) throw new Error('Aborted');
+            const last = context.messages.at(-1);
+            const frame =
+              last?.role === 'user'
+                ? typeof last.content === 'string'
+                  ? last.content
+                  : last.content.map((x) => (x.type === 'text' ? x.text : '')).join('')
+                : '';
+            // Check actual outgoing context, not the hook's return or a version in user text.
+            if (frame !== c.frame) throw new Error('Required task context missing');
+            const payload = await options?.onPayload?.({ messages: context.messages }, model);
+            if (
+              payload !== undefined &&
+              JSON.stringify(payload) !== JSON.stringify({ messages: context.messages })
+            )
+              throw new Error('Proof payload replacement is unsupported');
+            await bridge('model', {
+              source_key: sourceKey,
+              context_digest: textDigest(frame),
+              provider: model.provider,
+              model: model.id,
+            });
+            stream.push({ type: 'start', partial: response });
+            const realUser = context.messages.findLastIndex(
               (x) =>
-                x.role === 'toolResult' &&
-                [
-                  'salaam_probe',
-                  'salaam_review',
-                  'salaam_effect',
-                  'spawn_child',
-                  'inspect_child',
-                  'consume_child_result',
-                ].includes(x.toolName),
+                x.role === 'user' &&
+                (typeof x.content === 'string'
+                  ? x.content !== c.frame
+                  : !x.content.some((p) => p.type === 'text' && p.text === c.frame)),
             );
-          const source = context.messages[realUser];
-          const input =
-            source?.role === 'user'
-              ? typeof source.content === 'string'
-                ? source.content
-                : source.content
-                    .filter((p) => p.type === 'text')
-                    .map((p) => (p.type === 'text' ? p.text : ''))
-                    .join('')
-              : '';
-          const children = /^\[children\]\s+(.+)$/.exec(input);
-          const inbox = input.startsWith('[inbox]');
-          const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
-          const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
-          const effectDisabled = managed?.[1] === 'effect' && !c.effects;
-          if (!hasResult && !effectDisabled) {
-            const nested =
-              source?.role === 'user' && JSON.stringify(source.content).includes('nested');
-            const toolCall: ToolCall = {
-              type: 'toolCall' as const,
-              id: `tool-${randomUUID()}`,
-              name:
-                children && !c.child
-                  ? 'spawn_child'
-                  : inbox && !c.child
-                    ? 'inspect_child'
-                    : consume && !c.child
-                      ? 'consume_child_result'
-                      : managed?.[1] === 'effect'
-                        ? 'salaam_effect'
-                        : managed
-                          ? 'salaam_review'
-                          : 'salaam_probe',
-              arguments:
-                children && !c.child
-                  ? {
-                      tasks: children[1]!.split(',').map((step) => ({
-                        step_key: step.trim(),
-                        prompt: 'Read-only child: ' + step.trim(),
-                      })),
-                      budget: 2,
-                      wait: true,
-                    }
-                  : inbox && !c.child
-                    ? {}
-                    : consume && !c.child
-                      ? { child_id: consume[1]!, result_id: consume[2]!, acknowledge: !!consume[3] }
-                      : managed
+            const hasResult = context.messages
+              .slice(realUser + 1)
+              .some(
+                (x) =>
+                  x.role === 'toolResult' &&
+                  [
+                    'salaam_probe',
+                    'salaam_review',
+                    'salaam_effect',
+                    'spawn_child',
+                    'inspect_child',
+                    'consume_child_result',
+                  ].includes(x.toolName),
+              );
+            const source = context.messages[realUser];
+            const input =
+              source?.role === 'user'
+                ? typeof source.content === 'string'
+                  ? source.content
+                  : source.content
+                      .filter((p) => p.type === 'text')
+                      .map((p) => (p.type === 'text' ? p.text : ''))
+                      .join('')
+                : '';
+            const children = /^\[children\]\s+(.+)$/.exec(input);
+            const inbox = input.startsWith('[inbox]');
+            const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
+            const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
+            const effectDisabled = managed?.[1] === 'effect' && !c.effects;
+            if (!hasResult && !effectDisabled) {
+              const nested =
+                source?.role === 'user' && JSON.stringify(source.content).includes('nested');
+              const toolCall: ToolCall = {
+                type: 'toolCall' as const,
+                id: `tool-${randomUUID()}`,
+                name:
+                  children && !c.child
+                    ? 'spawn_child'
+                    : inbox && !c.child
+                      ? 'inspect_child'
+                      : consume && !c.child
+                        ? 'consume_child_result'
+                        : managed?.[1] === 'effect'
+                          ? 'salaam_effect'
+                          : managed
+                            ? 'salaam_review'
+                            : 'salaam_probe',
+                arguments:
+                  children && !c.child
+                    ? {
+                        tasks: children[1]!.split(',').map((step) => ({
+                          step_key: step.trim(),
+                          prompt: 'Read-only child: ' + step.trim(),
+                        })),
+                        budget: 2,
+                        wait: true,
+                      }
+                    : inbox && !c.child
+                      ? {}
+                      : consume && !c.child
                         ? {
-                            targets: managed[2]!.split(',').map((target) => target.trim()),
-                            value: 'offline fixture',
+                            child_id: consume[1]!,
+                            result_id: consume[2]!,
+                            acknowledge: !!consume[3],
                           }
-                        : nested
-                          ? { nested: true }
-                          : {},
-            };
-            response.content.push(toolCall);
-            response.stopReason = 'toolUse';
-            stream.push({ type: 'toolcall_start', contentIndex: 0, partial: response });
-            stream.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial: response });
-            await bridge('usage', { source_key: sourceKey, usage: response.usage });
-            stream.push({ type: 'done', reason: 'toolUse', message: response });
-          } else {
-            response.content.push({ type: 'text', text: '' });
-            stream.push({ type: 'text_start', contentIndex: 0, partial: response });
-            const text = effectDisabled
-              ? 'External effect connector is disabled; no effect was dispatched.'
-              : /^Run the (nested )?Salaam readiness probe\.$/.test(input)
-                ? 'Salaam readiness probe complete.'
-                : /^\[(review|effect)\]/.test(input)
-                  ? 'Offline managed operations settled; inspect their ledger outcomes.'
-                  : 'Offline reply: ' + input;
-            response.content[0] = { type: 'text', text };
-            stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
-            stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });
-            await bridge('usage', { source_key: sourceKey, usage: response.usage });
-            stream.push({ type: 'done', reason: 'stop', message: response });
+                        : managed
+                          ? {
+                              targets: managed[2]!.split(',').map((target) => target.trim()),
+                              value: 'offline fixture',
+                            }
+                          : nested
+                            ? { nested: true }
+                            : {},
+              };
+              response.content.push(toolCall);
+              response.stopReason = 'toolUse';
+              stream.push({ type: 'toolcall_start', contentIndex: 0, partial: response });
+              stream.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial: response });
+              await bridge('usage', { source_key: sourceKey, usage: response.usage });
+              stream.push({ type: 'done', reason: 'toolUse', message: response });
+            } else {
+              response.content.push({ type: 'text', text: '' });
+              stream.push({ type: 'text_start', contentIndex: 0, partial: response });
+              const text = effectDisabled
+                ? 'External effect connector is disabled; no effect was dispatched.'
+                : /^Run the (nested )?Salaam readiness probe\.$/.test(input)
+                  ? 'Salaam readiness probe complete.'
+                  : /^\[(review|effect)\]/.test(input)
+                    ? 'Offline managed operations settled; inspect their ledger outcomes.'
+                    : 'Offline reply: ' + input;
+              response.content[0] = { type: 'text', text };
+              stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
+              stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });
+              await bridge('usage', { source_key: sourceKey, usage: response.usage });
+              stream.push({ type: 'done', reason: 'stop', message: response });
+            }
+            stream.end();
+          } catch (error) {
+            response.stopReason = 'error';
+            response.errorMessage = (error as Error).message;
+            stream.push({ type: 'error', reason: 'error', error: response });
+            stream.end();
+            await fail();
           }
-          stream.end();
-        } catch (error) {
-          response.stopReason = 'error';
-          response.errorMessage = (error as Error).message;
-          stream.push({ type: 'error', reason: 'error', error: response });
-          stream.end();
-          await fail();
-        }
-      })();
-      return stream;
-    },
-  });
+        })();
+        return stream;
+      },
+    });
   pi.on('session_start', async (_event, ctx) => {
     shutdown = () => ctx.shutdown();
     await bridge('handshake', {
@@ -441,7 +453,8 @@ export default function house(pi: ExtensionAPI): void {
         .map((tool) => tool.name)
         .sort(),
       active_tools: pi.getActiveTools().sort(),
-      provider: 'salaam-proof',
+      provider: route.provider,
+      route,
       context_digest: textDigest(c.frame),
     });
     timer = setInterval(() => {

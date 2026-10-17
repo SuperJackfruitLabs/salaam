@@ -4,15 +4,35 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, openSync, closeSync } from 'node:fs';
+import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
+import { ROOT } from './config.js';
+import { cliHelp, hasHelpFlag } from './cli-help.js';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
 import { attach, acquireControl, Outbox } from './attach.js';
 import type { SessionSnapshot, Approval, Operation } from './protocol.js';
+import { providerRoute } from './provider-config.js';
+import { credentialPath, loadApiKey, readSecret, saveApiKey } from './credentials.js';
+import { canonical } from './protocol.js';
 import { SocketEffectConnector } from './effect-connector.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (args[0] === '--version' || args[0] === '-V' || args[0] === 'version') {
+    console.log('salaam ' + JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version);
+    return;
+  }
+  if (!args.length || args[0] === 'help' || hasHelpFlag(args)) {
+    const group = args[0] === 'help' ? args[1] : args[0]?.startsWith('-') ? undefined : args[0];
+    const help = cliHelp(group);
+    if (!help) {
+      console.error('Unknown command. Run salaam --help.');
+      process.exitCode = 2;
+      return;
+    }
+    console.log(help);
+    return;
+  }
   const option = (name: string): string | undefined => {
     const i = args.indexOf(name);
     if (i < 0) return;
@@ -28,6 +48,11 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'auth' && verb === 'set' && id === 'anthropic') {
+    saveApiKey(await readSecret());
+    console.log('Claude API key saved to ' + credentialPath() + ' (mode 600).');
+    return;
+  }
   if (group === 'session' && id && (verb === 'children' || verb === 'usage')) {
     console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/${verb}`), null, 2));
     return;
@@ -204,11 +229,22 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'service' && verb === 'start') {
+    const provider = option('--provider') ?? 'offline';
+    const model = option('--model');
+    const cap = option('--max-output-tokens');
+    const workspace = option('--workspace-id');
+    const route = providerRoute(
+      provider,
+      model,
+      cap === undefined ? undefined : Number(cap),
+      workspace,
+    );
     const effectSocket = option('--effect-socket');
     const opaque = args.includes('--effect-opaque');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
+        providerRoute: route,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -224,11 +260,17 @@ async function main(): Promise<void> {
       await service.closed;
       return;
     }
+    let health: { provider_route?: unknown } | undefined;
     try {
-      await call(socket, '/v1/health');
+      health = await call(socket, '/v1/health');
+    } catch {}
+    if (health) {
+      if (canonical(health.provider_route ?? providerRoute()) !== canonical(route))
+        throw new Error('Service is already running with another provider route; stop it first');
       console.log('Salaam service already running');
       return;
-    } catch {}
+    }
+    if (route.provider === 'anthropic') loadApiKey();
     mkdirSync(state, { recursive: true, mode: 0o700 });
     const fd = openSync(join(state, 'service.log'), 'a', 0o600);
     const child = spawn(
@@ -240,6 +282,11 @@ async function main(): Promise<void> {
         '--foreground',
         '--state',
         state,
+        '--provider',
+        provider,
+        ...(model ? ['--model', model] : []),
+        ...(cap ? ['--max-output-tokens', cap] : []),
+        ...(workspace ? ['--workspace-id', workspace] : []),
         ...(effectSocket ? ['--effect-socket', resolve(effectSocket)] : []),
         ...(opaque ? ['--effect-opaque'] : []),
       ],
@@ -304,10 +351,12 @@ async function main(): Promise<void> {
     }
     return;
   }
-  console.log(
-    'Usage: sal service start|stop|status [--state DIR] [--foreground] [--effect-socket PATH] [--effect-opaque]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal attach ID [--observe|--takeover] [--state DIR]\n       sal session submit ID --text TEXT\n       sal session continue ID --attempt ID --text NEW_INSTRUCTION\n       sal session cancel ID --attempt ID [--takeover]\n       sal approvals list [--session ID] | inspect ID | approve|deny ID --digest DIGEST --revision N\n       sal operations inspect|reconcile ID | resolve ID --digest DIGEST --revision N --outcome STATE --evidence TEXT\n       sal session children|usage ID\n       sal children inspect|result ID | ack ID --result RESULT_ID [--request-id ID]\n       sal session list|inspect ID|probe ID|resume ID [--state DIR]',
-  );
-  if (args.length) process.exitCode = 1;
+  const help = cliHelp(group);
+  if (args.length === 1 && help) console.log(help);
+  else {
+    console.error('Unknown or incomplete command. Run salaam --help.');
+    process.exitCode = 2;
+  }
 }
 main().catch((error) => {
   console.error((error as Error).message);

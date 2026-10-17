@@ -265,7 +265,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     store.finish(receipt.attempt_id, 'completed', 'preserved', null);
     const revision = store.session(session.id).revision;
     store.db.exec(
-      'DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
+      'DROP TABLE session_routes; DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
     );
     store.close();
     store = new Store(path);
@@ -275,7 +275,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     });
     expect(store.create(dir, 'create')).toEqual(session);
     expect(store.session(session.id).revision).toBe(revision);
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

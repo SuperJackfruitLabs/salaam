@@ -18,7 +18,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 3,
+  version: 4,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -34,8 +34,12 @@ export const POLICY = {
     maxChildRequestBudget: 8,
     authority: ['salaam_probe'],
   },
-  provider: 'salaam-proof',
-  model: 'scripted',
+  providers: [
+    'salaam-proof/scripted',
+    'anthropic/claude-sonnet-5-5',
+    'anthropic/claude-sonnet-4-6',
+  ],
+  provider_retries: 0,
   external_effects: 'explicit-connector-and-operation-approval',
 };
 export const POLICY_DIGEST = digest(POLICY);
@@ -59,6 +63,8 @@ export function bundleDigest(): string {
     policy: POLICY_DIGEST,
     lock: textDigest(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')),
     house: textDigest(readFileSync(HOUSE_EXTENSION, 'utf8')),
+    claude: textDigest(readFileSync(join(ROOT, 'dist/src/claude-provider.js'), 'utf8')),
+    provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/protocol.js'), 'utf8')),
     transport: textDigest(readFileSync(join(ROOT, 'dist/src/transport.js'), 'utf8')),
   });

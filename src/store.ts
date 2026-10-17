@@ -3,6 +3,8 @@ import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
+import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
+import { canonical } from './protocol.js';
 import {
   digest,
   ServiceError,
@@ -35,7 +37,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 4) {
+    if (version > 5) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -108,6 +110,12 @@ export class Store {
     }
     try {
       this.migrateChildren();
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 5
+      )
+        this.db.exec(
+          `BEGIN IMMEDIATE; CREATE TABLE session_routes(session_id TEXT PRIMARY KEY REFERENCES sessions(id),route TEXT NOT NULL); PRAGMA user_version=5; COMMIT;`,
+        );
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -247,6 +255,29 @@ export class Store {
       causation_id: row.causation_id,
       payload: JSON.parse(row.payload),
     }));
+  }
+  bindRoute(id: string, route: ProviderRoute): void {
+    this.transaction(() => {
+      const prior = this.db
+        .prepare('SELECT route FROM session_routes WHERE session_id=?')
+        .get(id) as { route: string } | undefined;
+      const expected =
+        prior?.route ?? (this.session(id).epoch > 0 ? canonical(OFFLINE_ROUTE) : null);
+      if (expected && expected !== canonical(route))
+        throw new ServiceError(
+          'provider_route_changed',
+          'Session provider route differs; restart with its original route or create a new session',
+        );
+      if (!prior) {
+        this.db.prepare('INSERT INTO session_routes VALUES (?,?)').run(id, canonical(route));
+        this.event(id, 'provider.bound', { route });
+      }
+    });
+  }
+  providerRoute(id: string): ProviderRoute | null {
+    const row = this.db.prepare('SELECT route FROM session_routes WHERE session_id=?').get(id) as
+      { route: string } | undefined;
+    return row ? JSON.parse(row.route) : null;
   }
   allocate(id: string, bootId: string): number {
     return this.transaction(() => {

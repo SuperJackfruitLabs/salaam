@@ -1,6 +1,6 @@
 # Session service architecture
 
-The operator API and private worker bridge share a service process. Pi runs in a separately supervised process, with a managed agent directory, explicit session identity, pinned house extension, builtin execution tools and MCP disabled, and one offline provider route.
+The operator API and private worker bridge share a service process. Pi runs in a separately supervised process, with a managed agent directory, explicit session identity, pinned house extension, builtin execution tools and MCP disabled, and either the offline route or a session-pinned guarded Anthropic route.
 
 ```mermaid
 flowchart LR
@@ -66,7 +66,7 @@ Receipt validation binds the accepted payload and action key before a success co
 
 Cancellation commits its request, revokes new grants, invalidates pending authority, cancels prepared operations and preserves unknown dispatched outcomes. Pi abort and owned transport abort happen afterward. Already accepted external work may continue. Shutdown drains dispatch, effect transport, lookups and outstanding request handlers before closing SQLite. This includes a target-version preflight still awaiting its connector.
 
-The shipped connector targets an explicit local fixture protocol, not arbitrary production APIs. It uses conditional writes and optional key lookup; shell execution, live model accounts, production isolation and durable task verification remain outside this evidence.
+The shipped connector targets an explicit local fixture protocol, not arbitrary production APIs. It uses conditional writes and optional key lookup; shell execution, live production effects, production isolation and durable task verification remain outside this evidence.
 
 ## Child lifecycle and usage
 
@@ -76,4 +76,14 @@ Completed, failed, cancelled and interrupted children publish the same fixed res
 
 Each parent attempt has a fixed 16-request budget. Child reservations are subtracted before launch; each admission consumes its own allocated request. Reservations are retained, including after uncertain usage, and cannot be reclaimed to fund a duplicate child. These bounds do not claim token or currency limits. New continuation attempts get new parent budgets while old step keys remain bound to their original children.
 
-Provider admission first journals an unknown observation with a generated source key. The fixture provider commits its usage receipt before delivering its final response to Pi; the response carries that source key into the transcript. Importing the same assistant entry joins the existing source instead of adding another amount. Raw Pi entries without request IDs use session/entry keys. Conflicting receipts fail closed. Auxiliary usage, compaction and branch-summary receipts use entry keys; missing/error receipts stay unknown. Pi pricing estimates are labelled separately from known fixture costs. Aggregation sums actual provider observations in each session of the tree; it never sums child aggregate amounts embedded in tool messages. Real compaction and live Anthropic forwarding remain unproved until their separate integration work.
+Provider admission first journals an unknown observation with a generated source key. The fixture provider commits its usage receipt before delivering its final response to Pi; the response carries that source key into the transcript. Importing the same assistant entry joins the existing source instead of adding another amount. Raw Pi entries without request IDs use session/entry keys. Conflicting receipts fail closed. Auxiliary usage, compaction and branch-summary receipts use entry keys; missing/error receipts stay unknown. Pi pricing estimates are labelled separately from known fixture costs. Aggregation sums actual provider observations in each session of the tree; it never sums child aggregate amounts embedded in tool messages. Real compaction and live account authentication remain separate verification steps.
+
+## Guarded Claude route
+
+Schema v5 stores a public provider route per session: provider, model, maximum output tokens and optional Anthropic workspace ID. Schema-v4 sessions with previous worker activity retain the offline route. A replacement worker must bind to the same route before allocating its new epoch, and readiness cross-checks the manifest and actual Pi selected model. The supervisor requires successful RPC disabling of automatic turn retry and automatic compaction before recording readiness. SDK retries are also zero.
+
+The house extension registers a wrapper around the pinned Pi Anthropic adapter, preserving normalized streaming events and Pi payload, response, header and stream callbacks. The initial route flattens mid-conversation controls into a fixed request tool inventory, uses low reasoning and admits only the selected Sonnet model. Payload hooks may replace the body, but the result is revalidated. The fetch boundary checks the actual serialized body against that approved digest and obtains a service admission before sending exactly one HTTP request. The service independently validates the context frame, selected model, output cap and tool inventory. Inline tool changes, server tools, fallback models and redirect forwarding are denied. A bridge or admission write failure denies HTTP dispatch and invalidates readiness.
+
+The key comes from the service's `ANTHROPIC_API_KEY` environment or the user's mode-600 credential file; the service passes it explicitly to live worker environments. It is not part of the route, manifest, bundle digest, process command line, operation binding or journal. The extension is trusted code, and this is not isolation from another process running as the same OS user. The direct endpoint is fixed to Anthropic. Provider failure bodies are sanitized before Pi persists them. There is no automatic credential discovery, OAuth refresh or external proxy configuration.
+
+Each HTTP admission journals a generated request source key with unknown amounts. A completed Anthropic stream commits usage before the normalized final message is delivered to Pi; the message's `responseId` carries Salaam's source key for idempotent transcript import. Provider pricing amounts are estimates, not billing receipts. An incomplete/error stream preserves an unknown observation. Parent/child trees retain the same route and aggregate provider executions once. Service death interrupts active work and never replays it; explicit continuation reuses the recorded session in a new worker epoch.

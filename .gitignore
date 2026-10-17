@@ -4,3 +4,7 @@ dist/
 coverage/
 .DS_Store
 *.log
+
+.env
+.env.*
+credentials/
