@@ -1,4 +1,21 @@
 const commands: Record<string, string> = {
+  acp: `salaam acp [--state DIR]
+
+Run the ACP v1 stdio client adapter against an already running Salaam service.`,
+  artifacts: `salaam artifacts put SESSION_ID --text TEXT [--request-id ID] [--takeover]
+
+Persist text evidence; reference its returned artifact ID in a task evidence fact.
+Read it with salaam history read SESSION_ID --artifact-id ID.`,
+  task: `salaam task inspect SESSION_ID
+salaam task update SESSION_ID --task-version N --kind objective|constraint|completed|outstanding|evidence --text TEXT
+                          [--supersedes FACT_ID] [--artifact-id ID] [--request-id ID] [--takeover]
+
+Updates are explicit and versioned. Corrections retain the original fact and its provenance.`,
+  history: `salaam history read SESSION_ID [--artifact-id ID|--entry-id ID] [--offset N]
+
+Read bounded evidence/history pages, including entries preceding compaction.`,
+  compactions: `salaam compactions inspect COMPACTION_ID
+salaam compactions cancel COMPACTION_ID [--takeover] [--request-id ID]`,
   auth: `salaam auth set anthropic
 
 Enter a Claude API key at a hidden prompt. It is saved privately under
@@ -21,6 +38,7 @@ salaam session cancel SESSION_ID --attempt ATTEMPT_ID [--takeover]
 salaam session probe SESSION_ID [--takeover]
 salaam session children SESSION_ID
 salaam session usage SESSION_ID
+salaam session compact SESSION_ID --task-version N [--takeover] [--request-id ID]
 
 Submissions are durable. Continuing an interrupted attempt creates a new instruction.
 Use salaam attach SESSION_ID for an interactive terminal.`,
@@ -67,9 +85,14 @@ Commands:
   service       Start, inspect or stop the session service
   session       Create, inspect, submit, resume or cancel work
   attach        Open an interactive terminal on a session
+  acp           Connect an editor over ACP v1 stdio
   approvals     Inspect, approve or deny managed operations
   operations    Inspect, reconcile or resolve effect outcomes
   children      Inspect, read or acknowledge durable child results
+  task          Inspect and update durable task facts
+  history       Retrieve older history and evidence
+  artifacts     Save durable text evidence
+  compactions   Inspect or cancel a managed checkpoint
 
 ${globalOptions}
 
@@ -99,6 +122,12 @@ const valueOptions = new Set([
   '--outcome',
   '--evidence',
   '--result',
+  '--kind',
+  '--supersedes',
+  '--artifact-id',
+  '--entry-id',
+  '--offset',
+  '--task-version',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
 export function hasHelpFlag(args: string[]): boolean {

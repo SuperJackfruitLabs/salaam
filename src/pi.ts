@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { ServiceError, object } from './protocol.js';
 
+export class PiCommandError extends Error {}
+
 // The upstream client does not expose process identity/group ownership or the
 // extension UI subprotocol. Keep this narrow transport behind the Pi adapter.
 export class PiProcess extends EventEmitter {
@@ -59,7 +61,7 @@ export class PiProcess extends EventEmitter {
             clearTimeout(pending.timer);
             this.pending.delete(record.id);
             if (record.success === true) pending.resolve(record);
-            else pending.reject(new Error(String(record.error ?? 'Pi command rejected')));
+            else pending.reject(new PiCommandError(String(record.error ?? 'Pi command rejected')));
           }
         } else this.emit('record', record);
       } catch (error) {

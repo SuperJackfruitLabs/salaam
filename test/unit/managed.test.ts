@@ -231,7 +231,7 @@ test('schema v2 upgrades without changing accepted request replies or completed 
     store.claim(session.id, epoch);
     store.finish(accepted.attempt_id, 'completed', 'M3 result', null);
     store.db.exec(
-      'DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations;DROP TABLE approval_dialogs;DROP TABLE approvals;DROP TABLE operations;PRAGMA user_version=2;',
+      'DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations;DROP TABLE approval_dialogs;DROP TABLE approvals;DROP TABLE operations;PRAGMA user_version=2;',
     );
     store.close();
     store = new Store(path);
@@ -241,7 +241,7 @@ test('schema v2 upgrades without changing accepted request replies or completed 
     });
     expect(store.accept(session.id, 'submit', session.revision, 'M3 input')).toEqual(accepted);
     expect(store.approvals(session.id)).toEqual([]);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

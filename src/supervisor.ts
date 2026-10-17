@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
@@ -16,7 +16,7 @@ import {
   type Session,
 } from './protocol.js';
 import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.js';
-import { PiProcess } from './pi.js';
+import { PiProcess, PiCommandError } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import type { ChildWork } from './children.js';
@@ -26,6 +26,7 @@ import {
   validateClaudePayload,
   type ProviderRoute,
 } from './provider-config.js';
+import type { TaskContext, Compaction } from './task-context.js';
 import { loadApiKey, validateApiKey } from './credentials.js';
 import { digest } from './protocol.js';
 
@@ -51,6 +52,8 @@ interface Worker {
   epoch: number;
   token: string;
   frame: string;
+  binding: string;
+  compaction?: string;
   bundle: string;
   ready: boolean;
   invalid: string | null;
@@ -89,6 +92,8 @@ function groupExists(pid: number): boolean {
   }
 }
 export class Supervisor extends EventEmitter {
+  tasks!: TaskContext;
+  private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
   children?: ChildWork;
   readonly route: ProviderRoute;
@@ -182,12 +187,14 @@ export class Supervisor extends EventEmitter {
       accept = a;
       reject = b;
     });
-    const frame = `SALAAM_TASK_STATE ${canonical({ version: 0, objective: null, constraints: [], session_id: id, nonce: randomBytes(16).toString('hex') })}`;
+    const binding = randomBytes(16).toString('hex');
+    const frame = this.tasks.frame(id, binding);
     const worker: Worker = {
       id,
       epoch,
       token: randomBytes(32).toString('hex'),
       frame,
+      binding,
       bundle: this.bundle,
       ready: false,
       invalid: null,
@@ -205,6 +212,13 @@ export class Supervisor extends EventEmitter {
     try {
       const workerDir = join(this.options.stateDir, 'workers', id);
       mkdirSync(join(workerDir, 'agent'), { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(workerDir, 'agent', 'settings.json'),
+        JSON.stringify({
+          compaction: { enabled: false, keepRecentTokens: 512, reserveTokens: 8192 },
+        }),
+        { mode: 0o600 },
+      );
       const sessionDir = join(workerDir, 'sessions');
       mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
       const config = {
@@ -507,6 +521,26 @@ export class Supervisor extends EventEmitter {
           );
         throw new Error('Unsupported child operation');
       }
+      if (method === 'context')
+        return { frame: this.tasks.frame(id, w.binding), version: this.tasks.state(id).version };
+      if (method === 'history') return this.tasks.history(id, body);
+      if (method === 'compaction.plan') {
+        if (!w.compaction || w.attempt) throw new Error('No managed compaction grant');
+        const work = this.tasks.compaction(w.compaction);
+        if (
+          work.state !== 'running' ||
+          work.epoch !== w.epoch ||
+          work.task_version !== this.tasks.state(id).version
+        )
+          throw new Error('Compaction grant is stale');
+        return {
+          id: work.id,
+          task_version: work.task_version,
+          summary:
+            'Salaam task checkpoint. Earlier conversation is available through salaam_history. Explicit facts below are authoritative; superseded facts remain historical.\n' +
+            this.tasks.frame(id, w.binding),
+        };
+      }
       if (method === 'usage') {
         const source = this.store.db
           .prepare('SELECT session_id,attempt_id FROM usage_observations WHERE source_key=?')
@@ -529,18 +563,37 @@ export class Supervisor extends EventEmitter {
         if (
           body.provider !== this.route.provider ||
           body.model !== this.route.model ||
-          body.context_digest !== textDigest(w.frame)
+          body.context_digest !== textDigest(this.tasks.frame(id, w.binding))
         )
           throw new Error('Provider or task context is invalid');
         if (this.route.provider === 'anthropic') {
           validateClaudePayload(
             body.payload,
             this.route,
-            w.frame,
+            this.tasks.frame(id, w.binding),
             workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
           );
           if (body.payload_digest !== digest(body.payload))
             throw new Error('Claude payload digest changed');
+        }
+        if (this.route.provider === 'salaam-proof') {
+          const payload = object(body.payload);
+          if (!Array.isArray(payload.messages)) throw new Error('Proof payload missing');
+          const last = object(payload.messages.at(-1));
+          const text =
+            typeof last.content === 'string'
+              ? last.content
+              : Array.isArray(last.content)
+                ? last.content
+                    .map((x) => (object(x).type === 'text' ? object(x).text : ''))
+                    .join('')
+                : '';
+          if (
+            last.role !== 'user' ||
+            text !== this.tasks.frame(id, w.binding) ||
+            body.payload_digest !== digest(payload)
+          )
+            throw new Error('Proof task payload is stale or invalid');
         }
         this.store.usage.admit(
           id,
@@ -555,6 +608,8 @@ export class Supervisor extends EventEmitter {
             epoch: w.epoch,
             provider: body.provider,
             context_digest: body.context_digest,
+            payload_digest: body.payload_digest,
+            task_version: this.tasks.state(id).version,
           });
         });
       } else if (method === 'policy' || method === 'tool') {
@@ -574,6 +629,12 @@ export class Supervisor extends EventEmitter {
       } else throw new Error('Unsupported worker operation');
       return { ok: true };
     } catch (error) {
+      if (
+        method === 'history' &&
+        error instanceof ServiceError &&
+        ['not_found', 'invalid_field'].includes(error.code)
+      )
+        throw error;
       if (
         method.startsWith('child.') &&
         error instanceof ServiceError &&
@@ -650,6 +711,85 @@ export class Supervisor extends EventEmitter {
     } catch {
       await this.stopWorker(w);
     }
+  }
+  assertIdle(id: string): Worker {
+    const w = this.workers.get(id);
+    if (!w?.ready || w.invalid || w.stopping || !w.pi || this.store.session(id).state !== 'ready')
+      throw new ServiceError('not_ready', 'A ready worker is required');
+    if (
+      w.busy ||
+      this.store.db
+        .prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending' LIMIT 1")
+        .get(id)
+    )
+      throw new ServiceError('worker_busy', 'Wait for the active turn and approvals to settle');
+    return w;
+  }
+  compact(id: string, request: string, expected: number, authorize: () => void): Compaction {
+    // Deduplication runs before idle/lease checks, including after a lost response.
+    const work = this.tasks.begin(id, this.store.session(id).epoch, request, expected, authorize);
+    const w = this.workers.get(id)!;
+    if (work.state !== 'running' || w.compaction === work.id) return work;
+    w.busy = true;
+    w.compaction = work.id;
+    const job = (async () => {
+      try {
+        await w.pi!.command('compact', {}, 30000);
+        await this.syncEntries(w);
+        if (this.tasks.compaction(work.id).state !== 'completed')
+          throw new Error('Pi compaction receipt missing');
+      } catch (error) {
+        try {
+          // A pipe response can be lost after Pi persisted its receipt.
+          if (!w.stopping && !w.invalid) await this.syncEntries(w);
+          const ambiguous = !(error instanceof PiCommandError);
+          if (ambiguous && this.tasks.compaction(work.id).state !== 'completed')
+            this.invalidate(w, 'Compaction outcome requires reconciliation');
+          this.tasks.settle(
+            work.id,
+            ambiguous
+              ? 'interrupted'
+              : this.store.db
+                    .prepare('SELECT 1 FROM compaction_cancellations WHERE id=?')
+                    .get(work.id)
+                ? 'cancelled'
+                : 'failed',
+            (error as Error).message,
+          );
+        } catch {
+          this.invalidate(w, 'Compaction reconciliation failed');
+        }
+      } finally {
+        w.busy = false;
+        delete w.compaction;
+        this.emit('idle', id);
+      }
+    })();
+    this.compactionJobs.add(job);
+    void job.finally(() => this.compactionJobs.delete(job));
+    return work;
+  }
+  cancelCompaction(id: string, request: string, authorize: () => void): Compaction {
+    const work = this.tasks.compaction(id);
+    this.store.request('local-operator', request, { kind: 'cancel-compaction', id }, () => {
+      authorize();
+      if (work.state === 'running') {
+        this.store.db.prepare('INSERT OR IGNORE INTO compaction_cancellations VALUES (?)').run(id);
+        this.store.event(
+          work.session_id,
+          'compaction.cancel_requested',
+          { compaction_id: id },
+          request,
+        );
+      }
+      return { id };
+    });
+    const w = this.workers.get(work.session_id);
+    if (w?.compaction === id)
+      void w
+        .pi!.command('abort', {}, 5000)
+        .catch(() => this.invalidate(w, 'Compaction abort failed'));
+    return this.tasks.compaction(id);
   }
   async probe(id: string, nested = false): Promise<{ text: string }> {
     const w = this.workers.get(id);
@@ -787,6 +927,7 @@ export class Supervisor extends EventEmitter {
     const errors = results
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
       .map((result) => result.reason);
+    await Promise.allSettled(this.compactionJobs);
     if (errors.length)
       throw new AggregateError(errors, 'Worker shutdown could not persist all final states');
   }

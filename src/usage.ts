@@ -86,10 +86,16 @@ export class UsageLedger {
         type?: string;
         message?: Record<string, unknown>;
         usage?: unknown;
+        details?: { strategy?: string; salaam_compaction?: string };
         provider?: string;
         model?: string;
       };
       const m = entry.message;
+      const checkpoint =
+        entry.type === 'compaction' &&
+        entry.details?.strategy === 'explicit-task-checkpoint-v1' &&
+        typeof entry.details.salaam_compaction === 'string';
+
       if (
         m?.role !== 'assistant' &&
         !['compaction', 'branch_summary', 'usage'].includes(entry.type ?? '')
@@ -105,10 +111,12 @@ export class UsageLedger {
         this.observe(
           session,
           key,
-          String(m?.provider ?? entry.provider ?? 'unknown'),
-          String(m?.model ?? entry.model ?? entry.type ?? 'unknown'),
+          checkpoint ? 'salaam-checkpoint' : String(m?.provider ?? entry.provider ?? 'unknown'),
+          checkpoint
+            ? 'deterministic-v1'
+            : String(m?.model ?? entry.model ?? entry.type ?? 'unknown'),
           entry.usage ?? m?.usage,
-          (m?.provider ?? entry.provider) === 'salaam-proof' ? 'known' : 'estimated',
+          checkpoint || (m?.provider ?? entry.provider) === 'salaam-proof' ? 'known' : 'estimated',
         );
       else if (
         !this.store.db.prepare('SELECT 1 FROM usage_observations WHERE source_key=?').get(key)

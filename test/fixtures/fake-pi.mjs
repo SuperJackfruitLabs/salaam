@@ -61,6 +61,10 @@ const mutations = {
   'wrong-provider': { provider: 'anthropic' },
   'wrong-route': { route: { ...c.route, max_tokens: 777 } },
   'wrong-tools': { tools: ['salaam_probe', 'bypass'] },
+  'missing-task-context': {
+    capabilities: CAPABILITIES.filter((x) => x !== 'durable-task-context'),
+  },
+  'missing-compaction': { capabilities: CAPABILITIES.filter((x) => x !== 'managed-compaction') },
   'missing-context': { capabilities: ['persistent-session'] },
   'missing-approvals': { capabilities: CAPABILITIES.filter((x) => x !== 'durable-approvals') },
   'missing-children': { capabilities: CAPABILITIES.filter((x) => x !== 'child-work') },

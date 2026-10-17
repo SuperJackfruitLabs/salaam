@@ -26,6 +26,7 @@ export class Store {
   readonly db: DatabaseSync;
   readonly changes = new EventEmitter();
   readonly usage = new UsageLedger(this);
+  reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
   cancelChildren?: (attempt: string) => void;
   private committed: DurableEvent[] | null = null;
@@ -37,7 +38,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 5) {
+    if (version > 6) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -116,6 +117,16 @@ export class Store {
         this.db.exec(
           `BEGIN IMMEDIATE; CREATE TABLE session_routes(session_id TEXT PRIMARY KEY REFERENCES sessions(id),route TEXT NOT NULL); PRAGMA user_version=5; COMMIT;`,
         );
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 6
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE task_heads(session_id TEXT PRIMARY KEY REFERENCES sessions(id),version INTEGER NOT NULL DEFAULT 0,compaction_cursor TEXT);
+          CREATE TABLE task_facts(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),version INTEGER NOT NULL,kind TEXT NOT NULL,text TEXT NOT NULL,
+            supersedes TEXT UNIQUE REFERENCES task_facts(id),artifact_id TEXT REFERENCES artifacts(id),source TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(session_id,version));
+          CREATE TABLE compactions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),epoch INTEGER NOT NULL,task_version INTEGER NOT NULL,state TEXT NOT NULL,cursor TEXT,error TEXT);
+          CREATE TABLE compaction_cancellations(id TEXT PRIMARY KEY REFERENCES compactions(id));
+          PRAGMA user_version=6;COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -723,6 +734,7 @@ export class Store {
     this.db
       .prepare('UPDATE sessions SET pi_cursor=COALESCE(?,pi_cursor),pi_leaf=? WHERE id=?')
       .run(entries.at(-1)?.id ?? null, leaf, id);
+    this.reconcileCompactions?.(id);
     this.event(id, 'transcript.synced', { entries: entries.length, leaf });
   }
   close(): void {

@@ -1,6 +1,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { TaskContext } from './task-context.js';
 import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
@@ -23,6 +24,7 @@ export class SalaamService {
   readonly bridgeSocket: string;
   readonly store: Store;
   readonly artifacts: Artifacts;
+  readonly tasks: TaskContext;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
@@ -48,12 +50,14 @@ export class SalaamService {
       this.store = new Store(join(this.stateDir, 'journal.sqlite'));
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
+        this.tasks = new TaskContext(this.store, this.artifacts);
         this.supervisor = new Supervisor(this.store, {
           ...options,
           stateDir: this.stateDir,
           bridgeSocket: this.bridgeSocket,
           effectsEnabled: !!options.effectConnector,
         });
+        this.supervisor.tasks = this.tasks;
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
           approvalTtlMs: options.approvalTtlMs,
@@ -100,6 +104,7 @@ export class SalaamService {
     try {
       await service.supervisor.recover();
       service.store.recoverWork();
+      service.tasks.recover();
       service.children.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
@@ -193,6 +198,81 @@ export class SalaamService {
         this.send(res, 201, session);
         return;
       }
+      if (parts[0] === 'v1' && parts[1] === 'compactions' && parts[2]) {
+        const work = this.tasks.compaction(parts[2]);
+        if (parts.length === 3 && req.method === 'GET') {
+          this.send(res, 200, work);
+          return;
+        }
+        if (parts[3] === 'cancel' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            202,
+            this.supervisor.cancelCompaction(
+              work.id,
+              string(body.request_id, 'request_id', 128),
+              () =>
+                this.store.authorizeControl(work.session_id, {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                }),
+            ),
+          );
+          return;
+        }
+      }
+      if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
+        const id = parts[2];
+        if (parts[3] === 'task' && req.method === 'GET') {
+          this.send(res, 200, this.tasks.state(id));
+          return;
+        }
+        if (parts[3] === 'history' && req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            this.tasks.history(
+              id,
+              Object.fromEntries(
+                [...url.searchParams].map(([k, v]) => [k, k === 'offset' ? Number(v) : v]),
+              ),
+            ),
+          );
+          return;
+        }
+        if (
+          (parts[3] === 'task' || parts[3] === 'compact' || parts[3] === 'artifacts') &&
+          req.method === 'POST'
+        ) {
+          const body = object(await readJson(req));
+          const authorize = () => {
+            this.store.authorizeControl(id, {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            });
+            this.supervisor.assertIdle(id);
+          };
+          const request = string(body.request_id, 'request_id', 128);
+          if (parts[3] === 'artifacts') {
+            this.send(
+              res,
+              201,
+              this.tasks.putArtifact(id, request, string(body.text, 'text', 256 * 1024), authorize),
+            );
+            return;
+          }
+          const expected = integer(body.expected_version, 'expected_version');
+          this.send(
+            res,
+            parts[3] === 'compact' ? 202 : 200,
+            parts[3] === 'task'
+              ? this.tasks.update(id, request, expected, object(body.fact), authorize)
+              : this.supervisor.compact(id, request, expected, authorize),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'approvals') {
         if (parts.length === 2 && req.method === 'GET') {
           const id = url.searchParams.get('session');
@@ -266,6 +346,16 @@ export class SalaamService {
           );
           return;
         }
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'attempts' &&
+        parts[2] &&
+        parts.length === 3 &&
+        req.method === 'GET'
+      ) {
+        this.send(res, 200, this.store.attempt(parts[2]));
+        return;
       }
       if (
         parts[0] === 'v1' &&

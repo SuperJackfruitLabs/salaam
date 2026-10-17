@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { ROOT } from '../../src/config.js';
 import { SalaamService } from '../../src/service.js';
 import { call } from '../../src/transport.js';
-import { acquireControl } from '../../src/attach.js';
+import { acquireControl, Outbox } from '../../src/attach.js';
 import type { Session, SessionSnapshot, Approval, Operation } from '../../src/protocol.js';
 import { effectFixture, submit, decide } from '../managed-helpers.js';
 import { fixture, create, ready, until } from '../helpers.js';
@@ -256,19 +256,21 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
         await ready(f.service, session.id);
         const work = await submit(f.service, session.id, '[effect] cancel-before');
         const approval = await until(() => f.service.store.approvals(session.id)[0], Boolean);
-        const body = {
-          ...work.controller,
-          request_id: 'cancel',
-          expected_revision: f.service.store.session(session.id).revision,
-        };
-        const receipt = await call(
-          f.service.socket,
-          `/v1/attempts/${work.attempt_id}/cancel`,
-          body,
+        const outbox = new Outbox(f.dir, session.id);
+        const request = randomUUID();
+        outbox.enqueueCancellation(
+          work.attempt_id,
+          f.service.store.session(session.id).revision,
+          request,
         );
+        await outbox.flush(f.service.socket, session.id, work.controller);
+        await outbox.flush(f.service.socket, session.id, work.controller);
+        expect(outbox.records()).toHaveLength(0);
         expect(
-          await call(f.service.socket, `/v1/attempts/${work.attempt_id}/cancel`, body),
-        ).toEqual(receipt);
+          f.service.store.db
+            .prepare('SELECT count(*) n FROM cancellations WHERE attempt_id=?')
+            .get(work.attempt_id)?.n,
+        ).toBe(1);
         await until(
           () => f.service.store.attempt(work.attempt_id).state,
           (state) => state === 'cancelled',
@@ -295,11 +297,21 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
         const approval = await until(() => f.service.store.approvals(session.id)[0], Boolean);
         await decide(f.service, approval!, 'approve');
         await until(() => existsSync(join(external.dir, 'accepted')), Boolean);
-        const receipt = await call(f.service.socket, `/v1/attempts/${work.attempt_id}/cancel`, {
-          ...work.controller,
-          request_id: 'cancel',
-          expected_revision: f.service.store.session(session.id).revision,
-        });
+        const outbox = new Outbox(f.dir, session.id);
+        const request = randomUUID();
+        outbox.enqueueCancellation(
+          work.attempt_id,
+          f.service.store.session(session.id).revision,
+          request,
+        );
+        await outbox.flush(f.service.socket, session.id, work.controller);
+        const receipt = JSON.parse(
+          (
+            f.service.store.db
+              .prepare('SELECT response FROM requests WHERE actor=? AND id=?')
+              .get('local-operator', request) as { response: string }
+          ).response,
+        );
         expect(receipt).toMatchObject({ unresolved_operations: [approval!.operation_id] });
         await until(
           () => f.service.store.attempt(work.attempt_id).state,

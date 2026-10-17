@@ -14,6 +14,7 @@ import {
   PROTOCOL_VERSION,
   workerTools,
   textDigest,
+  digest,
   type Approval,
   type Operation,
 } from './protocol.js';
@@ -246,20 +247,75 @@ export default function house(pi: ExtensionAPI): void {
       return { block: true, reason: 'Salaam policy gate unavailable' };
     }
   });
-  pi.on('context', async (event) => ({
-    messages: [
-      ...event.messages,
-      {
-        role: 'custom' as const,
-        customType: 'salaam-task-state',
-        content: c.frame,
-        display: false,
-        timestamp: Date.now(),
+  if (!c.child)
+    pi.registerTool({
+      name: 'salaam_history',
+      label: 'Retrieve Salaam evidence',
+      description:
+        'List append-order history or retrieve an older entry/evidence artifact. Results are bounded; follow next_offset.',
+      parameters: Type.Object({
+        artifact_id: Type.Optional(Type.String()),
+        entry_id: Type.Optional(Type.String()),
+        offset: Type.Optional(Type.Integer({ minimum: 0 })),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      async execute(_id, params) {
+        const result = await bridge('history', params);
+        return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
       },
-    ],
-  }));
+    });
+  pi.on('session_before_compact', async (event) => {
+    try {
+      const plan = await bridge<{ id: string; task_version: number; summary: string }>(
+        'compaction.plan',
+      );
+      if (event.signal.aborted) return { cancel: true };
+      const lastUser = event.branchEntries.findLast(
+        (entry) => entry.type === 'message' && entry.message.role === 'user',
+      );
+      if (!lastUser) return { cancel: true };
+      return {
+        compaction: {
+          summary: plan.summary,
+          firstKeptEntryId: lastUser.id,
+          tokensBefore: event.preparation.tokensBefore,
+          details: {
+            salaam_compaction: plan.id,
+            task_version: plan.task_version,
+            strategy: 'explicit-task-checkpoint-v1',
+          },
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        },
+      };
+    } catch {
+      await fail();
+      return { cancel: true }; // Never fall through to unadmitted default summarization.
+    }
+  });
+  pi.on('context', async (event) => {
+    c.frame = (await bridge<{ frame: string }>('context')).frame;
+    return {
+      messages: [
+        ...event.messages,
+        {
+          role: 'custom' as const,
+          customType: 'salaam-task-state',
+          content: c.frame,
+          display: false,
+          timestamp: Date.now(),
+        },
+      ],
+    };
+  });
   if (route.provider === 'anthropic')
-    registerClaude(pi, route, c.frame, workerTools(!!c.effects, !!c.child), bridge, fail);
+    registerClaude(pi, route, () => c.frame, workerTools(!!c.effects, !!c.child), bridge, fail);
   else
     pi.registerProvider('salaam-proof', {
       baseUrl: 'http://unused.invalid',
@@ -315,9 +371,12 @@ export default function house(pi: ExtensionAPI): void {
               JSON.stringify(payload) !== JSON.stringify({ messages: context.messages })
             )
               throw new Error('Proof payload replacement is unsupported');
+            const wirePayload = JSON.parse(JSON.stringify({ messages: context.messages }));
             await bridge('model', {
               source_key: sourceKey,
               context_digest: textDigest(frame),
+              payload: wirePayload,
+              payload_digest: digest(wirePayload),
               provider: model.provider,
               model: model.id,
             });
@@ -341,6 +400,7 @@ export default function house(pi: ExtensionAPI): void {
                     'spawn_child',
                     'inspect_child',
                     'consume_child_result',
+                    'salaam_history',
                   ].includes(x.toolName),
               );
             const source = context.messages[realUser];
@@ -353,7 +413,9 @@ export default function house(pi: ExtensionAPI): void {
                       .map((p) => (p.type === 'text' ? p.text : ''))
                       .join('')
                 : '';
-            const children = /^\[children\]\s+(.+)$/.exec(input);
+            const history = /^\[history\]\s+(\S+)$/.exec(input);
+            const next = input === '[next]';
+            const children = /^\[children(?:-nowait)?\]\s+(.+)$/.exec(input);
             const inbox = input.startsWith('[inbox]');
             const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
             const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
@@ -365,43 +427,47 @@ export default function house(pi: ExtensionAPI): void {
                 type: 'toolCall' as const,
                 id: `tool-${randomUUID()}`,
                 name:
-                  children && !c.child
-                    ? 'spawn_child'
-                    : inbox && !c.child
-                      ? 'inspect_child'
-                      : consume && !c.child
-                        ? 'consume_child_result'
-                        : managed?.[1] === 'effect'
-                          ? 'salaam_effect'
-                          : managed
-                            ? 'salaam_review'
-                            : 'salaam_probe',
+                  history && !c.child
+                    ? 'salaam_history'
+                    : children && !c.child
+                      ? 'spawn_child'
+                      : inbox && !c.child
+                        ? 'inspect_child'
+                        : consume && !c.child
+                          ? 'consume_child_result'
+                          : managed?.[1] === 'effect'
+                            ? 'salaam_effect'
+                            : managed
+                              ? 'salaam_review'
+                              : 'salaam_probe',
                 arguments:
-                  children && !c.child
-                    ? {
-                        tasks: children[1]!.split(',').map((step) => ({
-                          step_key: step.trim(),
-                          prompt: 'Read-only child: ' + step.trim(),
-                        })),
-                        budget: 2,
-                        wait: true,
-                      }
-                    : inbox && !c.child
-                      ? {}
-                      : consume && !c.child
-                        ? {
-                            child_id: consume[1]!,
-                            result_id: consume[2]!,
-                            acknowledge: !!consume[3],
-                          }
-                        : managed
+                  history && !c.child
+                    ? { artifact_id: history[1]! }
+                    : children && !c.child
+                      ? {
+                          tasks: children[1]!.split(',').map((step) => ({
+                            step_key: step.trim(),
+                            prompt: 'Read-only child: ' + step.trim(),
+                          })),
+                          budget: 2,
+                          wait: !input.startsWith('[children-nowait]'),
+                        }
+                      : inbox && !c.child
+                        ? {}
+                        : consume && !c.child
                           ? {
-                              targets: managed[2]!.split(',').map((target) => target.trim()),
-                              value: 'offline fixture',
+                              child_id: consume[1]!,
+                              result_id: consume[2]!,
+                              acknowledge: !!consume[3],
                             }
-                          : nested
-                            ? { nested: true }
-                            : {},
+                          : managed
+                            ? {
+                                targets: managed[2]!.split(',').map((target) => target.trim()),
+                                value: 'offline fixture',
+                              }
+                            : nested
+                              ? { nested: true }
+                              : {},
               };
               response.content.push(toolCall);
               response.stopReason = 'toolUse';
@@ -418,7 +484,16 @@ export default function house(pi: ExtensionAPI): void {
                   ? 'Salaam readiness probe complete.'
                   : /^\[(review|effect)\]/.test(input)
                     ? 'Offline managed operations settled; inspect their ledger outcomes.'
-                    : 'Offline reply: ' + input;
+                    : next
+                      ? 'Next explicit work: ' +
+                        JSON.parse(c.frame.slice('SALAAM_TASK_STATE '.length))
+                          .facts.filter(
+                            (f: { kind: string; superseded_by: string | null }) =>
+                              f.kind === 'outstanding' && !f.superseded_by,
+                          )
+                          .map((f: { text: string }) => f.text)
+                          .join('; ')
+                      : 'Offline reply: ' + input;
               response.content[0] = { type: 'text', text };
               stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
               stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });

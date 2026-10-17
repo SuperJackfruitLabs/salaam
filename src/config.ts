@@ -18,7 +18,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 4,
+  version: 5,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -26,6 +26,7 @@ export const POLICY = {
     'spawn_child',
     'inspect_child',
     'consume_child_result',
+    'salaam_history',
   ],
   children: {
     maxDepth: 1,
@@ -40,6 +41,7 @@ export const POLICY = {
     'anthropic/claude-sonnet-4-6',
   ],
   provider_retries: 0,
+  compaction: { strategy: 'explicit-task-checkpoint-v1', automatic: false, keepRecentTokens: 512 },
   external_effects: 'explicit-connector-and-operation-approval',
 };
 export const POLICY_DIGEST = digest(POLICY);

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { acp } from './acp.js';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -48,9 +49,92 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'acp') {
+    await acp(state);
+    return;
+  }
   if (group === 'auth' && verb === 'set' && id === 'anthropic') {
     saveApiKey(await readSecret());
     console.log('Claude API key saved to ' + credentialPath() + ' (mode 600).');
+    return;
+  }
+  if (group === 'task' && verb === 'inspect' && id) {
+    console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/task`), null, 2));
+    return;
+  }
+  if (group === 'history' && verb === 'read' && id) {
+    const query = new URLSearchParams();
+    for (const key of ['artifact-id', 'entry-id', 'offset']) {
+      const value = option('--' + key);
+      if (value !== undefined) query.set(key.replace('-', '_'), value);
+    }
+    console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/history?${query}`), null, 2));
+    return;
+  }
+  if (
+    (group === 'task' && verb === 'update' && id) ||
+    (group === 'session' && verb === 'compact' && id) ||
+    (group === 'compactions' && verb === 'cancel' && id) ||
+    (group === 'artifacts' && verb === 'put' && id)
+  ) {
+    const work =
+      group === 'compactions'
+        ? await call<{ session_id: string }>(socket, `/v1/compactions/${id}`)
+        : null;
+    const session = work?.session_id ?? id!;
+    const client_id = randomUUID();
+    const lease = await acquireControl(socket, session, client_id, args.includes('--takeover'));
+    const request_id = option('--request-id') ?? randomUUID();
+    try {
+      const expected = Number(option('--task-version'));
+      const fact =
+        group === 'task'
+          ? {
+              kind: option('--kind'),
+              text: option('--text'),
+              supersedes: option('--supersedes'),
+              artifact_id: option('--artifact-id'),
+            }
+          : undefined;
+      if (
+        !['compactions', 'artifacts'].includes(group!) &&
+        (!Number.isSafeInteger(expected) || expected < 0)
+      )
+        throw new Error('Supply the reviewed --task-version from task inspect');
+      console.log(JSON.stringify({ request_id }));
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            group === 'compactions'
+              ? `/v1/compactions/${id}/cancel`
+              : `/v1/sessions/${session}/${group === 'task' ? 'task' : group === 'artifacts' ? 'artifacts' : 'compact'}`,
+            {
+              request_id,
+              expected_version: expected,
+              fact,
+              ...(group === 'artifacts' ? { text: option('--text') } : {}),
+              client_id,
+              token: lease.token,
+            },
+          ),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${session}/control`, {
+        request_id: randomUUID(),
+        action: 'release',
+        client_id,
+        token: lease.token,
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (group === 'compactions' && verb === 'inspect' && id) {
+    console.log(JSON.stringify(await call(socket, `/v1/compactions/${id}`), null, 2));
     return;
   }
   if (group === 'session' && id && (verb === 'children' || verb === 'usage')) {

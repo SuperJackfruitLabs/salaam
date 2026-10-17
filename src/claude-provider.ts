@@ -14,7 +14,7 @@ import { getClaudeModel, validateClaudePayload, type ProviderRoute } from './pro
 export function registerClaude(
   pi: ExtensionAPI,
   route: ProviderRoute,
-  frame: string,
+  frame: () => string,
   tools: string[],
   bridge: (method: string, data: unknown) => Promise<unknown>,
   fail: () => Promise<void>,
@@ -76,7 +76,7 @@ export function registerClaude(
               const replacement = await options?.onPayload?.(payload, rawModel);
               const actual = replacement === undefined ? payload : replacement;
               try {
-                validateClaudePayload(actual, route, frame, tools);
+                validateClaudePayload(actual, route, frame(), tools);
                 approvedDigest = digest(actual);
               } catch {
                 gateFailed = true;
@@ -102,7 +102,7 @@ export function registerClaude(
                 if (sentHeaders.get('x-api-key') !== key || sentHeaders.has('authorization'))
                   throw new Error('Unapproved Claude authentication');
                 const payload = JSON.parse(init.body);
-                validateClaudePayload(payload, route, frame, tools);
+                validateClaudePayload(payload, route, frame(), tools);
                 if (approvedDigest !== digest(payload))
                   throw new Error('Claude payload changed after validation');
                 dispatched = true;
@@ -110,7 +110,7 @@ export function registerClaude(
                   source_key: source,
                   provider: 'anthropic',
                   model: route.model,
-                  context_digest: textDigest(frame),
+                  context_digest: textDigest(frame()),
                   payload_digest: approvedDigest,
                   payload,
                 });

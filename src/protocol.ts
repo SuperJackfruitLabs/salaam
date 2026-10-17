@@ -11,6 +11,8 @@ export const CAPABILITIES = [
   'operation-ledger',
   'child-work',
   'usage-ledger',
+  'durable-task-context',
+  'managed-compaction',
 ] as const;
 export const TOOLS = [
   'salaam_probe',
@@ -18,6 +20,7 @@ export const TOOLS = [
   'spawn_child',
   'inspect_child',
   'consume_child_result',
+  'salaam_history',
 ] as const;
 export function workerTools(effects: boolean, child = false): string[] {
   return child ? ['salaam_probe'] : [...TOOLS, ...(effects ? ['salaam_effect'] : [])].sort();

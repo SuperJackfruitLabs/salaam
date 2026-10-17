@@ -21,11 +21,13 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run format:check
       - run: npm run check
-      - run: npm test
+      - run: npm run test:acceptance
       - run: npm run setup:cli
       - run: salaam --help
       - run: sal --version
-      - run: npm run verify:pi
-      - run: npm run demo:session
-      - run: npm run demo:managed
-      - run: npm run demo:children
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-${{ matrix.os }}
+          path: .state/evidence/acceptance
+          retention-days: 14
