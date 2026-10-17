@@ -6,6 +6,8 @@ The current implementation covers **M0–M8**: a reproducible Pi bundle, transac
 
 ## Run locally
 
+The **M9.1 execution-boundary spike** adds an operator-only container proof and explicit unavailable coding-execution health status. See [the boundary contract and proof commands](docs/execution-boundary.md). File and command tools remain gated on M9.2/M9.3.
+
 Use Node **26.7.0** and npm **11.19.0**. The application uses Node's built-in SQLite module and has no database server or native addon build step.
 
 ```sh

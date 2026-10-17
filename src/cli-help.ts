@@ -1,4 +1,11 @@
 const commands: Record<string, string> = {
+  execution: `salaam execution prove --docker-socket PATH --scratch-root DIR --report PATH
+salaam execution cleanup --docker-socket PATH --run-id UUID
+
+Run the M9.1 boundary proof on a pre-provisioned local Linux Docker engine.
+Only disposable fixtures are mounted. The pinned image must already be present.
+No coding tools are enabled. A failed/unavailable backend exits nonzero.
+Cleanup reconciles the saved proof run without replaying commands.`,
   acp: `salaam acp [--state DIR]
 
 Run the ACP v1 stdio client adapter against an already running Salaam service.`,
@@ -93,6 +100,7 @@ Commands:
   history       Retrieve older history and evidence
   artifacts     Save durable text evidence
   compactions   Inspect or cancel a managed checkpoint
+  execution     Prove the container boundary with disposable fixtures
 
 ${globalOptions}
 
@@ -128,6 +136,10 @@ const valueOptions = new Set([
   '--entry-id',
   '--offset',
   '--task-version',
+  '--docker-socket',
+  '--scratch-root',
+  '--report',
+  '--run-id',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
 export function hasHelpFlag(args: string[]): boolean {

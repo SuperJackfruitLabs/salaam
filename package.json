@@ -20,6 +20,7 @@
     "test:proofs": "npm run build && vitest run test/proofs",
     "test:pi": "npm run build && vitest run test/pi",
     "verify:pi": "npm run build && node scripts/verify-pi.mjs",
+    "verify:execution": "npm run build && node bin/salaam.mjs execution prove",
     "demo:session": "npm run build && node scripts/demo.mjs",
     "demo:managed": "npm run build && node scripts/demo-managed.mjs",
     "format": "prettier --write .",

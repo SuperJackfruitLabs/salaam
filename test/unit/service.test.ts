@@ -8,6 +8,9 @@ import type { DurableEvent, Session } from '../../src/protocol.js';
 test('create is idempotent; a second service cannot own its state', async () => {
   const f = await fixture(fake());
   try {
+    expect(await call(f.service.socket, '/v1/health')).toMatchObject({
+      execution: { available: false, coding_tools: false },
+    });
     const a = await create(f.service, f.dir, 'C1');
     const b = await create(f.service, f.dir, 'C1');
     expect(b).toEqual(a);

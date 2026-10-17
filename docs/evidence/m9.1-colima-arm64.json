@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "operator": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.7.0"
+  },
+  "run_id": "fe1c8995-4185-4260-9cbd-14fa03083533",
+  "started_at": "2026-10-17T14:20:59.299Z",
+  "status": "passed",
+  "coding_tools_enabled": false,
+  "profile": {
+    "version": 1,
+    "image": "docker.io/library/busybox@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092",
+    "api": "/v1.47",
+    "user": "65532:65532",
+    "env": ["HOME=/tmp", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+    "network": "none",
+    "memory": 134217728,
+    "nanoCpus": 500000000,
+    "pids": 32,
+    "tmpfs": "rw,noexec,nosuid,nodev,size=16m,uid=65532,gid=65532,mode=700",
+    "shm": 8388608,
+    "outputBytes": 65536,
+    "wallMs": 10000
+  },
+  "profile_digest": "1231b5f2b573d62082204bf279d6320b3d75a7387e6d0e2f63b924b5f5a34d01",
+  "image": "docker.io/library/busybox@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092",
+  "source_digest": "13d388dd2b5f23cb72a363b6000b062a8af5d854073c28f4f18e0f31498d0a29",
+  "checks": [
+    {
+      "name": "backend-and-pinned-image",
+      "passed": true
+    },
+    {
+      "name": "effective-profile-inspected-before-start",
+      "passed": true,
+      "detail": {
+        "container": "b9ef020ab0b71f105a5e8d3d7324e0f73d83e3994b70547430f3512e637578b1"
+      }
+    },
+    {
+      "name": "workspace-environment-filesystem-network-kernel-limits",
+      "passed": true,
+      "detail": {
+        "exit": 0,
+        "logs": "isolation-ok\n"
+      }
+    },
+    {
+      "name": "workspace-write-visible-on-host",
+      "passed": true
+    },
+    {
+      "name": "host-private-files-unchanged",
+      "passed": true
+    },
+    {
+      "name": "completed-container-removed",
+      "passed": true
+    },
+    {
+      "name": "profile-drift-injected-on-real-engine",
+      "passed": true
+    },
+    {
+      "name": "changed-profile-denied-before-start",
+      "passed": true
+    },
+    {
+      "name": "wall-deadline-fails-closed",
+      "passed": true
+    },
+    {
+      "name": "timed-out-container-removed",
+      "passed": true
+    },
+    {
+      "name": "output-reader-bounded",
+      "passed": true
+    },
+    {
+      "name": "broker-process-killed-with-owned-descendant-live",
+      "passed": true,
+      "detail": {
+        "container": "f20e1b143238ae8849ce6e3162aab1bea8d6abf534fe5184bfbbb0babcf7c7bb"
+      }
+    },
+    {
+      "name": "replacement-broker-reaps-orphan-without-replay",
+      "passed": true
+    },
+    {
+      "name": "cancelled-descendant-cannot-write-later",
+      "passed": true
+    },
+    {
+      "name": "final-owned-container-set-empty",
+      "passed": true
+    }
+  ],
+  "backend": {
+    "engine_version": "29.5.2",
+    "runtime_versions": [
+      {
+        "name": "Engine",
+        "version": "29.5.2"
+      },
+      {
+        "name": "containerd",
+        "version": "v2.2.4"
+      },
+      {
+        "name": "runc",
+        "version": "1.3.5"
+      },
+      {
+        "name": "docker-init",
+        "version": "0.19.0"
+      }
+    ],
+    "api_version": "1.54",
+    "kernel": "6.8.0-117-generic",
+    "os": "linux",
+    "arch": "arm64",
+    "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+    "security_options": ["name=apparmor", "name=seccomp,profile=builtin", "name=cgroupns"],
+    "image_id": "sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092",
+    "image": "docker.io/library/busybox@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092",
+    "profile_digest": "1231b5f2b573d62082204bf279d6320b3d75a7387e6d0e2f63b924b5f5a34d01"
+  },
+  "cleanup_confirmed": true,
+  "finished_at": "2026-10-17T14:21:03.419Z"
+}

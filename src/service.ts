@@ -12,6 +12,7 @@ import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
 import { ChildWork } from './children.js';
 import type { EffectConnector } from './effect-connector.js';
+import { EXECUTION_STATUS } from './execution-boundary.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
@@ -156,6 +157,7 @@ export class SalaamService {
           service: 'healthy',
           provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
+          execution: EXECUTION_STATUS,
           sessions: sessions.map((x) => ({
             id: x.id,
             state: x.state,

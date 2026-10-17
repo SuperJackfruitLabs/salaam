@@ -16,6 +16,8 @@ import { providerRoute } from './provider-config.js';
 import { credentialPath, loadApiKey, readSecret, saveApiKey } from './credentials.js';
 import { canonical } from './protocol.js';
 import { SocketEffectConnector } from './effect-connector.js';
+import { proveExecutionBoundary } from './execution-proof.js';
+import { BoundaryBroker, engineRequest } from './execution-boundary.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -49,6 +51,24 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'execution' && ['prove', 'cleanup'].includes(verb ?? '')) {
+    const dockerSocket = option('--docker-socket');
+    if (!dockerSocket) throw new Error('Supply an explicit local --docker-socket PATH');
+    if (verb === 'cleanup') {
+      const run = option('--run-id');
+      if (!run) throw new Error('Supply the saved proof --run-id UUID');
+      const removed = await new BoundaryBroker(run, engineRequest(dockerSocket)).cleanup();
+      console.log(JSON.stringify({ removed, cleanup_confirmed: true }));
+    } else {
+      const scratchRoot = option('--scratch-root');
+      const report = option('--report');
+      if (!scratchRoot || !report) throw new Error('Supply --scratch-root DIR and --report PATH');
+      const passed = await proveExecutionBoundary({ socket: dockerSocket, scratchRoot, report });
+      console.log(JSON.stringify({ passed, report: resolve(report), coding_tools_enabled: false }));
+      if (!passed) process.exitCode = 1;
+    }
+    return;
+  }
   if (group === 'acp') {
     await acp(state);
     return;

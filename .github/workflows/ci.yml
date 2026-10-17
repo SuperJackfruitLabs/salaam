@@ -5,6 +5,29 @@ on:
 permissions:
   contents: read
 jobs:
+  execution-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - name: Provision pinned boundary fixture (outside model turns)
+        run: docker image pull docker.io/library/busybox@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092
+      - name: Prove real Linux execution boundary
+        run: |
+          mkdir -p /tmp/salaam-boundary
+          npm run verify:execution -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-boundary --report .state/evidence/execution/linux.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: execution-boundary-linux
+          path: .state/evidence/execution
+          retention-days: 14
   service:
     strategy:
       fail-fast: false
