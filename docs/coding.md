@@ -22,7 +22,7 @@ The existing local Claude credential is used by the provider worker and stays ou
 On macOS, use a dedicated Colima Linux VM and share only the coding root at the same absolute path. The [execution-boundary document](execution-boundary.md) records the observed VM/backend versions and trust model.
 
 ```sh
-colima start salaam-coding --activate=false --template=false --cpu 2 --memory 2 \
+colima start salaam-coding --activate=false --template=false --cpus 2 --memory 2 \
   --mount "$HOME/.local/share/salaam-coding:w" --ssh-agent=false --ssh-config=false
 docker --host "unix://$HOME/.colima/salaam-coding/docker.sock" image pull \
   docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
@@ -90,4 +90,4 @@ Reports under `.state/evidence/coding/` record fixture/build/backend identities,
 
 The Claude evaluation had an approved eight-request total budget and 1,024 maximum output tokens per request. An autonomous clamp fix used five requests. A supplied-patch integration check used the remaining three after immutable revision publication was introduced. Both preserved the tests and passed a separate operator-run behavioral check. These are small functional observations; a matched plain-Pi performance comparison has not been run.
 
-The local observed path is macOS arm64 → Colima/vz → Linux arm64. Host-local reconnect and daemon replacement are proven. The two-machine SSH/editor rehearsal belongs with M10/M12. The TUI, task-level verification/budgets/checkpoints and unattended scheduling remain M10, M11 and M12. The existing user daemon is not automatically restarted or reconfigured by this implementation.
+Observed command backends are macOS arm64 → Colima/vz → Linux arm64 and native Linux x64 CI. The [verification record](verification.md#m9-guarded-coding-observations--2026-10-17) binds both to their build/backend identities. Host-local reconnect and daemon replacement are proven. The two-machine SSH/editor rehearsal belongs with M10/M12. The TUI, task-level verification/budgets/checkpoints and unattended scheduling remain M10, M11 and M12. The existing user daemon is not automatically restarted or reconfigured by this implementation.

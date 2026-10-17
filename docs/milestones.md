@@ -48,7 +48,7 @@ The current baseline includes guarded file/search/patch tools and durable comman
 
 ### M9: make the service capable of real coding
 
-**Implemented scope:** [coding setup and recovery](coding.md) describes M9.2 file-tool enablement and M9.3 command enablement. Ten real-container offline tasks passed on the observed Colima/Linux arm64 backend. A five-request autonomous Claude fix and three-request supplied-patch integration check both passed separate behavioral verification, within the approved eight-request total. The matched plain-Pi comparison has not been run. See [verification](verification.md) for build identities and CI status.
+**Implemented scope:** [coding setup and recovery](coding.md) describes M9.2 file-tool enablement and M9.3 command enablement. Ten real-container offline tasks passed on the observed Colima/Linux arm64 and native Linux x64 CI backends. A five-request autonomous Claude fix and three-request supplied-patch integration check both passed separate behavioral verification, within the approved eight-request total. The matched plain-Pi comparison has not been run. See [verification](verification.md) for build identities and CI status.
 
 The tools use the managed bridge and ledger. Their authority, workspace identity and execution profile are declared before readiness; Pi's builtins remain disabled. Patches publish fresh workspace directories, preserving earlier human-edited roots. Commands operate on disposable writable copies of captured revisions; command writes are not imported back into durable state.
 

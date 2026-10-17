@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "product": "Salaam",
+  "implementation_commit": "03538e5b415cc5a19394d449a37c5dd4d729fb57",
+  "branch": "m9-coding-workspaces",
+  "ci_run": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39045113857",
+  "observed_at": "2026-10-17T15:33:00Z",
+  "scope": "M9 guarded coding; source and test evidence, no deployment or release binary",
+  "local_regressions": {
+    "tests": 163,
+    "files": 28,
+    "passed": true,
+    "provider": "offline"
+  },
+  "reports": [
+    {
+      "path": "m9-coding-colima-arm64.json",
+      "sha256": "9651d0dfb8e8246edf731d6300cebf66ecb5389a8afd73123c2919f875433923",
+      "passed": true,
+      "compiled_digest": "022a9f5ce51dad9f8cfeb2e5ca8294b902e11a8c75eac1bf57313f118d9cc452",
+      "backend": {
+        "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "image_id": "sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+        "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+        "engine_version": "29.5.2",
+        "kernel": "6.8.0-117-generic",
+        "arch": "arm64",
+        "node": "26.7.0",
+        "verified_at": "2026-10-17T15:26:10.368Z",
+        "probe": "passed",
+        "cleanup_confirmed": true
+      },
+      "task_count": 10,
+      "model": null,
+      "cleanup_confirmed": true
+    },
+    {
+      "path": "m9-coding-linux-x64.json",
+      "sha256": "b30e282dcd7e99581ccd602f1cc8eb27f88373314fa4e79ed07662d557765926",
+      "passed": true,
+      "compiled_digest": "022a9f5ce51dad9f8cfeb2e5ca8294b902e11a8c75eac1bf57313f118d9cc452",
+      "backend": {
+        "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "image_id": "sha256:6aa2b223ab7954b77a61e69c08176a2ba6ad3d224f9c39836cdf92b481e934ca",
+        "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+        "engine_id": "6134b6ae-8eb1-4f62-889e-a360c80bcfbf",
+        "engine_version": "28.0.4",
+        "kernel": "6.17.0-1022-azure",
+        "arch": "amd64",
+        "node": "26.7.0",
+        "verified_at": "2026-10-17T15:28:00.663Z",
+        "probe": "passed",
+        "cleanup_confirmed": true
+      },
+      "task_count": 10,
+      "model": null,
+      "cleanup_confirmed": true
+    },
+    {
+      "path": "m9-claude-autonomous.json",
+      "sha256": "fc0658162d11fa03237237eef6b999840f2bfabf812a18ca3c4e627a0683025e",
+      "passed": true,
+      "compiled_digest": "308803664994aba7747e4f83c5850fc54e0e5fd782930644a3a36d6378cc8f38",
+      "backend": {
+        "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "image_id": "sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+        "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+        "engine_version": "29.5.2",
+        "kernel": "6.8.0-117-generic",
+        "arch": "arm64",
+        "node": "26.7.0",
+        "verified_at": "2026-10-17T15:09:04.635Z",
+        "probe": "passed",
+        "cleanup_confirmed": true
+      },
+      "task_count": 0,
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "max_tokens": 1024
+      },
+      "cleanup_confirmed": true
+    },
+    {
+      "path": "m9-claude-integration.json",
+      "sha256": "816963f047bf165dc7b14d6d761b58f35d1a1e83a9b4cb326a3bbfb327ea8326",
+      "passed": true,
+      "compiled_digest": "c3812130bf4b15ead78c4d9848b7091bee2d971ee688958f1421281223565a08",
+      "backend": {
+        "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "image_id": "sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+        "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+        "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+        "engine_version": "29.5.2",
+        "kernel": "6.8.0-117-generic",
+        "arch": "arm64",
+        "node": "26.7.0",
+        "verified_at": "2026-10-17T15:18:53.143Z",
+        "probe": "passed",
+        "cleanup_confirmed": true
+      },
+      "task_count": 0,
+      "model": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "max_tokens": 1024
+      },
+      "cleanup_confirmed": true
+    }
+  ],
+  "live_budget": {
+    "approved_total_requests": 8,
+    "spent_requests": 8,
+    "max_output_tokens_per_request": 1024,
+    "autonomous_fix_requests": 5,
+    "provided_patch_integration_requests": 3
+  },
+  "service_acceptance": {
+    "macos": "pending",
+    "linux": "pending"
+  },
+  "limitations": [
+    "Matched plain-Pi comparison not run",
+    "Two-machine SSH/editor and TUI rehearsal remain M10/M12",
+    "Existing user daemon not restarted or reconfigured",
+    "Command deadline requires live broker; no backend TTL"
+  ]
+}
