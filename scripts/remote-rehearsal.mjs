@@ -112,7 +112,7 @@ try {
       node,
       '--input-type=module',
       '-e',
-      `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=bytes=>createHash('sha256').update(bytes).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
+      `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=bytes=>createHash('sha256').update(bytes).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')&&!f.startsWith('._')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
     ]),
   );
   save();
