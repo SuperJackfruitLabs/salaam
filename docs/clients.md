@@ -88,3 +88,30 @@ npm run test:acceptance -- --repeats 1
 The combined demo starts disposable offline service/effect fixtures, submits from the installed terminal, kills that client with two pending approvals, loads the same session over ACP, approves one effect, recovers child results, performs three checkpoints and retrieves old evidence. It inspects the same final session through the installed CLI.
 
 The acceptance runner records source-file hashes, worker bundle digest, runtime/platform, command exit codes, log digests, JSON reports and all six proof suites repeated 20 times by default. Reports live under `.state/evidence/acceptance/RUN_ID/`; `latest-acceptance.json` points to the last successful run. A shorter repetition run is marked partial. CI retains separate macOS and Linux artifacts. Platform success means an observed passing run for that revision; it does not imply a deployment, SSH rehearsal, live-model behavior evaluation or production isolation.
+
+## Zed rehearsal template
+
+Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#custom-agents) accepts an `agent_servers` entry. This template pins the executable runtime explicitly; replace the absolute paths for a disposable rehearsal service:
+
+```json
+{
+  "agent_servers": {
+    "Salaam": {
+      "type": "custom",
+      "command": "/absolute/path/to/node-26.7.0",
+      "args": [
+        "/absolute/path/to/salaam/bin/salaam.mjs",
+        "acp",
+        "--coding",
+        "--state",
+        "/absolute/path/to/rehearsal-state"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+Start the rehearsal service first with its coding root and selected executor. Use one disposable project and no forwarded MCP servers or additional directories; Salaam rejects those unsupported additions. Select Salaam as the external agent, send a coding instruction and inspect actual tool outcomes and the workspace diff through the same session ID. The guarded owned copy holds edits; the original project checkout remains the baseline.
+
+The remaining named-editor acceptance must observe the agent selector, prompt/tool/approval UI, reconnect, actual owned-file content and command exit outcome in Zed itself. The configuration template and separate ACP protocol checks do not complete that GUI rehearsal.
