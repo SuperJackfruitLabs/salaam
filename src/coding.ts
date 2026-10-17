@@ -153,6 +153,8 @@ export class CodingWork {
     if (w.revision !== revision)
       throw new ServiceError('workspace_changed', 'Workspace revision changed');
     const tree = readTree(w.root);
+    if (digest(tree) !== w.digest)
+      throw new ServiceError('workspace_changed', 'Workspace changed during command capture');
     if (cwd !== '.' && !Object.keys(tree).some((path) => path.startsWith(cwd + '/')))
       throw new ServiceError('not_found', 'Command directory not found', 404);
     const snapshot = this.artifacts.prepare(session, JSON.stringify(tree)),

@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
@@ -116,6 +116,28 @@ test('stable step keys return original runs before stale lease/revision checks a
       'succeeded',
     );
   } finally {
+    await f.close();
+  }
+});
+test('a human edit between admission and snapshot capture prevents dispatch', async () => {
+  const f = fixture();
+  const verify = f.workspaces.verify.bind(f.workspaces);
+  const hook = vi.spyOn(f.workspaces, 'verify').mockImplementationOnce((session, owner) => {
+    const workspace = verify(session, owner);
+    writeFileSync(join(workspace.root, 'app.js'), 'new human edit');
+    return workspace;
+  });
+  try {
+    expect(() => f.work.start(f.session.id, null, f.args, () => {})).toThrow(
+      'changed during command capture',
+    );
+    expect(f.work.list(f.session.id)).toEqual([]);
+    expect(f.backend.creates).toBe(0);
+    expect(readFileSync(join(f.workspaces.get(f.session.id).root, 'app.js'), 'utf8')).toBe(
+      'new human edit',
+    );
+  } finally {
+    hook.mockRestore();
     await f.close();
   }
 });
