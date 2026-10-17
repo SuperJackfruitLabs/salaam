@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { visibleWidth } from '@earendil-works/pi-tui';
+import { setCapabilityOverrides, visibleWidth } from '@earendil-works/pi-tui';
 import { remoteArguments, shellQuote } from '../../src/remote.js';
 import { editorArguments } from '../../src/tui.js';
 import { ChoiceModal, ApprovalModal } from '../../src/tui-modals.js';
@@ -99,4 +99,21 @@ test('approval cannot approve before full review or after its binding changes', 
   modal.render(64);
   modal.handleInput('\r');
   expect(decisions).toEqual(['approve']);
+});
+
+test('indexed palettes preserve distinct surfaces when SSH does not advertise true color', () => {
+  setCapabilityOverrides({ trueColor: false });
+  try {
+    for (const name of ['night', 'paper'] as const) {
+      const t = new SalaamTheme(name, true);
+      const bg = t.fill('', 20),
+        panel = t.fill('', 20, 'panel');
+      expect(bg).toContain(name === 'night' ? '48;5;233' : '48;5;255');
+      expect(panel).toContain(name === 'night' ? '48;5;234' : '48;5;254');
+      expect(bg).not.toBe(panel);
+      expect(visibleWidth(bg)).toBe(20);
+    }
+  } finally {
+    setCapabilityOverrides({ trueColor: undefined });
+  }
 });

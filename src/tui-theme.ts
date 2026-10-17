@@ -36,6 +36,32 @@ const palettes = {
     border: '#c4d1c6',
   },
 } as const;
+const indexedPalettes = {
+  night: {
+    bg: 233,
+    panel: 234,
+    selected: 237,
+    text: 255,
+    muted: 109,
+    jade: 115,
+    amber: 223,
+    red: 210,
+    blue: 153,
+    border: 66,
+  },
+  paper: {
+    bg: 255,
+    panel: 254,
+    selected: 194,
+    text: 237,
+    muted: 65,
+    jade: 29,
+    amber: 94,
+    red: 131,
+    blue: 24,
+    border: 250,
+  },
+} as const;
 export function safeText(text: unknown): string {
   return stripTerminalSequences(String(text ?? '')).replace(
     /[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g,
@@ -86,15 +112,20 @@ export class SalaamTheme {
   get palette() {
     return palettes[this.name];
   }
+  private paint(role: Ink | 'bg' | 'panel' | 'selected') {
+    return parseColor(
+      getTerminalColorMode() === '256color' ? indexedPalettes[this.name][role] : this.palette[role],
+    );
+  }
   ink(text: string, role: Ink = 'text', bold = false): string {
     if (!this.color) return text;
-    return styleText(text, { fg: parseColor(this.palette[role]), bold }, getTerminalColorMode());
+    return styleText(text, { fg: this.paint(role), bold }, getTerminalColorMode());
   }
   fill(text: string, width: number, surface: 'bg' | 'panel' | 'selected' = 'bg'): string {
     const clipped = truncateToWidth(text, Math.max(1, width), '');
     const padded = clipped + ' '.repeat(Math.max(0, width - visibleWidth(clipped)));
     if (!this.color) return padded;
-    return styleText(padded, { bg: parseColor(this.palette[surface]) }, getTerminalColorMode());
+    return styleText(padded, { bg: this.paint(surface) }, getTerminalColorMode());
   }
   line(text: string, width: number, surface: 'bg' | 'panel' | 'selected' = 'bg'): string {
     return this.fill('  ' + text, width, surface);
