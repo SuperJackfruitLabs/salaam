@@ -114,4 +114,16 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
 
 Start the rehearsal service first with its coding root and selected executor. Use one disposable project and no forwarded MCP servers or additional directories; Salaam rejects those unsupported additions. Select Salaam as the external agent, send a coding instruction and inspect actual tool outcomes and the workspace diff through the same session ID. The guarded owned copy holds edits; the original project checkout remains the baseline.
 
-The remaining named-editor acceptance must observe the agent selector, prompt/tool/approval UI, reconnect, actual owned-file content and command exit outcome in Zed itself. The configuration template and separate ACP protocol checks do not complete that GUI rehearsal.
+Zed may forward existing MCP configuration when starting an external agent. If Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the disposable project in `.zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "YOUR_EXISTING_MCP_SERVER": { "enabled": false }
+  }
+}
+```
+
+The named Zed 1.24.2 GUI rehearsal passed on 2026-10-18. It observed the Salaam selector/composer, live tools, actual isolated command exit 0, two separately reviewed approval bindings, the real owned file and an exported checked diff opened in the editor. `Reload Agent` restored the same session and committed history without another patch or command. After an abrupt adapter reload, the prior controller lease may remain valid briefly; wait for expiry or use an explicitly authorized controller takeover. A rejected prompt is not an accepted attempt. See [GUI evidence](evidence/m10-zed-gui.json).
+
+Live prompts are displayed by the editor; Salaam does not echo them as extra user chunks. Explicit history loading replays committed user turns once. The checked diff in this rehearsal was exported from the service and opened as a diff document; native ACP edit/diff rendering is not claimed.

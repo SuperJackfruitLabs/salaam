@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "recorded_at": "2026-10-17T20:35:19.999Z",
+  "recorded_at": "2026-10-17T21:34:33.494Z",
   "implementation_commit": "46be23cbec6375c7c8a082c5cd5fffab97e55a9a",
-  "milestone_status": "implementation-verified-editor-gui-pending",
+  "milestone_status": "operator-and-editor-rehearsals-passed-gui-fix-ci-pending",
   "runtime": {
     "node": "v26.7.0",
     "npm": "11.19.0",
@@ -194,9 +194,13 @@
   },
   "editor": {
     "name": "Zed",
-    "gui_rehearsal": "pending",
-    "reason": "Computer-use tool reports Mac locked; operator is away from home.",
-    "protocol_rehearsal": "passed separately over real SSH; not editor GUI evidence"
+    "version": "1.24.2",
+    "gui_rehearsal": "passed",
+    "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+    "source_revision": "6856fe0f73a32e4c79973682ee55004713557262",
+    "evidence": "m10-zed-gui.json",
+    "protocol_rehearsal": "passed separately over real SSH",
+    "live_provider_requests": 0
   },
   "captures": [
     {
@@ -221,10 +225,11 @@
     ".state/evidence/m10/vps-boundary.json": "accf7ab5f2a2d239c3441a4ad1880301dfe6c0b49853f17f3c5ad5533f9a2982",
     ".state/evidence/m10/vps-coding.json": "95626352ec1883d3d9c3bb1d4b5f224e46613fe70f7a6a90317b66d434cbe38e",
     ".state/evidence/m10/cleanup.json": "853ddff3d33e6089f762f3992fd02c2b624605589aadda58335641df3a05fcfa",
-    ".state/evidence/m10/local-coding.json": "7f638cd1d311cf4fc7770cb03deb3b319a76866590aa550ff17ddfc74534a62b"
+    ".state/evidence/m10/local-coding.json": "7f638cd1d311cf4fc7770cb03deb3b319a76866590aa550ff17ddfc74534a62b",
+    ".state/evidence/m10/zed-gui.json": "bec20616a01a583683ff9a544003c25b9d8767df87f0a2697742fd627363cc33"
   },
   "limits": [
-    "Zed GUI remains an M10 exit check.",
+    "The ACP prompt-display fix at 6856fe0f73a32e4c79973682ee55004713557262 passed local tests and the named Zed GUI rehearsal; its new cross-platform CI run is pending. Earlier CI/VPS source identities above remain historical.",
     "M11 verifiable task completion and M12 unattended jobs are not implemented.",
     "No live provider behavior, production deployment or stronger container isolation is claimed by these offline rehearsals."
   ],
@@ -282,5 +287,21 @@
     "missing_coding_routes": "not_found 404",
     "real_service_check": "GET only; no prompt, restart or mutation",
     "fixture_tui_regression": "passed"
+  },
+  "latest_implementation_commit": "6856fe0f73a32e4c79973682ee55004713557262",
+  "latest_runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+  "gui_fix_validation": {
+    "format": "passed",
+    "types": "passed",
+    "source_tests": {
+      "passed": 186,
+      "failed": 0
+    },
+    "ci": {
+      "run_id": 39071417389,
+      "url": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39071417389",
+      "status": "in_progress",
+      "revision": "6856fe0f73a32e4c79973682ee55004713557262"
+    }
   }
 }
