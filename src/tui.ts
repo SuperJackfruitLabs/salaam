@@ -10,7 +10,7 @@ import {
   type OverlayHandle,
   type KeyId,
 } from '@earendil-works/pi-tui';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
@@ -132,6 +132,7 @@ export class SalaamApp {
   private finish!: () => void;
   private readonly done: Promise<void>;
   private running = false;
+  private editorProcess?: ChildProcess;
   private painter?: NodeJS.Timeout;
   private logBusy = false;
   private diffBusy = false;
@@ -928,6 +929,7 @@ export class SalaamApp {
     this.tui.stop({ preserveScreen: true });
     try {
       const child = spawn(command!, [...args, path], { stdio: 'inherit' });
+      this.editorProcess = child;
       await new Promise<void>((resolve, reject) => {
         child.once('error', reject);
         child.once('exit', (code) =>
@@ -947,6 +949,7 @@ export class SalaamApp {
         closeSync(fd);
       }
     } finally {
+      this.editorProcess = undefined;
       rmSync(dir, { recursive: true, force: true });
       if (this.running) {
         this.tui.start();
@@ -960,6 +963,7 @@ export class SalaamApp {
     this.running = true;
     const close = () => {
       this.running = false;
+      this.editorProcess?.kill('SIGTERM');
       this.tui.stop({ preserveScreen: true });
       this.finish();
     };

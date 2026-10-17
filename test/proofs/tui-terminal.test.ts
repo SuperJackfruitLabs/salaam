@@ -295,3 +295,34 @@ test('terminating only the remote launcher forwards the signal so its SSH child 
     await f.close();
   }
 }, 30000);
+
+test('terminating the TUI while an external editor is open cleans up that editor and leaves terminal modes restored', async () => {
+  const f = await fixture();
+  let terminal: PtyClient | undefined;
+  try {
+    const editor = join(f.dir, 'editor-held.mjs'),
+      gate = join(f.dir, 'editor-open');
+    writeFileSync(
+      editor,
+      `import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(gate)},String(process.pid));setInterval(()=>{},1000);`,
+    );
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'tui', '--session', session.id, '--state', f.dir],
+      { state: f.dir, env: { EDITOR: process.execPath + ' ' + editor } },
+    );
+    await terminal.contains('You have control');
+    await terminal.write('\x05');
+    const { existsSync } = await import('node:fs');
+    await until(() => existsSync(gate), Boolean);
+    const editorPid = Number(readFileSync(gate, 'utf8'));
+    await terminal.command({ op: 'signal', signal: 'SIGTERM', target: 'process' });
+    expect(await terminal.exit()).toEqual({ code: 0, restored: true });
+    expect(() => process.kill(editorPid, 0)).toThrow();
+    expect(f.service.supervisor.inspect(session.id).state).toBe('ready');
+  } finally {
+    await terminal?.close();
+    await f.close();
+  }
+}, 30000);
