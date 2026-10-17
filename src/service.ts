@@ -13,11 +13,18 @@ import { ManagedWork } from './managed.js';
 import { ChildWork } from './children.js';
 import type { EffectConnector } from './effect-connector.js';
 import { EXECUTION_STATUS } from './execution-boundary.js';
+import { engineRequest } from './execution-boundary.js';
+import { DockerCodingExecutor, type ExecutionBackend } from './coding-executor.js';
+import { Workspaces } from './workspaces.js';
+import { CodingWork } from './coding.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
   effectConnector?: EffectConnector;
   approvalTtlMs?: number;
+  codingRoot?: string;
+  codingSocket?: string;
+  codingBackend?: ExecutionBackend;
 }
 export class SalaamService {
   readonly stateDir: string;
@@ -30,6 +37,9 @@ export class SalaamService {
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
   readonly children: ChildWork;
+  readonly workspaces: Workspaces;
+  readonly coding: CodingWork;
+  readonly codingSocket: string | null;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
   private operator: Server;
@@ -40,6 +50,7 @@ export class SalaamService {
   private constructor(options: ServiceOptions) {
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
+    this.codingSocket = options.codingSocket ? resolve(options.codingSocket) : null;
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.stateDir = realpathSync(this.stateDir);
     this.socket = join(this.stateDir, 'operator.sock');
@@ -52,6 +63,21 @@ export class SalaamService {
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
+        this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
+        if (options.codingSocket && !options.codingRoot)
+          throw new Error('Command execution requires an explicit --coding-root');
+        const executor =
+          options.codingBackend ??
+          (options.codingSocket
+            ? new DockerCodingExecutor(engineRequest(options.codingSocket))
+            : undefined);
+        this.coding = new CodingWork(
+          this.store,
+          this.workspaces,
+          this.artifacts,
+          executor,
+          (id, error) => this.supervisor.failControl(id, error),
+        );
         this.supervisor = new Supervisor(this.store, {
           ...options,
           stateDir: this.stateDir,
@@ -59,6 +85,7 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
+        this.supervisor.coding = this.coding;
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
           approvalTtlMs: options.approvalTtlMs,
@@ -103,9 +130,23 @@ export class SalaamService {
   static async open(options: ServiceOptions): Promise<SalaamService> {
     const service = new SalaamService(options);
     try {
+      if (service.coding.executor instanceof DockerCodingExecutor) {
+        const evidence = await service.coding.executor.prepare(service.workspaces.root!);
+        const path = join(service.stateDir, 'executor-proof.json');
+        const { writeFileSync, openSync, fsyncSync, closeSync } = await import('node:fs');
+        const fd = openSync(path, 'w', 0o600);
+        try {
+          writeFileSync(fd, JSON.stringify(evidence, null, 2) + '\n');
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+      }
       await service.supervisor.recover();
       service.store.recoverWork();
       service.tasks.recover();
+      service.workspaces.recover();
+      service.coding.recover();
       service.children.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
@@ -157,7 +198,17 @@ export class SalaamService {
           service: 'healthy',
           provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
-          execution: EXECUTION_STATUS,
+          coding_root: this.workspaces.root ?? null,
+          coding_socket: this.codingSocket,
+          execution: this.workspaces.root
+            ? {
+                available: !!this.coding.executor,
+                coding_tools: true,
+                file_tools: true,
+                commands: !!this.coding.executor,
+                backend: this.coding.executor?.evidence ?? null,
+              }
+            : EXECUTION_STATUS,
           sessions: sessions.map((x) => ({
             id: x.id,
             state: x.state,
@@ -194,7 +245,16 @@ export class SalaamService {
         const cwd = realpathSync(string(body.cwd, 'cwd'));
         if (!statSync(cwd).isDirectory())
           throw new ServiceError('invalid_workspace', 'Workspace must be a directory', 400);
-        const session = this.store.create(cwd, string(body.request_id, 'request_id', 128));
+        if (body.coding !== undefined && typeof body.coding !== 'boolean')
+          throw new ServiceError('invalid_field', 'coding must be a boolean', 400);
+        if (body.coding && !this.workspaces.root)
+          throw new ServiceError('coding_disabled', 'Start with an explicit --coding-root');
+        const session = this.store.create(
+          cwd,
+          string(body.request_id, 'request_id', 128),
+          body.coding === true,
+        );
+        if (body.coding) this.workspaces.import(session.id, cwd);
         if (this.store.session(session.id).state === 'stopped')
           void this.supervisor.start(session.id).catch(() => {});
         this.send(res, 201, session);
@@ -226,6 +286,98 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts[3] === 'workspace') {
+          if (req.method === 'GET') {
+            this.send(
+              res,
+              200,
+              parts[4] === 'diff'
+                ? this.workspaces.diff(
+                    id,
+                    integer(Number(url.searchParams.get('offset') ?? 0), 'offset'),
+                  )
+                : this.workspaces.inspect(id),
+            );
+            return;
+          }
+          if (req.method === 'POST' && parts[4] === 'refresh') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              this.workspaces.refresh(
+                id,
+                string(body.request_id, 'request_id', 128),
+                integer(body.expected_revision, 'expected_revision'),
+                string(body.digest, 'digest', 128),
+                () => {
+                  this.store.authorizeControl(id, {
+                    client_id: string(body.client_id, 'client_id', 128),
+                    token: string(body.token, 'token', 128),
+                  });
+                  this.supervisor.assertIdle(id);
+                },
+              ),
+            );
+            return;
+          }
+        }
+        if (parts[3] === 'commands') {
+          if (req.method === 'GET') {
+            this.send(
+              res,
+              200,
+              parts[4]
+                ? parts[5] === 'logs'
+                  ? this.coding.logs(
+                      id,
+                      parts[4],
+                      integer(Number(url.searchParams.get('offset') ?? 0), 'offset'),
+                    )
+                  : this.coding.get(id, parts[4])
+                : this.coding.list(id),
+            );
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            const authorize = () => {
+              this.store.authorizeControl(id, {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              });
+            };
+            if (!parts[4]) {
+              this.send(
+                res,
+                202,
+                this.coding.start(id, null, body, () => {
+                  authorize();
+                  this.supervisor.assertIdle(id);
+                }),
+              );
+              return;
+            }
+            if (parts[5] === 'cancel') {
+              this.send(
+                res,
+                202,
+                this.coding.cancel(
+                  id,
+                  parts[4],
+                  string(body.request_id, 'request_id', 128),
+                  authorize,
+                ),
+              );
+              return;
+            }
+            if (parts[5] === 'reconcile') {
+              authorize();
+              this.send(res, 202, this.coding.reconcile(id, parts[4]));
+              return;
+            }
+          }
+        }
         if (parts[3] === 'task' && req.method === 'GET') {
           this.send(res, 200, this.tasks.state(id));
           return;
@@ -377,6 +529,7 @@ export class SalaamService {
             token: string(body.token, 'token', 128),
           },
         );
+        this.coding.cancelAttempt(attempt);
         void this.children
           .cancelOwned(attempt)
           .then(() => this.supervisor.cancelAttempt(attempt))
@@ -605,6 +758,7 @@ export class SalaamService {
     this.children.pause();
     const errors: unknown[] = [];
     try {
+      await this.coding.close();
       try {
         await this.children.close();
         await this.supervisor.close();

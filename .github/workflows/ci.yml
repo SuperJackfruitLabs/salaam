@@ -22,11 +22,19 @@ jobs:
         run: |
           mkdir -p /tmp/salaam-boundary
           npm run verify:execution -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-boundary --report .state/evidence/execution/linux.json
+      - name: Provision the pinned Node coding image
+        run: docker image pull docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
+      - name: Prove the coding portfolio and daemon recovery
+        run: |
+          mkdir -p /tmp/salaam-coding
+          npm run test:coding -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-coding
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: execution-boundary-linux
-          path: .state/evidence/execution
+          path: |
+            .state/evidence/execution
+            .state/evidence/coding
           retention-days: 14
   service:
     strategy:

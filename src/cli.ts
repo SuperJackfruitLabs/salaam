@@ -18,6 +18,13 @@ import { canonical } from './protocol.js';
 import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
 import { BoundaryBroker, engineRequest } from './execution-boundary.js';
+import { workspaceDiff, type WorkspaceChange } from './workspace-diff.js';
+interface WorkspaceDiffPage {
+  revision: number;
+  digest: string;
+  changes: WorkspaceChange[];
+  next_offset: number | null;
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -51,6 +58,111 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'workspace' && id && ['inspect', 'diff', 'refresh'].includes(verb ?? '')) {
+    if (verb === 'inspect') {
+      console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/workspace`), null, 2));
+      return;
+    }
+    if (verb === 'diff') {
+      let offset: number | null = 0,
+        identity: string | undefined;
+      while (offset !== null) {
+        const page: WorkspaceDiffPage = await call<WorkspaceDiffPage>(
+          socket,
+          `/v1/sessions/${id}/workspace/diff?offset=${offset}`,
+        );
+        const nextIdentity = `${page.revision}:${page.digest}`;
+        if (identity && identity !== nextIdentity)
+          throw new Error('Workspace changed while reading diff');
+        identity = nextIdentity;
+        for (const file of page.changes) {
+          process.stdout.write(workspaceDiff(file));
+        }
+        offset = page.next_offset;
+      }
+      return;
+    }
+    const expected = Number(option('--revision')),
+      reviewed = option('--digest');
+    if (!Number.isSafeInteger(expected) || !reviewed)
+      throw new Error('Supply reviewed --revision and --digest');
+    const client = randomUUID(),
+      lease = await acquireControl(socket, id, client, args.includes('--takeover'));
+    try {
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/sessions/${id}/workspace/refresh`, {
+            request_id: option('--request-id') ?? randomUUID(),
+            expected_revision: expected,
+            digest: reviewed,
+            client_id: client,
+            token: lease.token,
+          }),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${id}/control`, {
+        request_id: randomUUID(),
+        action: 'release',
+        client_id: client,
+        token: lease.token,
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (
+    group === 'commands' &&
+    id &&
+    ['list', 'inspect', 'logs', 'start', 'cancel', 'reconcile'].includes(verb ?? '')
+  ) {
+    const run = option('--run-id');
+    if (['list', 'inspect', 'logs'].includes(verb!)) {
+      if (verb !== 'list' && !run) throw new Error('Supply --run-id');
+      const path =
+        `/v1/sessions/${id}/commands` +
+        (verb === 'list' ? '' : `/${run}`) +
+        (verb === 'logs' ? `/logs?offset=${Number(option('--offset') ?? 0)}` : '');
+      console.log(JSON.stringify(await call(socket, path), null, 2));
+      return;
+    }
+    if (verb !== 'start' && !run) throw new Error('Supply --run-id');
+    const body =
+      verb === 'start'
+        ? {
+            step_key: option('--step-key'),
+            command: option('--command'),
+            cwd: option('--cwd') ?? '.',
+            expected_revision: Number(option('--revision')),
+          }
+        : { request_id: option('--request-id') ?? randomUUID() };
+    const client = randomUUID(),
+      lease = await acquireControl(socket, id, client, args.includes('--takeover'));
+    try {
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            `/v1/sessions/${id}/commands` + (verb === 'start' ? '' : `/${run}/${verb}`),
+            { ...body, client_id: client, token: lease.token },
+          ),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${id}/control`, {
+        request_id: randomUUID(),
+        action: 'release',
+        client_id: client,
+        token: lease.token,
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'execution' && ['prove', 'cleanup'].includes(verb ?? '')) {
     const dockerSocket = option('--docker-socket');
     if (!dockerSocket) throw new Error('Supply an explicit local --docker-socket PATH');
@@ -345,10 +457,14 @@ async function main(): Promise<void> {
     );
     const effectSocket = option('--effect-socket');
     const opaque = args.includes('--effect-opaque');
+    const codingRoot = option('--coding-root'),
+      codingSocket = option('--coding-socket');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
         providerRoute: route,
+        codingRoot: codingRoot ? resolve(codingRoot) : undefined,
+        codingSocket: codingSocket ? resolve(codingSocket) : undefined,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -364,13 +480,22 @@ async function main(): Promise<void> {
       await service.closed;
       return;
     }
-    let health: { provider_route?: unknown } | undefined;
+    let health:
+      | { provider_route?: unknown; coding_root?: string | null; coding_socket?: string | null }
+      | undefined;
     try {
       health = await call(socket, '/v1/health');
     } catch {}
     if (health) {
       if (canonical(health.provider_route ?? providerRoute()) !== canonical(route))
         throw new Error('Service is already running with another provider route; stop it first');
+      if (
+        (health.coding_root ?? null) !== (codingRoot ? resolve(codingRoot) : null) ||
+        (health.coding_socket ?? null) !== (codingSocket ? resolve(codingSocket) : null)
+      )
+        throw new Error(
+          'Service is already running with another coding configuration; stop it first',
+        );
       console.log('Salaam service already running');
       return;
     }
@@ -393,12 +518,14 @@ async function main(): Promise<void> {
         ...(workspace ? ['--workspace-id', workspace] : []),
         ...(effectSocket ? ['--effect-socket', resolve(effectSocket)] : []),
         ...(opaque ? ['--effect-opaque'] : []),
+        ...(codingRoot ? ['--coding-root', resolve(codingRoot)] : []),
+        ...(codingSocket ? ['--coding-socket', resolve(codingSocket)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );
     closeSync(fd);
     child.unref();
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 150; i++) {
       try {
         await call(socket, '/v1/health');
         console.log(JSON.stringify({ socket, service: 'started' }));
@@ -420,8 +547,23 @@ async function main(): Promise<void> {
   if (group === 'session' && verb === 'create') {
     const cwd = resolve(option('--cwd') ?? process.cwd());
     const requestId = option('--request-id') ?? randomUUID();
+    if (args.includes('--coding')) {
+      const health = await call<{ coding_root?: string | null }>(socket, '/v1/health');
+      if (!health.coding_root)
+        throw new Error(
+          'Coding service is not configured; start with --coding-root (and --coding-socket for commands)',
+        );
+    }
     console.log(
-      JSON.stringify(await call(socket, '/v1/sessions', { cwd, request_id: requestId }), null, 2),
+      JSON.stringify(
+        await call(socket, '/v1/sessions', {
+          cwd,
+          request_id: requestId,
+          ...(args.includes('--coding') ? { coding: true } : {}),
+        }),
+        null,
+        2,
+      ),
     );
     return;
   }

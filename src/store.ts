@@ -38,7 +38,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 6) {
+    if (version > 7) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -127,6 +127,11 @@ export class Store {
           CREATE TABLE compactions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),epoch INTEGER NOT NULL,task_version INTEGER NOT NULL,state TEXT NOT NULL,cursor TEXT,error TEXT);
           CREATE TABLE compaction_cancellations(id TEXT PRIMARY KEY REFERENCES compactions(id));
           PRAGMA user_version=6;COMMIT;`);
+      this.db.exec(`BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),source TEXT NOT NULL,root TEXT NOT NULL,revision INTEGER NOT NULL,digest TEXT NOT NULL,baseline TEXT NOT NULL REFERENCES artifacts(id),state TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS workspace_mutations(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id),request_key TEXT NOT NULL,input_digest TEXT NOT NULL,expected_revision INTEGER NOT NULL,before_digest TEXT NOT NULL,after_digest TEXT NOT NULL,artifact_id TEXT NOT NULL REFERENCES artifacts(id),before_root TEXT NOT NULL,after_root TEXT NOT NULL,state TEXT NOT NULL,error TEXT,UNIQUE(workspace_id,request_key));
+        CREATE TABLE IF NOT EXISTS command_runs(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),workspace_id TEXT NOT NULL REFERENCES workspaces(id),attempt_id TEXT REFERENCES attempts(id),step_key TEXT NOT NULL,input_digest TEXT NOT NULL,command TEXT NOT NULL,cwd TEXT NOT NULL,workspace_revision INTEGER NOT NULL,workspace_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,engine_id TEXT NOT NULL,snapshot_artifact TEXT NOT NULL REFERENCES artifacts(id),container_id TEXT,exec_id TEXT,state TEXT NOT NULL,resume_state TEXT,exit_code INTEGER,output TEXT NOT NULL DEFAULT '',result_artifact TEXT,error TEXT,created_at INTEGER NOT NULL,deadline INTEGER NOT NULL,cancelled INTEGER NOT NULL DEFAULT 0,UNIQUE(session_id,step_key));
+        PRAGMA user_version=7; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -206,13 +211,20 @@ export class Store {
       );
     return JSON.parse(prior.response) as T;
   }
-  create(cwd: string, requestId: string): Session {
-    return this.request('local-operator', requestId, { kind: 'create', cwd }, () => {
-      const id = randomUUID();
-      this.db.prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)').run(id, cwd, id);
-      this.event(id, 'session.created', { cwd }, requestId);
-      return this.session(id);
-    });
+  create(cwd: string, requestId: string, coding = false): Session {
+    return this.request(
+      'local-operator',
+      requestId,
+      { kind: 'create', cwd, ...(coding ? { coding: true } : {}) },
+      () => {
+        const id = randomUUID();
+        this.db
+          .prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)')
+          .run(id, cwd, id);
+        this.event(id, 'session.created', { cwd }, requestId);
+        return this.session(id);
+      },
+    );
   }
   session(id: string): Session {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id=?').get(id) as

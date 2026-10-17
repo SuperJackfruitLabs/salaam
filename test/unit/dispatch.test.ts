@@ -84,7 +84,7 @@ test('v1 queued submissions migrate to one accepted attempt and retain legacy re
     expect(store.accept(session.id, 'old-submit', session.revision, 'Queued in M2')).toEqual(
       legacy,
     );
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

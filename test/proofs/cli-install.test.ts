@@ -56,6 +56,9 @@ test('npm link installs both executable names, with help/version and one shared 
     const session = JSON.parse(
       await run(sal, 'session', 'create', '--cwd', state, '--state', state),
     );
+    await expect(
+      run(sal, 'session', 'create', '--cwd', state, '--coding', '--state', state),
+    ).rejects.toThrow('Coding service is not configured');
     await until(
       () => call<SessionSnapshot>(socket, `/v1/sessions/${session.id}/snapshot`),
       (x) => x.state === 'ready',

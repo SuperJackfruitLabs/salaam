@@ -1,5 +1,10 @@
 import { call } from '../../dist/src/transport.js';
-import { CAPABILITIES, textDigest, workerTools } from '../../dist/src/protocol.js';
+import {
+  CAPABILITIES,
+  workerCapabilities,
+  textDigest,
+  workerTools,
+} from '../../dist/src/protocol.js';
 const c = JSON.parse(process.env.SALAAM_WORKER_CONFIG);
 const mode = process.env.SALAAM_TEST_SCENARIO ?? 'ready';
 const bridge = (method, body = {}, token = c.token) =>
@@ -46,14 +51,20 @@ const manifest = {
   session_id: c.session,
   pi_session_id: c.session,
   epoch: c.epoch,
-  capabilities: [...CAPABILITIES],
-  tools: workerTools(!!c.effects, !!c.child),
-  active_tools: workerTools(!!c.effects, !!c.child),
+  capabilities: workerCapabilities(c.coding),
+  tools: workerTools(!!c.effects, !!c.child, c.coding),
+  active_tools: workerTools(!!c.effects, !!c.child, c.coding),
+  ...(c.coding ? { coding: c.coding } : {}),
   provider: c.route.provider,
   route: c.route,
   context_digest: textDigest(c.frame),
 };
 const mutations = {
+  'missing-coding-binding': { coding: null },
+  'wrong-coding-profile': { coding: { ...c.coding, profile_digest: 'forged' } },
+  'missing-file-capability': {
+    capabilities: workerCapabilities(c.coding).filter((x) => x !== 'workspace-files'),
+  },
   'wrong-version': { protocol_version: 99 },
   'wrong-bundle': { bundle_digest: 'wrong' },
   'wrong-policy': { policy_digest: 'wrong' },

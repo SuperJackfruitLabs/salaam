@@ -13,6 +13,9 @@ import {
   CAPABILITIES,
   PROTOCOL_VERSION,
   workerTools,
+  workerCapabilities,
+  ServiceError,
+  type CodingBinding,
   textDigest,
   digest,
   type Approval,
@@ -30,6 +33,7 @@ interface WorkerConfig {
   effects?: boolean;
   child?: boolean;
   route?: ProviderRoute;
+  coding?: CodingBinding;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -239,6 +243,133 @@ export default function house(pi: ExtensionAPI): void {
     managedTool('salaam_review', 'review');
   }
   if (c.effects) managedTool('salaam_effect', 'effect');
+  if (c.coding && !c.child) {
+    const normal = (error: unknown) =>
+      error instanceof ServiceError &&
+      [
+        'unsafe_path',
+        'workspace_changed',
+        'workspace_busy',
+        'workspace_limit',
+        'workspace_conflict',
+        'not_found',
+        'binary_file',
+        'line_limit',
+        'invalid_field',
+        'request_conflict',
+        'command_conflict',
+        'command_limit',
+        'invalid_cursor',
+      ].includes(error.code);
+    pi.registerTool({
+      name: 'salaam_files',
+      label: 'Guarded workspace files',
+      description:
+        'Inspect/list/search/read an owned workspace or patch one UTF-8 file. Read returns one-based line references and a file hash. Before patching, inspect/read current revision and hash. expected_hash=null creates a new file, content=null deletes one. The source checkout and Git metadata stay outside this workspace.',
+      parameters: Type.Object({
+        action: Type.Union(
+          ['inspect', 'list', 'search', 'read', 'patch'].map((value) => Type.Literal(value)),
+        ),
+        path: Type.Optional(Type.String({ maxLength: 512 })),
+        query: Type.Optional(Type.String({ maxLength: 256 })),
+        offset: Type.Optional(Type.Integer({ minimum: 0 })),
+        expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
+        expected_hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        content: Type.Optional(Type.Union([Type.String({ maxLength: 262144 }), Type.Null()])),
+      }),
+      async execute(id, params) {
+        try {
+          const result = await bridge<Record<string, unknown>>('coding.files', {
+            tool_call_id: id,
+            args: params,
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            details: result,
+            isError: params.action === 'patch' && result.state !== 'applied',
+          };
+        } catch (error) {
+          if (!normal(error)) {
+            await fail();
+            throw error;
+          }
+          return {
+            content: [{ type: 'text', text: (error as Error).message }],
+            details: { error: (error as ServiceError).code },
+            isError: true,
+          };
+        }
+      },
+    });
+    if (c.coding.commands)
+      pi.registerTool({
+        name: 'salaam_command',
+        label: 'Durable isolated command',
+        description:
+          'Start/status/logs/cancel a command in a bounded, network-disabled disposable copy of the owned workspace. Use a stable step_key for retries: the same key returns the original run, never resends work. Supply the inspected expected_revision. Command edits are disposable; use salaam_files patch for durable changes. Commands are limited to 30 seconds and 64 KiB output. Start waits for the recorded outcome; clients may detach and inspect its stable run_id.',
+        parameters: Type.Object({
+          action: Type.Union(
+            ['start', 'status', 'logs', 'cancel'].map((value) => Type.Literal(value)),
+          ),
+          step_key: Type.Optional(Type.String({ maxLength: 128 })),
+          command: Type.Optional(Type.String({ maxLength: 8192 })),
+          cwd: Type.Optional(Type.String({ maxLength: 512 })),
+          expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
+          run_id: Type.Optional(Type.String()),
+          offset: Type.Optional(Type.Integer({ minimum: 0 })),
+        }),
+        async execute(id, params, signal) {
+          try {
+            let result = await bridge<Record<string, unknown>>('coding.command', {
+              tool_call_id: id,
+              args: params,
+            });
+            if (params.action === 'start') {
+              while (
+                ![
+                  'succeeded',
+                  'failed',
+                  'cancelled',
+                  'timed_out',
+                  'output_limited',
+                  'interrupted',
+                  'outcome_unknown',
+                ].includes(String(result.state))
+              ) {
+                if (signal?.aborted)
+                  throw new Error('Command tool detached; inspect the durable run');
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                result = await bridge<Record<string, unknown>>('coding.command', {
+                  tool_call_id: id,
+                  args: { action: 'status', run_id: result.id },
+                });
+              }
+              const logs = await bridge('coding.command', {
+                tool_call_id: id,
+                args: { action: 'logs', run_id: result.id, offset: 0 },
+              });
+              result = { ...result, logs };
+            }
+            return {
+              content: [{ type: 'text', text: JSON.stringify(result) }],
+              details: result,
+              isError: params.action === 'start' && result.state !== 'succeeded',
+            };
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            if (!normal(error)) {
+              await fail();
+              throw error;
+            }
+            return {
+              content: [{ type: 'text', text: (error as Error).message }],
+              details: { error: (error as ServiceError).code },
+              isError: true,
+            };
+          }
+        },
+      });
+  }
   pi.on('tool_call', async (event) => {
     try {
       await bridge('policy', { tool: event.toolName });
@@ -315,7 +446,14 @@ export default function house(pi: ExtensionAPI): void {
     };
   });
   if (route.provider === 'anthropic')
-    registerClaude(pi, route, () => c.frame, workerTools(!!c.effects, !!c.child), bridge, fail);
+    registerClaude(
+      pi,
+      route,
+      () => c.frame,
+      workerTools(!!c.effects, !!c.child, c.coding),
+      bridge,
+      fail,
+    );
   else
     pi.registerProvider('salaam-proof', {
       baseUrl: 'http://unused.invalid',
@@ -401,6 +539,8 @@ export default function house(pi: ExtensionAPI): void {
                     'inspect_child',
                     'consume_child_result',
                     'salaam_history',
+                    'salaam_files',
+                    'salaam_command',
                   ].includes(x.toolName),
               );
             const source = context.messages[realUser];
@@ -419,6 +559,7 @@ export default function house(pi: ExtensionAPI): void {
             const inbox = input.startsWith('[inbox]');
             const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
             const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
+            const coding = /^\[(files|command)\]\s+(.+)$/.exec(input);
             const effectDisabled = managed?.[1] === 'effect' && !c.effects;
             if (!hasResult && !effectDisabled) {
               const nested =
@@ -427,47 +568,53 @@ export default function house(pi: ExtensionAPI): void {
                 type: 'toolCall' as const,
                 id: `tool-${randomUUID()}`,
                 name:
-                  history && !c.child
-                    ? 'salaam_history'
-                    : children && !c.child
-                      ? 'spawn_child'
-                      : inbox && !c.child
-                        ? 'inspect_child'
-                        : consume && !c.child
-                          ? 'consume_child_result'
-                          : managed?.[1] === 'effect'
-                            ? 'salaam_effect'
-                            : managed
-                              ? 'salaam_review'
-                              : 'salaam_probe',
+                  coding && c.coding && !c.child
+                    ? coding[1] === 'files'
+                      ? 'salaam_files'
+                      : 'salaam_command'
+                    : history && !c.child
+                      ? 'salaam_history'
+                      : children && !c.child
+                        ? 'spawn_child'
+                        : inbox && !c.child
+                          ? 'inspect_child'
+                          : consume && !c.child
+                            ? 'consume_child_result'
+                            : managed?.[1] === 'effect'
+                              ? 'salaam_effect'
+                              : managed
+                                ? 'salaam_review'
+                                : 'salaam_probe',
                 arguments:
-                  history && !c.child
-                    ? { artifact_id: history[1]! }
-                    : children && !c.child
-                      ? {
-                          tasks: children[1]!.split(',').map((step) => ({
-                            step_key: step.trim(),
-                            prompt: 'Read-only child: ' + step.trim(),
-                          })),
-                          budget: 2,
-                          wait: !input.startsWith('[children-nowait]'),
-                        }
-                      : inbox && !c.child
-                        ? {}
-                        : consume && !c.child
-                          ? {
-                              child_id: consume[1]!,
-                              result_id: consume[2]!,
-                              acknowledge: !!consume[3],
-                            }
-                          : managed
+                  coding && c.coding && !c.child
+                    ? JSON.parse(coding[2]!)
+                    : history && !c.child
+                      ? { artifact_id: history[1]! }
+                      : children && !c.child
+                        ? {
+                            tasks: children[1]!.split(',').map((step) => ({
+                              step_key: step.trim(),
+                              prompt: 'Read-only child: ' + step.trim(),
+                            })),
+                            budget: 2,
+                            wait: !input.startsWith('[children-nowait]'),
+                          }
+                        : inbox && !c.child
+                          ? {}
+                          : consume && !c.child
                             ? {
-                                targets: managed[2]!.split(',').map((target) => target.trim()),
-                                value: 'offline fixture',
+                                child_id: consume[1]!,
+                                result_id: consume[2]!,
+                                acknowledge: !!consume[3],
                               }
-                            : nested
-                              ? { nested: true }
-                              : {},
+                            : managed
+                              ? {
+                                  targets: managed[2]!.split(',').map((target) => target.trim()),
+                                  value: 'offline fixture',
+                                }
+                              : nested
+                                ? { nested: true }
+                                : {},
               };
               response.content.push(toolCall);
               response.stopReason = 'toolUse';
@@ -521,7 +668,8 @@ export default function house(pi: ExtensionAPI): void {
       session_id: c.session,
       epoch: c.epoch,
       pi_session_id: ctx.sessionManager.getSessionId(),
-      capabilities: [...CAPABILITIES],
+      capabilities: workerCapabilities(c.coding),
+      ...(c.coding ? { coding: c.coding } : {}),
       tools: pi
         .getAllTools()
         .filter((tool) => tool.exposure !== 'hidden')

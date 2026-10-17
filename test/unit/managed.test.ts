@@ -241,7 +241,7 @@ test('schema v2 upgrades without changing accepted request replies or completed 
     });
     expect(store.accept(session.id, 'submit', session.revision, 'M3 input')).toEqual(accepted);
     expect(store.approvals(session.id)).toEqual([]);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

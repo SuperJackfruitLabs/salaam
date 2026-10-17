@@ -1,4 +1,19 @@
 const commands: Record<string, string> = {
+  workspace: `salaam workspace inspect SESSION_ID
+salaam workspace diff SESSION_ID
+salaam workspace refresh SESSION_ID --revision N --digest REVIEWED_OBSERVED_DIGEST [--takeover]
+
+Inspect an owned coding copy, print its checked diff, or acknowledge exact human edits.
+The source checkout stays outside the writable coding workspace.`,
+  commands: `salaam commands list SESSION_ID
+salaam commands start SESSION_ID --step-key KEY --command TEXT --revision N [--cwd RELATIVE_DIR]
+salaam commands inspect SESSION_ID --run-id UUID
+salaam commands logs SESSION_ID --run-id UUID [--offset BYTES]
+salaam commands cancel SESSION_ID --run-id UUID [--takeover]
+salaam commands reconcile SESSION_ID --run-id UUID [--takeover]
+
+Commands use a proven executor and a disposable working copy. Persist edits with the
+guarded file tool. A repeated step key returns the same run without executing again.`,
   execution: `salaam execution prove --docker-socket PATH --scratch-root DIR --report PATH
 salaam execution cleanup --docker-socket PATH --run-id UUID
 
@@ -30,12 +45,13 @@ Enter a Claude API key at a hidden prompt. It is saved privately under
   service: `salaam service start [--foreground] [--provider offline|anthropic]
                      [--model MODEL] [--max-output-tokens N] [--workspace-id ID]
                      [--effect-socket PATH] [--effect-opaque]
+                     [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 salaam service status
 salaam service stop
 
 The default provider is offline. Claude defaults to claude-sonnet-5-5.
 Start with --foreground for process-supervisor use; otherwise the service detaches.`,
-  session: `salaam session create [--cwd DIR] [--request-id ID]
+  session: `salaam session create [--cwd DIR] [--request-id ID] [--coding]
 salaam session list
 salaam session inspect SESSION_ID
 salaam session submit SESSION_ID --text TEXT
@@ -101,6 +117,8 @@ Commands:
   artifacts     Save durable text evidence
   compactions   Inspect or cancel a managed checkpoint
   execution     Prove the container boundary with disposable fixtures
+  workspace     Inspect coding copies, review diffs or acknowledge human edits
+  commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}
 
@@ -140,6 +158,10 @@ const valueOptions = new Set([
   '--scratch-root',
   '--report',
   '--run-id',
+  '--coding-root',
+  '--coding-socket',
+  '--step-key',
+  '--command',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
 export function hasHelpFlag(args: string[]): boolean {

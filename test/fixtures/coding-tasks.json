@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "discovery",
+      "files": {
+        "math.js": "export const add = (a, b) => a + b;\n",
+        "README.md": "Use add for addition.\n"
+      }
+    },
+    { "id": "precise-edit-crash", "files": { "math.js": "export const add = (a, b) => a - b;\n" } },
+    {
+      "id": "multi-file",
+      "files": {
+        "value.js": "export const value = 1;\n",
+        "client.js": "import {value} from './value.js'; export const answer = value;\n",
+        "client.test.js": "import {test} from 'node:test'; import assert from 'node:assert/strict'; import {answer} from './client.js'; test('answer', () => assert.equal(answer, 42));\n"
+      }
+    },
+    {
+      "id": "failure-repair",
+      "files": {
+        "math.js": "export const add = (a, b) => a - b;\n",
+        "math.test.js": "import {test} from 'node:test'; import assert from 'node:assert/strict'; import {add} from './math.js'; test('addition', () => assert.equal(add(2, 3), 5));\n"
+      }
+    },
+    {
+      "id": "new-module",
+      "files": {
+        "new.test.js": "import {test} from 'node:test'; import assert from 'node:assert/strict'; import {twice} from './new.js'; test('new module', () => assert.equal(twice(3), 6));\n"
+      }
+    },
+    {
+      "id": "deletion",
+      "files": {
+        "obsolete.js": "throw Error('obsolete');\n",
+        "README.md": "No obsolete module is needed.\n"
+      }
+    },
+    { "id": "human-conflict", "files": { "math.js": "export const value = 1;\n" } },
+    { "id": "authority-boundary", "files": { "math.js": "export const value = 1;\n" } },
+    { "id": "reconnect", "files": { "math.js": "export const value = 1;\n" } },
+    { "id": "cancellation-and-limits", "files": { "math.js": "export const value = 1;\n" } }
+  ]
+}

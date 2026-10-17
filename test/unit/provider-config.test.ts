@@ -91,7 +91,7 @@ test('schema v4 sessions remain pinned to offline, and a live route persists acr
     expect(store.providerRoute(live.id)).toEqual(route);
     expect(() => store.bindRoute(live.id, { ...route, max_tokens: 1024 })).toThrow('differs');
     expect(() => store.bindRoute(live.id, OFFLINE_ROUTE)).toThrow('differs');
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

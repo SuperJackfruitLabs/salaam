@@ -275,7 +275,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     });
     expect(store.create(dir, 'create')).toEqual(session);
     expect(store.session(session.id).revision).toBe(revision);
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

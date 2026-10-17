@@ -22,8 +22,28 @@ export const TOOLS = [
   'consume_child_result',
   'salaam_history',
 ] as const;
-export function workerTools(effects: boolean, child = false): string[] {
-  return child ? ['salaam_probe'] : [...TOOLS, ...(effects ? ['salaam_effect'] : [])].sort();
+export interface CodingBinding {
+  workspace_id: string;
+  files: true;
+  commands: boolean;
+  profile_digest: string | null;
+}
+export function workerCapabilities(coding?: CodingBinding): string[] {
+  return [
+    ...CAPABILITIES,
+    ...(coding ? ['workspace-files'] : []),
+    ...(coding?.commands ? ['command-execution'] : []),
+  ];
+}
+export function workerTools(effects: boolean, child = false, coding?: CodingBinding): string[] {
+  return child
+    ? ['salaam_probe']
+    : [
+        ...TOOLS,
+        ...(effects ? ['salaam_effect'] : []),
+        ...(coding ? ['salaam_files'] : []),
+        ...(coding?.commands ? ['salaam_command'] : []),
+      ].sort();
 }
 export interface ChildTask {
   id: string;

@@ -18,7 +18,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 5,
+  version: 6,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -27,6 +27,8 @@ export const POLICY = {
     'inspect_child',
     'consume_child_result',
     'salaam_history',
+    'salaam_files',
+    'salaam_command',
   ],
   children: {
     maxDepth: 1,
@@ -43,6 +45,12 @@ export const POLICY = {
   provider_retries: 0,
   compaction: { strategy: 'explicit-task-checkpoint-v1', automatic: false, keepRecentTokens: 512 },
   external_effects: 'explicit-connector-and-operation-approval',
+  coding: {
+    workspace: 'owned-copy-v1',
+    commands: 'disposable-copy-v1',
+    network: 'none',
+    persistent_edits: 'hash-bound-patch-only',
+  },
 };
 export const POLICY_DIGEST = digest(POLICY);
 export function bundleDigest(): string {

@@ -259,7 +259,7 @@ export function inspectBoundary(actual: any, expected: any, imageId: string): vo
     'Healthcheck',
   ])
     requireProfile(same(c[key], expected[key]), 'Config.' + key);
-  requireProfile(same([...c.Env].sort(), [...ENV].sort()), 'Config.Env');
+  requireProfile(same([...c.Env].sort(), [...expected.Env].sort()), 'Config.Env');
   requireProfile(!c.Volumes || Object.keys(c.Volumes).length === 0);
   for (const key of Object.keys(expected.HostConfig)) {
     // Docker omits the false ReadOnly zero value from HostConfig.Mounts.
@@ -284,14 +284,22 @@ export function inspectBoundary(actual: any, expected: any, imageId: string): vo
     requireProfile(!h[key] || Object.keys(h[key]).length === 0);
   for (const key of ['PidMode', 'UTSMode', 'UsernsMode', 'CgroupParent']) requireProfile(!h[key]);
   requireProfile(!h.PublishAllPorts && !h.OomKillDisable);
-  requireProfile(actual.Mounts?.length === 1);
-  requireProfile(actual.Mounts[0].Type === 'bind');
-  requireProfile(actual.Mounts[0].Source === expected.HostConfig.Mounts[0].Source);
-  requireProfile(actual.Mounts[0].Destination === '/workspace');
-  requireProfile(actual.Mounts[0].RW === true && actual.Mounts[0].Propagation === 'rprivate');
+  requireProfile(actual.Mounts?.length === expected.HostConfig.Mounts.length);
+  for (let index = 0; index < actual.Mounts.length; index++) {
+    const mount = actual.Mounts[index],
+      wanted = expected.HostConfig.Mounts[index];
+    requireProfile(
+      mount.Type === 'bind' &&
+        mount.Source === wanted.Source &&
+        mount.Destination === wanted.Target,
+    );
+    requireProfile(mount.RW === !wanted.ReadOnly && mount.Propagation === 'rprivate');
+  }
 }
 
-export function decodeLogs(body: Buffer, limit = BOUNDARY_PROFILE.outputBytes): string {
+export { json as engineJson };
+
+export function decodeLogs(body: Buffer, limit: number = BOUNDARY_PROFILE.outputBytes): string {
   const chunks: Buffer[] = [];
   let offset = 0;
   let size = 0;

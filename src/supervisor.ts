@@ -11,6 +11,8 @@ import {
   ServiceError,
   textDigest,
   workerTools,
+  workerCapabilities,
+  type CodingBinding,
   string,
   type Manifest,
   type Session,
@@ -29,6 +31,7 @@ import {
 import type { TaskContext, Compaction } from './task-context.js';
 import { loadApiKey, validateApiKey } from './credentials.js';
 import { digest } from './protocol.js';
+import type { CodingWork } from './coding.js';
 
 export interface Launch {
   command: string;
@@ -96,6 +99,17 @@ export class Supervisor extends EventEmitter {
   private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
   children?: ChildWork;
+  coding?: CodingWork;
+  private codingBinding(id: string): CodingBinding | undefined {
+    return this.children?.owned(id) ? undefined : this.coding?.binding(id);
+  }
+  private tools(id: string): string[] {
+    return workerTools(
+      !!this.options.effectsEnabled,
+      !!this.children?.owned(id),
+      this.codingBinding(id),
+    );
+  }
   readonly route: ProviderRoute;
   private apiKey?: string;
   readonly bootId = randomUUID();
@@ -232,6 +246,7 @@ export class Supervisor extends EventEmitter {
         effects: !!this.options.effectsEnabled && !this.children?.owned(id),
         child: !!this.children?.owned(id),
         route: this.route,
+        coding: this.codingBinding(id),
       };
       const args = [
         PI_CLI,
@@ -254,7 +269,7 @@ export class Supervisor extends EventEmitter {
         '--no-context-files',
         '--no-builtin-tools',
         '--tools',
-        workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)).join(','),
+        this.tools(id).join(','),
         '--provider',
         this.route.provider,
         '--model',
@@ -361,7 +376,7 @@ export class Supervisor extends EventEmitter {
       // Pi buffers setup-only entries until there is a conversation. Do not
       // persist a cursor into that ephemeral tree before its file exists.
       if (existsSync(file)) await this.syncEntries(worker);
-      this.store.state(id, epoch, 'ready', null, [...CAPABILITIES], file);
+      this.store.state(id, epoch, 'ready', null, workerCapabilities(this.codingBinding(id)), file);
       worker.ready = true;
       worker.lastBeat = Date.now();
     } catch (error) {
@@ -436,9 +451,10 @@ export class Supervisor extends EventEmitter {
           session_id: id,
           pi_session_id: id,
           epoch: w.epoch,
-          capabilities: [...CAPABILITIES],
-          tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
-          active_tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
+          capabilities: workerCapabilities(this.codingBinding(id)),
+          tools: this.tools(id),
+          active_tools: this.tools(id),
+          ...(this.codingBinding(id) ? { coding: this.codingBinding(id) } : {}),
           provider: this.route.provider,
           route: this.route,
           context_digest: textDigest(w.frame),
@@ -463,6 +479,33 @@ export class Supervisor extends EventEmitter {
     if (w.attempt && this.store.cancelled(w.attempt))
       throw new ServiceError('attempt_cancelled', 'Attempt cancellation revoked further grants');
     try {
+      if (method === 'coding.files' || method === 'coding.command') {
+        if (this.children?.owned(id) || !this.coding || !this.codingBinding(id) || !w.attempt)
+          throw new Error('Coding authority is unavailable');
+        this.assertActive(id, w.epoch, w.attempt);
+        const args = object(body.args);
+        if (method === 'coding.files')
+          return this.coding.file(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            args,
+          );
+        if (!this.codingBinding(id)?.commands) throw new Error('Command execution is unavailable');
+        if (args.action === 'start')
+          return this.coding.start(id, w.attempt, args, () =>
+            this.assertActive(id, w.epoch, w.attempt!),
+          );
+        const run = string(args.run_id, 'run_id', 128);
+        if (args.action === 'status') return this.coding.get(id, run);
+        if (args.action === 'logs') return this.coding.logs(id, run, Number(args.offset ?? 0));
+        if (args.action === 'cancel')
+          return this.coding.cancel(id, run, string(body.tool_call_id, 'tool_call_id', 512), () =>
+            this.assertActive(id, w.epoch, w.attempt!),
+          );
+        throw new ServiceError('invalid_field', 'Unsupported command action', 400);
+      }
       if (
         method === 'operation.prepare' ||
         method === 'operation.status' ||
@@ -560,6 +603,7 @@ export class Supervisor extends EventEmitter {
         return { ok: true };
       }
       if (method === 'model') {
+        this.coding?.assertSafe(id);
         if (
           body.provider !== this.route.provider ||
           body.model !== this.route.model ||
@@ -571,7 +615,7 @@ export class Supervisor extends EventEmitter {
             body.payload,
             this.route,
             this.tasks.frame(id, w.binding),
-            workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
+            this.tools(id),
           );
           if (body.payload_digest !== digest(body.payload))
             throw new Error('Claude payload digest changed');
@@ -613,12 +657,7 @@ export class Supervisor extends EventEmitter {
           });
         });
       } else if (method === 'policy' || method === 'tool') {
-        if (
-          !workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)).includes(
-            String(body.tool),
-          )
-        )
-          throw new Error('Tool is outside policy');
+        if (!this.tools(id).includes(String(body.tool))) throw new Error('Tool is outside policy');
         this.store.transaction(() => {
           this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
             attempt_id: w.attempt ?? null,
@@ -629,6 +668,26 @@ export class Supervisor extends EventEmitter {
       } else throw new Error('Unsupported worker operation');
       return { ok: true };
     } catch (error) {
+      if (
+        method.startsWith('coding.') &&
+        error instanceof ServiceError &&
+        [
+          'unsafe_path',
+          'workspace_changed',
+          'workspace_busy',
+          'workspace_limit',
+          'workspace_conflict',
+          'not_found',
+          'binary_file',
+          'line_limit',
+          'invalid_field',
+          'request_conflict',
+          'command_conflict',
+          'command_limit',
+          'invalid_cursor',
+        ].includes(error.code)
+      )
+        throw error;
       if (
         method === 'history' &&
         error instanceof ServiceError &&

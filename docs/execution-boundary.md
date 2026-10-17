@@ -1,5 +1,7 @@
 # M9.1 execution boundary
 
+This document records the historical M9.1 spike. M9.2/M9.3 now supply the separately admitted coding tools described in [Guarded coding](coding.md); their configuration and startup proof determine current coding health.
+
 The selected spike backend is **a broker-managed Linux Docker container using runc and cgroup v2**, reached through an explicit private Unix socket. macOS uses a local Linux VM. M9.1 implements fixed operator-run probes, not a model command tool. The service health response reports `execution.available=false` and `coding_tools=false`; parent and child tool inventories remain unchanged.
 
 The broker uses Docker Engine API **1.47** directly. It does not invoke a host shell or Docker CLI, load Docker contexts/configuration, forward host environment variables, pull images, or provision a VM. The operator provisions the backend and image before the proof. Missing engines/images, degraded daemon controls, configuration drift and unconfirmed cleanup fail closed with a nonzero CLI exit.
@@ -79,4 +81,4 @@ Observed on **2026-10-17**: all **15 real-engine checks passed** on macOS arm64 
 
 M9.1 permits proceeding to M9.2 on the observed local VM backend once the real proof and offline regressions pass. Native Linux x64 and other VM/runtime versions require their own reports. A CI definition alone is not evidence of a passing run.
 
-Before coding tools become available, M9.2/M9.3 still need owned workspace identity/revisions, safe file admission and metadata protection, workspace storage limits, managed bridge/ledger integration, durable command handles/logs, recording-failure admission gates and restart reconciliation. The writable workspace is not a rollback mechanism or a total disk quota. The per-file size cap does not cap aggregate workspace writes. The model must never receive mounts, daemon flags, environment overrides or executor credentials as tool parameters. A new tool image or network-enabled profile needs a separately reviewed and proven policy.
+The original gate before enabling coding tools required M9.2/M9.3 to supply owned workspace identity/revisions, safe file admission and metadata protection, workspace storage limits, managed bridge/ledger integration, durable command handles/logs, recording-failure admission gates and restart reconciliation. The writable workspace is not a rollback mechanism or a total disk quota. The per-file size cap does not cap aggregate workspace writes. The model must never receive mounts, daemon flags, environment overrides or executor credentials as tool parameters. A new tool image or network-enabled profile needs a separately reviewed and proven policy.

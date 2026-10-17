@@ -1,0 +1,2480 @@
+{
+  "schema": 1,
+  "run_id": "2026-10-17T15-17-37.704Z-d67de398",
+  "started_at": "2026-10-17T15:17:37.705Z",
+  "operator": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.7.0"
+  },
+  "fixture_version": 1,
+  "fixture_digest": "c037bb0b27b591123ee86aae5dec7f94036725fb3c2b78a671c84a8c705b93d2",
+  "compiled_digest": "c3812130bf4b15ead78c4d9848b7091bee2d971ee688958f1421281223565a08",
+  "tasks": [
+    {
+      "id": "discovery",
+      "started_at": "2026-10-17T15:17:38.789Z",
+      "passed": true,
+      "session_id": "5a98ffcd-3d95-4153-8c61-436a8f755c83",
+      "workspace": {
+        "id": "f2e94a34-b1af-451c-a8cb-5a82cf67b9cf",
+        "revision": 0,
+        "digest": "45b1fba297851c0336771a18ca65542eaa500318afb686056062db6921729abc"
+      },
+      "final_tree": {
+        "README.md": {
+          "content": "VXNlIGFkZCBmb3IgYWRkaXRpb24uCg==",
+          "executable": false
+        },
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IGFkZCA9IChhLCBiKSA9PiBhICsgYjsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/discovery/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "92096939-77cc-4e38-bf45-99488fa28ffa",
+            "digest": "45b1fba297851c0336771a18ca65542eaa500318afb686056062db6921729abc"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "f2e94a34-b1af-451c-a8cb-5a82cf67b9cf",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/discovery/source",
+            "revision": 0,
+            "digest": "45b1fba297851c0336771a18ca65542eaa500318afb686056062db6921729abc"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:39.676Z"
+    },
+    {
+      "id": "precise-edit-crash",
+      "started_at": "2026-10-17T15:17:39.676Z",
+      "passed": true,
+      "session_id": "7f745427-97d5-4602-9899-eafcb11e9ebb",
+      "workspace": {
+        "id": "f6704fa4-79b8-4e52-83ed-6a893b91f81c",
+        "revision": 1,
+        "digest": "ef46669da33ce6cfc871dc9ad6a75f978c83954a068b8f6deb671b2c5e6f9871"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IGFkZCA9IChhLCBiKSA9PiBhICsgYjsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/precise-edit-crash/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "cc3db4b4-b33d-45f6-a752-1733a6a3f88f",
+            "digest": "d0e25677f27df9f8bad8663ca7517a64dea7acaeb8be62be82e65b23ff771184"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "f6704fa4-79b8-4e52-83ed-6a893b91f81c",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/precise-edit-crash/source",
+            "revision": 0,
+            "digest": "d0e25677f27df9f8bad8663ca7517a64dea7acaeb8be62be82e65b23ff771184"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "worker.exited",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": []
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "dd953b2d-274b-4eb5-b708-50e39ccf3630",
+            "digest": "ef46669da33ce6cfc871dc9ad6a75f978c83954a068b8f6deb671b2c5e6f9871"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "af695529-f6a5-4f26-93b9-5ac79e4b50bb",
+            "revision": 0,
+            "before_digest": "d0e25677f27df9f8bad8663ca7517a64dea7acaeb8be62be82e65b23ff771184",
+            "after_digest": "ef46669da33ce6cfc871dc9ad6a75f978c83954a068b8f6deb671b2c5e6f9871"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "af695529-f6a5-4f26-93b9-5ac79e4b50bb",
+            "workspace_id": "f6704fa4-79b8-4e52-83ed-6a893b91f81c",
+            "digest": "ef46669da33ce6cfc871dc9ad6a75f978c83954a068b8f6deb671b2c5e6f9871"
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:40.615Z"
+    },
+    {
+      "id": "multi-file",
+      "started_at": "2026-10-17T15:17:40.616Z",
+      "passed": true,
+      "session_id": "cfb2b940-b983-47a7-a3f5-81ec6935a6b5",
+      "commands": [
+        {
+          "id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+          "session_id": "cfb2b940-b983-47a7-a3f5-81ec6935a6b5",
+          "workspace_id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+          "attempt_id": null,
+          "step_key": "multi-test",
+          "input_digest": "db9e20e53157abd3831fd9812b50cde952a0969d9befb3422eb146edf7b9ba95",
+          "command": "node --test",
+          "cwd": ".",
+          "workspace_revision": 2,
+          "workspace_digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "d4f24d96-8b3d-4a68-a038-489cb380cf1c",
+          "container_id": "d1a9ed6b3d63ceb9e33d240cfb975b16a16745d272a9d11764fad4c75fd76a90",
+          "exec_id": "10b68f79469626ca00bb0fd0f9e7c52828361e49bf1b6d504a83e2f1f85e8633",
+          "state": "succeeded",
+          "resume_state": null,
+          "exit_code": 0,
+          "output": "4pyUIGFuc3dlciAoMC43NDY2ODdtcykK4oS5IHRlc3RzIDEK4oS5IHN1aXRlcyAwCuKEuSBwYXNzIDEK4oS5IGZhaWwgMArihLkgY2FuY2VsbGVkIDAK4oS5IHNraXBwZWQgMArihLkgdG9kbyAwCuKEuSBkdXJhdGlvbl9tcyAxODIuMzY2MjA5Cg==",
+          "result_artifact": "addf9dcd-094d-46a6-9614-1f22ba3ee9f6",
+          "error": null,
+          "created_at": 1792250261121,
+          "deadline": 1792250291121,
+          "cancelled": 0,
+          "input_snapshot": {
+            "client.js": {
+              "content": "aW1wb3J0IHt2YWx1ZX0gZnJvbSAnLi92YWx1ZS5qcyc7IGV4cG9ydCBjb25zdCBhbnN3ZXIgPSB2YWx1ZSAqIDI7Cg==",
+              "executable": false
+            },
+            "client.test.js": {
+              "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7YW5zd2VyfSBmcm9tICcuL2NsaWVudC5qcyc7IHRlc3QoJ2Fuc3dlcicsICgpID0+IGFzc2VydC5lcXVhbChhbnN3ZXIsIDQyKSk7Cg==",
+              "executable": false
+            },
+            "value.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMjE7Cg==",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "4pyUIGFuc3dlciAoMC43NDY2ODdtcykK4oS5IHRlc3RzIDEK4oS5IHN1aXRlcyAwCuKEuSBwYXNzIDEK4oS5IGZhaWwgMArihLkgY2FuY2VsbGVkIDAK4oS5IHNraXBwZWQgMArihLkgdG9kbyAwCuKEuSBkdXJhdGlvbl9tcyAxODIuMzY2MjA5Cg=="
+          }
+        }
+      ],
+      "workspace": {
+        "id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+        "revision": 2,
+        "digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414"
+      },
+      "final_tree": {
+        "client.js": {
+          "content": "aW1wb3J0IHt2YWx1ZX0gZnJvbSAnLi92YWx1ZS5qcyc7IGV4cG9ydCBjb25zdCBhbnN3ZXIgPSB2YWx1ZSAqIDI7Cg==",
+          "executable": false
+        },
+        "client.test.js": {
+          "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7YW5zd2VyfSBmcm9tICcuL2NsaWVudC5qcyc7IHRlc3QoJ2Fuc3dlcicsICgpID0+IGFzc2VydC5lcXVhbChhbnN3ZXIsIDQyKSk7Cg==",
+          "executable": false
+        },
+        "value.js": {
+          "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMjE7Cg==",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/multi-file/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "6653e615-474c-4deb-af1a-a1870f16c73f",
+            "digest": "2419d6354911dc5d155ceb15ea77b7bd2975461191e0d1f2eecd86f0eb1cecf1"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/multi-file/source",
+            "revision": 0,
+            "digest": "2419d6354911dc5d155ceb15ea77b7bd2975461191e0d1f2eecd86f0eb1cecf1"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "e0067116-f742-491b-aecc-0a126304674f",
+            "digest": "f4c50ffab4a0e00fa7bbab6d4fe7437784a82619aa70e85d5409be0b19fd2e3f"
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "e236b400-92ea-4f48-9c8e-1895bfb007c7",
+            "revision": 0,
+            "before_digest": "2419d6354911dc5d155ceb15ea77b7bd2975461191e0d1f2eecd86f0eb1cecf1",
+            "after_digest": "f4c50ffab4a0e00fa7bbab6d4fe7437784a82619aa70e85d5409be0b19fd2e3f"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "e236b400-92ea-4f48-9c8e-1895bfb007c7",
+            "workspace_id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+            "digest": "f4c50ffab4a0e00fa7bbab6d4fe7437784a82619aa70e85d5409be0b19fd2e3f"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "e91b652c-90b2-41d1-af03-8ea1707f4564",
+            "digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414"
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "e5e40355-0ac7-4ecc-b840-65568d614e38",
+            "revision": 1,
+            "before_digest": "f4c50ffab4a0e00fa7bbab6d4fe7437784a82619aa70e85d5409be0b19fd2e3f",
+            "after_digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414"
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "e5e40355-0ac7-4ecc-b840-65568d614e38",
+            "workspace_id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+            "digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414"
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "78b0de11-fc41-4513-af60-f260b7d1ca99",
+            "epoch": 1,
+            "expires_at": 1792250276112
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "d4f24d96-8b3d-4a68-a038-489cb380cf1c",
+            "digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414"
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "attempt_id": null,
+            "step_key": "multi-test",
+            "command": "node --test",
+            "cwd": ".",
+            "workspace_id": "e18f6c2f-76bc-41f9-9f65-a0e1e5eab357",
+            "workspace_revision": 2,
+            "workspace_digest": "24dbc9c3b87983ab4256a8244057618113365be7328b6a2195e99827bbb01414",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 19,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 20,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 21,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "offset": 0,
+            "bytes": 139
+          }
+        },
+        {
+          "seq": 22,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "addf9dcd-094d-46a6-9614-1f22ba3ee9f6",
+            "digest": "499c1c82a2f58383a695bfbd11873c40efcb01a7243bd35b673b78e48c9cdc61"
+          }
+        },
+        {
+          "seq": 23,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": 0
+          }
+        },
+        {
+          "seq": 24,
+          "kind": "command.succeeded",
+          "payload": {
+            "run_id": "c7bffcdd-c75f-4307-aa91-dc88f3c6eddc",
+            "exit_code": 0,
+            "error": null
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:41.821Z"
+    },
+    {
+      "id": "failure-repair",
+      "started_at": "2026-10-17T15:17:41.822Z",
+      "passed": true,
+      "session_id": "b79ba7d9-2c33-4c3c-b605-29835a2cfec6",
+      "commands": [
+        {
+          "id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+          "session_id": "b79ba7d9-2c33-4c3c-b605-29835a2cfec6",
+          "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+          "attempt_id": null,
+          "step_key": "expected-failure",
+          "input_digest": "c9c967fb38608cf8de6c96278a5797602ad0ecf82c62adcc54452ed2ba34d5e1",
+          "command": "node --test",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "cd3bdad9-6e68-4da7-a62d-351792362b08",
+          "container_id": "020549ad158473fe96b5ab2f335d53ca31ce7dc47fef64b60c2328b1595d981e",
+          "exec_id": "5047239c16ac2b72c240bd33f737aebbff6a6b0bcef355d7be871eb8549e688c",
+          "state": "failed",
+          "resume_state": null,
+          "exit_code": 1,
+          "output": "4pyWIGFkZGl0aW9uICgxLjE2NTM3Nm1zKQrihLkgdGVzdHMgMQrihLkgc3VpdGVzIDAK4oS5IHBhc3MgMArihLkgZmFpbCAxCuKEuSBjYW5jZWxsZWQgMArihLkgc2tpcHBlZCAwCuKEuSB0b2RvIDAK4oS5IGR1cmF0aW9uX21zIDE0My42MTQxNDUKCuKcliBmYWlsaW5nIHRlc3RzOgoKdGVzdCBhdCBtYXRoLnRlc3QuanM6MToxMDUK4pyWIGFkZGl0aW9uICgxLjE2NTM3Nm1zKQogIEFzc2VydGlvbkVycm9yIFtFUlJfQVNTRVJUSU9OXTogRXhwZWN0ZWQgdmFsdWVzIHRvIGJlIHN0cmljdGx5IGVxdWFsOgogIAogIC0xICE9PSA1CiAgCiAgICAgIGF0IFRlc3RDb250ZXh0Ljxhbm9ueW1vdXM+IChmaWxlOi8vL3dvcmsvbWF0aC50ZXN0LmpzOjE6MTM1KQogICAgICBhdCBUZXN0LnJ1bkluQXN5bmNTY29wZSAobm9kZTphc3luY19ob29rczoyMjY6MTQpCiAgICAgIGF0IFRlc3QucnVuIChub2RlOmludGVybmFsL3Rlc3RfcnVubmVyL3Rlc3Q6MTM5NzoyNSkKICAgICAgYXQgVGVzdC5zdGFydCAobm9kZTppbnRlcm5hbC90ZXN0X3J1bm5lci90ZXN0OjEyNTc6MTcpCiAgICAgIGF0IHN0YXJ0U3VidGVzdEFmdGVyQm9vdHN0cmFwIChub2RlOmludGVybmFsL3Rlc3RfcnVubmVyL2hhcm5lc3M6Mzg3OjE3KSB7CiAgICBnZW5lcmF0ZWRNZXNzYWdlOiB0cnVlLAogICAgY29kZTogJ0VSUl9BU1NFUlRJT04nLAogICAgYWN0dWFsOiAtMSwKICAgIGV4cGVjdGVkOiA1LAogICAgb3BlcmF0b3I6ICdzdHJpY3RFcXVhbCcsCiAgICBkaWZmOiAnc2ltcGxlJwogIH0K",
+          "result_artifact": "23545ad6-70ad-49b6-94a4-f934b065fbc5",
+          "error": null,
+          "created_at": 1792250262254,
+          "deadline": 1792250292254,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IGFkZCA9IChhLCBiKSA9PiBhIC0gYjsK",
+              "executable": false
+            },
+            "math.test.js": {
+              "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7YWRkfSBmcm9tICcuL21hdGguanMnOyB0ZXN0KCdhZGRpdGlvbicsICgpID0+IGFzc2VydC5lcXVhbChhZGQoMiwgMyksIDUpKTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "4pyWIGFkZGl0aW9uICgxLjE2NTM3Nm1zKQrihLkgdGVzdHMgMQrihLkgc3VpdGVzIDAK4oS5IHBhc3MgMArihLkgZmFpbCAxCuKEuSBjYW5jZWxsZWQgMArihLkgc2tpcHBlZCAwCuKEuSB0b2RvIDAK4oS5IGR1cmF0aW9uX21zIDE0My42MTQxNDUKCuKcliBmYWlsaW5nIHRlc3RzOgoKdGVzdCBhdCBtYXRoLnRlc3QuanM6MToxMDUK4pyWIGFkZGl0aW9uICgxLjE2NTM3Nm1zKQogIEFzc2VydGlvbkVycm9yIFtFUlJfQVNTRVJUSU9OXTogRXhwZWN0ZWQgdmFsdWVzIHRvIGJlIHN0cmljdGx5IGVxdWFsOgogIAogIC0xICE9PSA1CiAgCiAgICAgIGF0IFRlc3RDb250ZXh0Ljxhbm9ueW1vdXM+IChmaWxlOi8vL3dvcmsvbWF0aC50ZXN0LmpzOjE6MTM1KQogICAgICBhdCBUZXN0LnJ1bkluQXN5bmNTY29wZSAobm9kZTphc3luY19ob29rczoyMjY6MTQpCiAgICAgIGF0IFRlc3QucnVuIChub2RlOmludGVybmFsL3Rlc3RfcnVubmVyL3Rlc3Q6MTM5NzoyNSkKICAgICAgYXQgVGVzdC5zdGFydCAobm9kZTppbnRlcm5hbC90ZXN0X3J1bm5lci90ZXN0OjEyNTc6MTcpCiAgICAgIGF0IHN0YXJ0U3VidGVzdEFmdGVyQm9vdHN0cmFwIChub2RlOmludGVybmFsL3Rlc3RfcnVubmVyL2hhcm5lc3M6Mzg3OjE3KSB7CiAgICBnZW5lcmF0ZWRNZXNzYWdlOiB0cnVlLAogICAgY29kZTogJ0VSUl9BU1NFUlRJT04nLAogICAgYWN0dWFsOiAtMSwKICAgIGV4cGVjdGVkOiA1LAogICAgb3BlcmF0b3I6ICdzdHJpY3RFcXVhbCcsCiAgICBkaWZmOiAnc2ltcGxlJwogIH0K"
+          }
+        },
+        {
+          "id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+          "session_id": "b79ba7d9-2c33-4c3c-b605-29835a2cfec6",
+          "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+          "attempt_id": null,
+          "step_key": "repaired-test",
+          "input_digest": "6f9bb03b0ea482e74550e8833d2cfffd92d140a62475c27b115e004e82fbbee2",
+          "command": "node --test",
+          "cwd": ".",
+          "workspace_revision": 1,
+          "workspace_digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "d285e8eb-b996-41d4-9915-b28e304574f2",
+          "container_id": "fd2699b26784ccc57406a3f2ec42882b42f556b2dffbfab88e7ffdd3dedffe22",
+          "exec_id": "03fd303efe15d44ecf5ff3eefb0321a81cff196055000b6c1337b4205904080d",
+          "state": "succeeded",
+          "resume_state": null,
+          "exit_code": 0,
+          "output": "4pyUIGFkZGl0aW9uICgwLjY5NjY2NG1zKQrihLkgdGVzdHMgMQrihLkgc3VpdGVzIDAK4oS5IHBhc3MgMQrihLkgZmFpbCAwCuKEuSBjYW5jZWxsZWQgMArihLkgc2tpcHBlZCAwCuKEuSB0b2RvIDAK4oS5IGR1cmF0aW9uX21zIDE2NC4zNzM3OTYK",
+          "result_artifact": "da0f337f-b176-46e5-9a1a-2673d1eac055",
+          "error": null,
+          "created_at": 1792250262973,
+          "deadline": 1792250292973,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IGFkZCA9IChhLCBiKSA9PiBhICsgYjsK",
+              "executable": false
+            },
+            "math.test.js": {
+              "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7YWRkfSBmcm9tICcuL21hdGguanMnOyB0ZXN0KCdhZGRpdGlvbicsICgpID0+IGFzc2VydC5lcXVhbChhZGQoMiwgMyksIDUpKTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "4pyUIGFkZGl0aW9uICgwLjY5NjY2NG1zKQrihLkgdGVzdHMgMQrihLkgc3VpdGVzIDAK4oS5IHBhc3MgMQrihLkgZmFpbCAwCuKEuSBjYW5jZWxsZWQgMArihLkgc2tpcHBlZCAwCuKEuSB0b2RvIDAK4oS5IGR1cmF0aW9uX21zIDE2NC4zNzM3OTYK"
+          }
+        }
+      ],
+      "workspace": {
+        "id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+        "revision": 1,
+        "digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IGFkZCA9IChhLCBiKSA9PiBhICsgYjsK",
+          "executable": false
+        },
+        "math.test.js": {
+          "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7YWRkfSBmcm9tICcuL21hdGguanMnOyB0ZXN0KCdhZGRpdGlvbicsICgpID0+IGFzc2VydC5lcXVhbChhZGQoMiwgMyksIDUpKTsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/failure-repair/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "5ca37918-0032-4da1-860b-680329021fb6",
+            "digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/failure-repair/source",
+            "revision": 0,
+            "digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "a8663c9e-dbc4-4835-98e3-6db9db0be372",
+            "epoch": 1,
+            "expires_at": 1792250277242
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "cd3bdad9-6e68-4da7-a62d-351792362b08",
+            "digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "attempt_id": null,
+            "step_key": "expected-failure",
+            "command": "node --test",
+            "cwd": ".",
+            "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+            "workspace_revision": 0,
+            "workspace_digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "offset": 0,
+            "bytes": 768
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "23545ad6-70ad-49b6-94a4-f934b065fbc5",
+            "digest": "00207ef11af87c37469c724a515dd2cc732acfe657dd9ef0af45fa1151888968"
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": 1
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "command.failed",
+          "payload": {
+            "run_id": "ab5cf923-cdf9-4aa0-a0b1-a634b77b6967",
+            "exit_code": 1,
+            "error": null
+          }
+        },
+        {
+          "seq": 19,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "2e89d47b-c7b4-430a-8b8d-d3019a869269",
+            "digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146"
+          }
+        },
+        {
+          "seq": 20,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "36dd90e0-9599-4adb-9589-4e0114f9e8d5",
+            "revision": 0,
+            "before_digest": "407e674ace81dfbe02cea6036166ab475144cd2d9c2362c3d434b9057adfed8e",
+            "after_digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146"
+          }
+        },
+        {
+          "seq": 21,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "36dd90e0-9599-4adb-9589-4e0114f9e8d5",
+            "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+            "digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146"
+          }
+        },
+        {
+          "seq": 22,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "4cd03b0d-da78-46bd-a349-f69aba190e05",
+            "epoch": 2,
+            "expires_at": 1792250277964
+          }
+        },
+        {
+          "seq": 23,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "d285e8eb-b996-41d4-9915-b28e304574f2",
+            "digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146"
+          }
+        },
+        {
+          "seq": 24,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "attempt_id": null,
+            "step_key": "repaired-test",
+            "command": "node --test",
+            "cwd": ".",
+            "workspace_id": "247eeb61-f502-407c-a8d8-c2146840bb4d",
+            "workspace_revision": 1,
+            "workspace_digest": "8f4a8c9262b3809bdf7e2d3f6aeeac3281151c87460e44ddb5bb2fcce6d1f146",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 25,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 26,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 27,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 28,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 29,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 30,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "offset": 0,
+            "bytes": 141
+          }
+        },
+        {
+          "seq": 31,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "da0f337f-b176-46e5-9a1a-2673d1eac055",
+            "digest": "e6274118c87b4e8ce17d72bf58e6321c46db8e43403a6ee8a15852e9c4e72605"
+          }
+        },
+        {
+          "seq": 32,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": 0
+          }
+        },
+        {
+          "seq": 33,
+          "kind": "command.succeeded",
+          "payload": {
+            "run_id": "040f9227-ef2e-4b93-a047-438d7e3a02f8",
+            "exit_code": 0,
+            "error": null
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:43.700Z"
+    },
+    {
+      "id": "new-module",
+      "started_at": "2026-10-17T15:17:43.700Z",
+      "passed": true,
+      "session_id": "ca3ee712-d23e-4683-9ec4-91ae82a23112",
+      "commands": [
+        {
+          "id": "0b6689fd-066f-4388-8275-067a59a829c4",
+          "session_id": "ca3ee712-d23e-4683-9ec4-91ae82a23112",
+          "workspace_id": "f440adb9-b35e-4dca-a046-8f2c8f1a1358",
+          "attempt_id": null,
+          "step_key": "new-module-test",
+          "input_digest": "fe625a2d9a719ffd8a85b5a6d118592461619578f2a1db4651bab8cb0548b86b",
+          "command": "node --test",
+          "cwd": ".",
+          "workspace_revision": 1,
+          "workspace_digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "e881c653-7901-4196-960a-acdfa8224e93",
+          "container_id": "bbfb2fd22d547ddd8ef0720742d0a36326e4a94471566ba20278c64213312483",
+          "exec_id": "4e91807d177e2a288c24c399cf58ee5fa610022565392fe7bd011238b9057d79",
+          "state": "succeeded",
+          "resume_state": null,
+          "exit_code": 0,
+          "output": "4pyUIG5ldyBtb2R1bGUgKDEuNDk2ODY0bXMpCuKEuSB0ZXN0cyAxCuKEuSBzdWl0ZXMgMArihLkgcGFzcyAxCuKEuSBmYWlsIDAK4oS5IGNhbmNlbGxlZCAwCuKEuSBza2lwcGVkIDAK4oS5IHRvZG8gMArihLkgZHVyYXRpb25fbXMgMTUwLjE0NDE1Nwo=",
+          "result_artifact": "2574b034-863e-4eb0-98c5-83f131c7fcbd",
+          "error": null,
+          "created_at": 1792250264222,
+          "deadline": 1792250294222,
+          "cancelled": 0,
+          "input_snapshot": {
+            "new.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHR3aWNlID0gbiA9PiBuICogMjsK",
+              "executable": false
+            },
+            "new.test.js": {
+              "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7dHdpY2V9IGZyb20gJy4vbmV3LmpzJzsgdGVzdCgnbmV3IG1vZHVsZScsICgpID0+IGFzc2VydC5lcXVhbCh0d2ljZSgzKSwgNikpOwo=",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "4pyUIG5ldyBtb2R1bGUgKDEuNDk2ODY0bXMpCuKEuSB0ZXN0cyAxCuKEuSBzdWl0ZXMgMArihLkgcGFzcyAxCuKEuSBmYWlsIDAK4oS5IGNhbmNlbGxlZCAwCuKEuSBza2lwcGVkIDAK4oS5IHRvZG8gMArihLkgZHVyYXRpb25fbXMgMTUwLjE0NDE1Nwo="
+          }
+        }
+      ],
+      "workspace": {
+        "id": "f440adb9-b35e-4dca-a046-8f2c8f1a1358",
+        "revision": 1,
+        "digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38"
+      },
+      "final_tree": {
+        "new.js": {
+          "content": "ZXhwb3J0IGNvbnN0IHR3aWNlID0gbiA9PiBuICogMjsK",
+          "executable": false
+        },
+        "new.test.js": {
+          "content": "aW1wb3J0IHt0ZXN0fSBmcm9tICdub2RlOnRlc3QnOyBpbXBvcnQgYXNzZXJ0IGZyb20gJ25vZGU6YXNzZXJ0L3N0cmljdCc7IGltcG9ydCB7dHdpY2V9IGZyb20gJy4vbmV3LmpzJzsgdGVzdCgnbmV3IG1vZHVsZScsICgpID0+IGFzc2VydC5lcXVhbCh0d2ljZSgzKSwgNikpOwo=",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/new-module/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "e158da44-5fe3-431e-976a-7b4432b975f1",
+            "digest": "d70676a08c275c93959def74df7b9695707b3c3ca03f40b9317fbd49f1498daa"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "f440adb9-b35e-4dca-a046-8f2c8f1a1358",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/new-module/source",
+            "revision": 0,
+            "digest": "d70676a08c275c93959def74df7b9695707b3c3ca03f40b9317fbd49f1498daa"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "d15ea07e-b896-4dbc-8e2f-f17757a0589c",
+            "digest": "2023a372c7519f8629c5f98c450941926deb4952c6bce7de727f5b0e6fa97fdc"
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "9b1f130f-7c96-4e4f-8ef4-98f58ad06ac7",
+            "revision": 0,
+            "before_digest": "d70676a08c275c93959def74df7b9695707b3c3ca03f40b9317fbd49f1498daa",
+            "after_digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "9b1f130f-7c96-4e4f-8ef4-98f58ad06ac7",
+            "workspace_id": "f440adb9-b35e-4dca-a046-8f2c8f1a1358",
+            "digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "0e5f6b4e-b313-4b21-b047-5a5ad306d822",
+            "epoch": 1,
+            "expires_at": 1792250279212
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "e881c653-7901-4196-960a-acdfa8224e93",
+            "digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38"
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "attempt_id": null,
+            "step_key": "new-module-test",
+            "command": "node --test",
+            "cwd": ".",
+            "workspace_id": "f440adb9-b35e-4dca-a046-8f2c8f1a1358",
+            "workspace_revision": 1,
+            "workspace_digest": "f2de8daca6b41dc6b12c773029900368458ca131a3820765305b214b5d120a38",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "offset": 0,
+            "bytes": 143
+          }
+        },
+        {
+          "seq": 19,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "2574b034-863e-4eb0-98c5-83f131c7fcbd",
+            "digest": "b064e1ca25f0b668db420beefdb7d65437c9bbf88bbee87314c90722270754d5"
+          }
+        },
+        {
+          "seq": 20,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": 0
+          }
+        },
+        {
+          "seq": 21,
+          "kind": "command.succeeded",
+          "payload": {
+            "run_id": "0b6689fd-066f-4388-8275-067a59a829c4",
+            "exit_code": 0,
+            "error": null
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:45.073Z"
+    },
+    {
+      "id": "deletion",
+      "started_at": "2026-10-17T15:17:45.074Z",
+      "passed": true,
+      "session_id": "186a6fc5-73de-4eb7-a79f-8cced741ece1",
+      "workspace": {
+        "id": "2697e490-a50e-4027-af18-78c23c64835d",
+        "revision": 1,
+        "digest": "2efd2186847ab210addb0b2c5f0b829020d9476ab049e54932511ef3a746ee36"
+      },
+      "final_tree": {
+        "README.md": {
+          "content": "Tm8gb2Jzb2xldGUgbW9kdWxlIGlzIG5lZWRlZC4K",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/deletion/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "3f57210d-2f28-44ae-abaf-cdad7463882e",
+            "digest": "6e8430dd4bbad4a16cc22eafb255684ec3e250ffd062986a26db7a7cfca4d7d7"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "2697e490-a50e-4027-af18-78c23c64835d",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/deletion/source",
+            "revision": 0,
+            "digest": "6e8430dd4bbad4a16cc22eafb255684ec3e250ffd062986a26db7a7cfca4d7d7"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "0798f43d-1d5a-4167-842d-d6821b0a8b1c",
+            "digest": "2efd2186847ab210addb0b2c5f0b829020d9476ab049e54932511ef3a746ee36"
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "3cd4058a-e518-4f9f-a65a-bb85f26604c4",
+            "revision": 0,
+            "before_digest": "6e8430dd4bbad4a16cc22eafb255684ec3e250ffd062986a26db7a7cfca4d7d7",
+            "after_digest": "2efd2186847ab210addb0b2c5f0b829020d9476ab049e54932511ef3a746ee36"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "3cd4058a-e518-4f9f-a65a-bb85f26604c4",
+            "workspace_id": "2697e490-a50e-4027-af18-78c23c64835d",
+            "digest": "2efd2186847ab210addb0b2c5f0b829020d9476ab049e54932511ef3a746ee36"
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:45.609Z"
+    },
+    {
+      "id": "human-conflict",
+      "started_at": "2026-10-17T15:17:45.609Z",
+      "passed": true,
+      "session_id": "71ae47c5-4319-4ccf-80a0-197de6ab58e6",
+      "workspace": {
+        "id": "59970f0c-44d8-4ef1-8db3-0da45d551491",
+        "revision": 2,
+        "digest": "c78cdbd9993bc1ab172ba6ddf627365d9a8c71a02b1c17ca488fb050c9c3592b"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "Ly8gaHVtYW4ga2VwdApleHBvcnQgY29uc3QgdmFsdWUgPSAyOwo=",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/human-conflict/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "15203b8a-0c5a-4272-856d-1156f3b8c9d3",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "59970f0c-44d8-4ef1-8db3-0da45d551491",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/human-conflict/source",
+            "revision": 0,
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "workspace.refreshed",
+          "payload": {
+            "workspace_id": "59970f0c-44d8-4ef1-8db3-0da45d551491",
+            "digest": "89fc2f71f7f62d4b3adc1dff073dbe3094255bc89550d2e6bf9292c01bb0b3e6"
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "f70c4936-52a4-4ae6-a711-6493ddbae92b",
+            "digest": "c78cdbd9993bc1ab172ba6ddf627365d9a8c71a02b1c17ca488fb050c9c3592b"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "workspace.mutation_prepared",
+          "payload": {
+            "mutation_id": "b1128731-7738-47cd-82d7-bc685a0b07ff",
+            "revision": 1,
+            "before_digest": "89fc2f71f7f62d4b3adc1dff073dbe3094255bc89550d2e6bf9292c01bb0b3e6",
+            "after_digest": "c78cdbd9993bc1ab172ba6ddf627365d9a8c71a02b1c17ca488fb050c9c3592b"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "workspace.mutation_applied",
+          "payload": {
+            "mutation_id": "b1128731-7738-47cd-82d7-bc685a0b07ff",
+            "workspace_id": "59970f0c-44d8-4ef1-8db3-0da45d551491",
+            "digest": "c78cdbd9993bc1ab172ba6ddf627365d9a8c71a02b1c17ca488fb050c9c3592b"
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:46.070Z"
+    },
+    {
+      "id": "authority-boundary",
+      "started_at": "2026-10-17T15:17:46.071Z",
+      "passed": true,
+      "session_id": "498b3d4d-eb8f-4564-984d-b719408bdfbc",
+      "commands": [
+        {
+          "id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+          "session_id": "498b3d4d-eb8f-4564-984d-b719408bdfbc",
+          "workspace_id": "aa56d1fa-8b9b-4494-982a-5f7e13ae6240",
+          "attempt_id": null,
+          "step_key": "authority",
+          "input_digest": "76a19dbf1c5e1461a6fe5dc67567ed1ed9a1927907affe21796f4404e292ac6f",
+          "command": "node -e \"const fs=require('node:fs'),assert=require('node:assert/strict'); assert.throws(()=>fs.writeFileSync('/source/math.js','bad'));assert.throws(()=>fs.statSync('/var/run/docker.sock'));assert.equal(process.env.ANTHROPIC_API_KEY,undefined);assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);console.log('boundary-ok');\"",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "9bb38da8-3a01-4387-a0af-b4a25c01932b",
+          "container_id": "dd30cd28de29702066e8fced795226e006efd41cb4c10c27aefb322a54230814",
+          "exec_id": "ac3ca3e09c9294d0cc277108aaeeb2389dbcc31d7c5d8cce30747a948082599f",
+          "state": "succeeded",
+          "resume_state": null,
+          "exit_code": 0,
+          "output": "Ym91bmRhcnktb2sK",
+          "result_artifact": "86815133-ec32-4f82-a998-e33c5f0a64d0",
+          "error": null,
+          "created_at": 1792250266937,
+          "deadline": 1792250296937,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "Ym91bmRhcnktb2sK"
+          }
+        }
+      ],
+      "workspace": {
+        "id": "aa56d1fa-8b9b-4494-982a-5f7e13ae6240",
+        "revision": 0,
+        "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/authority-boundary/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "600070fa-4474-4ae9-94e7-72a601b07da3",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "aa56d1fa-8b9b-4494-982a-5f7e13ae6240",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/authority-boundary/source",
+            "revision": 0,
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "30f1be3e-4007-4e38-b1f8-320f5aa29bc7",
+            "epoch": 1,
+            "expires_at": 1792250281918
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "9bb38da8-3a01-4387-a0af-b4a25c01932b",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "attempt_id": null,
+            "step_key": "authority",
+            "command": "node -e \"const fs=require('node:fs'),assert=require('node:assert/strict'); assert.throws(()=>fs.writeFileSync('/source/math.js','bad'));assert.throws(()=>fs.statSync('/var/run/docker.sock'));assert.equal(process.env.ANTHROPIC_API_KEY,undefined);assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);console.log('boundary-ok');\"",
+            "cwd": ".",
+            "workspace_id": "aa56d1fa-8b9b-4494-982a-5f7e13ae6240",
+            "workspace_revision": 0,
+            "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "offset": 0,
+            "bytes": 12
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "86815133-ec32-4f82-a998-e33c5f0a64d0",
+            "digest": "33b0e7828d9e8e10a239042e4d6a20ea1f6ab70f427cc588ff32a079e9981afa"
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": 0
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "command.succeeded",
+          "payload": {
+            "run_id": "4c622969-4ab2-45a5-9c20-c494ff137d0b",
+            "exit_code": 0,
+            "error": null
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:47.701Z"
+    },
+    {
+      "id": "reconnect",
+      "started_at": "2026-10-17T15:17:47.702Z",
+      "passed": true,
+      "session_id": "5131e7c7-b150-4789-a440-8043c676aa32",
+      "commands": [
+        {
+          "id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+          "session_id": "5131e7c7-b150-4789-a440-8043c676aa32",
+          "workspace_id": "df76b93a-de85-4548-933d-9bcf476fa578",
+          "attempt_id": null,
+          "step_key": "one-execution",
+          "input_digest": "6259fdbc03b65877e351af8d000aa0baeed2dd253f760e19cc45348f05d5e2ec",
+          "command": "node -e \"console.log('once'); setTimeout(()=>console.log('done'),3000)\"",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "585d1083-0760-44df-8337-f1b77d6ca95e",
+          "container_id": "663d6ac78a7fac9b93f16cb3acd4eca7e6695d1299c5ea1930e6ed8c1fb245de",
+          "exec_id": "10948bd71c4d24003a454865532f7605634db0f18b059ff1045852231eab7c9a",
+          "state": "succeeded",
+          "resume_state": null,
+          "exit_code": 0,
+          "output": "b25jZQpkb25lCg==",
+          "result_artifact": "362fd208-8d8b-4f68-9675-aa6464b6d9b6",
+          "error": null,
+          "created_at": 1792250269252,
+          "deadline": 1792250299252,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": {
+            "encoding": "base64",
+            "data": "b25jZQpkb25lCg=="
+          }
+        }
+      ],
+      "same_execution_after_sigkill": true,
+      "workspace": {
+        "id": "df76b93a-de85-4548-933d-9bcf476fa578",
+        "revision": 0,
+        "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/reconnect/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "d637cbe4-e497-4a16-9f06-1759c6e7cbed",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "df76b93a-de85-4548-933d-9bcf476fa578",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/reconnect/source",
+            "revision": 0,
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "worker.exited",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": []
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "d81177c6-a078-4e51-9420-dd189d7a8df0",
+            "epoch": 1,
+            "expires_at": 1792250283754
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 2
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 2,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "3173fe5f-d46a-49ff-885e-8b180845b0f4",
+            "epoch": 2,
+            "expires_at": 1792250284242
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "585d1083-0760-44df-8337-f1b77d6ca95e",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "attempt_id": null,
+            "step_key": "one-execution",
+            "command": "node -e \"console.log('once'); setTimeout(()=>console.log('done'),3000)\"",
+            "cwd": ".",
+            "workspace_id": "df76b93a-de85-4548-933d-9bcf476fa578",
+            "workspace_revision": 0,
+            "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 19,
+          "kind": "worker.exited",
+          "payload": {
+            "epoch": 2,
+            "error": "Service restart interrupted this worker",
+            "capabilities": []
+          }
+        },
+        {
+          "seq": 20,
+          "kind": "control.revoked",
+          "payload": {
+            "reason": "service restart"
+          }
+        },
+        {
+          "seq": 21,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "offset": 0,
+            "bytes": 5
+          }
+        },
+        {
+          "seq": 22,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "offset": 5,
+            "bytes": 5
+          }
+        },
+        {
+          "seq": 23,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "362fd208-8d8b-4f68-9675-aa6464b6d9b6",
+            "digest": "20d63b8f8bc6e8a0e8c20a4dc9d05e8fd973e2713dd52c5946b976e698586c48"
+          }
+        },
+        {
+          "seq": 24,
+          "kind": "command.finishing",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": 0
+          }
+        },
+        {
+          "seq": 25,
+          "kind": "command.succeeded",
+          "payload": {
+            "run_id": "5857e7da-4d9a-4fd1-86ee-f21a88cfa828",
+            "exit_code": 0,
+            "error": null
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:17:53.059Z"
+    },
+    {
+      "id": "cancellation-and-limits",
+      "started_at": "2026-10-17T15:17:53.059Z",
+      "passed": true,
+      "session_id": "5d4d8bea-81bb-44d0-8b46-35f7b38cbd55",
+      "commands": [
+        {
+          "id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+          "session_id": "5d4d8bea-81bb-44d0-8b46-35f7b38cbd55",
+          "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+          "attempt_id": null,
+          "step_key": "cancel-tree",
+          "input_digest": "b0b27eb49914af1abbf29d8d791ccd83ef48f0db9683decf3defedc6d4c66510",
+          "command": "node -e \"require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'}).unref();console.log('spawned');setInterval(()=>{},1000)\"",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "f39c1b3e-5d04-4043-b967-5217549d20ce",
+          "container_id": "0763963518f313c5f73b22837904d4f5b3f1daef46866e26c2a1f8f46dc7ccc6",
+          "exec_id": "90cbdf3a975638b39748a83a8bb911d16b2622a343085deb8b43014a397dbb79",
+          "state": "cancelled",
+          "resume_state": null,
+          "exit_code": null,
+          "output": "c3Bhd25lZAo=",
+          "result_artifact": null,
+          "error": "Cancellation requested",
+          "created_at": 1792250273470,
+          "deadline": 1792250303470,
+          "cancelled": 1,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": null
+        },
+        {
+          "id": "883a457e-46b0-421b-ae35-062753fcdd67",
+          "session_id": "5d4d8bea-81bb-44d0-8b46-35f7b38cbd55",
+          "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+          "attempt_id": null,
+          "step_key": "bounded-output",
+          "input_digest": "653004c95882d729d8231c78c6eac7ed50a881100a57f1038496bab7f7898a72",
+          "command": "node -e \"process.stdout.write('x'.repeat(100000))\"",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "f8ef07ea-9d8e-4c20-bb86-da454a20f6bf",
+          "container_id": "51b94a35e8e569b96233a4486f4b510e97a7fde53e1be1990aeacc17f852e1f1",
+          "exec_id": "9cf6e44f62fea768e9785facf6764b07ca44bc3858e3b177313f436883bff34d",
+          "state": "output_limited",
+          "resume_state": null,
+          "exit_code": null,
+          "output": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eA==",
+          "result_artifact": null,
+          "error": "Command output limit exceeded",
+          "created_at": 1792250273937,
+          "deadline": 1792250303937,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": null
+        },
+        {
+          "id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+          "session_id": "5d4d8bea-81bb-44d0-8b46-35f7b38cbd55",
+          "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+          "attempt_id": null,
+          "step_key": "deadline",
+          "input_digest": "3a3aa8c5bb94e1ec9bd9843c5afba6bbf96e8b8de1e9a777440d3d6bc170fcf2",
+          "command": "while true; do sleep 1; done",
+          "cwd": ".",
+          "workspace_revision": 0,
+          "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+          "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+          "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+          "snapshot_artifact": "8aeb705d-b74b-4080-8b23-17fc71404f3f",
+          "container_id": "2121a1b8c00deb45294c3237344cd038e18cfd3ca3c9bb28c7ab9eda4610c48e",
+          "exec_id": "d8cbb888d77210c6cf95c7112fc466a9566054d311c829d394ddc7e7c8b11c87",
+          "state": "timed_out",
+          "resume_state": null,
+          "exit_code": null,
+          "output": "",
+          "result_artifact": null,
+          "error": "Command runtime limit exceeded",
+          "created_at": 1792250274221,
+          "deadline": 1792250304221,
+          "cancelled": 0,
+          "input_snapshot": {
+            "math.js": {
+              "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+              "executable": false
+            }
+          },
+          "output_artifact": null
+        }
+      ],
+      "workspace": {
+        "id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+        "revision": 0,
+        "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+      },
+      "final_tree": {
+        "math.js": {
+          "content": "ZXhwb3J0IGNvbnN0IHZhbHVlID0gMTsK",
+          "executable": false
+        }
+      },
+      "events": [
+        {
+          "seq": 1,
+          "kind": "session.created",
+          "payload": {
+            "cwd": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/cancellation-and-limits/source"
+          }
+        },
+        {
+          "seq": 2,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "8b220ebf-904f-426d-bbb8-538761b0d21d",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 3,
+          "kind": "workspace.created",
+          "payload": {
+            "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+            "source": "/private/tmp/salaam-m9-boundary/acceptance-2XTliY/cases/cancellation-and-limits/source",
+            "revision": 0,
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 4,
+          "kind": "provider.bound",
+          "payload": {
+            "route": {
+              "provider": "salaam-proof",
+              "model": "scripted",
+              "max_tokens": 1024
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "kind": "worker.starting",
+          "payload": {
+            "epoch": 1
+          }
+        },
+        {
+          "seq": 6,
+          "kind": "worker.ready",
+          "payload": {
+            "epoch": 1,
+            "error": null,
+            "capabilities": [
+              "persistent-session",
+              "managed-policy",
+              "task-context",
+              "provider-admission",
+              "durable-approvals",
+              "operation-ledger",
+              "child-work",
+              "usage-ledger",
+              "durable-task-context",
+              "managed-compaction",
+              "workspace-files",
+              "command-execution"
+            ]
+          }
+        },
+        {
+          "seq": 7,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "140d5345-e219-41aa-80b3-1ad53d4baf72",
+            "epoch": 1,
+            "expires_at": 1792250288453
+          }
+        },
+        {
+          "seq": 8,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "f39c1b3e-5d04-4043-b967-5217549d20ce",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 9,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "attempt_id": null,
+            "step_key": "cancel-tree",
+            "command": "node -e \"require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'}).unref();console.log('spawned');setInterval(()=>{},1000)\"",
+            "cwd": ".",
+            "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+            "workspace_revision": 0,
+            "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 10,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 11,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 12,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 13,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 14,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 15,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "offset": 0,
+            "bytes": 8
+          }
+        },
+        {
+          "seq": 16,
+          "kind": "command.cancellation_requested",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1"
+          }
+        },
+        {
+          "seq": 17,
+          "kind": "command.cancelled",
+          "payload": {
+            "run_id": "f597ac5a-1564-4aca-b366-2773a31b1cc1",
+            "exit_code": null,
+            "error": "Cancellation requested"
+          }
+        },
+        {
+          "seq": 18,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "c17cd631-f7ba-4062-8323-bed1e8bf8b29",
+            "epoch": 2,
+            "expires_at": 1792250288923
+          }
+        },
+        {
+          "seq": 19,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "f8ef07ea-9d8e-4c20-bb86-da454a20f6bf",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 20,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "attempt_id": null,
+            "step_key": "bounded-output",
+            "command": "node -e \"process.stdout.write('x'.repeat(100000))\"",
+            "cwd": ".",
+            "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+            "workspace_revision": 0,
+            "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 21,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 22,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 23,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 24,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 25,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 26,
+          "kind": "command.output",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "offset": 0,
+            "bytes": 65536
+          }
+        },
+        {
+          "seq": 27,
+          "kind": "command.output_limited",
+          "payload": {
+            "run_id": "883a457e-46b0-421b-ae35-062753fcdd67",
+            "exit_code": null,
+            "error": "Command output limit exceeded"
+          }
+        },
+        {
+          "seq": 28,
+          "kind": "control.takeover",
+          "payload": {
+            "client_id": "ff728690-37bb-48f4-9b8b-bbb315fca228",
+            "epoch": 3,
+            "expires_at": 1792250289212
+          }
+        },
+        {
+          "seq": 29,
+          "kind": "artifact.created",
+          "payload": {
+            "artifact_id": "8aeb705d-b74b-4080-8b23-17fc71404f3f",
+            "digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9"
+          }
+        },
+        {
+          "seq": 30,
+          "kind": "command.accepted",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "attempt_id": null,
+            "step_key": "deadline",
+            "command": "while true; do sleep 1; done",
+            "cwd": ".",
+            "workspace_id": "1f7cb3fa-1348-4493-8106-cf791da08894",
+            "workspace_revision": 0,
+            "workspace_digest": "0285ef5613798ab37809488fa69bc6203e2e4cc30e073540051bb0b88ec995c9",
+            "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a"
+          }
+        },
+        {
+          "seq": 31,
+          "kind": "command.creating",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 32,
+          "kind": "command.created",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 33,
+          "kind": "command.exec_creating",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 34,
+          "kind": "command.launching",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 35,
+          "kind": "command.running",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": null
+          }
+        },
+        {
+          "seq": 36,
+          "kind": "command.timed_out",
+          "payload": {
+            "run_id": "223955b9-cdc6-4737-b62d-e1d5e19dfd30",
+            "exit_code": null,
+            "error": "Command runtime limit exceeded"
+          }
+        }
+      ],
+      "finished_at": "2026-10-17T15:18:24.297Z"
+    }
+  ],
+  "success": true,
+  "live_requested": false,
+  "mode": "offline",
+  "live_budget": null,
+  "live_evaluation": "autonomous-clamp-fix",
+  "backend": {
+    "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+    "image_id": "sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+    "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+    "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+    "engine_version": "29.5.2",
+    "kernel": "6.8.0-117-generic",
+    "arch": "arm64",
+    "node": "26.7.0",
+    "verified_at": "2026-10-17T15:17:38.778Z",
+    "probe": "passed",
+    "cleanup_confirmed": true
+  },
+  "cleanup_confirmed": true,
+  "finished_at": "2026-10-17T15:18:24.323Z"
+}
