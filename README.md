@@ -2,7 +2,7 @@
 
 Salaam is a local session service supervising persistent Pi workers. Terminal and editor clients will share the same sessions, while Salaam owns task and operation state around Pi's conversation history.
 
-The current implementation covers **M0–M5**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals and an operation/receipt ledger. The available model route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. This tests the service boundaries without model credentials or live third-party integrations.
+The current implementation covers **M0–M6**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes and usage accounting. The available model route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. This tests the service boundaries without model credentials or live third-party integrations.
 
 ## Run locally
 
@@ -16,11 +16,12 @@ npm test
 npm run verify:pi
 npm run demo:session
 npm run demo:managed
+npm run demo:children
 ```
 
 `npm test` and the demo open Unix sockets and supervise subprocesses. They require a host environment permitting those operations. Tests use disposable directories under `/tmp`; no provider credentials or paid requests are involved.
 
-The session demo runs a gated turn, inspects events and verifies an artifact. The managed demo starts a real Pi worker and an independent durable effect fixture, creates two concurrent approval requests, uses the CLI to approve B and deny A, and checks that only B executes. Both demos remove their disposable state and stop their workers.
+The session demo runs a gated turn, inspects events and verifies an artifact. The managed demo starts a real Pi worker and an independent durable effect fixture, creates two concurrent approval requests, uses the CLI to approve B and deny A, and checks that only B executes. The children demo runs two independent children, reads one result twice, repeats its acknowledgment and verifies six unique provider requests across the tree. All demos remove their disposable state and stop their workers.
 
 To keep a service running:
 
@@ -102,7 +103,7 @@ Use a short state path for macOS Unix socket limits. The directory and sockets a
 
 Pi is pinned to npm artifact **`@earendil-works/pi-coding-agent@1.3.0`** by exact dependency, lockfile integrity and installed package-content digests. [pi-pin.json](pi-pin.json) records the artifact and source-reference distinction. The shipped RPC command reference was byte-compared with the research commit. The registry does not supply `gitHead`, so the repository does not claim a reproducible upstream source build.
 
-The readiness manifest advertises `persistent-session`, `managed-policy`, `task-context`, `provider-admission`, `durable-approvals` and `operation-ledger`. The default reachable tools are `salaam_probe` and `salaam_review`; `salaam_effect` is registered only with an explicit connector. Health reports the configured connector and whether a session has unresolved operations. Ledger availability does not imply a live third-party integration. The task-context frame remains version zero; durable facts and compaction behavior arrive in M7.
+The readiness manifest advertises `persistent-session`, `managed-policy`, `task-context`, `provider-admission`, `durable-approvals`, `operation-ledger`, `child-work` and `usage-ledger`. Parent tools include `salaam_probe`, `salaam_review`, `spawn_child`, `inspect_child` and `consume_child_result`; `salaam_effect` is registered only with an explicit connector. Health reports the configured connector and whether a session has unresolved operations. Ledger availability does not imply a live third-party integration. The task-context frame remains version zero; durable facts and compaction behavior arrive in M7.
 
 ## Readiness proof
 
@@ -114,7 +115,7 @@ The [S1 attachment proof](test/proofs/session-attach.test.ts) kills a CLI during
 
 The [S2 approval proof](test/proofs/approval-correlation.test.ts) covers concurrent nested calls, reverse decisions, two sessions, expiry, changed targets, lost decision replies and worker replacement. It also injects unsolicited real Pi confirm replies and proves they cannot authorize a durable operation. The [S3 effect proof](test/proofs/effect-recovery.test.ts) kills services/workers around external acceptance and receipt commits, tests negative/unavailable lookup, opaque connectors, mismatched receipts, target-version races and cancellation. Storage failures deny dispatch.
 
-M6–M8 remain to be built. ACP, child tasks, durable task facts and real model-provider routing are unavailable. S1, S2, S3 and S6 have local offline/fixture evidence; S4–S5 remain pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
+M7–M8 remain to be built. ACP, durable task facts and real model-provider routing are unavailable. The [S4 child recovery proof](test/proofs/child-result-recovery.test.ts) covers parent/service death, durable redelivery, cancellation and interrupted usage accounting. S1–S4 and S6 have local offline/fixture evidence; S5 remains pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
 
 ## Local API
 
@@ -122,6 +123,11 @@ All endpoints use the operator Unix socket at `STATE_DIR/operator.sock`.
 
 | Endpoint                              | Behavior                                                                                                                     |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/sessions/:id/children`       | List a parent session’s child tasks                                                                                          |
+| `GET /v1/sessions/:id/usage`          | Aggregate provider usage across the parent and its children                                                                  |
+| `GET /v1/children/:id`                | Inspect one child task                                                                                                       |
+| `GET /v1/children/:id/result`         | Read a stable result without acknowledging delivery                                                                          |
+| `POST /v1/children/:id/ack`           | `{request_id,result_id}`; acknowledge the reviewed result idempotently                                                       |
 | `GET /v1/health`                      | Service health and per-session worker readiness                                                                              |
 | `GET /v1/sessions`                    | List session snapshots                                                                                                       |
 | `POST /v1/sessions`                   | `{request_id, cwd}`; create and provision a session                                                                          |
@@ -158,3 +164,25 @@ npm run test:pi
 ```
 
 The [milestone record](docs/milestones.md) describes scope and evidence. CI is configured for macOS and Linux; local results only establish support on the platform where they ran. The [architecture notes](docs/architecture.md) describe state ownership and failure boundaries.
+
+## Child work and usage
+
+Submit `[children] first,second` with the offline provider to run two read-only children in independent Pi processes. `[inbox]` lists the parent's durable inbox. The managed tools are `spawn_child`, `inspect_child` and `consume_child_result`. Spawn binds a step key for the lifetime of the parent session: retries and explicit continuations reuse that child; changed inputs conflict. A new intentional task needs a new step key.
+
+Depth is limited to one, with at most two active children per parent session. Child tool authority is the intersection of the requested tools and the parent's read-only `salaam_probe` grant. Children cannot spawn descendants, request approvals or dispatch effects. All children currently use the same offline provider as the parent. A parent attempt has 16 model requests; spawning reserves 1–8 of these for each child (default two), and each provider admission consumes a request before execution. Reservations remain held conservatively even after completion or interruption. This is a request-count bound, not a dollar or token-spend cap.
+
+```sh
+node dist/src/cli.js session children SESSION_ID --state /tmp/salaam-dev
+node dist/src/cli.js children inspect CHILD_ID --state /tmp/salaam-dev
+node dist/src/cli.js children result CHILD_ID --state /tmp/salaam-dev
+node dist/src/cli.js children ack CHILD_ID --result RESULT_ID --request-id ACK_REQUEST_ID --state /tmp/salaam-dev
+node dist/src/cli.js session usage SESSION_ID --state /tmp/salaam-dev
+```
+
+Result artifacts have a fixed envelope: schema version, child and attempt IDs, final state, text and error. Artifact bytes are flushed first; the attempt outcome, artifact reference, child final state and parent inbox event then commit together. Reading a result does not acknowledge it. Acknowledgment is explicit and idempotent by result ID, including after a lost reply. Model reasoning has at-least-once delivery; an acknowledgment cannot prove exactly-once reasoning.
+
+Parent worker death leaves children running under the service. A replacement parent sees the same task/result IDs in its inbox. Whole-service restart retains completed results and marks unfinished children interrupted, including children whose prompts had not yet dispatched. It never starts another run of those tasks. Cancelling the active parent attempt durably revokes all its session's owned active children before requesting Pi abort; unrelated sessions remain independent.
+
+Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Real compaction recovery is still M7.
+
+Claude is selected as the first live provider. The current service intentionally still launches the offline route and strips inherited provider credentials from Pi workers. Live routing, guarded Anthropic forwarding and credential setup are a separate integration step. Keep the API key outside Git and chat; no key is required by these tests or demos.

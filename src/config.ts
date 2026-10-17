@@ -18,8 +18,22 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 2,
-  tools: ['salaam_probe', 'salaam_review', 'salaam_effect'],
+  version: 3,
+  tools: [
+    'salaam_probe',
+    'salaam_review',
+    'salaam_effect',
+    'spawn_child',
+    'inspect_child',
+    'consume_child_result',
+  ],
+  children: {
+    maxDepth: 1,
+    maxConcurrent: 2,
+    parentRequestBudget: 16,
+    maxChildRequestBudget: 8,
+    authority: ['salaam_probe'],
+  },
   provider: 'salaam-proof',
   model: 'scripted',
   external_effects: 'explicit-connector-and-operation-approval',

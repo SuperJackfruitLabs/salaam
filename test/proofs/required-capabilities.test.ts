@@ -22,6 +22,8 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
       'wrong-state',
       'missing-approvals',
       'missing-ledger',
+      'missing-children',
+      'missing-usage',
     ])('refuses %s before any model request', async (mode) => {
       const f = await fixture(fake(mode));
       try {

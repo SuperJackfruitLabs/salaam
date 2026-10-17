@@ -601,6 +601,7 @@ export class ManagedWork {
           this.store.db
             .prepare("UPDATE submissions SET state='cancelled' WHERE id=?")
             .run(work.submission_id);
+          this.store.finishChild?.(this.store.attempt(attempt));
         }
         const ops = this.store.db
           .prepare(
@@ -615,6 +616,7 @@ export class ManagedWork {
             'Cancellation requested',
           );
         }
+        this.store.cancelChildren?.(attempt);
         this.store.event(
           work.session_id,
           'attempt.cancel_requested',

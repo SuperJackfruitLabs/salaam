@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { UsageLedger } from './usage.js';
 import {
   digest,
   ServiceError,
@@ -22,6 +23,9 @@ import {
 export class Store {
   readonly db: DatabaseSync;
   readonly changes = new EventEmitter();
+  readonly usage = new UsageLedger(this);
+  finishChild?: (attempt: Attempt) => void;
+  cancelChildren?: (attempt: string) => void;
   private committed: DurableEvent[] | null = null;
   constructor(path: string) {
     this.db = new DatabaseSync(path);
@@ -31,7 +35,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 3) {
+    if (version > 4) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -102,6 +106,28 @@ export class Store {
         throw error;
       }
     }
+    try {
+      this.migrateChildren();
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      this.db.close();
+      throw error;
+    }
+  }
+  private migrateChildren(): void {
+    if (
+      (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version >= 4
+    )
+      return;
+    this.db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE child_tasks(id TEXT PRIMARY KEY,parent_session TEXT NOT NULL REFERENCES sessions(id),parent_attempt TEXT NOT NULL REFERENCES attempts(id),
+        step_key TEXT NOT NULL,input_digest TEXT NOT NULL,child_session TEXT NOT NULL UNIQUE REFERENCES sessions(id),child_attempt TEXT NOT NULL UNIQUE REFERENCES attempts(id),
+        authority TEXT NOT NULL,budget INTEGER NOT NULL,state TEXT NOT NULL,result_id TEXT UNIQUE,artifact_id TEXT REFERENCES artifacts(id),acknowledged INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(parent_session,step_key));
+      CREATE TABLE attempt_budgets(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),limit_requests INTEGER NOT NULL,reserved_requests INTEGER NOT NULL DEFAULT 0,spent_requests INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE usage_observations(source_key TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),attempt_id TEXT REFERENCES attempts(id),provider TEXT NOT NULL,model TEXT NOT NULL,
+        status TEXT NOT NULL,input REAL,output REAL,cache_read REAL,cache_write REAL,cost REAL,payload_digest TEXT);
+      PRAGMA user_version=4; COMMIT;`);
   }
   transaction<T>(fn: () => T): T {
     if (this.committed) throw new Error('Nested transaction');
@@ -507,6 +533,7 @@ export class Store {
         truncated: (result?.length ?? 0) > 65536,
         error,
       });
+      this.finishChild?.(this.attempt(id));
     });
   }
   recoverWork(): void {
@@ -611,6 +638,9 @@ export class Store {
       history_truncated: cursor !== null,
       approvals: this.approvals(id),
       operations: this.operations(id),
+      children: this.db
+        .prepare('SELECT * FROM child_tasks WHERE parent_session=? ORDER BY rowid DESC LIMIT 100')
+        .all(id) as unknown as SessionSnapshot['children'],
     };
   }
   cancelled(id: string): boolean {
@@ -658,6 +688,7 @@ export class Store {
       this.db
         .prepare('INSERT OR IGNORE INTO pi_entries VALUES (?,?,?)')
         .run(id, entry.id, JSON.stringify(entry));
+    this.usage.importEntries(id, entries);
     this.db
       .prepare('UPDATE sessions SET pi_cursor=COALESCE(?,pi_cursor),pi_leaf=? WHERE id=?')
       .run(entries.at(-1)?.id ?? null, leaf, id);

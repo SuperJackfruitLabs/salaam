@@ -21,6 +21,12 @@ export class Artifacts {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   put(session: string, content: string): string {
+    const artifact = this.prepare(session, content);
+    this.store.transaction(() => artifact.commit());
+    return artifact.id;
+  }
+  /** Fsync bytes first; the caller commits the reference with its domain state. Orphans are harmless. */
+  prepare(session: string, content: string): { id: string; commit: () => void } {
     this.store.session(session);
     const id = randomUUID();
     const path = join(this.dir, id);
@@ -39,8 +45,9 @@ export class Artifacts {
     } finally {
       closeSync(dirFd);
     }
-    try {
-      this.store.transaction(() => {
+    return {
+      id,
+      commit: () => {
         this.store.db
           .prepare('INSERT INTO artifacts VALUES (?,?,?,?)')
           .run(id, session, textDigest(content), Buffer.byteLength(content));
@@ -48,12 +55,8 @@ export class Artifacts {
           artifact_id: id,
           digest: textDigest(content),
         });
-      });
-    } catch (error) {
-      unlinkSync(path);
-      throw error;
-    }
-    return id;
+      },
+    };
   }
   read(id: string): string {
     const row = this.store.db.prepare('SELECT digest FROM artifacts WHERE id=?').get(id) as

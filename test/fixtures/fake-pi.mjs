@@ -36,8 +36,8 @@ const manifest = {
   pi_session_id: c.session,
   epoch: c.epoch,
   capabilities: [...CAPABILITIES],
-  tools: workerTools(!!c.effects),
-  active_tools: workerTools(!!c.effects),
+  tools: workerTools(!!c.effects, !!c.child),
+  active_tools: workerTools(!!c.effects, !!c.child),
   provider: 'salaam-proof',
   context_digest: textDigest(c.frame),
 };
@@ -49,6 +49,8 @@ const mutations = {
   'wrong-tools': { tools: ['salaam_probe', 'bypass'] },
   'missing-context': { capabilities: ['persistent-session'] },
   'missing-approvals': { capabilities: CAPABILITIES.filter((x) => x !== 'durable-approvals') },
+  'missing-children': { capabilities: CAPABILITIES.filter((x) => x !== 'child-work') },
+  'missing-usage': { capabilities: CAPABILITIES.filter((x) => x !== 'usage-ledger') },
   'missing-ledger': { capabilities: CAPABILITIES.filter((x) => x !== 'operation-ledger') },
 };
 if (mode !== 'missing') {

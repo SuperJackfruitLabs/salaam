@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
   createAssistantMessageEventStream,
@@ -23,6 +24,7 @@ interface WorkerConfig {
   policy: string;
   frame: string;
   effects?: boolean;
+  child?: boolean;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -155,7 +157,81 @@ export default function house(pi: ExtensionAPI): void {
         };
       },
     });
-  managedTool('salaam_review', 'review');
+  if (!c.child) {
+    pi.registerTool({
+      name: 'spawn_child',
+      label: 'Spawn read-only child',
+      description:
+        'Reserve a request budget and start an independent read-only child. Reuse the same step key for retries.',
+      parameters: Type.Object({
+        step_key: Type.Optional(Type.String({ maxLength: 128 })),
+        prompt: Type.Optional(Type.String({ maxLength: 32768 })),
+        budget: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
+        authority: Type.Optional(Type.Array(Type.String())),
+        tasks: Type.Optional(
+          Type.Array(Type.Object({ step_key: Type.String(), prompt: Type.String() }), {
+            maxItems: 2,
+          }),
+        ),
+        wait: Type.Optional(Type.Boolean()),
+      }),
+      async execute(_id, params, signal) {
+        const tasks = params.tasks ?? [
+          { step_key: params.step_key ?? '', prompt: params.prompt ?? '' },
+        ];
+        let children = await Promise.all(
+          tasks.map((task) =>
+            bridge<import('./protocol.js').ChildTask>('child.spawn', {
+              ...task,
+              budget: params.budget ?? 2,
+              authority: params.authority ?? ['salaam_probe'],
+            }),
+          ),
+        );
+        while (params.wait && children.some((x) => x.state === 'accepted')) {
+          if (signal?.aborted) throw new Error('Parent cancelled');
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          children = await Promise.all(
+            children.map((x) =>
+              bridge<import('./protocol.js').ChildTask>('child.inspect', { child_id: x.id }),
+            ),
+          );
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify(children) }],
+          details: { children },
+        };
+      },
+    });
+    pi.registerTool({
+      name: 'inspect_child',
+      label: 'Inspect child inbox',
+      description: 'List durable child tasks and stable result IDs, or inspect one child.',
+      parameters: Type.Object({ child_id: Type.Optional(Type.String()) }),
+      async execute(_id, params) {
+        const result = await bridge(params.child_id ? 'child.inspect' : 'child.list', params);
+        return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { result } };
+      },
+    });
+    pi.registerTool({
+      name: 'consume_child_result',
+      label: 'Read or acknowledge child result',
+      description:
+        'Read the same durable result repeatedly. Set acknowledge only after processing it; reading alone never acknowledges.',
+      parameters: Type.Object({
+        child_id: Type.String(),
+        result_id: Type.String(),
+        acknowledge: Type.Optional(Type.Boolean()),
+      }),
+      async execute(_id, params) {
+        const result = await bridge('child.consume', params);
+        if (params.acknowledge)
+          await bridge('child.ack', { ...params, request_id: `ack:${params.result_id}` });
+        return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { result } };
+      },
+    });
+    managedTool('salaam_review', 'review');
+  }
   if (c.effects) managedTool('salaam_effect', 'effect');
   pi.on('tool_call', async (event) => {
     try {
@@ -194,8 +270,10 @@ export default function house(pi: ExtensionAPI): void {
     ],
     streamSimple(model, context, options) {
       const stream = createAssistantMessageEventStream();
+      const sourceKey = 'salaam-request:' + randomUUID();
       const response: AssistantMessage = {
         role: 'assistant',
+        responseId: sourceKey,
         content: [],
         api: model.api,
         provider: model.provider,
@@ -230,6 +308,7 @@ export default function house(pi: ExtensionAPI): void {
           )
             throw new Error('Proof payload replacement is unsupported');
           await bridge('model', {
+            source_key: sourceKey,
             context_digest: textDigest(frame),
             provider: model.provider,
             model: model.id,
@@ -247,7 +326,14 @@ export default function house(pi: ExtensionAPI): void {
             .some(
               (x) =>
                 x.role === 'toolResult' &&
-                ['salaam_probe', 'salaam_review', 'salaam_effect'].includes(x.toolName),
+                [
+                  'salaam_probe',
+                  'salaam_review',
+                  'salaam_effect',
+                  'spawn_child',
+                  'inspect_child',
+                  'consume_child_result',
+                ].includes(x.toolName),
             );
           const source = context.messages[realUser];
           const input =
@@ -259,6 +345,9 @@ export default function house(pi: ExtensionAPI): void {
                     .map((p) => (p.type === 'text' ? p.text : ''))
                     .join('')
               : '';
+          const children = /^\[children\]\s+(.+)$/.exec(input);
+          const inbox = input.startsWith('[inbox]');
+          const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
           const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
           const effectDisabled = managed?.[1] === 'effect' && !c.effects;
           if (!hasResult && !effectDisabled) {
@@ -266,26 +355,47 @@ export default function house(pi: ExtensionAPI): void {
               source?.role === 'user' && JSON.stringify(source.content).includes('nested');
             const toolCall: ToolCall = {
               type: 'toolCall' as const,
-              id: `probe-${Date.now()}`,
+              id: `tool-${randomUUID()}`,
               name:
-                managed?.[1] === 'effect'
-                  ? 'salaam_effect'
-                  : managed
-                    ? 'salaam_review'
-                    : 'salaam_probe',
-              arguments: managed
-                ? {
-                    targets: managed[2]!.split(',').map((target) => target.trim()),
-                    value: 'offline fixture',
-                  }
-                : nested
-                  ? { nested: true }
-                  : {},
+                children && !c.child
+                  ? 'spawn_child'
+                  : inbox && !c.child
+                    ? 'inspect_child'
+                    : consume && !c.child
+                      ? 'consume_child_result'
+                      : managed?.[1] === 'effect'
+                        ? 'salaam_effect'
+                        : managed
+                          ? 'salaam_review'
+                          : 'salaam_probe',
+              arguments:
+                children && !c.child
+                  ? {
+                      tasks: children[1]!.split(',').map((step) => ({
+                        step_key: step.trim(),
+                        prompt: 'Read-only child: ' + step.trim(),
+                      })),
+                      budget: 2,
+                      wait: true,
+                    }
+                  : inbox && !c.child
+                    ? {}
+                    : consume && !c.child
+                      ? { child_id: consume[1]!, result_id: consume[2]!, acknowledge: !!consume[3] }
+                      : managed
+                        ? {
+                            targets: managed[2]!.split(',').map((target) => target.trim()),
+                            value: 'offline fixture',
+                          }
+                        : nested
+                          ? { nested: true }
+                          : {},
             };
             response.content.push(toolCall);
             response.stopReason = 'toolUse';
             stream.push({ type: 'toolcall_start', contentIndex: 0, partial: response });
             stream.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial: response });
+            await bridge('usage', { source_key: sourceKey, usage: response.usage });
             stream.push({ type: 'done', reason: 'toolUse', message: response });
           } else {
             response.content.push({ type: 'text', text: '' });
@@ -300,6 +410,7 @@ export default function house(pi: ExtensionAPI): void {
             response.content[0] = { type: 'text', text };
             stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
             stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });
+            await bridge('usage', { source_key: sourceKey, usage: response.usage });
             stream.push({ type: 'done', reason: 'stop', message: response });
           }
           stream.end();

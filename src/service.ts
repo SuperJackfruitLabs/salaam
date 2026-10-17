@@ -9,6 +9,7 @@ import { integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
 import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
+import { ChildWork } from './children.js';
 import type { EffectConnector } from './effect-connector.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
@@ -25,6 +26,7 @@ export class SalaamService {
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
+  readonly children: ChildWork;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
   private operator: Server;
@@ -61,6 +63,8 @@ export class SalaamService {
           failed: (id, error) => this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
+        this.children = new ChildWork(this.store, this.artifacts, this.supervisor);
+        this.supervisor.children = this.children;
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
       } catch (error) {
         this.store.close();
@@ -96,6 +100,7 @@ export class SalaamService {
     try {
       await service.supervisor.recover();
       service.store.recoverWork();
+      service.children.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
       await service.listen(service.bridgeServer, service.bridgeSocket);
@@ -279,16 +284,59 @@ export class SalaamService {
             token: string(body.token, 'token', 128),
           },
         );
-        void this.supervisor
-          .cancelAttempt(attempt)
+        void this.children
+          .cancelOwned(attempt)
+          .then(() => this.supervisor.cancelAttempt(attempt))
           .catch((error) =>
             this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
           );
         this.send(res, 202, receipt);
         return;
       }
+      if (parts[0] === 'v1' && parts[1] === 'children' && parts[2]) {
+        const child = this.store.db
+          .prepare('SELECT parent_session FROM child_tasks WHERE id=?')
+          .get(parts[2]) as { parent_session: string } | undefined;
+        if (!child) throw new ServiceError('not_found', 'Child not found', 404);
+        if (req.method === 'GET' && parts.length === 3) {
+          this.send(res, 200, this.children.inspect(child.parent_session, parts[2]));
+          return;
+        }
+        if (req.method === 'GET' && parts[3] === 'result') {
+          const row = this.children.inspect(child.parent_session, parts[2]);
+          this.send(
+            res,
+            200,
+            this.children.consume(child.parent_session, row.id, row.result_id ?? ''),
+          );
+          return;
+        }
+        if (req.method === 'POST' && parts[3] === 'ack') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            200,
+            this.children.acknowledge(
+              child.parent_session,
+              parts[2],
+              string(body.result_id, 'result_id', 128),
+              string(body.request_id, 'request_id', 128),
+            ),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts[3] === 'children' && req.method === 'GET') {
+          this.store.session(id);
+          this.send(res, 200, this.children.list(id));
+          return;
+        }
+        if (parts[3] === 'usage' && req.method === 'GET') {
+          this.send(res, 200, this.store.usage.summary(id));
+          return;
+        }
         if (parts.length === 3 && req.method === 'GET') {
           this.send(res, 200, this.supervisor.inspect(id));
           return;
@@ -453,9 +501,11 @@ export class SalaamService {
     this.stopping = true;
     this.dispatcher.pause();
     this.managed.pause();
+    this.children.pause();
     const errors: unknown[] = [];
     try {
       try {
+        await this.children.close();
         await this.supervisor.close();
       } catch (error) {
         errors.push(error);

@@ -25,3 +25,4 @@ jobs:
       - run: npm run verify:pi
       - run: npm run demo:session
       - run: npm run demo:managed
+      - run: npm run demo:children

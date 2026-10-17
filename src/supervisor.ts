@@ -5,7 +5,6 @@ import { mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
-  TOOLS,
   PROTOCOL_VERSION,
   canonical,
   object,
@@ -20,6 +19,7 @@ import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.j
 import { PiProcess } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
+import type { ChildWork } from './children.js';
 
 export interface Launch {
   command: string;
@@ -80,6 +80,7 @@ function groupExists(pid: number): boolean {
 }
 export class Supervisor extends EventEmitter {
   managed?: ManagedWork;
+  children?: ChildWork;
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
   private monitor: NodeJS.Timeout;
@@ -188,7 +189,8 @@ export class Supervisor extends EventEmitter {
         bundle: this.bundle,
         policy: POLICY_DIGEST,
         frame,
-        effects: !!this.options.effectsEnabled,
+        effects: !!this.options.effectsEnabled && !this.children?.owned(id),
+        child: !!this.children?.owned(id),
       };
       const args = [
         PI_CLI,
@@ -211,7 +213,7 @@ export class Supervisor extends EventEmitter {
         '--no-context-files',
         '--no-builtin-tools',
         '--tools',
-        workerTools(!!this.options.effectsEnabled).join(','),
+        workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)).join(','),
         '--provider',
         'salaam-proof',
         '--model',
@@ -328,6 +330,7 @@ export class Supervisor extends EventEmitter {
     worker.reject(new Error(reason));
     try {
       this.managed?.invalidateWorker(worker.id, worker.epoch);
+      this.children?.workerLost(worker.id, reason);
     } catch {
       /* in-memory readiness denial fences new dispatch */
     }
@@ -385,8 +388,8 @@ export class Supervisor extends EventEmitter {
           pi_session_id: id,
           epoch: w.epoch,
           capabilities: [...CAPABILITIES],
-          tools: workerTools(!!this.options.effectsEnabled),
-          active_tools: workerTools(!!this.options.effectsEnabled),
+          tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
+          active_tools: workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)),
           provider: 'salaam-proof',
           context_digest: textDigest(w.frame),
         };
@@ -415,6 +418,8 @@ export class Supervisor extends EventEmitter {
         method === 'operation.status' ||
         method === 'operation.run'
       ) {
+        if (this.children?.owned(id))
+          throw new Error('Child operation authority is read-only probe only');
         if (!this.managed || !w.attempt) throw new Error('No active managed attempt');
         this.assertActive(id, w.epoch, w.attempt);
         if (method === 'operation.prepare') {
@@ -437,6 +442,52 @@ export class Supervisor extends EventEmitter {
           throw new Error('Operation belongs to another invocation');
         return method === 'operation.run' ? this.managed.start(op.id, id, w.epoch, w.attempt) : op;
       }
+      if (method.startsWith('child.')) {
+        if (!this.children || !w.attempt) throw new Error('No active parent attempt');
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'child.spawn')
+          return this.children.spawn(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.step_key, 'step_key', 128),
+            string(body.prompt, 'prompt', 32768),
+            Number(body.budget),
+            Array.isArray(body.authority)
+              ? body.authority.map((x) => string(x, 'authority', 128))
+              : ['salaam_probe'],
+          );
+        if (method === 'child.list') return this.children.list(id);
+        const child = string(body.child_id, 'child_id', 128);
+        if (method === 'child.inspect') return this.children.inspect(id, child);
+        const result = string(body.result_id, 'result_id', 128);
+        if (method === 'child.consume') return this.children.consume(id, child, result);
+        if (method === 'child.ack')
+          return this.children.acknowledge(
+            id,
+            child,
+            result,
+            string(body.request_id, 'request_id', 128),
+          );
+        throw new Error('Unsupported child operation');
+      }
+      if (method === 'usage') {
+        const source = this.store.db
+          .prepare('SELECT session_id,attempt_id FROM usage_observations WHERE source_key=?')
+          .get(String(body.source_key));
+        if (!source || source.session_id !== id || source.attempt_id !== (w.attempt ?? null))
+          throw new Error('Usage does not belong to this request');
+        this.store.transaction(() =>
+          this.store.usage.observe(
+            id,
+            string(body.source_key, 'source_key', 256),
+            'salaam-proof',
+            'scripted',
+            body.usage,
+          ),
+        );
+        return { ok: true };
+      }
       if (method === 'model') {
         if (
           body.provider !== 'salaam-proof' ||
@@ -444,6 +495,13 @@ export class Supervisor extends EventEmitter {
           body.context_digest !== textDigest(w.frame)
         )
           throw new Error('Provider or task context is invalid');
+        this.store.usage.admit(
+          id,
+          w.attempt,
+          string(body.source_key, 'source_key', 256),
+          String(body.provider),
+          String(body.model),
+        );
         this.store.transaction(() => {
           this.store.event(id, 'model.admitted', {
             attempt_id: w.attempt ?? null,
@@ -453,7 +511,11 @@ export class Supervisor extends EventEmitter {
           });
         });
       } else if (method === 'policy' || method === 'tool') {
-        if (!workerTools(!!this.options.effectsEnabled).includes(String(body.tool)))
+        if (
+          !workerTools(!!this.options.effectsEnabled, !!this.children?.owned(id)).includes(
+            String(body.tool),
+          )
+        )
           throw new Error('Tool is outside policy');
         this.store.transaction(() => {
           this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
@@ -465,6 +527,23 @@ export class Supervisor extends EventEmitter {
       } else throw new Error('Unsupported worker operation');
       return { ok: true };
     } catch (error) {
+      if (
+        method.startsWith('child.') &&
+        error instanceof ServiceError &&
+        [
+          'budget_exhausted',
+          'child_limit',
+          'depth_exceeded',
+          'authority_denied',
+          'spawn_conflict',
+          'invalid_budget',
+          'invalid_child',
+          'result_unavailable',
+          'not_found',
+          'request_conflict',
+        ].includes(error.code)
+      )
+        throw error;
       if (!w.stopping) this.invalidate(w, 'Required control failed: ' + (error as Error).message);
       throw new ServiceError('control_failed', 'Required control unavailable', 503);
     }
@@ -555,6 +634,8 @@ export class Supervisor extends EventEmitter {
     if (!w?.ready || w.invalid || !w.pi || w.busy) return false;
     // Commit the handoff boundary before touching the pipe. A crash from this
     // point onward is ambiguous and must never cause automatic prompt replay.
+    if (this.children?.owned(id) && this.store.cancelled(this.children.owned(id)!.child_attempt))
+      return false;
     const work = this.store.claim(id, w.epoch);
     if (!work) return false;
     w.busy = true;
@@ -634,6 +715,7 @@ export class Supervisor extends EventEmitter {
     w.ready = false;
     try {
       this.managed?.invalidateWorker(w.id, w.epoch);
+      this.children?.workerLost(w.id, 'Worker stopped before child dispatch');
     } catch {
       /* shutdown still owns and stops the worker */
     }

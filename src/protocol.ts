@@ -8,10 +8,33 @@ export const CAPABILITIES = [
   'provider-admission',
   'durable-approvals',
   'operation-ledger',
+  'child-work',
+  'usage-ledger',
 ] as const;
-export const TOOLS = ['salaam_probe', 'salaam_review'] as const;
-export function workerTools(effects: boolean): string[] {
-  return [...TOOLS, ...(effects ? ['salaam_effect'] : [])].sort();
+export const TOOLS = [
+  'salaam_probe',
+  'salaam_review',
+  'spawn_child',
+  'inspect_child',
+  'consume_child_result',
+] as const;
+export function workerTools(effects: boolean, child = false): string[] {
+  return child ? ['salaam_probe'] : [...TOOLS, ...(effects ? ['salaam_effect'] : [])].sort();
+}
+export interface ChildTask {
+  id: string;
+  parent_session: string;
+  parent_attempt: string;
+  step_key: string;
+  input_digest: string;
+  child_session: string;
+  child_attempt: string;
+  authority: string;
+  budget: number;
+  state: 'accepted' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
+  result_id: string | null;
+  artifact_id: string | null;
+  acknowledged: number;
 }
 export type WorkerState = 'stopped' | 'starting' | 'ready' | 'unhealthy' | 'exited';
 export interface Session {
@@ -77,6 +100,7 @@ export interface SessionSnapshot extends Session {
   history_truncated: boolean;
   approvals: Approval[];
   operations: Operation[];
+  children: ChildTask[];
 }
 export type OperationState =
   | 'prepared'

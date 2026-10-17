@@ -28,6 +28,34 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'session' && id && (verb === 'children' || verb === 'usage')) {
+    console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/${verb}`), null, 2));
+    return;
+  }
+  if (group === 'children' && id && ['inspect', 'result', 'ack'].includes(verb ?? '')) {
+    if (verb === 'ack') {
+      const result_id = option('--result');
+      if (!result_id) throw new Error('Supply the result ID with --result');
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/children/${id}/ack`, {
+            result_id,
+            request_id: option('--request-id') ?? randomUUID(),
+          }),
+          null,
+          2,
+        ),
+      );
+    } else
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/children/${id}${verb === 'result' ? '/result' : ''}`),
+          null,
+          2,
+        ),
+      );
+    return;
+  }
   if (group === 'approvals' && verb === 'list') {
     const session = option('--session');
     console.log(
@@ -277,7 +305,7 @@ async function main(): Promise<void> {
     return;
   }
   console.log(
-    'Usage: sal service start|stop|status [--state DIR] [--foreground] [--effect-socket PATH] [--effect-opaque]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal attach ID [--observe|--takeover] [--state DIR]\n       sal session submit ID --text TEXT\n       sal session continue ID --attempt ID --text NEW_INSTRUCTION\n       sal session cancel ID --attempt ID [--takeover]\n       sal approvals list [--session ID] | inspect ID | approve|deny ID --digest DIGEST --revision N\n       sal operations inspect|reconcile ID | resolve ID --digest DIGEST --revision N --outcome STATE --evidence TEXT\n       sal session list|inspect ID|probe ID|resume ID [--state DIR]',
+    'Usage: sal service start|stop|status [--state DIR] [--foreground] [--effect-socket PATH] [--effect-opaque]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal attach ID [--observe|--takeover] [--state DIR]\n       sal session submit ID --text TEXT\n       sal session continue ID --attempt ID --text NEW_INSTRUCTION\n       sal session cancel ID --attempt ID [--takeover]\n       sal approvals list [--session ID] | inspect ID | approve|deny ID --digest DIGEST --revision N\n       sal operations inspect|reconcile ID | resolve ID --digest DIGEST --revision N --outcome STATE --evidence TEXT\n       sal session children|usage ID\n       sal children inspect|result ID | ack ID --result RESULT_ID [--request-id ID]\n       sal session list|inspect ID|probe ID|resume ID [--state DIR]',
   );
   if (args.length) process.exitCode = 1;
 }
