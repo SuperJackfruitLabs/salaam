@@ -1,0 +1,105 @@
+#!/usr/bin/env node
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { mkdirSync, openSync, closeSync } from 'node:fs';
+import { SalaamService } from './service.js';
+import { call } from './transport.js';
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const option = (name: string): string | undefined => {
+    const i = args.indexOf(name);
+    if (i < 0) return;
+    const value = args[i + 1];
+    if (!value) throw new Error(`Missing ${name}`);
+    args.splice(i, 2);
+    return value;
+  };
+  const state = resolve(
+    option('--state') ?? process.env.SALAAM_STATE_DIR ?? join(homedir(), '.local/state/salaam'),
+  );
+  const foreground = args.includes('--foreground');
+  if (foreground) args.splice(args.indexOf('--foreground'), 1);
+  const socket = join(state, 'operator.sock');
+  const [group, verb, id] = args;
+  if (group === 'service' && verb === 'start') {
+    if (foreground) {
+      const service = await SalaamService.open({ stateDir: state });
+      process.stdout.write(JSON.stringify({ socket, service: 'started' }) + '\n');
+      for (const signal of ['SIGINT', 'SIGTERM'] as const)
+        process.once(signal, () => {
+          void service.close().catch(() => {
+            console.error('Salaam stopped with a persistence error');
+            process.exitCode = 1;
+          });
+        });
+      await service.closed;
+      return;
+    }
+    try {
+      await call(socket, '/v1/health');
+      console.log('Salaam service already running');
+      return;
+    } catch {}
+    mkdirSync(state, { recursive: true, mode: 0o700 });
+    const fd = openSync(join(state, 'service.log'), 'a', 0o600);
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(import.meta.url), 'service', 'start', '--foreground', '--state', state],
+      { detached: true, stdio: ['ignore', fd, fd] },
+    );
+    closeSync(fd);
+    child.unref();
+    for (let i = 0; i < 50; i++) {
+      try {
+        await call(socket, '/v1/health');
+        console.log(JSON.stringify({ socket, service: 'started' }));
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    throw new Error('Service did not start; inspect ' + join(state, 'service.log'));
+  }
+  if (group === 'service' && verb === 'stop') {
+    console.log(JSON.stringify(await call(socket, '/v1/shutdown', {})));
+    return;
+  }
+  if (group === 'service' && verb === 'status') {
+    console.log(JSON.stringify(await call(socket, '/v1/health'), null, 2));
+    return;
+  }
+  if (group === 'session' && verb === 'create') {
+    const cwd = resolve(option('--cwd') ?? process.cwd());
+    const requestId = option('--request-id') ?? randomUUID();
+    console.log(
+      JSON.stringify(await call(socket, '/v1/sessions', { cwd, request_id: requestId }), null, 2),
+    );
+    return;
+  }
+  if (group === 'session' && verb === 'list') {
+    console.log(JSON.stringify(await call(socket, '/v1/sessions'), null, 2));
+    return;
+  }
+  if (group === 'session' && verb === 'inspect' && id) {
+    console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}`), null, 2));
+    return;
+  }
+  if (group === 'session' && verb === 'probe' && id) {
+    console.log(
+      JSON.stringify(await call(socket, `/v1/sessions/${id}/probe`, {}, undefined, 15000), null, 2),
+    );
+    return;
+  }
+  console.log(
+    'Usage: sal service start|stop|status [--state DIR] [--foreground]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal session list|inspect ID|probe ID [--state DIR]',
+  );
+  if (args.length) process.exitCode = 1;
+}
+main().catch((error) => {
+  console.error((error as Error).message);
+  process.exitCode = 1;
+});

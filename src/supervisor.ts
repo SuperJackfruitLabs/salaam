@@ -1,0 +1,477 @@
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import {
+  CAPABILITIES,
+  TOOLS,
+  PROTOCOL_VERSION,
+  canonical,
+  object,
+  ServiceError,
+  textDigest,
+  type Manifest,
+  type Session,
+} from './protocol.js';
+import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.js';
+import { PiProcess } from './pi.js';
+import type { Store } from './store.js';
+
+export interface Launch {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+export interface SupervisorOptions {
+  stateDir: string;
+  bridgeSocket: string;
+  startupTimeout?: number;
+  heartbeatTimeout?: number;
+  launch?: (launch: Launch) => PiProcess;
+  extensionPath?: string;
+}
+interface Worker {
+  id: string;
+  epoch: number;
+  token: string;
+  frame: string;
+  bundle: string;
+  ready: boolean;
+  invalid: string | null;
+  stopping: boolean;
+  pi?: PiProcess;
+  manifest?: Manifest;
+  lastBeat: number;
+  busy: boolean;
+  handshake: Promise<void>;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+export function processIdentity(pid: number): string | null {
+  try {
+    return (
+      execFileSync('/bin/ps', ['-ww', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+function groupExists(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    return true;
+  }
+}
+export class Supervisor {
+  readonly bootId = randomUUID();
+  private workers = new Map<string, Worker>();
+  private monitor: NodeJS.Timeout;
+  readonly bundle: string;
+  constructor(
+    readonly store: Store,
+    readonly options: SupervisorOptions,
+  ) {
+    this.bundle = bundleDigest();
+    this.monitor = setInterval(() => {
+      for (const worker of this.workers.values())
+        if (worker.ready && Date.now() - worker.lastBeat > (options.heartbeatTimeout ?? 2500))
+          this.invalidate(worker, 'Worker heartbeat expired');
+    }, 250);
+    this.monitor.unref();
+  }
+  async recover(): Promise<void> {
+    const rows = this.store.db.prepare("SELECT * FROM workers WHERE state!='exited'").all() as {
+      session_id: string;
+      epoch: number;
+      pid: number | null;
+      identity: string | null;
+    }[];
+    for (const row of rows) {
+      let error: string | null = null;
+      if (row.pid === null || row.identity === null)
+        error = 'Previous worker identity was not recorded; manual reconciliation required';
+      else {
+        const actual = processIdentity(row.pid);
+        if (actual === row.identity) {
+          try {
+            process.kill(-row.pid, 'SIGKILL');
+          } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== 'ESRCH')
+              error = 'Previous worker cannot be stopped';
+          }
+          for (let i = 0; i < 40 && groupExists(row.pid); i++)
+            await new Promise((r) => setTimeout(r, 25));
+        }
+        if (groupExists(row.pid)) error = 'Previous worker group cannot be proven stopped';
+      }
+      // A mismatched live PID is never signalled. Its group still blocks reuse.
+      this.store.state(
+        row.session_id,
+        row.epoch,
+        error ? 'unhealthy' : 'exited',
+        error ?? 'Service restart interrupted this worker',
+      );
+    }
+  }
+  async start(id: string): Promise<void> {
+    const prior = this.workers.get(id);
+    if (prior && !prior.stopping)
+      throw new ServiceError('worker_exists', 'Worker already supervised');
+    const previous = this.store.session(id);
+    if (previous.state === 'unhealthy')
+      throw new ServiceError(
+        'reconciliation_required',
+        previous.error ?? 'Session requires reconciliation',
+      );
+    const epoch = this.store.allocate(id, this.bootId);
+    let accept!: () => void;
+    let reject!: (e: Error) => void;
+    const handshake = new Promise<void>((a, b) => {
+      accept = a;
+      reject = b;
+    });
+    const frame = `SALAAM_TASK_STATE ${canonical({ version: 0, objective: null, constraints: [], session_id: id, nonce: randomBytes(16).toString('hex') })}`;
+    const worker: Worker = {
+      id,
+      epoch,
+      token: randomBytes(32).toString('hex'),
+      frame,
+      bundle: this.bundle,
+      ready: false,
+      invalid: null,
+      stopping: false,
+      lastBeat: Date.now(),
+      busy: false,
+      handshake,
+      resolve: accept,
+      reject,
+    };
+    this.workers.set(id, worker);
+    // Attach a rejection handler before spawn/identity checks can fail.
+    void handshake.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const workerDir = join(this.options.stateDir, 'workers', id);
+      mkdirSync(join(workerDir, 'agent'), { recursive: true, mode: 0o700 });
+      const sessionDir = join(workerDir, 'sessions');
+      mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+      const config = {
+        socket: this.options.bridgeSocket,
+        token: worker.token,
+        session: id,
+        epoch,
+        bundle: this.bundle,
+        policy: POLICY_DIGEST,
+        frame,
+      };
+      const args = [
+        PI_CLI,
+        '--mode',
+        'rpc',
+        '--session-id',
+        id,
+        '--session-dir',
+        sessionDir,
+        '--name',
+        `salaam/${id}/${epoch}/${this.bootId}`,
+        '--no-approve',
+        '--no-extensions',
+        '--extension',
+        this.options.extensionPath ?? HOUSE_EXTENSION,
+        '--no-mcp',
+        '--no-skills',
+        '--no-prompt-templates',
+        '--no-themes',
+        '--no-context-files',
+        '--no-builtin-tools',
+        '--tools',
+        'salaam_probe',
+        '--provider',
+        'salaam-proof',
+        '--model',
+        'scripted',
+      ];
+      if (previous.pi_session_file && existsSync(previous.pi_session_file)) {
+        const index = args.indexOf('--session-id');
+        args.splice(index, 2, '--session', previous.pi_session_file);
+      } else if (
+        this.store.db
+          .prepare("SELECT 1 FROM events WHERE session_id=? AND kind='model.admitted' LIMIT 1")
+          .get(id)
+      ) {
+        throw new Error('Recorded Pi transcript is missing; reconciliation required');
+      }
+      // Do not inherit provider credentials or global Pi resource settings.
+      const env: NodeJS.ProcessEnv = {
+        PATH: process.env.PATH,
+        HOME: workerDir,
+        TMPDIR: process.env.TMPDIR,
+        LANG: process.env.LANG ?? 'en_US.UTF-8',
+        PI_CODING_AGENT_DIR: join(workerDir, 'agent'),
+        SALAAM_WORKER_CONFIG: JSON.stringify(config),
+      };
+      worker.pi = (this.options.launch ?? ((x) => new PiProcess(x.command, x.args, x.cwd, x.env)))({
+        command: process.execPath,
+        args,
+        cwd: previous.cwd,
+        env,
+      });
+      worker.pi.on('fault', (error) => {
+        if (!worker.stopping) this.invalidate(worker, 'Pi transport failed');
+      });
+      worker.pi.on('record', (record) => {
+        if (record.type === 'extension_error')
+          this.invalidate(worker, 'Required extension reported an error');
+        if (
+          record.type === 'tool_execution_end' &&
+          record.toolName === 'salaam_probe' &&
+          record.isError === true
+        )
+          this.invalidate(worker, 'Required managed probe failed');
+      });
+      const pid = worker.pi.child.pid;
+      if (!pid) throw new Error('Pi failed to spawn');
+      const identity = processIdentity(pid);
+      if (!identity) throw new Error('Pi process identity unavailable');
+      this.store.process(id, epoch, pid, identity);
+      const timeout = new Promise<never>((_a, b) => {
+        timer = setTimeout(
+          () => b(new Error('Worker readiness timed out')),
+          this.options.startupTimeout ?? 15000,
+        );
+      });
+      await Promise.race([handshake, timeout]);
+      const response = await worker.pi.command('get_state');
+      const state = object(response.data);
+      if (state.sessionId !== id) throw new Error('Pi state has the wrong session identity');
+      const file = typeof state.sessionFile === 'string' ? resolve(state.sessionFile) : null;
+      if (!file || !file.startsWith(resolve(sessionDir) + '/'))
+        throw new Error('Pi session is outside its managed directory');
+      if (object(state.model).provider !== 'salaam-proof' || object(state.model).id !== 'scripted')
+        throw new Error('Pi selected an unapproved provider route');
+      if (worker.invalid) throw new Error(worker.invalid);
+      // Pi buffers setup-only entries until there is a conversation. Do not
+      // persist a cursor into that ephemeral tree before its file exists.
+      if (existsSync(file)) await this.syncEntries(worker);
+      this.store.state(id, epoch, 'ready', null, [...CAPABILITIES], file);
+      worker.ready = true;
+      worker.lastBeat = Date.now();
+    } catch (error) {
+      this.invalidate(worker, (error as Error).message);
+      await this.stopWorker(worker);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  private invalidate(worker: Worker, reason: string): void {
+    if (worker.invalid) return;
+    worker.invalid = reason;
+    worker.ready = false;
+    worker.reject(new Error(reason));
+    try {
+      this.store.state(worker.id, worker.epoch, 'unhealthy', reason);
+    } catch {
+      /* in-memory denial remains authoritative if persistence fails */
+    }
+    if (worker.pi) void this.stopWorker(worker).catch(() => {});
+  }
+  private authenticate(
+    id: string,
+    token: string | undefined,
+    body: Record<string, unknown>,
+  ): Worker {
+    const w = this.workers.get(id);
+    if (
+      !w ||
+      !token ||
+      Buffer.byteLength(token) !== Buffer.byteLength(w.token) ||
+      !timingSafeEqual(Buffer.from(token), Buffer.from(w.token))
+    )
+      throw new ServiceError('unauthorized', 'Invalid worker credentials', 403);
+    if (body.epoch !== w.epoch)
+      throw new ServiceError('stale_worker', 'Worker epoch is no longer current', 403);
+    try {
+      this.store.assertEpoch(id, w.epoch);
+    } catch (error) {
+      this.invalidate(w, 'Worker epoch was revoked');
+      throw error;
+    }
+    return w;
+  }
+  bridge(
+    id: string,
+    method: string,
+    token: string | undefined,
+    body: Record<string, unknown>,
+  ): unknown {
+    const w = this.authenticate(id, token, body);
+    if (method === 'failure') {
+      this.invalidate(w, 'Required extension failed');
+      return { ok: true };
+    }
+    if (w.invalid || w.stopping)
+      throw new ServiceError('worker_unavailable', 'Worker is not available', 403);
+    if (method === 'handshake') {
+      try {
+        if (w.manifest) throw new Error('Duplicate handshake');
+        const expected = {
+          protocol_version: PROTOCOL_VERSION,
+          bundle_digest: w.bundle,
+          policy_digest: POLICY_DIGEST,
+          session_id: id,
+          pi_session_id: id,
+          epoch: w.epoch,
+          capabilities: [...CAPABILITIES],
+          tools: [...TOOLS],
+          active_tools: [...TOOLS],
+          provider: 'salaam-proof',
+          context_digest: textDigest(w.frame),
+        };
+        for (const [key, value] of Object.entries(expected))
+          if (canonical(body[key]) !== canonical(value))
+            throw new Error(`Invalid readiness field: ${key}`);
+        w.manifest = body as unknown as Manifest;
+        w.resolve();
+        return { ok: true };
+      } catch (error) {
+        this.invalidate(w, (error as Error).message);
+        throw new ServiceError('readiness_rejected', (error as Error).message, 403);
+      }
+    }
+    if (method === 'heartbeat') {
+      w.lastBeat = Date.now();
+      return { ok: true };
+    }
+    if (!w.ready || this.store.session(id).state !== 'ready')
+      throw new ServiceError('not_ready', 'Worker has not passed readiness', 403);
+    try {
+      if (method === 'model') {
+        if (
+          body.provider !== 'salaam-proof' ||
+          body.model !== 'scripted' ||
+          body.context_digest !== textDigest(w.frame)
+        )
+          throw new Error('Provider or task context is invalid');
+        this.store.transaction(() => {
+          this.store.event(id, 'model.admitted', {
+            epoch: w.epoch,
+            provider: body.provider,
+            context_digest: body.context_digest,
+          });
+        });
+      } else if (method === 'policy' || method === 'tool') {
+        if (body.tool !== 'salaam_probe') throw new Error('Tool is outside policy');
+        this.store.transaction(() => {
+          this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
+            epoch: w.epoch,
+            tool: body.tool,
+          });
+        });
+      } else throw new Error('Unsupported worker operation');
+      return { ok: true };
+    } catch (error) {
+      this.invalidate(w, 'Required control failed: ' + (error as Error).message);
+      throw new ServiceError('control_failed', 'Required control unavailable', 503);
+    }
+  }
+  inspect(id: string): Session {
+    const state = this.store.session(id);
+    const w = this.workers.get(id);
+    if (w?.invalid) return { ...state, state: 'unhealthy', capabilities: [], error: w.invalid };
+    if (state.state === 'ready' && (!w?.ready || w.stopping))
+      return {
+        ...state,
+        state: 'unhealthy',
+        capabilities: [],
+        error: 'No ready supervised worker; reconciliation required',
+      };
+    if (w && w.epoch !== state.epoch)
+      return {
+        ...state,
+        state: 'unhealthy',
+        capabilities: [],
+        error: 'Worker epoch changed; reconciliation required',
+      };
+    return state;
+  }
+  async probe(id: string, nested = false): Promise<{ text: string }> {
+    const w = this.workers.get(id);
+    if (!w?.ready || w.invalid || !w.pi || this.store.session(id).state !== 'ready')
+      throw new ServiceError('not_ready', 'Worker has not passed readiness');
+    if (w.busy) throw new ServiceError('worker_busy', 'A diagnostic is already active');
+    w.busy = true;
+    const settled = w.pi.waitFor('agent_settled');
+    void settled.catch(() => {});
+    try {
+      this.store.writable();
+      await w.pi.command('prompt', {
+        message: nested
+          ? 'Run the nested Salaam readiness probe.'
+          : 'Run the Salaam readiness probe.',
+      });
+      await settled;
+      if (w.invalid) throw new Error(w.invalid);
+      await this.syncEntries(w);
+      const text = object((await w.pi.command('get_last_assistant_text')).data);
+      return { text: String(text.text ?? '') };
+    } catch (error) {
+      this.invalidate(w, 'Diagnostic failed: ' + (error as Error).message);
+      throw error;
+    } finally {
+      w.busy = false;
+    }
+  }
+  private async syncEntries(w: Worker): Promise<void> {
+    const cursor = this.store.session(w.id).pi_cursor;
+    const entries = object(
+      (await w.pi!.command('get_entries', cursor ? { since: cursor } : {})).data,
+    );
+    if (
+      !Array.isArray(entries.entries) ||
+      entries.entries.some((entry) => typeof object(entry).id !== 'string')
+    )
+      throw new Error('Invalid Pi entries');
+    this.store.importEntries(
+      w.id,
+      w.epoch,
+      entries.entries as { id: string }[],
+      typeof entries.leafId === 'string' ? entries.leafId : null,
+    );
+  }
+  private async stopWorker(w: Worker): Promise<void> {
+    if (w.stopping) {
+      await w.pi?.closed;
+      return;
+    }
+    w.stopping = true;
+    w.ready = false;
+    await w.pi?.stop();
+    if (!w.invalid) this.store.state(w.id, w.epoch, 'exited');
+    // Preserve the unhealthy session reason while marking this process dead.
+    else
+      try {
+        this.store.db
+          .prepare("UPDATE workers SET state='exited' WHERE session_id=? AND epoch=?")
+          .run(w.id, w.epoch);
+      } catch {}
+  }
+  async close(): Promise<void> {
+    clearInterval(this.monitor);
+    const results = await Promise.allSettled(
+      [...this.workers.values()].map((w) => this.stopWorker(w)),
+    );
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length)
+      throw new AggregateError(errors, 'Worker shutdown could not persist all final states');
+  }
+}

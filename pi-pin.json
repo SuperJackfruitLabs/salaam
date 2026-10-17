@@ -1,0 +1,21 @@
+{
+  "package": "@earendil-works/pi-coding-agent",
+  "version": "1.3.0",
+  "integrity": "sha512-V/WoCjA2hQSe3QLWIUB24cTRdtEdeLiIzkDqU5RMXV6VWuD+KGZnzVBMhglwdnQTySkehZsjt8a3g6Jd2g4nnw==",
+  "tarball": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-1.3.0.tgz",
+  "researchSource": "8efd314fa3d3232ce197d8d7a6a5660530b9d83e",
+  "provenance": "Tests target the integrity-pinned npm artifact. The registry supplies no gitHead; researchSource is a source reference, not an assertion of a reproducible upstream build.",
+  "packageDigests": {
+    "@earendil-works/pi-agent-core": "5ecfa8f1a2260da58cc96f03582c25def9c84d9619083c306f0158061babec69",
+    "@earendil-works/pi-ai": "acda68041d514365177b6d2273b573e3a069253c89c66e443ccbd6682e917ca7",
+    "@earendil-works/pi-codemode": "c7d82b850b554a5818aca4a6512f1d0e279d9ff898de1f9833eb398339f9e63b",
+    "@earendil-works/pi-coding-agent": "18d7fd576360a04894a3f6dab78096185b44ab3c3c648fb7759dd1ec4c2f1d63",
+    "@earendil-works/pi-mcp": "1e0a5325475328db6f9b0ff59cfadafe4e846d9b6198bb9870bafd1262ef5590",
+    "@earendil-works/pi-telemetry": "ea7a1c72d7301f6e8ddb3916a45a578ae704b87b6b3994538806663e7a3968ac",
+    "@earendil-works/pi-tui": "9f33d38b2d799bd5c25b46ceacf836fbc1d88e3be13d81d45ac791f4089865ac"
+  },
+  "rpcCommandsSourceMatch": {
+    "sha256": "4deeee367852f4633ef594bc079f9e9fb14640a4e3ba8a69b7c89b6f54740838",
+    "source": "8efd314fa3d3232ce197d8d7a6a5660530b9d83e"
+  }
+}
