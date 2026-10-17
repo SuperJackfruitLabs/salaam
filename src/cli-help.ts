@@ -1,4 +1,17 @@
 const commands: Record<string, string> = {
+  tui: `salaam tui [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
+           [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
+
+Bare sal opens the same Salaam terminal interface in a TTY.
+Ctrl+K actions · Ctrl+P sessions · Ctrl+N new · Ctrl+O approvals
+Ctrl+G changes · Ctrl+T commands · Ctrl+E external editor · Ctrl+C detach.
+Work continues in the service when the terminal closes.`,
+  remote: `salaam remote SSH_HOST [--remote-bin ABSOLUTE_PATH] [--state REMOTE_DIR]
+              [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
+
+Open the Salaam TUI over SSH on an existing execution host. The remote binary
+must be installed already. State paths belong to that host. No key is copied;
+the host-local service owns the session. SSH agent forwarding is disabled.`,
   workspace: `salaam workspace inspect SESSION_ID
 salaam workspace diff SESSION_ID
 salaam workspace refresh SESSION_ID --revision N --digest REVIEWED_OBSERVED_DIGEST [--takeover]
@@ -21,9 +34,11 @@ Run the M9.1 boundary proof on a pre-provisioned local Linux Docker engine.
 Only disposable fixtures are mounted. The pinned image must already be present.
 No coding tools are enabled. A failed/unavailable backend exits nonzero.
 Cleanup reconciles the saved proof run without replaying commands.`,
-  acp: `salaam acp [--state DIR]
+  acp: `salaam acp [--state DIR] [--coding]
 
-Run the ACP v1 stdio client adapter against an already running Salaam service.`,
+Run the ACP v1 stdio client adapter against an already running Salaam service.
+--coding creates owned coding sessions; the service must have --coding-root.
+Loading an existing session preserves its original tool authority.`,
   artifacts: `salaam artifacts put SESSION_ID --text TEXT [--request-id ID] [--takeover]
 
 Persist text evidence; reference its returned artifact ID in a task evidence fact.
@@ -65,11 +80,12 @@ salaam session compact SESSION_ID --task-version N [--takeover] [--request-id ID
 
 Submissions are durable. Continuing an interrupted attempt creates a new instruction.
 Use salaam attach SESSION_ID for an interactive terminal.`,
-  attach: `salaam attach SESSION_ID [--observe|--takeover]
+  attach: `salaam attach SESSION_ID [--observe|--takeover] [--plain]
 
 Reconnect to a persistent session. Ctrl-C or Ctrl-D detaches while work continues.
 --observe watches without taking control; --takeover replaces the controller.
-Type :help inside the attachment for approval and cancellation commands.`,
+A TTY opens the Salaam TUI. --plain retains the line client (:help).
+Piped attachments use the line client automatically.`,
   approvals: `salaam approvals list [--session SESSION_ID]
 salaam approvals inspect APPROVAL_ID
 salaam approvals approve APPROVAL_ID --digest DIGEST --revision N [--request-id UUID]
@@ -98,12 +114,14 @@ const globalOptions = `Global options:
   -V, --version  Show the installed version.`;
 export function cliHelp(group?: string): string | undefined {
   if (group) return commands[group] ? `${commands[group]}\n\n${globalOptions}` : undefined;
-  return `Salaam — persistent Pi-backed agent sessions
+  return `Salaam — persistent coding sessions
 
 Usage: salaam <command> [options]
        sal <command> [options]
 
 Commands:
+  tui           Open the Salaam terminal interface (also bare sal)
+  remote        Open the same session over SSH
   auth          Configure the Claude API key locally
   service       Start, inspect or stop the session service
   session       Create, inspect, submit, resume or cancel work
@@ -132,6 +150,8 @@ Run salaam <command> --help for command usage.
 Both salaam and sal are executable names for the same CLI.`;
 }
 const valueOptions = new Set([
+  '--theme',
+  '--remote-bin',
   '--state',
   '--cwd',
   '--request-id',

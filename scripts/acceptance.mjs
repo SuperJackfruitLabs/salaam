@@ -27,6 +27,11 @@ const proofs = {
   S5: 'context-compaction',
   S6: 'required-capabilities',
 };
+const operatorProofs = [
+  'test/proofs/tui-terminal.test.ts',
+  'test/proofs/tui-client.test.ts',
+  'test/proofs/operator-coding.test.ts',
+];
 const evidence = {
   schema_version: 1,
   run_id: runId,
@@ -41,6 +46,9 @@ const evidence = {
   bundle_digest: bundleDigest(),
   requested_repeats: repeats,
   completed_repeats: 0,
+  operator_proofs: operatorProofs,
+  operator_requested_repeats: 3,
+  operator_completed_repeats: 0,
   proofs,
   commands: [],
   scope: 'Host-local offline/fixture evidence. Other platforms require their own observed run.',
@@ -79,6 +87,21 @@ try {
   const full = join(dir, 'full-suite.json');
   await execute('full-suite', 'npm', ['test', '--', '--reporter=json', '--outputFile=' + full]);
   evidence.tests = JSON.parse(readFileSync(full, 'utf8')).numTotalTests;
+  for (let iteration = 1; iteration <= 3; iteration++) {
+    const report = join(dir, 'operators-' + iteration + '.json');
+    await execute('operators-' + iteration, process.execPath, [
+      join(root, 'node_modules/vitest/vitest.mjs'),
+      'run',
+      ...operatorProofs,
+      '--reporter=json',
+      '--outputFile=' + report,
+    ]);
+    const result = JSON.parse(readFileSync(report, 'utf8'));
+    if (!result.success || result.numFailedTests || !result.numTotalTests)
+      throw new Error('Incomplete operator proof report');
+    evidence.operator_completed_repeats = iteration;
+    save();
+  }
   const files = Object.values(proofs).map((name) => 'test/proofs/' + name + '.test.ts');
   for (let iteration = 1; iteration <= repeats; iteration++) {
     const report = join(dir, 'proofs-' + iteration + '.json');
@@ -98,7 +121,7 @@ try {
   for (const name of ['session', 'managed', 'children', 'acceptance'])
     await execute('demo-' + name, 'npm', ['run', 'demo:' + name]);
   evidence.success = true;
-  evidence.full_acceptance = repeats >= 20;
+  evidence.full_acceptance = repeats >= 20 && evidence.operator_completed_repeats === 3;
   evidence.finished_at = new Date().toISOString();
   save();
   writeFileSync(

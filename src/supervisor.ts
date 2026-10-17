@@ -304,6 +304,26 @@ export class Supervisor extends EventEmitter {
       worker.pi.on('fault', (error) => {
         if (!worker.stopping) this.invalidate(worker, 'Pi transport failed');
       });
+      worker.pi.on('activity', (observation: import('./pi.js').ToolObservation) => {
+        if (!worker.attempt || worker.stopping) return;
+        try {
+          this.store.request(
+            `tool-activity:${id}:${epoch}:${worker.attempt}`,
+            `${observation.phase}:${observation.tool_call_id}`,
+            observation,
+            () => {
+              this.store.event(id, `tool.${observation.phase}`, {
+                attempt_id: worker.attempt,
+                worker_epoch: epoch,
+                ...observation,
+              });
+              return { recorded: true };
+            },
+          );
+        } catch {
+          this.invalidate(worker, 'Required tool activity recording failed');
+        }
+      });
       worker.pi.on('record', (record) => {
         if (
           record.type === 'extension_ui_request' &&

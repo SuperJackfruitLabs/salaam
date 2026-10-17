@@ -111,9 +111,11 @@ export class CodingWork {
     if (!row) throw new ServiceError('not_found', 'Command not found', 404);
     return row;
   }
-  list(session: string): CommandRun[] {
+  list(session: string, summary = false): CommandRun[] {
     return this.store.db
-      .prepare('SELECT * FROM command_runs WHERE session_id=? ORDER BY created_at DESC LIMIT 100')
+      .prepare(
+        `SELECT ${summary ? "id,session_id,workspace_id,attempt_id,step_key,command,cwd,workspace_revision,workspace_digest,profile_digest,engine_id,container_id,exec_id,state,exit_code,error,created_at,deadline,cancelled,'' AS output" : '*'} FROM command_runs WHERE session_id=? ORDER BY created_at DESC LIMIT 100`,
+      )
       .all(session) as unknown as CommandRun[];
   }
   start(

@@ -1,0 +1,308 @@
+{
+  "schema": 1,
+  "observed_at": "2026-10-17T21:33:22.413Z",
+  "success": true,
+  "editor": {
+    "name": "Zed",
+    "version": "1.24.2",
+    "platform": "darwin",
+    "arch": "arm64",
+    "macos": "15.5",
+    "interaction": "native GUI via cua_repl; manual focus assistance required"
+  },
+  "source": {
+    "initial_revision": "45b95275b745453aff7b04cde5eab563a467dd99",
+    "corrected_revision": "6856fe0f73a32e4c79973682ee55004713557262",
+    "runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+    "acp_source_sha256": "bed8179176a92958e9a8314eb2042ed19adfe3bab7fbe2a36760445547f519dd",
+    "acp_build_sha256": "35affa50830b9ff207f66fba44a4177f2bb0a713b7ac91256fbc89e0111bb9ee",
+    "worker_bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d"
+  },
+  "scope": {
+    "provider": "offline",
+    "real_provider_requests": 0,
+    "execution": "dedicated Colima salaam-m9; real isolated Docker command",
+    "gui_diff": "export from checked service workspace diff, opened as a diff document; no native ACP diff renderer claimed",
+    "gui_capture": "CUA screenshots observed in the chat; no standalone screenshot files retained"
+  },
+  "fixture_root": "/private/tmp/salaam-m9-boundary/zed-xfzuO9",
+  "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+  "worker_epoch": 1,
+  "workspace": {
+    "id": "c66dc63a-6ac3-47f4-a7dd-27e42dee2518",
+    "revision": 1,
+    "digest": "04ec3feea4e9ac79bda5e37a0ac9f8c70d34a512144dbf4368b1294412940a4e"
+  },
+  "submissions": [
+    {
+      "id": "22bef911-48ce-4d99-98cd-7fc95790c160",
+      "text": "[review] alpha,beta",
+      "attempt_id": "0d78e884-afca-4a62-8454-cbfaafdbc1a2",
+      "state": "completed"
+    },
+    {
+      "id": "a9248b90-f700-4355-be4c-cc165a3aeedb",
+      "text": "[command] {\"action\":\"start\",\"step_key\":\"zed-gui-test-once\",\"expected_revision\":1,\"command\":\"node --test\"}",
+      "attempt_id": "8599de34-bffc-4ec5-8358-e7e8a472b464",
+      "state": "completed"
+    },
+    {
+      "id": "b05879d9-8082-418d-af95-28247942b487",
+      "text": "[files] {\"action\":\"patch\",\"path\":\"math.js\",\"expected_revision\":0,\"expected_hash\":\"8332950700a41fc9719d1cc7c0c2b073ba26f8ab7b2d4028652523aa2b040004\",\"content\":\"exports.add = (a,b) => a+b;\\n\"}",
+      "attempt_id": "cdf4daf7-0eee-40c4-a67e-f68ffda51d69",
+      "state": "completed"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "0d78e884-afca-4a62-8454-cbfaafdbc1a2",
+      "state": "completed"
+    },
+    {
+      "id": "8599de34-bffc-4ec5-8358-e7e8a472b464",
+      "state": "completed"
+    },
+    {
+      "id": "cdf4daf7-0eee-40c4-a67e-f68ffda51d69",
+      "state": "completed"
+    }
+  ],
+  "command": {
+    "id": "64f8b9e5-3ffc-4cd6-a18c-cf077a0f49ad",
+    "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+    "workspace_id": "c66dc63a-6ac3-47f4-a7dd-27e42dee2518",
+    "attempt_id": "8599de34-bffc-4ec5-8358-e7e8a472b464",
+    "step_key": "zed-gui-test-once",
+    "input_digest": "a0834a15a4ba3585c85b8529c703d3db4e46e552b6e69576ac31a590ac8eb83e",
+    "command": "node --test",
+    "cwd": ".",
+    "workspace_revision": 1,
+    "workspace_digest": "04ec3feea4e9ac79bda5e37a0ac9f8c70d34a512144dbf4368b1294412940a4e",
+    "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+    "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+    "snapshot_artifact": "a390ff40-5442-4478-9e5c-7bd515880f3f",
+    "container_id": "183082c252298537b5bdea7033bf9cf0b70ab91dca1110f7326bb675d16becfa",
+    "exec_id": "8bfb6bf0b82b5f6760d99bd85747e65a9907abb6bdd26f91759e88ae341a7c9c",
+    "state": "succeeded",
+    "resume_state": null,
+    "exit_code": 0,
+    "output": "4pyUIGFkZHMgKDEuOTI4MDI4bXMpCuKEuSB0ZXN0cyAxCuKEuSBzdWl0ZXMgMArihLkgcGFzcyAxCuKEuSBmYWlsIDAK4oS5IGNhbmNlbGxlZCAwCuKEuSBza2lwcGVkIDAK4oS5IHRvZG8gMArihLkgZHVyYXRpb25fbXMgMjA1Ljk3MjUwNAo=",
+    "result_artifact": "445c4d47-322d-4479-9646-9ec6791b42ee",
+    "error": null,
+    "created_at": 1792272470180,
+    "deadline": 1792272500180,
+    "cancelled": 0
+  },
+  "approvals": [
+    {
+      "id": "77b5617c-e54a-4263-895a-ff75ac07750e",
+      "operation_id": "77efdc11-a1d3-4a17-929f-b9b4e577f103",
+      "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+      "worker_epoch": 1,
+      "operation_digest": "1dc1812620d430d90d8923a6500d7a9e055ccee2fdeb04f001f0525ba7699205",
+      "revision": 2,
+      "actor_scope": "local-operator",
+      "policy_digest": "2091fbe4256c541f32b1e1a73a846311f563fa8ff95bd60e1bdf241144f6dca3",
+      "expires_at": 1792272818735,
+      "state": "decided",
+      "decision": "approve",
+      "decided_by": "local-operator"
+    },
+    {
+      "id": "3597c4f9-12d0-40c1-be8f-b1f4e04bfa07",
+      "operation_id": "fc7c8dd7-1afc-412d-b866-9273eb1ba8e4",
+      "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+      "worker_epoch": 1,
+      "operation_digest": "439cd85af5888c6816f72ec88bb25bb5e0fe4194fde3205cf7379c86032df3fc",
+      "revision": 2,
+      "actor_scope": "local-operator",
+      "policy_digest": "2091fbe4256c541f32b1e1a73a846311f563fa8ff95bd60e1bdf241144f6dca3",
+      "expires_at": 1792272818733,
+      "state": "decided",
+      "decision": "deny",
+      "decided_by": "local-operator"
+    }
+  ],
+  "operations": [
+    {
+      "id": "77efdc11-a1d3-4a17-929f-b9b4e577f103",
+      "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+      "attempt_id": "0d78e884-afca-4a62-8454-cbfaafdbc1a2",
+      "worker_epoch": 1,
+      "tool_call_id": "tool-87397207-8942-4c31-bde2-ac0816f6312c/2",
+      "kind": "review",
+      "action_key": "a34f0aa983431ce2707ee341b81d8a3abb5ed2a36e589c0b3b5e13cfc7c909ea",
+      "argument_digest": "7f7ae5ec0e1fdcf97472e7e7d19b2689a79923b49403a7c887dcdb3ce30a8488",
+      "operation_digest": "1dc1812620d430d90d8923a6500d7a9e055ccee2fdeb04f001f0525ba7699205",
+      "target": "beta",
+      "value": "offline fixture",
+      "target_version": "read-only",
+      "policy_digest": "2091fbe4256c541f32b1e1a73a846311f563fa8ff95bd60e1bdf241144f6dca3",
+      "connector": "local-review-v1",
+      "replay": "read-only",
+      "revision": 3,
+      "state": "succeeded",
+      "receipt": null,
+      "error": null,
+      "resolution": "local-review-receipt",
+      "value_truncated": false,
+      "receipt_available": true
+    },
+    {
+      "id": "fc7c8dd7-1afc-412d-b866-9273eb1ba8e4",
+      "session_id": "962cef73-5b2d-4893-adf1-b6f4069c19c5",
+      "attempt_id": "0d78e884-afca-4a62-8454-cbfaafdbc1a2",
+      "worker_epoch": 1,
+      "tool_call_id": "tool-87397207-8942-4c31-bde2-ac0816f6312c/1",
+      "kind": "review",
+      "action_key": "371175f89a7f5f9d55d2c5cc1f3f5e07676b20f42b87a9a9e32e6851ae2e778f",
+      "argument_digest": "c7008c7bd2264f277d165f8615fc5192cc140ca94b319179c5fd987281f4afe2",
+      "operation_digest": "439cd85af5888c6816f72ec88bb25bb5e0fe4194fde3205cf7379c86032df3fc",
+      "target": "alpha",
+      "value": "offline fixture",
+      "target_version": "read-only",
+      "policy_digest": "2091fbe4256c541f32b1e1a73a846311f563fa8ff95bd60e1bdf241144f6dca3",
+      "connector": "local-review-v1",
+      "replay": "read-only",
+      "revision": 2,
+      "state": "cancelled_before_dispatch",
+      "receipt": null,
+      "error": "Denied by operator",
+      "resolution": null,
+      "value_truncated": false,
+      "receipt_available": false
+    }
+  ],
+  "checked_diff": {
+    "workspace_id": "c66dc63a-6ac3-47f4-a7dd-27e42dee2518",
+    "revision": 1,
+    "digest": "04ec3feea4e9ac79bda5e37a0ac9f8c70d34a512144dbf4368b1294412940a4e",
+    "source": "/private/tmp/salaam-m9-boundary/zed-xfzuO9/task",
+    "changes": [
+      {
+        "path": "math.js",
+        "before": {
+          "content": "ZXhwb3J0cy5hZGQgPSAoYSxiKSA9PiBhLWI7Cg==",
+          "executable": false
+        },
+        "after": {
+          "content": "ZXhwb3J0cy5hZGQgPSAoYSxiKSA9PiBhK2I7Cg==",
+          "executable": false
+        }
+      }
+    ],
+    "next_offset": null,
+    "source_untouched": true
+  },
+  "backend": {
+    "image": "docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+    "image_id": "sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019",
+    "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+    "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+    "engine_version": "29.5.2",
+    "kernel": "6.8.0-117-generic",
+    "arch": "arm64",
+    "node": "26.7.0",
+    "verified_at": "2026-10-17T21:20:14.883Z",
+    "probe": "passed",
+    "cleanup_confirmed": true
+  },
+  "source_untouched": true,
+  "observations": [
+    "Salaam listed in external-agent selector and composer",
+    "Forwarded MCP rejected before session creation; project-only context-server disable allowed startup",
+    "Initial live prompt echoed twice in GUI but one durable submission; ACP correction suppresses live user chunks while explicit load retains them",
+    "Reload Agent restored the same session without another patch or command",
+    "A prompt during prior controller lease was rejected before acceptance; later explicit retry after expiry ran one command",
+    "Tool expanded in Zed showed state succeeded, exit_code 0 and one passing node test",
+    "Two approval cards exposed distinct operation digest and revision; beta allow once, alpha reject",
+    "Exported checked diff and real owned math.js inspected in Zed; original source stayed unchanged",
+    "Project reopened and final Reload Agent replayed three committed user turns once"
+  ],
+  "cleanup": {
+    "checked_at": "2026-10-17T21:34:33.486Z",
+    "service_stopped": true,
+    "owned_containers_remaining": 0,
+    "settings_only_test_entry_removed": true,
+    "vm_profile": "salaam-m9",
+    "vm_state": "stopped",
+    "docker_context_before": "default",
+    "docker_context_after": "default",
+    "disposable_files_removed": true
+  },
+  "ci": {
+    "run_id": 39071417389,
+    "url": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39071417389",
+    "status": "success",
+    "revision": "6856fe0f73a32e4c79973682ee55004713557262",
+    "finished_at": "2026-10-17T21:59:10Z",
+    "jobs": [
+      {
+        "name": "execution-boundary",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "service (macos-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "service (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "platforms": {
+      "macos": {
+        "status": "success",
+        "platform": "darwin",
+        "arch": "arm64",
+        "git_commit": "d04cf3b5b7a543a63a12712eb943378764bd19b7",
+        "source_digest": "035916ce36952b2b87100ba171b75e63f9f6d783ba37c92b73f87ef343c91bbe",
+        "runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+        "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+        "tests": 186,
+        "six_proof_repeats": 20,
+        "six_proof_cases": 1200,
+        "operator_repeats": 3,
+        "operator_cases": 48,
+        "manifest": ".state/evidence/m10/ci-zed/macos/acceptance/2026-10-17T21-33-29.378Z-82c803aa/manifest.json",
+        "manifest_sha256": "29a7f3bf6faf5859d31783215b1e77deb1e6615c319d291de83300dc68ff4e3c",
+        "log_digests_verified": true
+      },
+      "linux": {
+        "status": "success",
+        "platform": "linux",
+        "arch": "x64",
+        "git_commit": "d04cf3b5b7a543a63a12712eb943378764bd19b7",
+        "source_digest": "035916ce36952b2b87100ba171b75e63f9f6d783ba37c92b73f87ef343c91bbe",
+        "runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+        "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+        "tests": 186,
+        "six_proof_repeats": 20,
+        "six_proof_cases": 1200,
+        "operator_repeats": 3,
+        "operator_cases": 48,
+        "manifest": ".state/evidence/m10/ci-zed/linux/acceptance/2026-10-17T21-33-35.916Z-878ede32/manifest.json",
+        "manifest_sha256": "a7340acf9a9426c46fcee540b16576404fb31403fc1d4f5a4b992826acfca410",
+        "log_digests_verified": true
+      }
+    },
+    "execution": {
+      "status": "success",
+      "boundary": {
+        "path": ".state/evidence/m10/ci-zed/execution/execution/linux.json",
+        "sha256": "c991461fa82f9442a87e99de5afc0aae7b48810d26a6def40fe494e4e70d7741",
+        "checks": 15,
+        "status": "passed"
+      },
+      "coding": {
+        "path": ".state/evidence/m10/ci-zed/execution/coding/2026-10-17T21-33-40.949Z-9f8c7029/report.json",
+        "sha256": "6723aaad6c203d9f959ef751e183c3b5962a6936ae9c633e46e7879a50cc971f",
+        "tasks": 10,
+        "success": true
+      }
+    }
+  }
+}

@@ -1,7 +1,18 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { ServiceError, object } from './protocol.js';
+import { ServiceError, object, textDigest } from './protocol.js';
+
+export interface ToolObservation {
+  phase: 'started' | 'finished';
+  tool_call_id: string;
+  parent_tool_call_id?: string;
+  tool: string;
+  input?: string;
+  input_digest?: string;
+  input_truncated?: boolean;
+  failed?: boolean;
+}
 
 export class PiCommandError extends Error {}
 
@@ -63,7 +74,31 @@ export class PiProcess extends EventEmitter {
             if (record.success === true) pending.resolve(record);
             else pending.reject(new PiCommandError(String(record.error ?? 'Pi command rejected')));
           }
-        } else this.emit('record', record);
+        } else {
+          if (
+            ['tool_execution_start', 'tool_execution_end'].includes(record.type) &&
+            typeof record.toolCallId === 'string' &&
+            typeof record.toolName === 'string'
+          ) {
+            const input = JSON.stringify(record.args ?? {});
+            this.emit('activity', {
+              phase: record.type === 'tool_execution_start' ? 'started' : 'finished',
+              tool_call_id: record.toolCallId.slice(0, 512),
+              ...(typeof record.parentToolCallId === 'string'
+                ? { parent_tool_call_id: record.parentToolCallId.slice(0, 512) }
+                : {}),
+              tool: record.toolName.slice(0, 128),
+              ...(record.type === 'tool_execution_start'
+                ? {
+                    input: input.slice(0, 8192),
+                    input_digest: textDigest(input),
+                    input_truncated: input.length > 8192,
+                  }
+                : { failed: record.isError === true }),
+            } satisfies ToolObservation);
+          }
+          this.emit('record', record);
+        }
       } catch (error) {
         this.fail(new Error(`Invalid Pi protocol: ${(error as Error).message}`));
         return;

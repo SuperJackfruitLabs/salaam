@@ -37,6 +37,8 @@ jobs:
             .state/evidence/coding
           retention-days: 14
   service:
+    env:
+      SALAAM_TUI_CAPTURE_DIR: .state/evidence/m10/screens
     strategy:
       fail-fast: false
       matrix:
@@ -60,5 +62,7 @@ jobs:
         if: always()
         with:
           name: acceptance-${{ matrix.os }}
-          path: .state/evidence/acceptance
+          path: |
+            .state/evidence/acceptance
+            .state/evidence/m10/screens
           retention-days: 14

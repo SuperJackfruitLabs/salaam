@@ -358,3 +358,28 @@ test('temporary backend loss preserves the resume phase and original execution i
     await f.close();
   }
 });
+
+test('operator command summaries stay bounded while full logs retain captured bytes', async () => {
+  const f = fixture();
+  try {
+    f.backend.output = 'x'.repeat(64000);
+    for (let i = 0; i < 65; i++) {
+      const run = f.work.start(f.session.id, null, { ...f.args, step_key: 'large-' + i }, () => {});
+      await until(
+        () => f.work.get(f.session.id, run.id),
+        (x) => commandTerminal(x.state),
+      );
+    }
+    const summaries = f.work.list(f.session.id, true);
+    expect(summaries).toHaveLength(65);
+    expect(Buffer.byteLength(JSON.stringify(summaries))).toBeLessThan(256000);
+    expect(summaries.every((run) => run.output === '')).toBe(true);
+    const run = summaries[0]!;
+    expect(Buffer.from(f.work.get(f.session.id, run.id).output, 'base64').length).toBe(64000);
+    expect(
+      (f.work.logs(f.session.id, run.id, 0) as { next_offset: number }).next_offset,
+    ).toBeGreaterThan(0);
+  } finally {
+    await f.close();
+  }
+}, 30000);

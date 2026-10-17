@@ -1,6 +1,6 @@
 # Local verification
 
-Verified on **2026-10-17**, on macOS arm64 with Node **26.7.0** and npm **11.19.0**. Historical M6 and Claude-route evidence is retained below; the latest M7–M8 acceptance record is at the end.
+Verified on **2026-10-17**, on macOS arm64 with Node **26.7.0** and npm **11.19.0**. Historical foundation and Claude-route records are retained below; M9 and M10 evidence is recorded at the end.
 
 | Check                     | Observed result                                                                                                                                                                                                          |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -176,3 +176,55 @@ These are small functional observations, not a productivity benchmark. A matched
 The final implementation commit `03538e5b415cc5a19394d449a37c5dd4d729fb57` also passed the real Linux execution-boundary and [ten-task coding portfolio](evidence/m9-coding-linux-x64.json) in [CI run 39045113857](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39045113857). The coding report has the same compiled and fixture digests as the final local portfolio, with native Linux x64, Docker Engine `28.0.4`, Linux kernel `6.17.0-1022-azure`, pinned image/config digest and confirmed cleanup. Its SHA-256 is `b30e282dcd7e99581ccd602f1cc8eb27f88373314fa4e79ed07662d557765926`.
 
 The final [CI run](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39045113857) completed successfully: execution boundary, macOS service and Linux service. Each service job passed 163 tests, all twenty S1–S6 repetitions (1,200 repeated proof cases), all four demos and installed CLI checks. Both downloaded manifests identify implementation commit `03538e5b415cc5a19394d449a37c5dd4d729fb57`, source digest `1cc4993e7e323036dc51faf122f76e32e581264e1082bbb62101b64dd9d6d3d6` and worker bundle `de1df146aa2cb14daae8dc6f67339b6649516443fe1d3a4f51ef65145a3e1ef9`. [M9 evidence summary](evidence/m9-summary.json) retains platform results and manifest/report hashes. Later evidence-only commits do not change the tested code.
+
+## M10 terminal and remote operator verification
+
+The terminal/VPS evidence below was observed on **2026-10-18** (Asia/Kolkata), with implementation revision `46be23cbec6375c7c8a082c5cd5fffab97e55a9a`. The later named Zed GUI rehearsal and adapter correction are recorded separately below. M9’s baseline on main is `810218b`; M10’s implementation and acceptance evidence are reviewed in [PR #1](https://github.com/SuperJackfruitLabs/salaam/pull/1).
+
+The final local source suite passed **186 tests** with no failures. Formatting, types and the Pi pin verification passed. Node remains **26.7.0**, npm **11.19.0**, Pi and the directly reused terminal primitives **1.3.0**; the real-PTY parser is pinned at **xterm/headless 5.5.0**. The full runtime-source digest matches the deployed VPS source:
+
+```text
+c5792171b92cace291001ab4771fcc588f14f3b9bdd8a1f9938c05c5f92f4a1c
+```
+
+The worker bundle digest is:
+
+```text
+1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d
+```
+
+| Operator / execution backend                                | Actual observation                                                                                                                                                |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS arm64 real PTY / local dedicated Colima Linux arm64   | Guarded patch, checked TUI diff, isolated `node --test` exit 0; independent ACP protocol patch/test exit 0; original source unchanged                             |
+| macOS real PTY → actual SSH → Linux x64 VPS / native Docker | Killed SSH client during a command; observer reconnect and takeover retained worker/attempt/run IDs; test exited 0; same workspace/diff survived daemon restart   |
+| Remote observer / same VPS service                          | Two concurrent operation-bound approval requests were decided in reverse order, one approved and one denied, without taking the controller                        |
+| ACP protocol over actual SSH / same VPS backend             | A separate coding session performed a guarded patch and real test command with exit 0; live tool updates used the same tool IDs                                   |
+| Named Zed 1.24.2 GUI / macOS arm64 and dedicated Colima     | **Passed separately below.** Actual agent selector, coding tools, isolated test exit 0, bound approval decisions, owned file/checked diff and same-session reload |
+
+The independent TUI proofs cover exact Unicode multiline paste, resize, input durability after a lost acceptance response, hard attachment loss, explicit takeover, observer approval decisions, stale/unreviewed approval denial, nested tool progress, volatile-preview replacement, bounded command-history/activity responses, slow output, external-editor modes, direct launcher signals and terminal restoration. Resume cannot silently take the controller lease. A real-PTY compatibility fixture reproduces the running M8 daemon’s absent coding/execution health fields and missing routes; all views stay usable. Read-only checks confirmed that schema and its `not_found` error codes without restarting or prompting the actual Claude daemon. Required tool-activity recording failure invalidates readiness and prevents subsequent grants.
+
+The explicitly approved VPS was the existing `superprocess-remote-dev` host. Its private rehearsal root held the pinned Node runtime, source checkout, owned coding trees and disposable fixture states. The selected backend passed all **15 boundary probes** and the **ten-task offline coding portfolio**; the coding compiled-source digest matches the final build. The actual SSH run retained session `764c2a15-8d59-4c1b-82b5-bf78c7bc7561`, workspace `ce8c2c66-473b-4582-a36e-5eed8f732ae5` at revision 1, and command `73f50fd6-c287-43ca-a9e0-f378c9d9c74e`. The daemon restart preserved those durable identities and advanced the worker epoch. No provider credentials or local user session state were copied, and no live provider requests were made.
+
+Cleanup inspection found zero rehearsal daemons and zero Salaam command containers on the VPS. Its private fixture root is retained for inspection. The local rehearsal service and owned containers were removed, its disposable files were deleted, and the dedicated Colima VM returned to its stopped baseline with the Docker context preserved.
+
+**CI status:** the final [platform acceptance run](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39065497648) passed **all three jobs**. macOS arm64 and Linux x64 each passed the complete **186-test** source suite, **48 operator proof executions** (16 cases repeated three times), **1,200 S1–S6 proof executions** (twenty repetitions), all four demos and both installed aliases. The separate Linux execution job passed the 15 boundary probes and ten coding tasks. Both service manifests report the same source digest, runtime-source digest and worker bundle. GitHub tested PR merge checkout `9a52a005ad2edc2780a347de62b81e7ba6414af4` for implementation head `46be23cbec6375c7c8a082c5cd5fffab97e55a9a`, with clean worktrees. Manifest paths/hashes are retained in the [M10 summary](evidence/m10-summary.json). This evidence record follows in a documentation-only commit; runtime source is unchanged.
+
+[Machine-readable M10 evidence](evidence/m10-summary.json) binds local/VPS identities, backend profiles, actual outcomes, raw evidence hashes and screenshot provenance. The following images render actual captured terminal cells, using the pinned headless terminal parser and a monospace SVG-to-PNG renderer. They are not Zed screenshots.
+
+![Salaam Night over actual SSH](evidence/m10/night-diff.png)
+
+![Salaam Paper checked diff](evidence/m10/paper-changes.png)
+
+![Salaam bound approval review](evidence/m10/night-approval.png)
+
+### Named Zed GUI acceptance
+
+The unlocked desktop rehearsal passed on **2026-10-18**, using **Zed 1.24.2**, macOS arm64, pinned Node 26.7.0 and the dedicated Colima/Docker backend. Native computer-use observed the actual agent selector and Salaam composer, a guarded file patch, live tool activity, the expanded command result with **exit code 0** and one passing test, two operation-bound approval cards, and the real owned `math.js` in the editor. A checked diff was exported from the service and opened as a diff document; native ACP edit/diff rendering was not exercised. Original source files remained unchanged.
+
+The GUI exposed a duplicate prompt display: the editor had already shown its submitted text when ACP replay echoed the committed user message. Revision `6856fe0f73a32e4c79973682ee55004713557262` suppresses live user chunks while preserving explicit load replay. The regression proof checks both paths, and all **186 source tests**, formatting and type checks passed after the fix. The corrected runtime-source digest is `6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13`; the worker bundle above is unchanged. The prior VPS/CI observations remain bound to their original source revision.
+
+`Reload Agent` and reopening the disposable project restored session `962cef73-5b2d-4893-adf1-b6f4069c19c5`, worker epoch 1, workspace `c66dc63a-6ac3-47f4-a7dd-27e42dee2518` revision 1 and command `64f8b9e5-3ffc-4cd6-a18c-cf077a0f49ad`. Final ledger inspection found **one session, three completed attempts and one command run**. The third attempt contained concurrent approvals: beta was approved and succeeded; alpha was denied before dispatch. A prompt attempted during the old controller lease was rejected before acceptance; a later explicit retry after expiry ran the sole command. The final GUI reload displayed the three committed user turns once and caused no new work.
+
+The initial launch rejected Zed’s forwarded MCP configuration before creating a session. Disabling that server only in the disposable project allowed startup. Manual foreground-focus assistance was needed for the desktop-control tool. Cleanup removed only the temporary Salaam agent entry from user settings (verified byte-for-byte against the expected removal), stopped the test service, found zero owned command containers, removed disposable files and returned the dedicated VM to its stopped baseline with Docker context `default`. No live provider requests were made and the existing Claude daemon was untouched.
+
+[GUI evidence](evidence/m10-zed-gui.json) retains source/build identities, actual command/approval/diff outcomes, observations and cleanup. The [final PR acceptance run](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39071417389) for `6856fe0` passed all three jobs. macOS and Linux each passed 186 source tests, 48 operator proof executions, 1,200 S1–S6 proof executions, all four demos and installed aliases. The execution job passed all 15 boundary probes and ten coding tasks. Downloaded manifests match the corrected runtime-source digest, and every acceptance log digest was verified. Later evidence-only commits leave that runtime source unchanged. M10’s named terminal, SSH and editor rehearsals have now passed within their recorded offline fixtures. M11 task-wide verification/budgets/checkpoints and M12 unattended jobs remain planned; these rehearsals do not establish a production deployment or live-provider behavior.

@@ -32,7 +32,11 @@ async function main(): Promise<void> {
     console.log('salaam ' + JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version);
     return;
   }
-  if (!args.length || args[0] === 'help' || hasHelpFlag(args)) {
+  if (
+    (!args.length && !(process.stdin.isTTY && process.stdout.isTTY)) ||
+    args[0] === 'help' ||
+    hasHelpFlag(args)
+  ) {
     const group = args[0] === 'help' ? args[1] : args[0]?.startsWith('-') ? undefined : args[0];
     const help = cliHelp(group);
     if (!help) {
@@ -51,13 +55,59 @@ async function main(): Promise<void> {
     args.splice(i, 2);
     return value;
   };
+  const explicitState = option('--state');
   const state = resolve(
-    option('--state') ?? process.env.SALAAM_STATE_DIR ?? join(homedir(), '.local/state/salaam'),
+    explicitState ?? process.env.SALAAM_STATE_DIR ?? join(homedir(), '.local/state/salaam'),
   );
   const foreground = args.includes('--foreground');
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'remote' && verb) {
+    const { remote } = await import('./remote.js');
+    const theme = option('--theme');
+    if (theme && !['night', 'paper'].includes(theme))
+      throw new Error('Choose --theme night or paper.');
+    await remote({
+      host: verb,
+      executable: option('--remote-bin'),
+      state: explicitState,
+      session: option('--session'),
+      observe: args.includes('--observe'),
+      takeover: args.includes('--takeover'),
+      theme: theme as 'night' | 'paper' | undefined,
+    });
+    return;
+  }
+  if (
+    !group ||
+    group === 'tui' ||
+    [
+      '--session',
+      '--observe',
+      '--takeover',
+      '--theme',
+      '--cwd',
+      '--coding-root',
+      '--coding-socket',
+    ].includes(group)
+  ) {
+    const { tui } = await import('./tui.js');
+    const theme = option('--theme');
+    if (theme && !['night', 'paper'].includes(theme))
+      throw new Error('Choose --theme night or paper.');
+    await tui({
+      state,
+      session: option('--session'),
+      observe: args.includes('--observe'),
+      takeover: args.includes('--takeover'),
+      theme: theme as 'night' | 'paper' | undefined,
+      cwd: option('--cwd'),
+      codingRoot: option('--coding-root'),
+      codingSocket: option('--coding-socket'),
+    });
+    return;
+  }
   if (group === 'workspace' && id && ['inspect', 'diff', 'refresh'].includes(verb ?? '')) {
     if (verb === 'inspect') {
       console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/workspace`), null, 2));
@@ -123,7 +173,7 @@ async function main(): Promise<void> {
       if (verb !== 'list' && !run) throw new Error('Supply --run-id');
       const path =
         `/v1/sessions/${id}/commands` +
-        (verb === 'list' ? '' : `/${run}`) +
+        (verb === 'list' ? '?summary=1' : `/${run}`) +
         (verb === 'logs' ? `/logs?offset=${Number(option('--offset') ?? 0)}` : '');
       console.log(JSON.stringify(await call(socket, path), null, 2));
       return;
@@ -182,7 +232,7 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'acp') {
-    await acp(state);
+    await acp(state, { coding: args.includes('--coding') });
     return;
   }
   if (group === 'auth' && verb === 'set' && id === 'anthropic') {
@@ -410,6 +460,16 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'attach' && verb) {
+    if (process.stdin.isTTY && process.stdout.isTTY && !args.includes('--plain')) {
+      const { tui } = await import('./tui.js');
+      await tui({
+        state,
+        session: verb,
+        observe: args.includes('--observe'),
+        takeover: args.includes('--takeover'),
+      });
+      return;
+    }
     await attach(state, verb, {
       observe: args.includes('--observe'),
       takeover: args.includes('--takeover'),

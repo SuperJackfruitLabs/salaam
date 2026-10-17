@@ -38,6 +38,9 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
       ...prompt('Salaam through ACP', logical),
     });
     expect(result.stopReason).toBe('end_turn');
+    expect(
+      a.messages.filter((m) => m.params?.update?.sessionUpdate === 'user_message_chunk'),
+    ).toHaveLength(0);
     const output = await promisify(execFile)(process.execPath, [
       join(ROOT, 'bin/salaam.mjs'),
       'session',
@@ -56,6 +59,9 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
     a = client(f.dir);
     await a.initialize();
     await a.request('session/load', { sessionId, cwd: f.dir, mcpServers: [] });
+    expect(
+      a.messages.filter((m) => m.params?.update?.sessionUpdate === 'user_message_chunk'),
+    ).toHaveLength(1);
     expect(
       a.messages.some(
         (m) => m.params?.update?.content?.text === 'Offline reply: Salaam through ACP',
@@ -156,6 +162,15 @@ test('ACP disconnect during a running tool preserves one attempt; resume omits o
       .catch(() => {});
     await until(() => existsSync(join(f.dir, 'probe-entered')), Boolean);
     const attempt = f.service.store.snapshot(session.id).attempts[0]!;
+    await until(
+      () =>
+        a.messages.filter(
+          (m) =>
+            m.params?.update?.sessionUpdate === 'tool_call' &&
+            m.params.update.status === 'in_progress',
+        ),
+      (messages) => messages.length > 0,
+    );
     await a.close();
     expect(f.service.store.attempt(attempt.id).state).toBe('running');
     a = client(f.dir);

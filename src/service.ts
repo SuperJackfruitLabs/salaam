@@ -286,6 +286,23 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts[3] === 'activity' && req.method === 'GET') {
+          this.store.session(id);
+          const rows = this.store.db
+            .prepare(
+              "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished') ORDER BY seq DESC LIMIT 200",
+            )
+            .all(id);
+          let bytes = 0;
+          const page = [];
+          for (const row of rows) {
+            bytes += Buffer.byteLength(String(row.payload)) + 128;
+            if (bytes > 1024 * 1024) break;
+            page.push({ seq: row.seq, kind: row.kind, payload: JSON.parse(String(row.payload)) });
+          }
+          this.send(res, 200, page.reverse());
+          return;
+        }
         if (parts[3] === 'workspace') {
           if (req.method === 'GET') {
             this.send(
@@ -335,7 +352,7 @@ export class SalaamService {
                       integer(Number(url.searchParams.get('offset') ?? 0), 'offset'),
                     )
                   : this.coding.get(id, parts[4])
-                : this.coding.list(id),
+                : this.coding.list(id, url.searchParams.get('summary') === '1'),
             );
             return;
           }
