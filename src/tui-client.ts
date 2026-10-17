@@ -218,6 +218,12 @@ export class OperatorClient extends EventEmitter {
     this.changed();
     return record.request_id;
   }
+  async resume(): Promise<void> {
+    if (!this.snapshot) return;
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/resume`, this.actor());
+    await this.refresh();
+    await this.flush();
+  }
   async takeControl(): Promise<void> {
     if (!this.snapshot) return;
     const id = this.snapshot.id;

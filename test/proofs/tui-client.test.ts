@@ -137,3 +137,24 @@ test('volatile preview disappears on reconnect and committed message identities 
     await f.close();
   }
 });
+
+test('resuming as an observer cannot silently replace the controller', async () => {
+  const f = await fixture();
+  const writer = new OperatorClient(f.dir),
+    observer = new OperatorClient(f.dir);
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    await writer.open(session.id);
+    await observer.open(session.id, { observe: true });
+    const owner = f.service.store.controlView(session.id);
+    await expect(observer.resume()).rejects.toThrow('Take control');
+    expect(f.service.store.controlView(session.id)).toEqual(owner);
+    await writer.resume();
+    expect(writer.controlling).toBe(true);
+  } finally {
+    await observer.close();
+    await writer.close();
+    await f.close();
+  }
+});

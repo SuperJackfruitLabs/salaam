@@ -687,10 +687,7 @@ export class SalaamApp {
           'Take control',
           () => this.client.takeControl(),
         );
-      else if (value === 'resume')
-        void this.execute(async () => {
-          await this.client.takeControl();
-        });
+      else if (value === 'resume') void this.execute(() => this.client.resume());
       else if (value === 'continue') {
         const interrupted = snapshot?.attempts.find(
           (a) => a.state === 'interrupted' && !a.resolved_by,

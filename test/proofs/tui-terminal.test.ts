@@ -265,3 +265,33 @@ test('slow terminal output recovers a complete fresh frame and still accepts one
     await f.close();
   }
 }, 30000);
+
+test('terminating only the remote launcher forwards the signal so its SSH child restores the terminal', async () => {
+  const f = await fixture();
+  let terminal: PtyClient | undefined;
+  try {
+    const bin = join(f.dir, 'bin');
+    mkdirSync(bin);
+    const child = join(f.dir, 'ssh-child.mjs');
+    writeFileSync(
+      child,
+      "process.stdin.setRawMode(true);process.stdin.resume();console.log('fixture-ssh-ready');process.once('SIGTERM',()=>{process.stdin.setRawMode(false);process.exit(0);});setInterval(()=>{},1000);",
+    );
+    writeFileSync(
+      join(bin, 'ssh'),
+      '#!/bin/sh\nexec ' + JSON.stringify(process.execPath) + ' ' + JSON.stringify(child) + '\n',
+      { mode: 0o700 },
+    );
+    terminal = new PtyClient([join(ROOT, 'bin/salaam.mjs'), 'remote', 'fixture'], {
+      state: f.dir,
+      env: { PATH: bin + ':' + process.env.PATH },
+    });
+    await terminal.contains('fixture-ssh-ready');
+    expect((await terminal.command({ op: 'status' })).raw).toBe(true);
+    await terminal.command({ op: 'signal', signal: 'SIGTERM', target: 'process' });
+    expect(await terminal.exit()).toEqual({ code: 0, restored: true });
+  } finally {
+    await terminal?.close();
+    await f.close();
+  }
+}, 30000);

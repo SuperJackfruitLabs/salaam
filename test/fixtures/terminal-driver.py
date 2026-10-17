@@ -50,7 +50,9 @@ try:
                     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', command['rows'], command['columns'], 0, 0))
                     if p.poll() is None: os.killpg(p.pid, signal.SIGWINCH)
                 elif op == 'signal':
-                    if p.poll() is None: os.killpg(p.pid, getattr(signal, command['signal']))
+                    if p.poll() is None:
+                        target = os.kill if command.get('target') == 'process' else os.killpg
+                        target(p.pid, getattr(signal, command['signal']))
                 elif op == 'pause': paused = bool(command['paused'])
                 elif op == 'status': pass
                 else: raise ValueError('Unknown terminal operation')

@@ -55,18 +55,30 @@ export async function remote(options: RemoteOptions): Promise<void> {
       'Remote TUI needs a terminal. Use ssh with the scriptable Salaam commands for automation.',
     );
   const child = spawn('ssh', remoteArguments(options), { stdio: 'inherit' });
-  await new Promise<void>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (code === 0) resolve();
-      else
-        reject(
-          new Error(
-            'SSH session ended ' +
-              (signal ?? `with status ${code}`) +
-              '. Reconnect to the same session to inspect work.',
-          ),
-        );
-    });
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+  const handlers = signals.map((signal) => {
+    const handler = () => {
+      child.kill(signal);
+    };
+    process.once(signal, handler);
+    return handler;
   });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => {
+        if (code === 0) resolve();
+        else
+          reject(
+            new Error(
+              'SSH session ended ' +
+                (signal ?? `with status ${code}`) +
+                '. Reconnect to the same session to inspect work.',
+            ),
+          );
+      });
+    });
+  } finally {
+    signals.forEach((signal, index) => process.off(signal, handlers[index]!));
+  }
 }
