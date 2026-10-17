@@ -1,8 +1,8 @@
 # Salaam
 
-Salaam is a local session service supervising persistent Pi workers. Terminal and editor clients will share the same sessions, while Salaam owns task and operation state around Pi's conversation history.
+Salaam is a local session service supervising persistent Pi workers. Terminal and ACP clients share the same sessions, while Salaam owns task and operation state around Pi's conversation history.
 
-The current implementation covers **M0–M6**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes and usage accounting. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
+The current implementation covers **M0–M8**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes, usage accounting, explicit task facts, managed checkpoint compaction and an ACP v1 stdio adapter. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
 
 ## Run locally
 
@@ -20,6 +20,9 @@ npm run verify:pi
 npm run demo:session
 npm run demo:managed
 npm run demo:children
+npm run demo:acceptance
+# Full host-local acceptance: all six proof suites, 20 repetitions each
+npm run test:acceptance
 ```
 
 `npm run setup:cli` builds the checkout and links both commands into the current Node installation's global npm bin directory. It uses offline linking with dependency lifecycle scripts disabled. The commands follow this checkout; after source changes, run `npm run build`. Repeat setup after moving the checkout or changing the Node installation. No npm publication is involved, and the package remains private.
@@ -28,7 +31,7 @@ To run without a global link, use `npm run cli -- --help` or `./bin/salaam.mjs -
 
 `npm test` and the demo open Unix sockets and supervise subprocesses. They require a host environment permitting those operations. Tests use disposable directories under `/tmp`; no provider credentials or paid requests are involved.
 
-The session demo runs a gated turn, inspects events and verifies an artifact. The managed demo starts a real Pi worker and an independent durable effect fixture, creates two concurrent approval requests, uses the CLI to approve B and deny A, and checks that only B executes. The children demo runs two independent children, reads one result twice, repeats its acknowledgment and verifies six unique provider requests across the tree. All demos remove their disposable state and stop their workers.
+The session demo runs a gated turn, inspects events and verifies an artifact. The managed demo starts a real Pi worker and an independent durable effect fixture, creates two concurrent approval requests, uses the CLI to approve B and deny A, and checks that only B executes. The children demo runs two independent children, reads one result twice, repeats its acknowledgment and verifies six unique provider requests across the tree. The combined acceptance demo uses terminal attach, ACP and CLI inspection on one session, detaches with pending approvals, checks one approved effect and two child results, then performs three compactions and retrieves older evidence. All demos remove their disposable state and stop their workers.
 
 To keep a service running:
 
@@ -62,6 +65,22 @@ salaam session continue SESSION_ID --attempt INTERRUPTED_ATTEMPT_ID \
 
 Service restart expires controller leases and marks prompts already handed toward Pi as `interrupted`. Those prompts are never automatically replayed, even if Pi's transcript contains a final answer. An unresolved interruption holds later queued work. Explicit continuation creates a **new instruction and attempt**, links it to the interruption, and runs before previously queued work. `resume` provisions the same recorded Pi session and dispatches safe queued work after readiness.
 
+## Task context and clients
+
+[Durable task context](docs/task-context.md) documents explicit objectives, constraints, corrections, completed steps, outstanding work, evidence and manual compaction. [Client setup](docs/clients.md) documents the ACP v1 adapter and SSH attachment.
+
+```sh
+sal task inspect SESSION_ID
+sal task update SESSION_ID --task-version 0 --kind objective --text 'Review the staging release'
+sal artifacts put SESSION_ID --text 'Build evidence'
+sal session compact SESSION_ID --task-version 1
+sal compactions inspect COMPACTION_ID
+# Editor subprocess command, against an already running service:
+sal acp --state /tmp/salaam-dev
+```
+
+Task versions are independent of session revisions. Fact updates, artifact creation and compaction starts require a controller and an idle ready parent; CLI commands accept `--takeover` explicitly. Compaction is asynchronous and manual. It checkpoints explicit task facts, retains the latest user turn and leaves older entries available through `salaam_history`. Automatic and model-generated compaction are disabled. Apply this service revision by stopping and restarting the daemon at an appropriate work boundary; changing a checkout does not update an already running process.
+
 ## Claude setup
 
 After `npm run setup:cli`, store your key through the hidden terminal prompt:
@@ -89,7 +108,7 @@ If your API key requires an Anthropic workspace header, add `--workspace-id WORK
 
 Only live workers receive `ANTHROPIC_API_KEY`; other inherited provider credentials and global Pi settings remain excluded. Keys are absent from worker configuration JSON, process arguments, journal events and operator responses. Provider error bodies are replaced with safe status messages before they enter transcripts. Rotating the key requires updating the saved key/environment and restarting the service; no credential value or credential digest is persisted in the journal.
 
-Both SDK and Pi turn retries are disabled, and automatic compaction stays disabled until M7. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage rather than a zero charge. The service validates the final serialized model, output cap, fixed tool inventory and actual task-context frame before each HTTP dispatch. The private bridge currently bounds request bodies to 1 MiB. Existing approval/effect rules and child authority limits apply to Claude turns too. No live filesystem or shell tool is added by this provider integration.
+Both SDK and Pi turn retries are disabled. Automatic compaction stays disabled; use the managed manual checkpoint command. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage rather than a zero charge. The service validates the final serialized model, output cap, fixed tool inventory and actual task-context frame before each HTTP dispatch. The private bridge currently bounds request bodies to 1 MiB. Existing approval/effect rules and child authority limits apply to Claude turns too. No live filesystem or shell tool is added by this provider integration.
 
 ## Approvals and managed effects
 
@@ -135,11 +154,14 @@ Use a short state path for macOS Unix socket limits. The directory and sockets a
 - Pi subprocess ownership, explicit session paths and IDs, worker epochs, process-group cleanup, heartbeat expiry, and conservative restart fencing.
 - An authenticated worker bridge and a required manifest covering the bundle, session, policy, reachable tools, provider route, and task-context digest.
 - Service-side admission before each provider request and managed tool operation, including nested calls, with grants correlated to dispatched attempts.
+- Explicit append-only task facts and correction links; bounded, current task-state admission at each provider request; paginated evidence/history retrieval.
+- Managed deterministic checkpoint compaction, positive-receipt reconciliation and durable cancellation; task versions remain independent of compaction cursors.
+- ACP v1 new/load/resume, committed transcript and tool updates, bound permissions and cancellation against the same session service.
 - A real-Pi diagnostic provider and independent fake-Pi, protocol, and durable mock-effect fixtures.
 
 Pi is pinned to npm artifact **`@earendil-works/pi-coding-agent@1.3.0`** by exact dependency, lockfile integrity and installed package-content digests. [pi-pin.json](pi-pin.json) records the artifact and source-reference distinction. The shipped RPC command reference was byte-compared with the research commit. The registry does not supply `gitHead`, so the repository does not claim a reproducible upstream source build.
 
-The readiness manifest advertises `persistent-session`, `managed-policy`, `task-context`, `provider-admission`, `durable-approvals`, `operation-ledger`, `child-work` and `usage-ledger`. Parent tools include `salaam_probe`, `salaam_review`, `spawn_child`, `inspect_child` and `consume_child_result`; `salaam_effect` is registered only with an explicit connector. Health reports the configured connector and whether a session has unresolved operations. Ledger availability does not imply a live third-party integration. The task-context frame remains version zero; durable facts and compaction behavior arrive in M7.
+The readiness manifest advertises `persistent-session`, `managed-policy`, `task-context`, `provider-admission`, `durable-approvals`, `operation-ledger`, `child-work`, `usage-ledger`, `durable-task-context` and `managed-compaction`. Parent tools include `salaam_probe`, `salaam_review`, `spawn_child`, `inspect_child`, `consume_child_result` and `salaam_history`; `salaam_effect` is registered only with an explicit connector. Health reports the configured connector and whether a session has unresolved operations. Ledger availability does not imply a live third-party integration. Each request obtains the current task version and facts from the bridge; stale or missing actual payload context denies forwarding.
 
 ## Readiness proof
 
@@ -151,43 +173,51 @@ The [S1 attachment proof](test/proofs/session-attach.test.ts) kills a CLI during
 
 The [S2 approval proof](test/proofs/approval-correlation.test.ts) covers concurrent nested calls, reverse decisions, two sessions, expiry, changed targets, lost decision replies and worker replacement. It also injects unsolicited real Pi confirm replies and proves they cannot authorize a durable operation. The [S3 effect proof](test/proofs/effect-recovery.test.ts) kills services/workers around external acceptance and receipt commits, tests negative/unavailable lookup, opaque connectors, mismatched receipts, target-version races and cancellation. Storage failures deny dispatch.
 
-M7–M8 remain to be built. ACP and durable task facts remain pending. The guarded Claude route is tested against a local Anthropic-compatible fixture; live account authentication is verified by your first configured request. The [S4 child recovery proof](test/proofs/child-result-recovery.test.ts) covers parent/service death, durable redelivery, cancellation and interrupted usage accounting. S1–S4 and S6 have local offline/fixture evidence; S5 remains pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
+The [S5 context proof](test/proofs/context-compaction.test.ts) forces three real Pi compactions and restarts a worker, inspects the actual outgoing payload, retrieves old evidence, and checks failed/cancelled compaction and both sides of the Pi persistence boundary. It separately preserves an outstanding real child and unknown effect and rejects compaction while an approval blocks a tool. The [ACP proofs](test/proofs/acp-client.test.ts) cover shared sessions, full history replay beyond the terminal snapshot, reverse permissions, cancellation, client loss and a lost acceptance reply. The guarded Claude route is tested against a local Anthropic-compatible fixture; live account authentication is verified by your first configured request. The [S4 child recovery proof](test/proofs/child-result-recovery.test.ts) covers parent/service death, durable redelivery, cancellation and interrupted usage accounting. S1–S6 have host-local offline/fixture evidence; platform observations and repetition counts are recorded in [verification](docs/verification.md). These results do not establish exactly-once effects for arbitrary external services or shell commands.
 
 ## Local API
 
 All endpoints use the operator Unix socket at `STATE_DIR/operator.sock`.
 
-| Endpoint                              | Behavior                                                                                                                     |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/sessions/:id/children`       | List a parent session’s child tasks                                                                                          |
-| `GET /v1/sessions/:id/usage`          | Aggregate provider usage across the parent and its children                                                                  |
-| `GET /v1/children/:id`                | Inspect one child task                                                                                                       |
-| `GET /v1/children/:id/result`         | Read a stable result without acknowledging delivery                                                                          |
-| `POST /v1/children/:id/ack`           | `{request_id,result_id}`; acknowledge the reviewed result idempotently                                                       |
-| `GET /v1/health`                      | Service health and per-session worker readiness                                                                              |
-| `GET /v1/sessions`                    | List session snapshots                                                                                                       |
-| `POST /v1/sessions`                   | `{request_id, cwd}`; create and provision a session                                                                          |
-| `GET /v1/sessions/:id`                | Inspect a session and its durable event sequence                                                                             |
-| `GET /v1/sessions/:id/snapshot`       | Session, controller view, bounded attempts/submissions and active-branch transcript                                          |
-| `GET /v1/sessions/:id/events?after=N` | Replay and stream committed events after the snapshot cursor                                                                 |
-| `POST /v1/sessions/:id/control`       | `{request_id, client_id, action, expected_epoch, token?}`; acquire, renew, release or take over a lease                      |
-| `POST /v1/sessions/:id/submissions`   | `{request_id, expected_revision, text, client_id, token, continues_attempt_id?}`; atomically accept a submission and attempt |
-| `POST /v1/sessions/:id/resume`        | `{client_id, token}`; provision a stopped session and dispatch safe queued work                                              |
-| `POST /v1/sessions/:id/probe`         | `{client_id, token, nested?: boolean}`; run the fixed diagnostic after readiness                                             |
-| `GET /v1/approvals?session=ID`        | List session approvals; omitting the session lists pending approvals                                                         |
-| `GET /v1/approvals/:id`               | Inspect a bound approval                                                                                                     |
-| `POST /v1/approvals/:id/decision`     | `{request_id, expected_revision, operation_digest, decision: approve\|deny}`                                                 |
-| `GET /v1/operations/:id`              | Full operation binding, state, receipt and resolution source                                                                 |
-| `POST /v1/operations/:id/reconcile`   | `{request_id}`; collect external status without reissuing an effect                                                          |
-| `POST /v1/operations/:id/resolution`  | `{request_id, expected_revision, operation_digest, outcome, evidence}`; explicit operator attestation                        |
-| `POST /v1/attempts/:id/cancel`        | `{request_id, expected_revision, client_id, token}`; revoke dispatch and request cancellation                                |
-| `POST /v1/shutdown`                   | Stop the service and its owned workers                                                                                       |
+| Endpoint                              | Behavior                                                                                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/sessions/:id/children`       | List a parent session’s child tasks                                                                                                |
+| `GET /v1/sessions/:id/usage`          | Aggregate provider usage across the parent and its children                                                                        |
+| `GET /v1/children/:id`                | Inspect one child task                                                                                                             |
+| `GET /v1/children/:id/result`         | Read a stable result without acknowledging delivery                                                                                |
+| `POST /v1/children/:id/ack`           | `{request_id,result_id}`; acknowledge the reviewed result idempotently                                                             |
+| `GET /v1/sessions/:id/task`           | Current task version, original facts, provenance, supersession links and compaction cursor                                         |
+| `POST /v1/sessions/:id/task`          | `{request_id,expected_version,fact,client_id,token}`; append an explicit fact/correction while idle                                |
+| `POST /v1/sessions/:id/artifacts`     | `{request_id,text,client_id,token}`; persist bounded text evidence while idle                                                      |
+| `GET /v1/sessions/:id/history`        | Bounded history index or `?entry_id=ID` / `?artifact_id=ID`, with `offset` continuation; `branch=true` lists active-branch entries |
+| `POST /v1/sessions/:id/compact`       | `{request_id,expected_version,client_id,token}`; start a manual checkpoint while idle                                              |
+| `GET /v1/compactions/:id`             | Inspect running/completed/failed/interrupted/cancelled checkpoint state                                                            |
+| `POST /v1/compactions/:id/cancel`     | `{request_id,client_id,token}`; record cancellation before requesting Pi abort                                                     |
+| `GET /v1/attempts/:id`                | Inspect a durable execution attempt                                                                                                |
+| `GET /v1/health`                      | Service health and per-session worker readiness                                                                                    |
+| `GET /v1/sessions`                    | List session snapshots                                                                                                             |
+| `POST /v1/sessions`                   | `{request_id, cwd}`; create and provision a session                                                                                |
+| `GET /v1/sessions/:id`                | Inspect a session and its durable event sequence                                                                                   |
+| `GET /v1/sessions/:id/snapshot`       | Session, controller view, bounded attempts/submissions and active-branch transcript                                                |
+| `GET /v1/sessions/:id/events?after=N` | Replay and stream committed events after the snapshot cursor                                                                       |
+| `POST /v1/sessions/:id/control`       | `{request_id, client_id, action, expected_epoch, token?}`; acquire, renew, release or take over a lease                            |
+| `POST /v1/sessions/:id/submissions`   | `{request_id, expected_revision, text, client_id, token, continues_attempt_id?}`; atomically accept a submission and attempt       |
+| `POST /v1/sessions/:id/resume`        | `{client_id, token}`; provision a stopped session and dispatch safe queued work                                                    |
+| `POST /v1/sessions/:id/probe`         | `{client_id, token, nested?: boolean}`; run the fixed diagnostic after readiness                                                   |
+| `GET /v1/approvals?session=ID`        | List session approvals; omitting the session lists pending approvals                                                               |
+| `GET /v1/approvals/:id`               | Inspect a bound approval                                                                                                           |
+| `POST /v1/approvals/:id/decision`     | `{request_id, expected_revision, operation_digest, decision: approve\|deny}`                                                       |
+| `GET /v1/operations/:id`              | Full operation binding, state, receipt and resolution source                                                                       |
+| `POST /v1/operations/:id/reconcile`   | `{request_id}`; collect external status without reissuing an effect                                                                |
+| `POST /v1/operations/:id/resolution`  | `{request_id, expected_revision, operation_digest, outcome, evidence}`; explicit operator attestation                              |
+| `POST /v1/attempts/:id/cancel`        | `{request_id, expected_revision, client_id, token}`; revoke dispatch and request cancellation                                      |
+| `POST /v1/shutdown`                   | Stop the service and its owned workers                                                                                             |
 
 Identical command requests return their original saved result. Reusing a request ID with different logical input conflicts. Controller credentials are excluded from the submission/cancellation logical input so a new controller can recover a lost reply. Request lookup precedes mutation preconditions. Approvals use their own revision, independent of session progress. The local operator identity is derived from the private socket's OS-account boundary; caller-supplied actor IDs confer no authority. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
 
 A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Attempts, submissions, approvals and operations are bounded to 100 each; transcript messages are bounded to 100 with text budgets. Operation values may be truncated and receipts are omitted from snapshots with `value_truncated`/`receipt_available` flags; inspect the full operation before deciding. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
 
-On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version three upgrades M2/M3 state while preserving cached acceptance replies and attempt outcomes.
+On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version six upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
 
 ## Development
 
@@ -199,7 +229,7 @@ npm run test:proofs
 npm run test:pi
 ```
 
-The [milestone record](docs/milestones.md) describes scope and evidence. CI is configured for macOS and Linux; local results only establish support on the platform where they ran. The [architecture notes](docs/architecture.md) describe state ownership and failure boundaries.
+The [milestone record](docs/milestones.md) describes scope and evidence. The [M7–M8 acceptance run](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39036223669) passed on macOS arm64 and Linux x64: 123 regression tests and 20 repetitions of all six proof suites per platform. See [verification](docs/verification.md) for the tested implementation commit and evidence digests. The [architecture notes](docs/architecture.md) describe state ownership and failure boundaries.
 
 ## Child work and usage
 
@@ -219,6 +249,6 @@ Result artifacts have a fixed envelope: schema version, child and attempt IDs, f
 
 Parent worker death leaves children running under the service. A replacement parent sees the same task/result IDs in its inbox. Whole-service restart retains completed results and marks unfinished children interrupted, including children whose prompts had not yet dispatched. It never starts another run of those tasks. Cancelling the active parent attempt durably revokes all its session's owned active children before requesting Pi abort; unrelated sessions remain independent.
 
-Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Real compaction recovery is still M7.
+Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Managed checkpoint compaction has known zero provider usage and reconciles its persisted Pi receipt after worker loss; its tests are part of S5.
 
 Claude is the first live provider. The service defaults to offline and passes only the explicitly configured Anthropic key into live workers. Keep the key outside Git and chat; default tests and demos use fixtures.

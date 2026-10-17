@@ -1,6 +1,6 @@
 # Local verification
 
-Verified on **2026-10-17**, on macOS arm64 with Node **26.7.0** and npm **11.19.0**. The M6 baseline below is retained separately from the latest Claude-route evidence at the end.
+Verified on **2026-10-17**, on macOS arm64 with Node **26.7.0** and npm **11.19.0**. Historical M6 and Claude-route evidence is retained below; the latest M7–M8 acceptance record is at the end.
 
 | Check                     | Observed result                                                                                                                                                                                                          |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -108,3 +108,55 @@ This establishes one real authentication/text-completion path through the instal
 An optional follow-up database read did not run because automatic permission review timed out. The saved evidence uses the operator responses already observed; no further provider request was made.
 
 The operator subsequently confirmed that attaching to the running live session with the installed CLI worked. This is a manual attachment observation, separate from the automated recovery fixtures.
+
+## M7–M8 session-service acceptance
+
+Verified on 2026-10-17 for implementation commit [`9c49f74d2656d954b02584ef3c3edebddc38d38a`](https://github.com/SuperJackfruitLabs/salaam/commit/9c49f74d2656d954b02584ef3c3edebddc38d38a), on branch `m7-m8-context-clients`. The documentation follow-up changes no runtime source. This is implementation/build/fixture evidence for the local session-service slice, not a packaged public release or a new live deployment.
+
+| Check                       | Observed local result                                                                                                                                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime and pin             | macOS arm64, Node 26.7.0, npm 11.19.0; exact Pi 1.3.0 artifacts and package-content digests verified                                                                                                                                       |
+| Formatting/build/types      | All passed; compiled source and worker bundle identified below                                                                                                                                                                             |
+| Full regression suite       | 123 tests passed, zero failures                                                                                                                                                                                                            |
+| Six-proof acceptance        | All 60 cases across S1–S6 passed in each of 20 independent repetitions: 1,200 proof cases                                                                                                                                                  |
+| S5                          | Three real-Pi checkpoints and an idle worker restart preserved explicit corrections and completed/outstanding facts; the captured next payload contained the exact current state and provenance                                            |
+| S5 failure/recovery         | Failed/cancelled compaction retained the task version/cursor; worker death before/after Pi persistence reconciled only a positive receipt and never replayed; pending approvals rejected compaction                                        |
+| External state preservation | A real outstanding child and unknown fixture effect survived compaction and parent replacement unchanged                                                                                                                                   |
+| History and capacity        | Old evidence was retrieved through the managed model tool; foreign artifacts rejected; mandatory-state capacity failure rolled back the fact and event                                                                                     |
+| ACP                         | Independent stdio client exercised new/load/resume, CLI sharing, full branch replay beyond 100 messages, reversed concurrent permissions, explicit cancellation, running-client loss and a lost acceptance reply without a second attempt  |
+| Combined demo               | Installed terminal attach, ACP and CLI inspected one session; terminal loss left two approvals pending; one approved fixture effect executed, two child results completed, and three compactions preserved the correction and old evidence |
+| Other demos                 | Session, managed-effect and child-result demos all passed against the final compiled worker bundle                                                                                                                                         |
+
+The local acceptance ran from `2026-10-17T13:17:28.016Z` through `2026-10-17T13:32:18.747Z`. Its 28 recorded commands all exited zero. It began before the implementation commit was created, with a dirty tree; a subsequent content-hash comparison confirmed every recorded source file matched commit `9c49f74` before the documentation follow-up.
+
+```text
+worker_bundle: 08ac88762cd870f15f59d50f12e01fc2b0108aef382ad154f0bf10880ae19bb7
+source_manifest: 48e7730c2cbba37608053249d62aabe3d21962aa5ad4dc8bfc1c1d6e347a8162
+acceptance_manifest: 72de45ad895428a66cbb090c84f507cb4c2d86b06d699f249929bb36aa6d6d78
+```
+
+Raw local reports and logs are ignored by Git under `.state/evidence/acceptance/2026-10-17T13-17-27.994Z-e8aaa26d/`. `.state/evidence/m7-m8-source-match.json` records the source comparison and individual proof-report hashes. The first acceptance attempt, `2026-10-17T13-14-40.170Z-98ca1cec`, stopped at a cancellation fixture's `revision_conflict`: it read a revision before another session event could commit. The fixture now uses the actual durable client outbox, which refreshes revisions only after a definite rejection. The final 20-repeat run passed.
+
+Task checkpoint compaction is deterministic and uses no summarization model request; completed checkpoints record known zero provider usage. Automatic/model-generated compaction is disabled. The scripted next-action trace excludes completed work, but this structural proof does not establish that every live model follows the supplied facts. Current Claude serialization/authentication remains covered by its independent local HTTP fixture; the earlier real completion and operator attachment are separate historical observations.
+
+This work did not restart or deploy a new build into the pre-existing live Claude daemon. The checked-in ACP client fixture and automated combined demo do not establish a particular editor UI or a cross-machine SSH rehearsal. SSH setup instructions are in [clients.md](clients.md). The same trusted OS-account boundary and fixture-connector limitations continue to apply.
+
+Reproduce the full acceptance with `npm ci --ignore-scripts` followed by `npm run test:acceptance`. `-- --repeats 1` is a shorter development run and is explicitly labelled partial.
+
+### Observed platform acceptance
+
+[GitHub Actions run 39036223669](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39036223669) passed on both platforms for the implementation commit above. Each artifact was downloaded and its 20 proof reports inspected: 60 passed cases per repetition, no skipped or failed cases. The full regression report on each platform also contains 123 passed cases and no skips/failures. Both CI source-manifest and compiled-worker digests exactly match the local run above.
+
+| Platform    | Observed result                                                                                      | Evidence artifact                                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| macOS arm64 | 123 regression tests, 1,200 proof cases, all four demos, CLI setup and both executable checks passed | [acceptance-macos-latest](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39036223669/artifacts/12102886041)  |
+| Linux x64   | 123 regression tests, 1,200 proof cases, all four demos, CLI setup and both executable checks passed | [acceptance-ubuntu-latest](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39036223669/artifacts/12102536778) |
+
+```text
+macos_manifest: a5a5911c28b8dfadf4fb0486f35f085871753ccf0ae4af667463cf7000bcdd6e
+linux_manifest: 77caa3f0741bcf185e802bc2376e8eb601eb7f713b105bff5f0cdc398bed4e12
+macos_artifact: sha256:da432ed292a92632630979eb9ed808be00968f28cd16ef738f9031a0a2799119
+linux_artifact: sha256:c91ba6612cd89ad53192142282ec3f1d3f8264a9ee0204d3c007f3ba734db683
+```
+
+The downloaded CI records are retained locally under `.state/evidence/ci/39036223669/`; GitHub artifact retention is 14 days. The defensible completion claim is: **M0–M8's local session-service slice passes its six-proof acceptance on macOS arm64 and Linux x64 at implementation commit `9c49f74`, using the pinned real Pi process with offline/local HTTP fixtures.** A live-model compaction behavior evaluation, named-editor UI rehearsal, cross-machine SSH rehearsal and deployment of the new daemon are not established by these checks. Further product milestones remain undecided.
