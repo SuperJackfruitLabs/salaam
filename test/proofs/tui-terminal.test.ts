@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { createServer, request } from 'node:http';
 import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { fixture, create, ready, until } from '../helpers.js';
@@ -323,6 +324,83 @@ test('terminating the TUI while an external editor is open cleans up that editor
     expect(f.service.supervisor.inspect(session.id).state).toBe('ready');
   } finally {
     await terminal?.close();
+    await f.close();
+  }
+}, 30000);
+
+test('TUI preserves M8 daemon compatibility when health and coding routes lack M9 fields', async () => {
+  const f = await fixture();
+  let terminal: PtyClient | undefined;
+  const clientState = join(f.dir, 'legacy-client');
+  mkdirSync(clientState);
+  const upstreams = new Set<ReturnType<typeof request>>();
+  const proxy = createServer((req, res) => {
+    if (req.url === '/v1/health') {
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          service: 'salaam',
+          provider_route: { provider: 'salaam-proof', model: 'scripted', max_tokens: 1024 },
+          effect_connector: false,
+          sessions: 1,
+        }),
+      );
+      return;
+    }
+    if (/\/(activity|workspace|commands)(\?|$)/.test(req.url ?? '')) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ code: 'not_found', error: 'Unknown route' }));
+      return;
+    }
+    const upstream = request(
+      {
+        socketPath: f.service.socket,
+        path: req.url,
+        method: req.method,
+        headers: req.headers,
+        agent: false,
+      },
+      (reply) => {
+        res.writeHead(reply.statusCode ?? 500, reply.headers);
+        reply.pipe(res);
+      },
+    );
+    upstreams.add(upstream);
+    upstream.on('error', () => res.destroy());
+    res.once('close', () => {
+      upstreams.delete(upstream);
+      upstream.destroy();
+    });
+    req.pipe(upstream);
+  });
+  try {
+    await new Promise<void>((resolve) => proxy.listen(join(clientState, 'operator.sock'), resolve));
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [
+        join(ROOT, 'bin/salaam.mjs'),
+        'tui',
+        '--session',
+        session.id,
+        '--observe',
+        '--state',
+        clientState,
+      ],
+      { state: clientState, columns: 116, rows: 38 },
+    );
+    await terminal.contains('Observer');
+    await terminal.write('\x14');
+    await terminal.contains('Command execution is off');
+    await terminal.write('\t');
+    await terminal.contains('SESSION CONTEXT');
+    await terminal.write('\x03');
+    expect(await terminal.exit()).toEqual({ code: 0, restored: true });
+    expect(f.service.store.snapshot(session.id).submissions).toHaveLength(0);
+  } finally {
+    await terminal?.close();
+    for (const req of upstreams) req.destroy();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
     await f.close();
   }
 }, 30000);

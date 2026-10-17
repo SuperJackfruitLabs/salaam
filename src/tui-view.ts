@@ -384,7 +384,7 @@ export class DocumentView implements Component {
       if (!c.commands.length)
         lines.push(
           ...this.text(
-            c.health?.execution.commands
+            c.health?.execution?.commands
               ? 'Commands will appear here with their actual exit status and captured revision.'
               : 'Command execution is off for this service.',
             width,
@@ -498,7 +498,7 @@ export class DocumentView implements Component {
             width,
           ),
         );
-      if (c.health?.execution.backend)
+      if (c.health?.execution?.backend)
         lines.push(
           t.fill('', width),
           ...this.title('EXECUTION', width),
@@ -573,8 +573,8 @@ export function sidebar(view: ViewModel, width: number): string[] {
   label('CODING TOOLS');
   row(c.workspace ? 'Files · guarded' : 'Files · off', c.workspace ? 'jade' : 'muted');
   row(
-    c.workspace && c.health?.execution.commands ? 'Commands · isolated' : 'Commands · off',
-    c.workspace && c.health?.execution.commands ? 'jade' : 'muted',
+    c.workspace && c.health?.execution?.commands ? 'Commands · isolated' : 'Commands · off',
+    c.workspace && c.health?.execution?.commands ? 'jade' : 'muted',
   );
   row('');
   row('ctrl+k  actions', 'muted');

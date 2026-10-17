@@ -18,8 +18,8 @@ import type { Workspace } from './workspaces.js';
 export interface OperatorHealth {
   service: string;
   provider_route: { provider: string; model: string; max_tokens: number };
-  coding_root: string | null;
-  execution: { commands?: boolean; available: boolean; backend?: Record<string, unknown> };
+  coding_root?: string | null;
+  execution?: { commands?: boolean; available: boolean; backend?: Record<string, unknown> };
 }
 export interface WorkspaceView extends Workspace {
   observed_digest: string | null;
