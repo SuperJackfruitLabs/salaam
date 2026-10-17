@@ -6,8 +6,13 @@ export const CAPABILITIES = [
   'managed-policy',
   'task-context',
   'provider-admission',
+  'durable-approvals',
+  'operation-ledger',
 ] as const;
-export const TOOLS = ['salaam_probe'] as const;
+export const TOOLS = ['salaam_probe', 'salaam_review'] as const;
+export function workerTools(effects: boolean): string[] {
+  return [...TOOLS, ...(effects ? ['salaam_effect'] : [])].sort();
+}
 export type WorkerState = 'stopped' | 'starting' | 'ready' | 'unhealthy' | 'exited';
 export interface Session {
   id: string;
@@ -33,7 +38,7 @@ export interface DurableEvent {
   payload: unknown;
 }
 export type AttemptState =
-  'accepted' | 'dispatching' | 'running' | 'completed' | 'failed' | 'interrupted';
+  'accepted' | 'dispatching' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
 export interface Attempt {
   id: string;
   session_id: string;
@@ -70,6 +75,53 @@ export interface SessionSnapshot extends Session {
   submissions: (Submission & { text_truncated: boolean })[];
   messages: { entry_id: string; role: string; text: string; truncated: boolean }[];
   history_truncated: boolean;
+  approvals: Approval[];
+  operations: Operation[];
+}
+export type OperationState =
+  | 'prepared'
+  | 'dispatching'
+  | 'succeeded'
+  | 'failed_definite'
+  | 'outcome_unknown'
+  | 'cancelled_before_dispatch';
+export interface Operation {
+  id: string;
+  session_id: string;
+  attempt_id: string;
+  worker_epoch: number;
+  tool_call_id: string;
+  kind: 'review' | 'effect';
+  action_key: string;
+  argument_digest: string;
+  operation_digest: string;
+  target: string;
+  value: string;
+  target_version: string;
+  policy_digest: string;
+  connector: string;
+  replay: 'lookup' | 'opaque' | 'read-only';
+  revision: number;
+  state: OperationState;
+  receipt: string | null;
+  error: string | null;
+  resolution: string | null;
+  value_truncated?: boolean;
+  receipt_available?: boolean;
+}
+export interface Approval {
+  id: string;
+  operation_id: string;
+  session_id: string;
+  worker_epoch: number;
+  operation_digest: string;
+  revision: number;
+  actor_scope: string;
+  policy_digest: string;
+  expires_at: number;
+  state: 'pending' | 'decided' | 'expired' | 'invalidated';
+  decision: 'approve' | 'deny' | null;
+  decided_by: string | null;
 }
 export interface Manifest {
   protocol_version: number;

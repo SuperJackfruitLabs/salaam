@@ -12,9 +12,13 @@ flowchart LR
     EXT --> BRIDGE[Authenticated worker bridge]
     BRIDGE --> DB
     BRIDGE --> SUP
+    API --> LEDGER[Approvals and operation ledger]
+    BRIDGE --> LEDGER
+    LEDGER --> DB
+    LEDGER --> EFFECT[Explicit conditional effect connector]
 ```
 
-Pi owns the conversation tree. Salaam imports read-only entries, cursors and active-leaf references after a turn settles. Salaam owns session lifecycle, accepted inputs, attempts, controller leases, request responses, artifact references and ordered durable events. It does not maintain an independently editable model transcript.
+Pi owns the conversation tree. Salaam imports read-only entries, cursors and active-leaf references after a turn settles. Salaam owns session lifecycle, accepted inputs, attempts, controller leases, approvals, operations/receipts, request responses, artifact references and ordered durable events. It does not maintain an independently editable model transcript.
 
 ## Readiness and grants
 
@@ -30,9 +34,9 @@ SQLite transactions include both the mutation and its event. Durable request IDs
 
 The client outbox flushes an instruction and stable request ID before sending. A lost acceptance response leaves the original record intact. Reattachment retries that logical request, even with a new controller credential. Cache lookup precedes lease/revision checks. A definite revision rejection permits rewriting the pending revision; unknown outcomes do not. Definitively invalid records are retained separately for inspection.
 
-One controller lease permits new input; observers only read. Lease acquisition/release/takeover advances a controller epoch, renewals retain it, and service recovery revokes all leases. Takeover does not stop an active prompt. Leases coordinate trusted clients and do not isolate applications running as the same OS user.
+One controller lease permits new input and cancellation. Approval authority is separate: any authorized client of the trusted OS account can decide, including an observer attachment. Lease acquisition/release/takeover advances a controller epoch, renewals retain it, and service recovery revokes all leases. Takeover does not stop an active prompt. Leases coordinate trusted clients and do not isolate applications running as the same OS user.
 
-The dispatcher is independent of attachments and runs one attempt per session. Its states are `accepted → dispatching → running → completed/failed/interrupted`. The service commits `dispatching` before writing the Pi prompt. Pi's `started` disposition is acceptance into a run, not proof of completion. A settled run, actual error outcomes and transcript collection determine the attempt result. Transcript import and completion share one transaction so a snapshot cannot expose a completed answer ahead of its completion event. A completed turn is not proof of success for an external operation.
+The dispatcher is independent of attachments and runs one attempt per session. Its states are `accepted → dispatching → running → completed/failed/interrupted/cancelled`. The service commits `dispatching` before writing the Pi prompt. Pi's `started` disposition is acceptance into a run, not proof of completion. A settled run, actual error outcomes and transcript collection determine the attempt result. Transcript import and completion share one transaction so a snapshot cannot expose a completed answer ahead of its completion event. A completed turn is not proof of success for an external operation.
 
 Snapshot projection follows the imported active leaf and bounds history and text. SSE replays committed events from that snapshot's cursor, handles socket backpressure and disconnects a persistently stalled consumer. Volatile previews have no event ID; the terminal renders committed results and does not use preview text as a recovery record.
 
@@ -46,4 +50,20 @@ Pi processes get their own process groups and a name containing the session, epo
 
 Workers also stop after bridge loss. Recovery does not adopt a live worker after supervisor death or replay unknown prompts. Once old workers are fenced, `dispatching`/`running` attempts become `interrupted`; `accepted` attempts remain queued. This includes the gap before a pipe write and the gap after Pi settles but before SQLite completion commits. Pi JSONL and SQLite cannot atomically acknowledge a prompt, so uncertainty is preserved rather than inferred away. Empty Pi sessions may not yet have a JSONL file; they retain their explicit session ID when restarted. A missing transcript with recorded model activity is an integrity failure.
 
-Ordinary worker stop, service stop and client disconnection are different lifetimes. The detached service outlives its launcher and attachments. Ctrl-C/Ctrl-D detaches; shutdown stops workers and records active interruptions before closing the journal. `resume` provisions the recorded session and permits safe queued dispatch after readiness. An unresolved interrupted attempt blocks the queue. Explicit continuation creates a new attempt with new instruction text, links it to the interrupted attempt and takes priority over prior queued work. Cancellation controls remain future work.
+Ordinary worker stop, service stop and client disconnection are different lifetimes. The detached service outlives its launcher and attachments. Ctrl-C/Ctrl-D detaches; shutdown stops workers and records active interruptions before closing the journal. `resume` provisions the recorded session and permits safe queued dispatch after readiness. An unresolved interrupted attempt blocks the queue. Explicit continuation creates a new attempt with new instruction text, links it to the interrupted attempt and takes priority over prior queued work. A failed worker can be replaced only after all prior writers are proven exited, with full readiness in a new epoch. Uncertain process ownership remains blocked.
+
+## Approvals and effects
+
+Preparation creates an immutable operation binding and a pending approval together. The binding covers session, attempt, worker epoch, tool-call lineage, server-generated action key, normalized argument digest, target/version, policy and connector. Reusing an invocation with different arguments conflicts. A distinct call gets a distinct key; model-supplied text cannot choose a previous key.
+
+Approvals have their own revision, authorized operator scope and durable deadline. Decisions are request-deduplicated before checking stale preconditions, then committed before notifying Pi. No transaction or session lock remains held while waiting for a human. Default expiry is five minutes; the adapter has no independent dialog/turn timer that silently overrides it.
+
+The house tool creates the durable approval before calling Pi confirm. A unique marker carries approval ID and digest; the supervisor persists the mapping to worker epoch and Pi request ID. Labels never route decisions. Bare confirm replies are presentation only: the operation dispatcher still checks the ledger. Worker loss invalidates old dialogs and prepared authority. A cached old decision response is historical evidence and cannot authorize a replacement invocation.
+
+The service owns effect transport. States are `prepared`, `dispatching`, `succeeded`, `failed_definite`, `outcome_unknown` and `cancelled_before_dispatch`. After approval, target preflight runs without a database lock. Immediately before dispatch, the service rechecks the active invocation, approval/deadline, policy, binding, connector and unresolved-operation gate, then commits `dispatching`. The external conditional write closes the target-version race. The fixture connector's lookup mode sends the stable key; opaque mode supplies no idempotency/lookup guarantee.
+
+Receipt validation binds the accepted payload and action key before a success commit. Connection failure after dispatch is unknown, never definite failure. Recovery fences old workers, cancels undispatched prepared operations and marks in-flight operations unknown, then performs read-only status lookup. A positive bound receipt resolves success. Not-found, unavailable lookup, changed connector or mismatched receipt cannot prove nonexecution, so the session remains blocked. Reconciliation never reissues an effect. An explicit operator resolution records its evidence and provenance separately from verified receipts.
+
+Cancellation commits its request, revokes new grants, invalidates pending authority, cancels prepared operations and preserves unknown dispatched outcomes. Pi abort and owned transport abort happen afterward. Already accepted external work may continue. Shutdown drains dispatch, effect transport, lookups and outstanding request handlers before closing SQLite. This includes a target-version preflight still awaiting its connector.
+
+The shipped connector targets an explicit local fixture protocol, not arbitrary production APIs. It uses conditional writes and optional key lookup; shell execution, live model accounts, production isolation and durable task verification remain outside this evidence.

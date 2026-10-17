@@ -16,6 +16,7 @@ import { terminalInput } from './input.js';
 import { call } from './transport.js';
 import {
   ServiceError,
+  canonical,
   type ControlLease,
   type Controller,
   type DurableEvent,
@@ -28,6 +29,15 @@ interface Pending {
   expected_revision: number;
   text: string;
   continues_attempt_id?: string;
+  command?:
+    | {
+        kind: 'decision';
+        approval_id: string;
+        operation_digest: string;
+        expected_revision: number;
+        decision: 'approve' | 'deny';
+      }
+    | { kind: 'cancel'; attempt_id: string };
 }
 function syncDirectory(path: string): void {
   const fd = openSync(path, 'r');
@@ -80,33 +90,117 @@ export class Outbox {
     this.save(record);
     return record;
   }
+  enqueueDecision(
+    approval: string,
+    binding: string,
+    revision: number,
+    decision: 'approve' | 'deny',
+    request: string = randomUUID(),
+  ): Pending {
+    if (
+      !/^[a-f0-9-]{36}$/i.test(request) ||
+      !/^[a-f0-9-]{36}$/i.test(approval) ||
+      !/^[a-f0-9]{64}$/i.test(binding) ||
+      !Number.isSafeInteger(revision) ||
+      revision < 1
+    )
+      throw new Error('Invalid decision identity or binding');
+    const record: Pending = {
+      created_at: Date.now(),
+      request_id: request,
+      expected_revision: revision,
+      text: '',
+      command: {
+        kind: 'decision',
+        approval_id: approval,
+        operation_digest: binding,
+        expected_revision: revision,
+        decision,
+      },
+    };
+    return this.enqueueCommand(record);
+  }
+  enqueueCancellation(attempt: string, revision: number, request: string = randomUUID()): Pending {
+    if (!/^[a-f0-9-]{36}$/i.test(request) || !/^[a-f0-9-]{36}$/i.test(attempt))
+      throw new Error('Invalid cancellation identity');
+    const record: Pending = {
+      created_at: Date.now(),
+      request_id: request,
+      expected_revision: revision,
+      text: '',
+      command: { kind: 'cancel', attempt_id: attempt },
+    };
+    return this.enqueueCommand(record);
+  }
+  private enqueueCommand(record: Pending): Pending {
+    const records = this.records();
+    const prior = records.find((prior) => prior.request_id === record.request_id);
+    if (prior) {
+      if (canonical({ ...prior, created_at: 0 }) !== canonical({ ...record, created_at: 0 }))
+        throw new Error('Pending request ID already binds different input');
+      return prior;
+    }
+    record.created_at = records.reduce(
+      (latest, prior) => Math.max(latest, prior.created_at + 1),
+      Date.now(),
+    );
+    this.save(record);
+    return record;
+  }
   records(): Pending[] {
     return readdirSync(this.dir)
       .filter((name) => /^[a-f0-9-]{36}\.json$/i.test(name))
       .map((name) => JSON.parse(readFileSync(join(this.dir, name), 'utf8')) as Pending)
       .sort((a, b) => a.created_at - b.created_at);
   }
-  async flush(socket: string, session: string, controller: Controller): Promise<void> {
+  async flush(socket: string, session: string, controller?: Controller): Promise<void> {
     for (const record of this.records()) {
+      if (record.command?.kind !== 'decision' && !controller) continue;
       // Refresh only after a definite rejection. On a transport/500 failure the
       // original request remains byte-for-byte retryable on the next attach.
       for (let retry = 0; ; retry++) {
         try {
-          await call(socket, `/v1/sessions/${session}/submissions`, { ...record, ...controller });
+          if (record.command?.kind === 'decision')
+            await call(socket, `/v1/approvals/${record.command.approval_id}/decision`, {
+              ...record.command,
+              request_id: record.request_id,
+            });
+          else if (record.command?.kind === 'cancel')
+            await call(socket, `/v1/attempts/${record.command.attempt_id}/cancel`, {
+              request_id: record.request_id,
+              expected_revision: record.expected_revision,
+              ...controller,
+            });
+          else
+            await call(socket, `/v1/sessions/${session}/submissions`, { ...record, ...controller });
           unlinkSync(join(this.dir, record.request_id + '.json'));
           syncDirectory(this.dir);
           break;
         } catch (error) {
           if (
             error instanceof ServiceError &&
-            ['reserved_command', 'invalid_continuation', 'invalid_field'].includes(error.code)
+            ([
+              'reserved_command',
+              'invalid_continuation',
+              'invalid_field',
+              'approval_stale',
+              'approval_mismatch',
+              'binding_changed',
+              'attempt_settled',
+            ].includes(error.code) ||
+              (record.command && error.code === 'not_found'))
           ) {
             const rejected = join(this.dir, record.request_id + '.rejected.json');
             renameSync(join(this.dir, record.request_id + '.json'), rejected);
             syncDirectory(this.dir);
             throw new Error(`${error.message}; rejected input saved at ${rejected}`);
           }
-          if (!(error instanceof ServiceError) || error.code !== 'revision_conflict' || retry >= 20)
+          if (
+            record.command?.kind === 'decision' ||
+            !(error instanceof ServiceError) ||
+            error.code !== 'revision_conflict' ||
+            retry >= 20
+          )
             throw error;
           const snapshot = await call<SessionSnapshot>(socket, `/v1/sessions/${session}/snapshot`);
           record.expected_revision = snapshot.revision;
@@ -225,22 +319,31 @@ export async function attach(
   if (snapshot.history_truncated) output('[Showing recent transcript history.]');
   for (const attempt of snapshot.attempts.filter((a) => !['completed', 'failed'].includes(a.state)))
     output(`[${attempt.id}: ${attempt.state}${attempt.resolved_by ? ', continued' : ''}]`);
+  for (const approval of snapshot.approvals.filter((a) => a.state === 'pending')) {
+    const op = snapshot.operations.find((op) => op.id === approval.operation_id);
+    output(
+      `[approval ${approval.id}] ${safe(op?.target ?? '')} ${safe(op?.value ?? '')}${op?.value_truncated ? ' [truncated; inspect full operation]' : ''} version=${safe(op?.target_version ?? '')} digest=${approval.operation_digest} revision=${approval.revision}`,
+    );
+  }
+  for (const op of snapshot.operations.filter((op) => op.state === 'outcome_unknown'))
+    output(`[operation ${op.id}: outcome_unknown; inspect and reconcile before continuing]`);
   output(
-    `Attached to ${id} (${controller ? 'controller' : 'observer'}). Ctrl-D or Ctrl-C detaches.`,
+    `Attached to ${id} (${controller ? 'controller' : 'observer'}). Ctrl-D or Ctrl-C detaches. :help lists decision and cancel commands.`,
   );
-  const outbox = controller ? new Outbox(state, id) : undefined;
+  const outbox = new Outbox(state, id);
   let active = true;
   let feed: Feed | undefined;
   let queue = Promise.resolve();
   const flush = () => {
     queue = queue
       .then(async () => {
-        if (controller) await outbox?.flush(socket, id, controller);
+        await outbox.flush(socket, id, controller);
       })
       .catch((error) => output(`[input delivery: ${(error as Error).message}]`));
   };
-  if (controller) flush();
+  flush();
   const renew = setInterval(() => {
+    flush();
     if (!lease || !controller) return;
     const old = lease;
     void call<ControlLease>(socket, `/v1/sessions/${id}/control`, {
@@ -261,7 +364,6 @@ export async function attach(
           output('[Controller lease lost; observing. Reattach with --takeover to take control.]');
         }
       });
-    flush();
   }, 5000);
   const reconnect = (async () => {
     while (active) {
@@ -272,14 +374,43 @@ export async function attach(
           text?: string;
           error?: string;
           truncated?: boolean;
+          approval_id?: string;
+          operation_digest?: string;
+          target?: string;
+          value?: string;
+          target_version?: string;
+          operation_id?: string;
         };
         if (event.kind === 'attempt.completed')
           output(
             `assistant> ${safe(payload.text ?? '')}${payload.truncated ? ' [truncated]' : ''}`,
           );
-        else if (['attempt.running', 'attempt.interrupted', 'attempt.failed'].includes(event.kind))
+        else if (
+          [
+            'attempt.running',
+            'attempt.interrupted',
+            'attempt.failed',
+            'attempt.cancelled',
+            'attempt.cancel_requested',
+          ].includes(event.kind)
+        )
           output(
             `[${payload.attempt_id}: ${event.kind.slice(8)}${payload.error ? ': ' + safe(payload.error) : ''}]`,
+          );
+        else if (event.kind === 'approval.requested')
+          output(
+            `[approval ${payload.approval_id}] ${safe(payload.target ?? '')} ${safe(payload.value ?? '')} version=${safe(payload.target_version ?? '')} digest=${payload.operation_digest} revision=1`,
+          );
+        else if (
+          event.kind.startsWith('operation.') &&
+          [
+            'operation.succeeded',
+            'operation.outcome_unknown',
+            'operation.failed_definite',
+          ].includes(event.kind)
+        )
+          output(
+            `[${event.kind} ${payload.operation_id}${payload.error ? ': ' + safe(payload.error) : ''}]`,
           );
         cursor = event.seq;
         revision = event.seq;
@@ -294,11 +425,36 @@ export async function attach(
   })();
   const acceptLine = (text: string) => {
     if (!text.trim()) return;
+    const decision = /^:(approve|deny) ([a-f0-9-]{36}) ([a-f0-9]{64}) (\d+)$/.exec(text);
+    if (decision) {
+      outbox.enqueueDecision(
+        decision[2]!,
+        decision[3]!,
+        Number(decision[4]),
+        decision[1] === 'approve' ? 'approve' : 'deny',
+      );
+      flush();
+      return;
+    }
+    const cancellation = /^:cancel ([a-f0-9-]{36})$/.exec(text);
+    if (cancellation) {
+      if (!controller) {
+        output('[A controller lease is required to cancel.]');
+        return;
+      }
+      outbox.enqueueCancellation(cancellation[1]!, revision);
+      flush();
+      return;
+    }
+    if (text.startsWith(':')) {
+      output('Commands: :approve ID DIGEST REV | :deny ID DIGEST REV | :cancel ATTEMPT_ID');
+      return;
+    }
     if (text.trimStart().startsWith('/')) {
       output('[Pi slash commands are unavailable; enter a plain instruction.]');
       return;
     }
-    if (!controller || !outbox) {
+    if (!controller) {
       output('[Read-only attachment; use --takeover to submit.]');
       return;
     }

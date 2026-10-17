@@ -7,7 +7,14 @@ export class Dispatcher {
   private paused = false;
   private active = new Map<string, Promise<void>>();
   private change = (event: DurableEvent) => {
-    if (event.kind === 'submission.accepted' || event.kind === 'worker.ready')
+    if (
+      [
+        'submission.accepted',
+        'worker.ready',
+        'operation.succeeded',
+        'operation.failed_definite',
+      ].includes(event.kind)
+    )
       this.kick(event.session_id);
   };
   private idle = (id: string) => this.kick(id);

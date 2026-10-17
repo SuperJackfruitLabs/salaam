@@ -11,12 +11,15 @@ import {
   object,
   ServiceError,
   textDigest,
+  workerTools,
+  string,
   type Manifest,
   type Session,
 } from './protocol.js';
 import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.js';
 import { PiProcess } from './pi.js';
 import type { Store } from './store.js';
+import type { ManagedWork } from './managed.js';
 
 export interface Launch {
   command: string;
@@ -31,6 +34,7 @@ export interface SupervisorOptions {
   heartbeatTimeout?: number;
   launch?: (launch: Launch) => PiProcess;
   extensionPath?: string;
+  effectsEnabled?: boolean;
 }
 interface Worker {
   id: string;
@@ -56,6 +60,9 @@ export function processIdentity(pid: number): string | null {
       execFileSync('/bin/ps', ['-ww', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000,
+        killSignal: 'SIGKILL',
+        maxBuffer: 16384,
       }).trim() || null
     );
   } catch {
@@ -72,6 +79,7 @@ function groupExists(pid: number): boolean {
   }
 }
 export class Supervisor extends EventEmitter {
+  managed?: ManagedWork;
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
   private monitor: NodeJS.Timeout;
@@ -128,7 +136,14 @@ export class Supervisor extends EventEmitter {
     if (prior && !prior.stopping)
       throw new ServiceError('worker_exists', 'Worker already supervised');
     const previous = this.store.session(id);
-    if (previous.state === 'unhealthy')
+    // A new worker must earn readiness again. Only a proven-dead previous
+    // writer permits this; uncertain process ownership still blocks recovery.
+    if (
+      previous.state === 'unhealthy' &&
+      this.store.db
+        .prepare("SELECT 1 FROM workers WHERE session_id=? AND state!='exited' LIMIT 1")
+        .get(id)
+    )
       throw new ServiceError(
         'reconciliation_required',
         previous.error ?? 'Session requires reconciliation',
@@ -173,6 +188,7 @@ export class Supervisor extends EventEmitter {
         bundle: this.bundle,
         policy: POLICY_DIGEST,
         frame,
+        effects: !!this.options.effectsEnabled,
       };
       const args = [
         PI_CLI,
@@ -195,7 +211,7 @@ export class Supervisor extends EventEmitter {
         '--no-context-files',
         '--no-builtin-tools',
         '--tools',
-        'salaam_probe',
+        workerTools(!!this.options.effectsEnabled).join(','),
         '--provider',
         'salaam-proof',
         '--model',
@@ -230,6 +246,28 @@ export class Supervisor extends EventEmitter {
         if (!worker.stopping) this.invalidate(worker, 'Pi transport failed');
       });
       worker.pi.on('record', (record) => {
+        if (
+          record.type === 'extension_ui_request' &&
+          record.method === 'confirm' &&
+          typeof record.id === 'string'
+        ) {
+          const marker =
+            typeof record.title === 'string'
+              ? /^salaam-approval:([a-f0-9-]{36}):([a-f0-9]{64})$/.exec(record.title)
+              : null;
+          try {
+            if (!marker || !this.managed) {
+              worker.pi!.replyUI(record.id, false);
+              return;
+            }
+            this.managed.bindDialog(id, epoch, marker[1]!, marker[2]!, record.id);
+          } catch {
+            try {
+              worker.pi!.replyUI(record.id, false);
+            } catch {}
+            if (!worker.stopping) this.invalidate(worker, 'Approval dialog binding failed');
+          }
+        }
         if (worker.attempt && record.type === 'message_update') {
           const update = object(record.assistantMessageEvent ?? {});
           if (update.type === 'text_delta' && typeof update.delta === 'string')
@@ -289,6 +327,11 @@ export class Supervisor extends EventEmitter {
     worker.ready = false;
     worker.reject(new Error(reason));
     try {
+      this.managed?.invalidateWorker(worker.id, worker.epoch);
+    } catch {
+      /* in-memory readiness denial fences new dispatch */
+    }
+    try {
       this.store.state(worker.id, worker.epoch, 'unhealthy', reason);
     } catch {
       /* in-memory denial remains authoritative if persistence fails */
@@ -318,15 +361,15 @@ export class Supervisor extends EventEmitter {
     }
     return w;
   }
-  bridge(
+  async bridge(
     id: string,
     method: string,
     token: string | undefined,
     body: Record<string, unknown>,
-  ): unknown {
+  ): Promise<unknown> {
     const w = this.authenticate(id, token, body);
     if (method === 'failure') {
-      this.invalidate(w, 'Required extension failed');
+      if (!w.stopping) this.invalidate(w, 'Required extension failed');
       return { ok: true };
     }
     if (w.invalid || w.stopping)
@@ -342,8 +385,8 @@ export class Supervisor extends EventEmitter {
           pi_session_id: id,
           epoch: w.epoch,
           capabilities: [...CAPABILITIES],
-          tools: [...TOOLS],
-          active_tools: [...TOOLS],
+          tools: workerTools(!!this.options.effectsEnabled),
+          active_tools: workerTools(!!this.options.effectsEnabled),
           provider: 'salaam-proof',
           context_digest: textDigest(w.frame),
         };
@@ -364,7 +407,36 @@ export class Supervisor extends EventEmitter {
     }
     if (!w.ready || this.store.session(id).state !== 'ready')
       throw new ServiceError('not_ready', 'Worker has not passed readiness', 403);
+    if (w.attempt && this.store.cancelled(w.attempt))
+      throw new ServiceError('attempt_cancelled', 'Attempt cancellation revoked further grants');
     try {
+      if (
+        method === 'operation.prepare' ||
+        method === 'operation.status' ||
+        method === 'operation.run'
+      ) {
+        if (!this.managed || !w.attempt) throw new Error('No active managed attempt');
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'operation.prepare') {
+          if (body.kind !== 'review' && body.kind !== 'effect')
+            throw new Error('Unsupported operation kind');
+          if (body.kind === 'effect' && !this.options.effectsEnabled)
+            throw new Error('Effects are disabled');
+          return await this.managed.prepare(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            body.kind,
+            string(body.target, 'target', 256),
+            string(body.value, 'value', 4096),
+          );
+        }
+        const op = this.managed.operation(string(body.operation_id, 'operation_id', 128));
+        if (op.session_id !== id || op.worker_epoch !== w.epoch || op.attempt_id !== w.attempt)
+          throw new Error('Operation belongs to another invocation');
+        return method === 'operation.run' ? this.managed.start(op.id, id, w.epoch, w.attempt) : op;
+      }
       if (method === 'model') {
         if (
           body.provider !== 'salaam-proof' ||
@@ -381,7 +453,8 @@ export class Supervisor extends EventEmitter {
           });
         });
       } else if (method === 'policy' || method === 'tool') {
-        if (body.tool !== 'salaam_probe') throw new Error('Tool is outside policy');
+        if (!workerTools(!!this.options.effectsEnabled).includes(String(body.tool)))
+          throw new Error('Tool is outside policy');
         this.store.transaction(() => {
           this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
             attempt_id: w.attempt ?? null,
@@ -392,7 +465,7 @@ export class Supervisor extends EventEmitter {
       } else throw new Error('Unsupported worker operation');
       return { ok: true };
     } catch (error) {
-      this.invalidate(w, 'Required control failed: ' + (error as Error).message);
+      if (!w.stopping) this.invalidate(w, 'Required control failed: ' + (error as Error).message);
       throw new ServiceError('control_failed', 'Required control unavailable', 503);
     }
   }
@@ -415,6 +488,39 @@ export class Supervisor extends EventEmitter {
         error: 'Worker epoch changed; reconciliation required',
       };
     return state;
+  }
+  assertActive(id: string, epoch: number, attempt: string): void {
+    const w = this.workers.get(id);
+    if (
+      !w ||
+      !w.ready ||
+      w.invalid ||
+      w.stopping ||
+      w.epoch !== epoch ||
+      w.attempt !== attempt ||
+      this.store.assertEpoch(id, epoch).state !== 'ready' ||
+      this.store.cancelled(attempt)
+    )
+      throw new ServiceError('invocation_inactive', 'Worker no longer owns this invocation');
+  }
+  replyUI(id: string, epoch: number, request: string, confirmed: boolean): void {
+    const w = this.workers.get(id);
+    if (!w || w.epoch !== epoch || w.stopping || w.invalid) return;
+    w.pi?.replyUI(request, confirmed);
+  }
+  failControl(id: string, error: Error): void {
+    const w = this.workers.get(id);
+    if (w) this.invalidate(w, 'Managed control failed: ' + error.message);
+  }
+  async cancelAttempt(attempt: string): Promise<void> {
+    const work = this.store.attempt(attempt);
+    const w = this.workers.get(work.session_id);
+    if (!w?.pi || w.attempt !== attempt) return;
+    try {
+      await w.pi.command('abort', {}, 5000);
+    } catch {
+      await this.stopWorker(w);
+    }
   }
   async probe(id: string, nested = false): Promise<{ text: string }> {
     const w = this.workers.get(id);
@@ -453,7 +559,8 @@ export class Supervisor extends EventEmitter {
     if (!work) return false;
     w.busy = true;
     w.attempt = work.attempt.id;
-    const settled = w.pi.waitFor('agent_settled', 120_000);
+    // Approval deadlines belong to the journal, not an adapter-side timer.
+    const settled = w.pi.waitFor('agent_settled', 0);
     void settled.catch(() => {});
     let outcomeError: string | null = null;
     const record = (value: Record<string, unknown>) => {
@@ -486,7 +593,8 @@ export class Supervisor extends EventEmitter {
         { epoch: w.epoch, ...entries },
       );
     } catch (error) {
-      if (!w.stopping) this.invalidate(w, 'Attempt interrupted: ' + (error as Error).message);
+      if (!w.stopping && !this.store.cancelled(work.attempt.id))
+        this.invalidate(w, 'Attempt interrupted: ' + (error as Error).message);
       this.store.finish(work.attempt.id, 'interrupted', null, (error as Error).message);
     } finally {
       w.pi.off('record', record);
@@ -524,6 +632,11 @@ export class Supervisor extends EventEmitter {
     }
     w.stopping = true;
     w.ready = false;
+    try {
+      this.managed?.invalidateWorker(w.id, w.epoch);
+    } catch {
+      /* shutdown still owns and stops the worker */
+    }
     await w.pi?.stop();
     if (!w.invalid) this.store.state(w.id, w.epoch, 'exited');
     // Preserve the unhealthy session reason while marking this process dead.

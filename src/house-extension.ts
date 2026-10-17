@@ -6,7 +6,13 @@ import {
 } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import { call } from './transport.js';
-import { CAPABILITIES, PROTOCOL_VERSION, textDigest } from './protocol.js';
+import {
+  CAPABILITIES,
+  PROTOCOL_VERSION,
+  textDigest,
+  type Approval,
+  type Operation,
+} from './protocol.js';
 
 interface WorkerConfig {
   socket: string;
@@ -16,6 +22,7 @@ interface WorkerConfig {
   bundle: string;
   policy: string;
   frame: string;
+  effects?: boolean;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -61,6 +68,95 @@ export default function house(pi: ExtensionAPI): void {
       };
     },
   });
+  const managedTool = (name: 'salaam_review' | 'salaam_effect', kind: 'review' | 'effect') =>
+    pi.registerTool({
+      name,
+      label: kind === 'review' ? 'Approved read-only review' : 'Approved fixture effect',
+      description:
+        'Request an operation-bound human decision; execute only the service-authorized operation.',
+      parameters: Type.Object({
+        target: Type.Optional(Type.String({ maxLength: 256 })),
+        targets: Type.Optional(Type.Array(Type.String({ maxLength: 256 }), { maxItems: 8 })),
+        value: Type.Optional(Type.String({ maxLength: 4096 })),
+      }),
+      annotations: { readOnlyHint: kind === 'review', openWorldHint: kind === 'effect' },
+      async execute(toolCallId, params, signal, _update, ctx) {
+        if (params.targets) {
+          const outcomes = await Promise.all(
+            params.targets.map((target) =>
+              ctx.executeTool(
+                name,
+                { target, value: params.value ?? 'offline fixture' },
+                { signal },
+              ),
+            ),
+          );
+          for (const outcome of outcomes) {
+            if (!outcome.isError || signal?.aborted) continue;
+            const operationId = outcome.result.details?.operation_id;
+            const operation =
+              typeof operationId === 'string'
+                ? await bridge<Operation>('operation.status', { operation_id: operationId })
+                : undefined;
+            // A definite/uncertain operation outcome is normal tool failure.
+            // A missing execution/gate result is a required-control failure.
+            if (!operation || !['failed_definite', 'outcome_unknown'].includes(operation.state)) {
+              await fail();
+              throw new Error('Required nested managed tool path failed');
+            }
+          }
+          return {
+            content: outcomes.flatMap((outcome) => outcome.result.content),
+            details: { results: outcomes.map((outcome) => outcome.result.details) },
+            isError: outcomes.some((outcome) => outcome.isError),
+          };
+        }
+        if (!params.target) throw new Error('A target is required');
+        const created = await bridge<{ operation: Operation; approval: Approval }>(
+          'operation.prepare',
+          {
+            tool_call_id: toolCallId,
+            kind,
+            target: params.target,
+            value: params.value ?? 'offline fixture',
+          },
+        );
+        // The dialog is a presentation channel. Only the durable ledger decision
+        // can authorize dispatch, even if an unsolicited raw UI reply says yes.
+        await ctx.ui.confirm(
+          `salaam-approval:${created.approval.id}:${created.operation.operation_digest}`,
+          `${kind}: ${params.target}\n${params.value ?? 'offline fixture'}\nVersion: ${created.operation.target_version}`,
+          { signal },
+        );
+        let operation = await bridge<Operation>('operation.run', {
+          operation_id: created.operation.id,
+        });
+        while (['prepared', 'dispatching'].includes(operation.state)) {
+          if (signal?.aborted) throw new Error('Managed operation cancelled');
+          await new Promise((resolve) => setTimeout(resolve, 75));
+          operation = await bridge<Operation>(
+            operation.state === 'prepared' ? 'operation.run' : 'operation.status',
+            { operation_id: created.operation.id },
+          );
+        }
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `${operation.target}: ${operation.state}${operation.error ? ': ' + operation.error : ''}`,
+            },
+          ],
+          details: {
+            operation_id: operation.id,
+            state: operation.state,
+            receipt: operation.receipt ? JSON.parse(operation.receipt) : null,
+          },
+          isError: ['failed_definite', 'outcome_unknown'].includes(operation.state),
+        };
+      },
+    });
+  managedTool('salaam_review', 'review');
+  if (c.effects) managedTool('salaam_effect', 'effect');
   pi.on('tool_call', async (event) => {
     try {
       await bridge('policy', { tool: event.toolName });
@@ -148,16 +244,43 @@ export default function house(pi: ExtensionAPI): void {
           );
           const hasResult = context.messages
             .slice(realUser + 1)
-            .some((x) => x.role === 'toolResult' && x.toolName === 'salaam_probe');
-          if (!hasResult) {
-            const source = context.messages[realUser];
+            .some(
+              (x) =>
+                x.role === 'toolResult' &&
+                ['salaam_probe', 'salaam_review', 'salaam_effect'].includes(x.toolName),
+            );
+          const source = context.messages[realUser];
+          const input =
+            source?.role === 'user'
+              ? typeof source.content === 'string'
+                ? source.content
+                : source.content
+                    .filter((p) => p.type === 'text')
+                    .map((p) => (p.type === 'text' ? p.text : ''))
+                    .join('')
+              : '';
+          const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
+          const effectDisabled = managed?.[1] === 'effect' && !c.effects;
+          if (!hasResult && !effectDisabled) {
             const nested =
               source?.role === 'user' && JSON.stringify(source.content).includes('nested');
             const toolCall: ToolCall = {
               type: 'toolCall' as const,
               id: `probe-${Date.now()}`,
-              name: 'salaam_probe',
-              arguments: nested ? { nested: true } : {},
+              name:
+                managed?.[1] === 'effect'
+                  ? 'salaam_effect'
+                  : managed
+                    ? 'salaam_review'
+                    : 'salaam_probe',
+              arguments: managed
+                ? {
+                    targets: managed[2]!.split(',').map((target) => target.trim()),
+                    value: 'offline fixture',
+                  }
+                : nested
+                  ? { nested: true }
+                  : {},
             };
             response.content.push(toolCall);
             response.stopReason = 'toolUse';
@@ -167,16 +290,13 @@ export default function house(pi: ExtensionAPI): void {
           } else {
             response.content.push({ type: 'text', text: '' });
             stream.push({ type: 'text_start', contentIndex: 0, partial: response });
-            const source = context.messages[realUser];
-            const input =
-              source?.role === 'user'
-                ? typeof source.content === 'string'
-                  ? source.content
-                  : source.content.map((p) => (p.type === 'text' ? p.text : '')).join('')
-                : '';
-            const text = /^Run the (nested )?Salaam readiness probe\.$/.test(input)
-              ? 'Salaam readiness probe complete.'
-              : 'Offline reply: ' + input;
+            const text = effectDisabled
+              ? 'External effect connector is disabled; no effect was dispatched.'
+              : /^Run the (nested )?Salaam readiness probe\.$/.test(input)
+                ? 'Salaam readiness probe complete.'
+                : /^\[(review|effect)\]/.test(input)
+                  ? 'Offline managed operations settled; inspect their ledger outcomes.'
+                  : 'Offline reply: ' + input;
             response.content[0] = { type: 'text', text };
             stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
             stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });

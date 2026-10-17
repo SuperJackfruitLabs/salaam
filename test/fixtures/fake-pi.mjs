@@ -1,5 +1,5 @@
 import { call } from '../../dist/src/transport.js';
-import { CAPABILITIES, textDigest } from '../../dist/src/protocol.js';
+import { CAPABILITIES, textDigest, workerTools } from '../../dist/src/protocol.js';
 const c = JSON.parse(process.env.SALAAM_WORKER_CONFIG);
 const mode = process.env.SALAAM_TEST_SCENARIO ?? 'ready';
 const bridge = (method, body = {}, token = c.token) =>
@@ -36,8 +36,8 @@ const manifest = {
   pi_session_id: c.session,
   epoch: c.epoch,
   capabilities: [...CAPABILITIES],
-  tools: ['salaam_probe'],
-  active_tools: ['salaam_probe'],
+  tools: workerTools(!!c.effects),
+  active_tools: workerTools(!!c.effects),
   provider: 'salaam-proof',
   context_digest: textDigest(c.frame),
 };
@@ -48,6 +48,8 @@ const mutations = {
   'wrong-session': { pi_session_id: 'wrong' },
   'wrong-tools': { tools: ['salaam_probe', 'bypass'] },
   'missing-context': { capabilities: ['persistent-session'] },
+  'missing-approvals': { capabilities: CAPABILITIES.filter((x) => x !== 'durable-approvals') },
+  'missing-ledger': { capabilities: CAPABILITIES.filter((x) => x !== 'operation-ledger') },
 };
 if (mode !== 'missing') {
   try {

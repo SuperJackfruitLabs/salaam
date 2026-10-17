@@ -8,9 +8,13 @@ import { Supervisor, type SupervisorOptions } from './supervisor.js';
 import { integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
 import { Dispatcher } from './dispatcher.js';
+import { ManagedWork } from './managed.js';
+import type { EffectConnector } from './effect-connector.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
+  effectConnector?: EffectConnector;
+  approvalTtlMs?: number;
 }
 export class SalaamService {
   readonly stateDir: string;
@@ -20,12 +24,14 @@ export class SalaamService {
   readonly artifacts: Artifacts;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
+  readonly managed: ManagedWork;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
   private operator: Server;
   private bridgeServer: Server;
   private release: () => void;
   private stopping = false;
+  private handlers = new Set<Promise<void>>();
   private constructor(options: ServiceOptions) {
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
@@ -44,7 +50,17 @@ export class SalaamService {
           ...options,
           stateDir: this.stateDir,
           bridgeSocket: this.bridgeSocket,
+          effectsEnabled: !!options.effectConnector,
         });
+        this.managed = new ManagedWork(this.store, {
+          connector: options.effectConnector,
+          approvalTtlMs: options.approvalTtlMs,
+          assertActive: (id, epoch, attempt) => this.supervisor.assertActive(id, epoch, attempt),
+          reply: (id, epoch, request, confirmed) =>
+            this.supervisor.replyUI(id, epoch, request, confirmed),
+          failed: (id, error) => this.supervisor.failControl(id, error),
+        });
+        this.supervisor.managed = this.managed;
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
       } catch (error) {
         this.store.close();
@@ -58,21 +74,30 @@ export class SalaamService {
       this.resolveClosed = resolve;
     });
     this.operator = createServer((req, res) => {
-      void this.handle(req, res, false);
+      this.serve(req, res, false);
     });
     this.bridgeServer = createServer((req, res) => {
-      void this.handle(req, res, true);
+      this.serve(req, res, true);
     });
     for (const server of [this.operator, this.bridgeServer]) {
       server.requestTimeout = 10_000;
       server.headersTimeout = 10_000;
     }
   }
+  private serve(req: IncomingMessage, res: ServerResponse, bridge: boolean): void {
+    const task = this.handle(req, res, bridge)
+      .catch(() => res.destroy())
+      .then(() => {});
+    this.handlers.add(task);
+    void task.finally(() => this.handlers.delete(task));
+  }
   static async open(options: ServiceOptions): Promise<SalaamService> {
     const service = new SalaamService(options);
     try {
       await service.supervisor.recover();
       service.store.recoverWork();
+      service.managed.recover();
+      await service.managed.reconcileAll();
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
       return service;
@@ -106,7 +131,7 @@ export class SalaamService {
         if (req.method !== 'POST' || parts.length !== 3 || parts[0] !== 'worker')
           throw new ServiceError('not_found', 'Bridge route not found', 404);
         const authorization = req.headers.authorization;
-        const value = this.supervisor.bridge(
+        const value = await this.supervisor.bridge(
           parts[1]!,
           parts[2]!,
           authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined,
@@ -119,11 +144,16 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          effect_connector: this.managed.options.connector?.id ?? null,
           sessions: sessions.map((x) => ({
             id: x.id,
             state: x.state,
             error: x.error,
             capabilities: x.capabilities,
+            pending_approvals: this.store
+              .approvals(x.id)
+              .filter((approval) => approval.state === 'pending').length,
+            unresolved_operations: this.store.hasUnknown(x.id),
           })),
         });
         return;
@@ -155,6 +185,106 @@ export class SalaamService {
         if (this.store.session(session.id).state === 'stopped')
           void this.supervisor.start(session.id).catch(() => {});
         this.send(res, 201, session);
+        return;
+      }
+      if (parts[0] === 'v1' && parts[1] === 'approvals') {
+        if (parts.length === 2 && req.method === 'GET') {
+          const id = url.searchParams.get('session');
+          this.managed.expire();
+          this.send(res, 200, id ? this.store.approvals(id) : this.managed.pending());
+          return;
+        }
+        if (parts[2] && parts.length === 3 && req.method === 'GET') {
+          this.managed.expire();
+          this.send(res, 200, this.managed.approval(parts[2]));
+          return;
+        }
+        if (parts[2] && parts[3] === 'decision' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          const decision = string(body.decision, 'decision');
+          if (decision !== 'approve' && decision !== 'deny')
+            throw new ServiceError('invalid_field', 'Decision must be approve or deny', 400);
+          this.send(
+            res,
+            200,
+            this.managed.decide(
+              parts[2],
+              string(body.request_id, 'request_id', 128),
+              integer(body.expected_revision, 'expected_revision'),
+              string(body.operation_digest, 'operation_digest', 128),
+              decision,
+            ),
+          );
+          return;
+        }
+      }
+      if (parts[0] === 'v1' && parts[1] === 'operations' && parts[2]) {
+        const id = parts[2];
+        if (parts.length === 3 && req.method === 'GET') {
+          this.send(res, 200, this.managed.operation(id));
+          return;
+        }
+        if (parts[3] === 'reconcile' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          const request = string(body.request_id, 'request_id', 128);
+          const input = { kind: 'reconcile-operation', id };
+          const saved = this.store.cachedRequest('local-operator', request, input);
+          if (saved !== undefined) {
+            this.send(res, 200, saved);
+            return;
+          }
+          const result = await this.managed.reconcile(id);
+          this.send(
+            res,
+            200,
+            this.store.request('local-operator', request, input, () => result),
+          );
+          return;
+        }
+        if (parts[3] === 'resolution' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          const outcome = string(body.outcome, 'outcome');
+          if (outcome !== 'succeeded' && outcome !== 'failed_definite')
+            throw new ServiceError('invalid_field', 'Invalid resolution outcome', 400);
+          this.send(
+            res,
+            200,
+            this.managed.resolve(
+              id,
+              string(body.request_id, 'request_id', 128),
+              integer(body.expected_revision, 'expected_revision'),
+              string(body.operation_digest, 'operation_digest', 128),
+              outcome,
+              string(body.evidence, 'evidence', 4096),
+            ),
+          );
+          return;
+        }
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'attempts' &&
+        parts[2] &&
+        parts[3] === 'cancel' &&
+        req.method === 'POST'
+      ) {
+        const body = object(await readJson(req));
+        const attempt = parts[2];
+        const receipt = this.managed.cancel(
+          attempt,
+          string(body.request_id, 'request_id', 128),
+          integer(body.expected_revision, 'expected_revision'),
+          {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          },
+        );
+        void this.supervisor
+          .cancelAttempt(attempt)
+          .catch((error) =>
+            this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
+          );
+        this.send(res, 202, receipt);
         return;
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
@@ -322,6 +452,7 @@ export class SalaamService {
     }
     this.stopping = true;
     this.dispatcher.pause();
+    this.managed.pause();
     const errors: unknown[] = [];
     try {
       try {
@@ -330,6 +461,7 @@ export class SalaamService {
         errors.push(error);
       }
       await this.dispatcher.drain();
+      await this.managed.close();
       await Promise.all(
         [this.operator, this.bridgeServer].map(
           (server) =>
@@ -343,6 +475,7 @@ export class SalaamService {
             }),
         ),
       );
+      await Promise.all(this.handlers);
       try {
         this.store.close();
       } catch (error) {

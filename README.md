@@ -2,7 +2,7 @@
 
 Salaam is a local session service supervising persistent Pi workers. Terminal and editor clients will share the same sessions, while Salaam owns task and operation state around Pi's conversation history.
 
-The current implementation covers **M0–M3**: a reproducible Pi bundle, transactional service core, supervised workers, interactive attachment and durable prompt dispatch. Clients can disconnect and reconnect to the same session without resending accepted work. The available model route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. It exercises real Pi, persistence and service gates without model credentials.
+The current implementation covers **M0–M5**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals and an operation/receipt ledger. The available model route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. This tests the service boundaries without model credentials or live third-party integrations.
 
 ## Run locally
 
@@ -15,11 +15,12 @@ npm run check
 npm test
 npm run verify:pi
 npm run demo:session
+npm run demo:managed
 ```
 
 `npm test` and the demo open Unix sockets and supervise subprocesses. They require a host environment permitting those operations. Tests use disposable directories under `/tmp`; no provider credentials or paid requests are involved.
 
-The demo creates a session, waits for readiness, runs a gated Pi turn, inspects durable events, verifies an artifact, and shuts down its workers. Its state is removed afterward.
+The session demo runs a gated turn, inspects events and verifies an artifact. The managed demo starts a real Pi worker and an independent durable effect fixture, creates two concurrent approval requests, uses the CLI to approve B and deny A, and checks that only B executes. Both demos remove their disposable state and stop their workers.
 
 To keep a service running:
 
@@ -53,6 +54,37 @@ node dist/src/cli.js session continue SESSION_ID --attempt INTERRUPTED_ATTEMPT_I
 
 Service restart expires controller leases and marks prompts already handed toward Pi as `interrupted`. Those prompts are never automatically replayed, even if Pi's transcript contains a final answer. An unresolved interruption holds later queued work. Explicit continuation creates a **new instruction and attempt**, links it to the interruption, and runs before previously queued work. `resume` provisions the same recorded Pi session and dispatches safe queued work after readiness.
 
+## Approvals and managed effects
+
+With the default bundle, submit `[review] alpha,beta` to request two concurrent, read-only fixture reviews. `[effect] alpha,beta` requests external fixture effects when the service was started with `--effect-socket PATH`. Without that option the provider explicitly declines the effect; it does not substitute a review. `npm run demo:managed` configures the independent fixture automatically.
+
+Each approval binds the session, attempt, worker epoch, tool invocation, target, target version, normalized arguments, policy and connector. Approvals expire after five minutes. Inspect the complete operation before deciding; the decision must carry the reviewed digest and approval revision:
+
+```sh
+node dist/src/cli.js approvals list --session SESSION_ID --state /tmp/salaam-dev
+node dist/src/cli.js approvals inspect APPROVAL_ID --state /tmp/salaam-dev
+node dist/src/cli.js approvals approve APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
+node dist/src/cli.js approvals deny APPROVAL_ID --digest DIGEST --revision 1 --state /tmp/salaam-dev
+```
+
+Attachments also accept `:approve ID DIGEST REV`, `:deny ID DIGEST REV`, and `:cancel ATTEMPT_ID`; `:help` lists them. Approval decisions are independent of the prompt controller lease: an observer under the trusted OS account can act as an approver. New prompts and cancellation require a controller. The client flushes decisions and cancellations to its outbox before sending, preserving request IDs after lost replies. Changed decisions cannot overwrite an unresolved command. CLI `--request-id` overrides for outbox commands must be UUIDs.
+
+Pi confirm dialogs carry a unique approval/digest marker and are mapped by worker epoch and Pi request ID. Text labels and bare dialog replies cannot grant dispatch. Decisions commit before dialog replies. Losing the client leaves approvals pending until their deadline; losing the worker invalidates its pending approvals and dialogs. A replacement worker needs a newly bound approval.
+
+The service commits operation intent before dispatch and rechecks authority and target version. The connector sends an external conditional write (`If-Match`), plus a service-generated idempotency key in lookup mode. A positive receipt must match the action key and normalized arguments. A failed or missing response becomes `outcome_unknown`; it is never automatically resent. A negative status lookup also remains unknown because an earlier request may still arrive. Unknown operations block new work in that session.
+
+```sh
+node dist/src/cli.js operations inspect OPERATION_ID --state /tmp/salaam-dev
+node dist/src/cli.js operations reconcile OPERATION_ID --state /tmp/salaam-dev
+node dist/src/cli.js operations resolve OPERATION_ID --digest DIGEST --revision N \
+  --outcome succeeded --evidence 'Receipt inspected out of band' --state /tmp/salaam-dev
+node dist/src/cli.js session cancel SESSION_ID --attempt ATTEMPT_ID --takeover --state /tmp/salaam-dev
+```
+
+`reconcile` performs status lookup, with a fresh request ID for each new observation. Recovery automatically attempts lookup for unknown operations using the same connector. Missing/unavailable lookup or a mismatched receipt leaves the operation unknown. `--effect-opaque` models a connector without idempotency or lookup; an uncertain outcome then requires an explicit operator resolution. Resolutions are recorded as **operator attestations**, distinct from verified external receipts; they do not prove a task passed its checks. `failed_definite` is the alternative resolution outcome.
+
+Cancellation revokes new dispatch, cancels prepared operations and aborts the Pi run and owned effect transports. A dispatched effect may already have happened; cancellation reports unresolved operation IDs and preserves their unknown state until reconciliation. It does not undo external work.
+
 Use a short state path for macOS Unix socket limits. The directory and sockets are private to the local OS account. The first prototype treats that account as one trusted operator; it does not isolate hostile programs running as the same user.
 
 ## What is implemented
@@ -61,6 +93,8 @@ Use a short state path for macOS Unix socket limits. The directory and sockets a
 - An OS-managed exclusive state lock, independent of the application journal, that releases on process death.
 - Session creation, inspection, bounded transcript snapshots, durable event replay/SSE, accepted input storage, and content-checked artifacts.
 - Controller/observer attachments, lease takeover, a flushed client outbox, one-at-a-time durable dispatch, and explicit interruption continuation.
+- Operation-bound durable approvals, expiry, concurrent decisions and Pi dialog correlation; managed intent/receipt states, conditional writes, lookup and explicit uncertain-outcome resolution.
+- Durable cancellation that prevents new grants and preserves uncertain dispatched effects.
 - Pi subprocess ownership, explicit session paths and IDs, worker epochs, process-group cleanup, heartbeat expiry, and conservative restart fencing.
 - An authenticated worker bridge and a required manifest covering the bundle, session, policy, reachable tools, provider route, and task-context digest.
 - Service-side admission before each provider request and managed tool operation, including nested calls, with grants correlated to dispatched attempts.
@@ -68,7 +102,7 @@ Use a short state path for macOS Unix socket limits. The directory and sockets a
 
 Pi is pinned to npm artifact **`@earendil-works/pi-coding-agent@1.3.0`** by exact dependency, lockfile integrity and installed package-content digests. [pi-pin.json](pi-pin.json) records the artifact and source-reference distinction. The shipped RPC command reference was byte-compared with the research commit. The registry does not supply `gitHead`, so the repository does not claim a reproducible upstream source build.
 
-The readiness manifest currently advertises only `persistent-session`, `managed-policy`, `task-context`, and `provider-admission`. The task-context frame is version zero for admission testing; durable user facts and compaction behavior arrive in M7.
+The readiness manifest advertises `persistent-session`, `managed-policy`, `task-context`, `provider-admission`, `durable-approvals` and `operation-ledger`. The default reachable tools are `salaam_probe` and `salaam_review`; `salaam_effect` is registered only with an explicit connector. Health reports the configured connector and whether a session has unresolved operations. Ledger availability does not imply a live third-party integration. The task-context frame remains version zero; durable facts and compaction behavior arrive in M7.
 
 ## Readiness proof
 
@@ -78,7 +112,9 @@ The [S6 tests](test/proofs/required-capabilities.test.ts) reject missing control
 
 The [S1 attachment proof](test/proofs/session-attach.test.ts) kills a CLI during an actual Pi tool turn and reconnects to the same worker. It checks one user message, one attempt and one tool grant. Further cases drop an acceptance response, replay events after disconnect, kill the service during a prompt, and kill it between Pi completion and the SQLite completion commit. [Dispatch tests](test/unit/dispatch.test.ts) cover controller fencing, schema migration and a committed handoff before any pipe write.
 
-M4–M8 remain to be built. ACP, durable human approvals, external-effect reconciliation, child tasks, durable task facts, cancellation controls and real model-provider routing are unavailable. S1 and S6 have local offline evidence; S2–S5 remain pending. Prompt deduplication does not establish exactly-once external effects.
+The [S2 approval proof](test/proofs/approval-correlation.test.ts) covers concurrent nested calls, reverse decisions, two sessions, expiry, changed targets, lost decision replies and worker replacement. It also injects unsolicited real Pi confirm replies and proves they cannot authorize a durable operation. The [S3 effect proof](test/proofs/effect-recovery.test.ts) kills services/workers around external acceptance and receipt commits, tests negative/unavailable lookup, opaque connectors, mismatched receipts, target-version races and cancellation. Storage failures deny dispatch.
+
+M6–M8 remain to be built. ACP, child tasks, durable task facts and real model-provider routing are unavailable. S1, S2, S3 and S6 have local offline/fixture evidence; S4–S5 remain pending. These results do not establish exactly-once effects for arbitrary external services or shell commands.
 
 ## Local API
 
@@ -96,13 +132,20 @@ All endpoints use the operator Unix socket at `STATE_DIR/operator.sock`.
 | `POST /v1/sessions/:id/submissions`   | `{request_id, expected_revision, text, client_id, token, continues_attempt_id?}`; atomically accept a submission and attempt |
 | `POST /v1/sessions/:id/resume`        | `{client_id, token}`; provision a stopped session and dispatch safe queued work                                              |
 | `POST /v1/sessions/:id/probe`         | `{client_id, token, nested?: boolean}`; run the fixed diagnostic after readiness                                             |
+| `GET /v1/approvals?session=ID`        | List session approvals; omitting the session lists pending approvals                                                         |
+| `GET /v1/approvals/:id`               | Inspect a bound approval                                                                                                     |
+| `POST /v1/approvals/:id/decision`     | `{request_id, expected_revision, operation_digest, decision: approve\|deny}`                                                 |
+| `GET /v1/operations/:id`              | Full operation binding, state, receipt and resolution source                                                                 |
+| `POST /v1/operations/:id/reconcile`   | `{request_id}`; collect external status without reissuing an effect                                                          |
+| `POST /v1/operations/:id/resolution`  | `{request_id, expected_revision, operation_digest, outcome, evidence}`; explicit operator attestation                        |
+| `POST /v1/attempts/:id/cancel`        | `{request_id, expected_revision, client_id, token}`; revoke dispatch and request cancellation                                |
 | `POST /v1/shutdown`                   | Stop the service and its owned workers                                                                                       |
 
-Identical create/submission requests return the original saved result. Reusing a request ID with different logical input conflicts. Submission credentials are excluded from that logical input, so a new controller can recover a lost reply. Request lookup happens before checking an old revision or controller lease; a new mutation requires both. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
+Identical command requests return their original saved result. Reusing a request ID with different logical input conflicts. Controller credentials are excluded from the submission/cancellation logical input so a new controller can recover a lost reply. Request lookup precedes mutation preconditions. Approvals use their own revision, independent of session progress. The local operator identity is derived from the private socket's OS-account boundary; caller-supplied actor IDs confer no authority. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
 
-A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Snapshots bound recent attempts/submissions to 100 each and transcript messages to 100, with text budgets and truncation flags. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
+A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Attempts, submissions, approvals and operations are bounded to 100 each; transcript messages are bounded to 100 with text budgets. Operation values may be truncated and receipts are omitted from snapshots with `value_truncated`/`receipt_available` flags; inspect the full operation before deciding. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
 
-On graceful shutdown, workers stop and active attempts become interrupted. After a service crash, the next service proves old workers have stopped before permitting a new writer. Uncertain process identity or missing recorded history makes the session unavailable for reconciliation. Schema version two migrates existing M2 accepted submissions into accepted attempts while preserving original cached acceptance replies.
+On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version three upgrades M2/M3 state while preserving cached acceptance replies and attempt outcomes.
 
 ## Development
 

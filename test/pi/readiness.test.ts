@@ -15,6 +15,8 @@ test('real pinned Pi passes readiness, executes a gated turn, and persists its s
       'managed-policy',
       'task-context',
       'provider-admission',
+      'durable-approvals',
+      'operation-ledger',
     ]);
     expect(f.service.store.events(session.id, 0).some((x) => x.kind === 'model.admitted')).toBe(
       false,

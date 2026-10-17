@@ -21,6 +21,7 @@
     "test:pi": "npm run build && vitest run test/pi",
     "verify:pi": "npm run build && node scripts/verify-pi.mjs",
     "demo:session": "npm run build && node scripts/demo.mjs",
+    "demo:managed": "npm run build && node scripts/demo-managed.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

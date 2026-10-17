@@ -15,6 +15,8 @@ import {
   type ControlView,
   type SessionSnapshot,
   textDigest,
+  type Operation,
+  type Approval,
 } from './protocol.js';
 
 export class Store {
@@ -29,7 +31,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 2) {
+    if (version > 3) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -72,6 +74,28 @@ export class Store {
           this.db.prepare('UPDATE submissions SET attempt_id=? WHERE id=?').run(attempt, row.id);
         }
         this.db.exec('PRAGMA user_version=2; COMMIT;');
+      } catch (error) {
+        if (this.db.isTransaction) this.db.exec('ROLLBACK');
+        this.db.close();
+        throw error;
+      }
+    }
+    if (version < 3) {
+      try {
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE operations (id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),
+            worker_epoch INTEGER NOT NULL,tool_call_id TEXT NOT NULL,kind TEXT NOT NULL,action_key TEXT NOT NULL UNIQUE,
+            argument_digest TEXT NOT NULL,operation_digest TEXT NOT NULL,target TEXT NOT NULL,value TEXT NOT NULL,target_version TEXT NOT NULL,
+            policy_digest TEXT NOT NULL,connector TEXT NOT NULL,replay TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,state TEXT NOT NULL,
+            receipt TEXT,error TEXT,resolution TEXT,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE INDEX operation_recovery ON operations(session_id,state);
+          CREATE TABLE approvals(id TEXT PRIMARY KEY,operation_id TEXT NOT NULL UNIQUE REFERENCES operations(id),session_id TEXT NOT NULL REFERENCES sessions(id),
+            worker_epoch INTEGER NOT NULL,operation_digest TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,actor_scope TEXT NOT NULL,
+            policy_digest TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL,decision TEXT,decided_by TEXT);
+          CREATE TABLE approval_dialogs(approval_id TEXT PRIMARY KEY REFERENCES approvals(id),session_id TEXT NOT NULL,worker_epoch INTEGER NOT NULL,
+            pi_request_id TEXT NOT NULL,state TEXT NOT NULL,UNIQUE(session_id,worker_epoch,pi_request_id));
+          CREATE TABLE cancellations(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),requested_by TEXT NOT NULL);
+          PRAGMA user_version=3;COMMIT;`);
       } catch (error) {
         if (this.db.isTransaction) this.db.exec('ROLLBACK');
         this.db.close();
@@ -124,6 +148,18 @@ export class Store {
         .run(actor, id, hash, JSON.stringify(response));
       return response;
     });
+  }
+  cachedRequest<T>(actor: string, id: string, input: unknown): T | undefined {
+    const prior = this.db
+      .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
+      .get(actor, id) as { hash: string; response: string } | undefined;
+    if (!prior) return undefined;
+    if (prior.hash !== digest(input))
+      throw new ServiceError(
+        'request_conflict',
+        'Request ID was already used with different input',
+      );
+    return JSON.parse(prior.response) as T;
   }
   create(cwd: string, requestId: string): Session {
     return this.request('local-operator', requestId, { kind: 'create', cwd }, () => {
@@ -388,6 +424,7 @@ export class Store {
   claim(id: string, epoch: number): { attempt: Attempt; submission: Submission } | null {
     return this.transaction(() => {
       if (this.assertEpoch(id, epoch).state !== 'ready') return null;
+      if (this.hasUnknown(id)) return null;
       if (
         this.db
           .prepare(
@@ -437,7 +474,7 @@ export class Store {
   }
   finish(
     id: string,
-    state: 'completed' | 'failed' | 'interrupted',
+    state: 'completed' | 'failed' | 'interrupted' | 'cancelled',
     result: string | null,
     error: string | null,
     transcript?: { epoch: number; entries: { id: string }[]; leaf: string | null },
@@ -445,6 +482,11 @@ export class Store {
     this.transaction(() => {
       const attempt = this.attempt(id);
       if (!['dispatching', 'running'].includes(attempt.state)) return;
+      if (this.cancelled(id)) state = 'cancelled';
+      else if (this.hasUnknown(attempt.session_id)) {
+        state = 'interrupted';
+        error = 'Managed operation outcome is unknown';
+      }
       if (transcript)
         this.appendEntries(
           attempt.session_id,
@@ -567,7 +609,40 @@ export class Store {
       submissions: boundedSubmissions,
       messages: messages.reverse(),
       history_truncated: cursor !== null,
+      approvals: this.approvals(id),
+      operations: this.operations(id),
     };
+  }
+  cancelled(id: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM cancellations WHERE attempt_id=?').get(id);
+  }
+  hasUnknown(id: string): boolean {
+    return !!this.db
+      .prepare("SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' LIMIT 1")
+      .get(id);
+  }
+  approvals(id: string): Approval[] {
+    this.session(id);
+    return this.db
+      .prepare('SELECT * FROM approvals WHERE session_id=? ORDER BY rowid DESC LIMIT 100')
+      .all(id) as unknown as Approval[];
+  }
+  operations(id: string): Operation[] {
+    this.session(id);
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM operations WHERE session_id=? ORDER BY (state='outcome_unknown') DESC,rowid DESC LIMIT 100",
+      )
+      .all(id) as unknown as Operation[];
+    return rows.map((op) => ({
+      ...op,
+      value: op.value.slice(0, 256),
+      value_truncated: op.value.length > 256,
+      receipt: null,
+      receipt_available: op.receipt !== null,
+      error: op.error?.slice(0, 512) ?? null,
+      resolution: op.resolution?.slice(0, 512) ?? null,
+    }));
   }
   importEntries(id: string, epoch: number, entries: { id: string }[], leaf: string | null): void {
     this.transaction(() => this.appendEntries(id, epoch, entries, leaf));

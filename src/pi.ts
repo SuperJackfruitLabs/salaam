@@ -117,16 +117,28 @@ export class PiProcess extends EventEmitter {
         done();
         reject(error);
       };
-      const timer = setTimeout(() => {
-        done();
-        reject(new Error(`Pi ${type} timed out`));
-      }, timeout);
+      const timer =
+        timeout > 0
+          ? setTimeout(() => {
+              done();
+              reject(new Error(`Pi ${type} timed out`));
+            }, timeout)
+          : undefined;
       this.on('record', record);
       this.on('fault', fault);
     });
   }
   diagnostics(): string {
     return this.stderr;
+  }
+  replyUI(id: string, confirmed: boolean): void {
+    if (this.failed) throw this.failed;
+    this.child.stdin.write(
+      JSON.stringify({ type: 'extension_ui_response', id, confirmed }) + '\n',
+      (error) => {
+        if (error) this.fail(error);
+      },
+    );
   }
   async stop(): Promise<void> {
     const pid = this.child.pid;

@@ -18,11 +18,11 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 1,
-  tools: ['salaam_probe'],
+  version: 2,
+  tools: ['salaam_probe', 'salaam_review', 'salaam_effect'],
   provider: 'salaam-proof',
   model: 'scripted',
-  external_effects: false,
+  external_effects: 'explicit-connector-and-operation-approval',
 };
 export const POLICY_DIGEST = digest(POLICY);
 export function bundleDigest(): string {

@@ -119,7 +119,7 @@ test('snapshot cursor plus replay/live events has no subscribe gap', async () =>
     expect((await reconnect.result)[0]?.event_id).toBe(events[1]!.event_id);
     await until(
       () => f.service.store.changes.listenerCount('event'),
-      (n) => n === 1,
+      (n) => n === 2,
     );
   } finally {
     await f.close();
