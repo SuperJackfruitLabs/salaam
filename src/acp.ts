@@ -73,7 +73,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     }
     return object(JSON.parse(content));
   };
-  const replay = async (c: Connection, emit: boolean) => {
+  const replay = async (c: Connection, emit: boolean, includeUsers = false) => {
     let offset: number | null = 0;
     while (offset !== null && !closed) {
       const page: { entries: { entry_id: string }[]; next_offset: number | null } = await call(
@@ -93,7 +93,13 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
                 : [];
           if (message.role === 'user' || message.role === 'assistant') {
             for (const part of parts) {
-              if (part.type === 'text' && typeof part.text === 'string')
+              // The editor already displays its submitted prompt. User chunks belong
+              // to explicit history loading, otherwise Zed renders a second copy.
+              if (
+                part.type === 'text' &&
+                typeof part.text === 'string' &&
+                (message.role !== 'user' || includeUsers)
+              )
                 await text(c.id, String(message.role), part.text, item.entry_id);
               if (part.type === 'toolCall' && !c.liveTools.has(String(part.id))) {
                 c.liveTools.add(String(part.id));
@@ -324,7 +330,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
-      await replay(c, replayHistory);
+      await replay(c, replayHistory, replayHistory);
       if (journal.pending(id).length) {
         const actor = await controller(
           c,

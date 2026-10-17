@@ -38,6 +38,9 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
       ...prompt('Salaam through ACP', logical),
     });
     expect(result.stopReason).toBe('end_turn');
+    expect(
+      a.messages.filter((m) => m.params?.update?.sessionUpdate === 'user_message_chunk'),
+    ).toHaveLength(0);
     const output = await promisify(execFile)(process.execPath, [
       join(ROOT, 'bin/salaam.mjs'),
       'session',
@@ -56,6 +59,9 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
     a = client(f.dir);
     await a.initialize();
     await a.request('session/load', { sessionId, cwd: f.dir, mcpServers: [] });
+    expect(
+      a.messages.filter((m) => m.params?.update?.sessionUpdate === 'user_message_chunk'),
+    ).toHaveLength(1);
     expect(
       a.messages.some(
         (m) => m.params?.update?.content?.text === 'Offline reply: Salaam through ACP',
