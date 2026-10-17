@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
@@ -44,6 +45,7 @@ interface Worker {
   manifest?: Manifest;
   lastBeat: number;
   busy: boolean;
+  attempt?: string;
   handshake: Promise<void>;
   resolve: () => void;
   reject: (error: Error) => void;
@@ -69,7 +71,7 @@ function groupExists(pid: number): boolean {
     return true;
   }
 }
-export class Supervisor {
+export class Supervisor extends EventEmitter {
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
   private monitor: NodeJS.Timeout;
@@ -78,6 +80,7 @@ export class Supervisor {
     readonly store: Store,
     readonly options: SupervisorOptions,
   ) {
+    super();
     this.bundle = bundleDigest();
     this.monitor = setInterval(() => {
       for (const worker of this.workers.values())
@@ -227,6 +230,15 @@ export class Supervisor {
         if (!worker.stopping) this.invalidate(worker, 'Pi transport failed');
       });
       worker.pi.on('record', (record) => {
+        if (worker.attempt && record.type === 'message_update') {
+          const update = object(record.assistantMessageEvent ?? {});
+          if (update.type === 'text_delta' && typeof update.delta === 'string')
+            this.emit('preview', {
+              session_id: id,
+              attempt_id: worker.attempt,
+              text: update.delta,
+            });
+        }
         if (record.type === 'extension_error')
           this.invalidate(worker, 'Required extension reported an error');
         if (
@@ -362,6 +374,7 @@ export class Supervisor {
           throw new Error('Provider or task context is invalid');
         this.store.transaction(() => {
           this.store.event(id, 'model.admitted', {
+            attempt_id: w.attempt ?? null,
             epoch: w.epoch,
             provider: body.provider,
             context_digest: body.context_digest,
@@ -371,6 +384,7 @@ export class Supervisor {
         if (body.tool !== 'salaam_probe') throw new Error('Tool is outside policy');
         this.store.transaction(() => {
           this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
+            attempt_id: w.attempt ?? null,
             epoch: w.epoch,
             tool: body.tool,
           });
@@ -423,13 +437,72 @@ export class Supervisor {
       const text = object((await w.pi.command('get_last_assistant_text')).data);
       return { text: String(text.text ?? '') };
     } catch (error) {
-      this.invalidate(w, 'Diagnostic failed: ' + (error as Error).message);
+      if (!w.stopping) this.invalidate(w, 'Diagnostic failed: ' + (error as Error).message);
       throw error;
     } finally {
       w.busy = false;
+      this.emit('idle', id);
     }
   }
+  async dispatchNext(id: string): Promise<boolean> {
+    const w = this.workers.get(id);
+    if (!w?.ready || w.invalid || !w.pi || w.busy) return false;
+    // Commit the handoff boundary before touching the pipe. A crash from this
+    // point onward is ambiguous and must never cause automatic prompt replay.
+    const work = this.store.claim(id, w.epoch);
+    if (!work) return false;
+    w.busy = true;
+    w.attempt = work.attempt.id;
+    const settled = w.pi.waitFor('agent_settled', 120_000);
+    void settled.catch(() => {});
+    let outcomeError: string | null = null;
+    const record = (value: Record<string, unknown>) => {
+      if (value.type === 'message_end') {
+        const message = object(value.message);
+        if (
+          message.role === 'assistant' &&
+          ['error', 'aborted'].includes(String(message.stopReason))
+        )
+          outcomeError = String(message.errorMessage ?? message.stopReason);
+      }
+      if (value.type === 'tool_execution_end' && value.isError === true)
+        outcomeError = 'Tool execution failed';
+    };
+    w.pi.on('record', record);
+    try {
+      const response = await w.pi.command('prompt', { message: work.submission.text });
+      const disposition = object(response.data ?? {}).disposition;
+      if (disposition !== 'started') throw new Error('Pi did not start the dispatched prompt');
+      this.store.running(work.attempt.id);
+      const end = await settled;
+      if (w.invalid || end.aborted) throw new Error(w.invalid ?? 'Attempt aborted');
+      const entries = await this.readEntries(w);
+      const result = object((await w.pi.command('get_last_assistant_text')).data);
+      this.store.finish(
+        work.attempt.id,
+        outcomeError ? 'failed' : 'completed',
+        String(result.text ?? ''),
+        outcomeError,
+        { epoch: w.epoch, ...entries },
+      );
+    } catch (error) {
+      if (!w.stopping) this.invalidate(w, 'Attempt interrupted: ' + (error as Error).message);
+      this.store.finish(work.attempt.id, 'interrupted', null, (error as Error).message);
+    } finally {
+      w.pi.off('record', record);
+      w.busy = false;
+      delete w.attempt;
+      this.emit('idle', id);
+    }
+    return true;
+  }
   private async syncEntries(w: Worker): Promise<void> {
+    const entries = await this.readEntries(w);
+    this.store.importEntries(w.id, w.epoch, entries.entries, entries.leaf);
+  }
+  private async readEntries(
+    w: Worker,
+  ): Promise<{ entries: { id: string }[]; leaf: string | null }> {
     const cursor = this.store.session(w.id).pi_cursor;
     const entries = object(
       (await w.pi!.command('get_entries', cursor ? { since: cursor } : {})).data,
@@ -439,12 +512,10 @@ export class Supervisor {
       entries.entries.some((entry) => typeof object(entry).id !== 'string')
     )
       throw new Error('Invalid Pi entries');
-    this.store.importEntries(
-      w.id,
-      w.epoch,
-      entries.entries as { id: string }[],
-      typeof entries.leafId === 'string' ? entries.leafId : null,
-    );
+    return {
+      entries: entries.entries as { id: string }[],
+      leaf: typeof entries.leafId === 'string' ? entries.leafId : null,
+    };
   }
   private async stopWorker(w: Worker): Promise<void> {
     if (w.stopping) {

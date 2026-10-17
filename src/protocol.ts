@@ -32,6 +32,45 @@ export interface DurableEvent {
   causation_id: string | null;
   payload: unknown;
 }
+export type AttemptState =
+  'accepted' | 'dispatching' | 'running' | 'completed' | 'failed' | 'interrupted';
+export interface Attempt {
+  id: string;
+  session_id: string;
+  submission_id: string;
+  state: AttemptState;
+  worker_epoch: number | null;
+  error: string | null;
+  result: string | null;
+  continues_attempt_id: string | null;
+  resolved_by: string | null;
+}
+export interface Submission {
+  id: string;
+  session_id: string;
+  text: string;
+  state: AttemptState;
+  attempt_id: string;
+}
+export interface ControlView {
+  client_id: string | null;
+  epoch: number;
+  expires_at: number;
+}
+export interface ControlLease extends ControlView {
+  token: string;
+}
+export interface Controller {
+  client_id: string;
+  token: string;
+}
+export interface SessionSnapshot extends Session {
+  control: ControlView;
+  attempts: (Attempt & { result_truncated: boolean })[];
+  submissions: (Submission & { text_truncated: boolean })[];
+  messages: { entry_id: string; role: string; text: string; truncated: boolean }[];
+  history_truncated: boolean;
+}
 export interface Manifest {
   protocol_version: number;
   bundle_digest: string;

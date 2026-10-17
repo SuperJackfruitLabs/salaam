@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fixture, fake, create, ready, until } from '../helpers.js';
+import { fixture, fake, create, ready, until, control, probe } from '../helpers.js';
 import { call } from '../../src/transport.js';
 import type { Session } from '../../src/protocol.js';
 import { PiProcess } from '../../src/pi.js';
@@ -24,9 +24,11 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
       const f = await fixture(fake(mode));
       try {
         const session = f.service.store.create(f.dir, 'stored-before-start');
+        const controller = await control(f.service, session.id);
         const accepted = await call(f.service.socket, `/v1/sessions/${session.id}/submissions`, {
+          ...controller,
           request_id: 'queued',
-          expected_revision: session.revision,
+          expected_revision: f.service.store.session(session.id).revision,
           text: 'Do not run before readiness',
         });
         expect(accepted).toMatchObject({ state: 'accepted' });
@@ -35,9 +37,7 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
           () => call<Session>(f.service.socket, `/v1/sessions/${session.id}`),
           (x) => x.state === 'unhealthy',
         );
-        await expect(
-          call(f.service.socket, `/v1/sessions/${session.id}/probe`, {}),
-        ).rejects.toThrow('not passed readiness');
+        await expect(probe(f.service, session.id, {})).rejects.toThrow('not passed readiness');
         const events = f.service.store.events(session.id, 0);
         expect(events.some((x) => x.kind === 'worker.ready')).toBe(false);
         expect(events.some((x) => x.kind === 'model.admitted')).toBe(false);

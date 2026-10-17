@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fixture, create, ready, until } from '../helpers.js';
+import { fixture, create, ready, until, probe } from '../helpers.js';
 import { ROOT } from '../../src/config.js';
 import { call } from '../../src/transport.js';
 
@@ -19,14 +19,14 @@ test('real pinned Pi passes readiness, executes a gated turn, and persists its s
     expect(f.service.store.events(session.id, 0).some((x) => x.kind === 'model.admitted')).toBe(
       false,
     );
-    expect(
-      await call(f.service.socket, `/v1/sessions/${session.id}/probe`, { nested: true }),
-    ).toEqual({ text: 'Salaam readiness probe complete.' });
+    expect(await probe(f.service, session.id, { nested: true })).toEqual({
+      text: 'Salaam readiness probe complete.',
+    });
     expect(readFileSync(snapshot.pi_session_file!, 'utf8')).toContain(
       'Run the nested Salaam readiness probe.',
     );
     expect(f.service.store.session(session.id).pi_cursor).toBeTruthy();
-    expect(await call(f.service.socket, `/v1/sessions/${session.id}/probe`, {})).toEqual({
+    expect(await probe(f.service, session.id, {})).toEqual({
       text: 'Salaam readiness probe complete.',
     });
     expect(
@@ -41,9 +41,7 @@ test('a nested tool cannot bypass a failed policy hook', async () => {
   try {
     const session = await create(f.service, f.dir);
     await ready(f.service, session.id);
-    await expect(
-      call(f.service.socket, `/v1/sessions/${session.id}/probe`, { nested: true }),
-    ).rejects.toThrow();
+    await expect(probe(f.service, session.id, { nested: true })).rejects.toThrow();
     await until(
       () => f.service.supervisor.inspect(session.id),
       (x) => x.state === 'unhealthy',
@@ -80,7 +78,7 @@ test('a context hook that throws cannot forward a request through the guarded pr
   try {
     const session = await create(f.service, f.dir);
     await ready(f.service, session.id);
-    await expect(call(f.service.socket, `/v1/sessions/${session.id}/probe`, {})).rejects.toThrow();
+    await expect(probe(f.service, session.id, {})).rejects.toThrow();
     await until(
       () => f.service.supervisor.inspect(session.id),
       (x) => x.state === 'unhealthy',

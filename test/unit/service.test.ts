@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { request } from 'node:http';
-import { fixture, fake, create, ready, until } from '../helpers.js';
+import { fixture, fake, create, ready, until, control, probe } from '../helpers.js';
 import { call } from '../../src/transport.js';
 import { SalaamService } from '../../src/service.js';
 import type { DurableEvent, Session } from '../../src/protocol.js';
@@ -19,13 +19,43 @@ test('create is idempotent; a second service cannot own its state', async () => 
       call(f.service.socket, '/v1/sessions', { request_id: 'C1', cwd: '/tmp' }),
     ).rejects.toThrow('different input');
     await expect(SalaamService.open({ stateDir: f.dir })).rejects.toThrow('Another Salaam service');
+    f.service.dispatcher.pause();
+    const controller = await control(f.service, a.id);
+    await expect(
+      call(f.service.socket, `/v1/sessions/${a.id}/probe`, {
+        client_id: 'observer',
+        token: 'invalid',
+      }),
+    ).rejects.toThrow('controller lease');
     const before = await call<Session>(f.service.socket, `/v1/sessions/${a.id}`);
-    const command = { request_id: 'R1', text: 'Queued for M3', expected_revision: before.revision };
+    const command = {
+      ...controller,
+      request_id: 'R1',
+      text: 'Queued for dispatch',
+      expected_revision: before.revision,
+    };
     const accepted = await call(f.service.socket, `/v1/sessions/${a.id}/submissions`, command);
     expect(await call(f.service.socket, `/v1/sessions/${a.id}/submissions`, command)).toEqual(
       accepted,
     );
     expect(f.service.store.events(a.id, 0).some((x) => x.kind === 'model.admitted')).toBe(false);
+  } finally {
+    await f.close();
+  }
+});
+
+test('an SSE record larger than the socket high-water mark is delivered and replayable', async () => {
+  const f = await fixture(fake());
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    const before = f.service.store.session(session.id).seq;
+    const payload = { text: '🌍'.repeat(65536) };
+    f.service.store.transaction(() => f.service.store.event(session.id, 'large.record', payload));
+    const connection = stream(f.service.socket, session.id, before, 1);
+    expect((await connection.result)[0]?.payload).toEqual(payload);
+    const replay = stream(f.service.socket, session.id, before, 1);
+    expect((await replay.result)[0]?.seq).toBe(before + 1);
   } finally {
     await f.close();
   }
@@ -89,7 +119,7 @@ test('snapshot cursor plus replay/live events has no subscribe gap', async () =>
     expect((await reconnect.result)[0]?.event_id).toBe(events[1]!.event_id);
     await until(
       () => f.service.store.changes.listenerCount('event'),
-      (n) => n === 0,
+      (n) => n === 1,
     );
   } finally {
     await f.close();
@@ -146,9 +176,7 @@ test('a stale persisted ready row cannot advertise a missing worker', async () =
       state: 'unhealthy',
       capabilities: [],
     });
-    await expect(call(f.service.socket, `/v1/sessions/${session.id}/probe`, {})).rejects.toThrow(
-      'not passed readiness',
-    );
+    await expect(probe(f.service, session.id, {})).rejects.toThrow('not passed readiness');
   } finally {
     await f.close();
   }

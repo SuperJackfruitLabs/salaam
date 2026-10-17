@@ -167,7 +167,16 @@ export default function house(pi: ExtensionAPI): void {
           } else {
             response.content.push({ type: 'text', text: '' });
             stream.push({ type: 'text_start', contentIndex: 0, partial: response });
-            const text = 'Salaam readiness probe complete.';
+            const source = context.messages[realUser];
+            const input =
+              source?.role === 'user'
+                ? typeof source.content === 'string'
+                  ? source.content
+                  : source.content.map((p) => (p.type === 'text' ? p.text : '')).join('')
+                : '';
+            const text = /^Run the (nested )?Salaam readiness probe\.$/.test(input)
+              ? 'Salaam readiness probe complete.'
+              : 'Offline reply: ' + input;
             response.content[0] = { type: 'text', text };
             stream.push({ type: 'text_delta', contentIndex: 0, delta: text, partial: response });
             stream.push({ type: 'text_end', contentIndex: 0, content: text, partial: response });

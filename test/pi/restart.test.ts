@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
-import { fixture, create, ready, until } from '../helpers.js';
+import { fixture, create, ready, until, probe } from '../helpers.js';
 import { SalaamService } from '../../src/service.js';
 import { call } from '../../src/transport.js';
 import { ROOT } from '../../src/config.js';
@@ -15,7 +15,7 @@ test('an explicitly resumed worker reuses the recorded Pi transcript', async () 
   try {
     const created = await create(f.service, f.dir);
     const original = await ready(f.service, created.id);
-    await call(f.service.socket, `/v1/sessions/${created.id}/probe`, {});
+    await probe(f.service, created.id, {});
     const count = f.service.store.db
       .prepare(
         "SELECT count(*) AS n FROM pi_entries WHERE json_extract(payload,'$.message.role')='user'",

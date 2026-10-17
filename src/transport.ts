@@ -25,6 +25,9 @@ export function call<T = unknown>(
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       {
+        // A service can reopen the same Unix path immediately after shutdown.
+        // Never reuse a pooled connection to its previous incarnation.
+        agent: false,
         socketPath,
         path,
         method: body === undefined ? 'GET' : 'POST',

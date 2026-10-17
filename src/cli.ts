@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { mkdirSync, openSync, closeSync } from 'node:fs';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
+import { attach, acquireControl, Outbox } from './attach.js';
+import type { SessionSnapshot } from './protocol.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -25,6 +27,41 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'attach' && verb) {
+    await attach(state, verb, {
+      observe: args.includes('--observe'),
+      takeover: args.includes('--takeover'),
+    });
+    return;
+  }
+  if (group === 'session' && ['submit', 'continue', 'resume'].includes(verb ?? '') && id) {
+    const client = randomUUID();
+    const lease = await acquireControl(socket, id, client, args.includes('--takeover'));
+    const controller = { client_id: client, token: lease.token };
+    try {
+      if (verb !== 'resume') {
+        const text = option('--text');
+        if (!text) throw new Error('Supply --text with a new instruction');
+        const continues = verb === 'continue' ? option('--attempt') : undefined;
+        if (verb === 'continue' && !continues)
+          throw new Error('Supply --attempt with the interrupted attempt ID');
+        const snapshot = await call<SessionSnapshot>(socket, `/v1/sessions/${id}/snapshot`);
+        const outbox = new Outbox(state, id);
+        const pending = outbox.enqueue(text, snapshot.revision, continues);
+        await outbox.flush(socket, id, controller);
+        console.log(JSON.stringify({ request_id: pending.request_id, accepted: true }));
+      }
+      console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/resume`, controller)));
+    } finally {
+      await call(socket, `/v1/sessions/${id}/control`, {
+        ...controller,
+        request_id: randomUUID(),
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'service' && verb === 'start') {
     if (foreground) {
       const service = await SalaamService.open({ stateDir: state });
@@ -89,13 +126,29 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'session' && verb === 'probe' && id) {
-    console.log(
-      JSON.stringify(await call(socket, `/v1/sessions/${id}/probe`, {}, undefined, 15000), null, 2),
-    );
+    const client_id = randomUUID();
+    const lease = await acquireControl(socket, id, client_id, args.includes('--takeover'));
+    const controller = { client_id, token: lease.token };
+    try {
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/sessions/${id}/probe`, controller, undefined, 15000),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${id}/control`, {
+        ...controller,
+        request_id: randomUUID(),
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
     return;
   }
   console.log(
-    'Usage: sal service start|stop|status [--state DIR] [--foreground]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal session list|inspect ID|probe ID [--state DIR]',
+    'Usage: sal service start|stop|status [--state DIR] [--foreground]\n       sal session create [--cwd DIR] [--request-id ID]\n       sal attach ID [--observe|--takeover] [--state DIR]\n       sal session submit ID --text TEXT\n       sal session continue ID --attempt ID --text NEW_INSTRUCTION\n       sal session list|inspect ID|probe ID|resume ID [--state DIR]',
   );
   if (args.length) process.exitCode = 1;
 }

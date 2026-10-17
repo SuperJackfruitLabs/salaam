@@ -7,6 +7,7 @@ import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
 import { integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
+import { Dispatcher } from './dispatcher.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
@@ -18,6 +19,7 @@ export class SalaamService {
   readonly store: Store;
   readonly artifacts: Artifacts;
   readonly supervisor: Supervisor;
+  readonly dispatcher: Dispatcher;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
   private operator: Server;
@@ -43,6 +45,7 @@ export class SalaamService {
           stateDir: this.stateDir,
           bridgeSocket: this.bridgeSocket,
         });
+        this.dispatcher = new Dispatcher(this.store, this.supervisor);
       } catch (error) {
         this.store.close();
         throw error;
@@ -69,6 +72,7 @@ export class SalaamService {
     const service = new SalaamService(options);
     try {
       await service.supervisor.recover();
+      service.store.recoverWork();
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
       return service;
@@ -159,6 +163,41 @@ export class SalaamService {
           this.send(res, 200, this.supervisor.inspect(id));
           return;
         }
+        if (parts[3] === 'snapshot' && req.method === 'GET') {
+          this.send(res, 200, { ...this.store.snapshot(id), ...this.supervisor.inspect(id) });
+          return;
+        }
+        if (parts[3] === 'control' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          const action = string(body.action, 'action');
+          if (!['acquire', 'renew', 'release', 'takeover'].includes(action))
+            throw new ServiceError('invalid_field', 'Invalid control action', 400);
+          this.send(
+            res,
+            200,
+            this.store.control(
+              id,
+              string(body.request_id, 'request_id', 128),
+              string(body.client_id, 'client_id', 128),
+              action as 'acquire' | 'renew' | 'release' | 'takeover',
+              integer(body.expected_epoch, 'expected_epoch'),
+              body.token === undefined ? undefined : string(body.token, 'token', 128),
+            ),
+          );
+          return;
+        }
+        if (parts[3] === 'resume' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          const session = this.supervisor.inspect(id);
+          if (session.state !== 'ready' && session.state !== 'starting')
+            void this.supervisor.start(id).catch(() => {});
+          this.send(res, 202, this.supervisor.inspect(id));
+          return;
+        }
         if (parts[3] === 'events' && req.method === 'GET') {
           const raw = url.searchParams.get('after') ?? '0';
           if (!/^\d+$/.test(raw))
@@ -171,18 +210,28 @@ export class SalaamService {
         }
         if (parts[3] === 'submissions' && req.method === 'POST') {
           const body = object(await readJson(req));
-          // M2 stores accepted work, but deliberately has no automatic prompt dispatcher (M3).
           const submission = this.store.accept(
             id,
             string(body.request_id, 'request_id', 128),
             integer(body.expected_revision, 'expected_revision'),
             string(body.text, 'text', 256 * 1024),
+            {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            },
+            body.continues_attempt_id === undefined
+              ? null
+              : string(body.continues_attempt_id, 'continues_attempt_id', 128),
           );
           this.send(res, 202, submission);
           return;
         }
         if (parts[3] === 'probe' && req.method === 'POST') {
           const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
           if (body.nested !== undefined && typeof body.nested !== 'boolean')
             throw new ServiceError('invalid_field', 'Invalid nested flag', 400);
           this.send(res, 200, await this.supervisor.probe(id, body.nested === true));
@@ -208,19 +257,28 @@ export class SalaamService {
     let cursor = after;
     let active = true;
     let scheduled = false;
+    let blocked = false;
+    let drainTimer: NodeJS.Timeout | undefined;
+    const write = (text: string) => {
+      if (!res.write(text)) {
+        blocked = true;
+        drainTimer = setTimeout(() => res.destroy(), 10000);
+        res.once('drain', () => {
+          clearTimeout(drainTimer);
+          blocked = false;
+          schedule();
+        });
+      }
+    };
     const pump = () => {
       scheduled = false;
-      if (!active) return;
+      if (!active || blocked) return;
       try {
         const events = this.store.events(id, cursor);
         for (const event of events) {
-          if (
-            !res.write(`id: ${event.seq}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`)
-          ) {
-            res.destroy();
-            return;
-          }
+          write(`id: ${event.seq}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`);
           cursor = event.seq;
+          if (blocked) return;
         }
         if (events.length === 256) schedule();
       } catch {
@@ -237,15 +295,22 @@ export class SalaamService {
       if (event.session_id === id) schedule();
     };
     this.store.changes.on('event', change);
+    const preview = (value: { session_id: string }) => {
+      if (value.session_id === id && !blocked && active)
+        write(`event: preview\ndata: ${JSON.stringify(value)}\n\n`);
+    };
+    this.supervisor.on('preview', preview);
     schedule();
     const heartbeat = setInterval(() => {
-      if (!res.write(': heartbeat\n\n')) res.destroy();
+      if (!blocked) write(': heartbeat\n\n');
     }, 15000);
     heartbeat.unref();
     const cleanup = () => {
       active = false;
       clearInterval(heartbeat);
+      clearTimeout(drainTimer);
       this.store.changes.off('event', change);
+      this.supervisor.off('preview', preview);
     };
     res.on('close', cleanup);
     req.on('error', cleanup);
@@ -256,6 +321,7 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    this.dispatcher.pause();
     const errors: unknown[] = [];
     try {
       try {
@@ -263,6 +329,7 @@ export class SalaamService {
       } catch (error) {
         errors.push(error);
       }
+      await this.dispatcher.drain();
       await Promise.all(
         [this.operator, this.bridgeServer].map(
           (server) =>

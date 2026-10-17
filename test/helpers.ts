@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { SalaamService, type ServiceOptions } from '../src/service.js';
 import { call } from '../src/transport.js';
 import type { Session } from '../src/protocol.js';
+import type { ControlLease } from '../src/protocol.js';
+import { randomUUID } from 'node:crypto';
 import { PiProcess } from '../src/pi.js';
 import { ROOT } from '../src/config.js';
 
@@ -58,4 +60,27 @@ export async function ready(service: SalaamService, id: string): Promise<Session
   );
   if (result.state !== 'ready') throw new Error(result.error ?? 'Worker not ready');
   return result;
+}
+export async function control(service: SalaamService, id: string, takeover = false) {
+  const client_id = randomUUID();
+  const lease = await call<ControlLease>(service.socket, `/v1/sessions/${id}/control`, {
+    request_id: randomUUID(),
+    client_id,
+    action: takeover ? 'takeover' : 'acquire',
+    expected_epoch: service.store.controlView(id).epoch,
+  });
+  return { client_id, token: lease.token };
+}
+export async function probe(service: SalaamService, id: string, body: { nested?: boolean } = {}) {
+  const controller = await control(service, id, true);
+  try {
+    return await call(service.socket, `/v1/sessions/${id}/probe`, { ...body, ...controller });
+  } finally {
+    await call(service.socket, `/v1/sessions/${id}/control`, {
+      ...controller,
+      request_id: randomUUID(),
+      action: 'release',
+      expected_epoch: service.store.controlView(id).epoch,
+    }).catch(() => {});
+  }
 }
