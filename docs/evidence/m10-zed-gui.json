@@ -233,7 +233,76 @@
   "ci": {
     "run_id": 39071417389,
     "url": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39071417389",
-    "status": "in_progress",
-    "revision": "6856fe0f73a32e4c79973682ee55004713557262"
+    "status": "success",
+    "revision": "6856fe0f73a32e4c79973682ee55004713557262",
+    "finished_at": "2026-10-17T21:59:10Z",
+    "jobs": [
+      {
+        "name": "execution-boundary",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "service (macos-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "name": "service (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "platforms": {
+      "macos": {
+        "status": "success",
+        "platform": "darwin",
+        "arch": "arm64",
+        "git_commit": "d04cf3b5b7a543a63a12712eb943378764bd19b7",
+        "source_digest": "035916ce36952b2b87100ba171b75e63f9f6d783ba37c92b73f87ef343c91bbe",
+        "runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+        "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+        "tests": 186,
+        "six_proof_repeats": 20,
+        "six_proof_cases": 1200,
+        "operator_repeats": 3,
+        "operator_cases": 48,
+        "manifest": ".state/evidence/m10/ci-zed/macos/acceptance/2026-10-17T21-33-29.378Z-82c803aa/manifest.json",
+        "manifest_sha256": "29a7f3bf6faf5859d31783215b1e77deb1e6615c319d291de83300dc68ff4e3c",
+        "log_digests_verified": true
+      },
+      "linux": {
+        "status": "success",
+        "platform": "linux",
+        "arch": "x64",
+        "git_commit": "d04cf3b5b7a543a63a12712eb943378764bd19b7",
+        "source_digest": "035916ce36952b2b87100ba171b75e63f9f6d783ba37c92b73f87ef343c91bbe",
+        "runtime_source_digest": "6ab556256e15b5154cf2b4f3bef1893bbb98acd8912d3023dae1ad45df1fac13",
+        "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+        "tests": 186,
+        "six_proof_repeats": 20,
+        "six_proof_cases": 1200,
+        "operator_repeats": 3,
+        "operator_cases": 48,
+        "manifest": ".state/evidence/m10/ci-zed/linux/acceptance/2026-10-17T21-33-35.916Z-878ede32/manifest.json",
+        "manifest_sha256": "a7340acf9a9426c46fcee540b16576404fb31403fc1d4f5a4b992826acfca410",
+        "log_digests_verified": true
+      }
+    },
+    "execution": {
+      "status": "success",
+      "boundary": {
+        "path": ".state/evidence/m10/ci-zed/execution/execution/linux.json",
+        "sha256": "c991461fa82f9442a87e99de5afc0aae7b48810d26a6def40fe494e4e70d7741",
+        "checks": 15,
+        "status": "passed"
+      },
+      "coding": {
+        "path": ".state/evidence/m10/ci-zed/execution/coding/2026-10-17T21-33-40.949Z-9f8c7029/report.json",
+        "sha256": "6723aaad6c203d9f959ef751e183c3b5962a6936ae9c633e46e7879a50cc971f",
+        "tasks": 10,
+        "success": true
+      }
+    }
   }
 }
