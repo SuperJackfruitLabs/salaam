@@ -4,7 +4,7 @@
   "implementation_commit": "03538e5b415cc5a19394d449a37c5dd4d729fb57",
   "branch": "m9-coding-workspaces",
   "ci_run": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39045113857",
-  "observed_at": "2026-10-17T15:33:00Z",
+  "observed_at": "2026-10-17T15:52:00Z",
   "scope": "M9 guarded coding; source and test evidence, no deployment or release binary",
   "local_regressions": {
     "tests": 163,
@@ -118,8 +118,30 @@
     "provided_patch_integration_requests": 3
   },
   "service_acceptance": {
-    "macos": "pending",
-    "linux": "pending"
+    "macos": {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "git_commit": "03538e5b415cc5a19394d449a37c5dd4d729fb57",
+      "tests": 163,
+      "completed_repeats": 20,
+      "success": true,
+      "full_acceptance": true,
+      "source_digest": "1cc4993e7e323036dc51faf122f76e32e581264e1082bbb62101b64dd9d6d3d6",
+      "bundle_digest": "de1df146aa2cb14daae8dc6f67339b6649516443fe1d3a4f51ef65145a3e1ef9",
+      "manifest_sha256": "4e8dfe1a0f42bda591c3560ffe5a6aa9ebfd7f93d4bfe7c8a672c4acdcb00dd9"
+    },
+    "linux": {
+      "platform": "linux",
+      "architecture": "x64",
+      "git_commit": "03538e5b415cc5a19394d449a37c5dd4d729fb57",
+      "tests": 163,
+      "completed_repeats": 20,
+      "success": true,
+      "full_acceptance": true,
+      "source_digest": "1cc4993e7e323036dc51faf122f76e32e581264e1082bbb62101b64dd9d6d3d6",
+      "bundle_digest": "de1df146aa2cb14daae8dc6f67339b6649516443fe1d3a4f51ef65145a3e1ef9",
+      "manifest_sha256": "c3916b8f4b5a18b711d5a669385a110c4235904bda85f76d995a62f1d83e6c55"
+    }
   },
   "limitations": [
     "Matched plain-Pi comparison not run",
