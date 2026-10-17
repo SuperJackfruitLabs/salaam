@@ -69,4 +69,6 @@ The UI reuses the exact `@earendil-works/pi-tui@1.3.0` rendering/editor primitiv
 
 Design references were the [Crush terminal interface](https://github.com/charmbracelet/crush), [OpenCode TUI](https://github.com/anomalyco/opencode), [Pi terminal primitives](https://github.com/earendil-works/pi/tree/main/packages/tui) and [Zed external-agent integration](https://zed.dev/docs/ai/external-agents). Their service/client separation and keyboard-oriented controls informed Salaam’s own visual design.
 
+`npm run test:acceptance` runs the complete source test suite, repeats the new operator recovery/coding proofs three times and retains the existing 20-repetition S1–S6 gate. CI stores actual terminal-cell SVG/text captures alongside its platform manifests. Source-only test discovery prevents compiled rehearsal helpers from causing duplicate test runs.
+
 Local PTY and ACP protocol proofs are independent of the named Zed GUI rehearsal. A locked desktop prevents that GUI check; it remains pending and must pass before claiming the complete M10 editor acceptance matrix. M11 task verification and M12 unattended job orchestration remain future milestones.
