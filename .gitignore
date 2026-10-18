@@ -10,3 +10,4 @@ coverage/
 credentials/
 .astro/
 .wrangler/
+landing/public/install.sh

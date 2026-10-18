@@ -43,6 +43,12 @@ function walk(directory, build) {
   }
 }
 for (const build of builds) walk(build.path, build);
+const hostedInstaller = join(builds[0].path, 'install.sh');
+if (
+  !existsSync(hostedInstaller) ||
+  !readFileSync(hostedInstaller).equals(readFileSync(join(root, 'install.sh')))
+)
+  failures.push('Hosted installer is missing or differs from the canonical release installer');
 // Contributor material must not leak through standalone routes, search or exports.
 for (const internal of ['milestones', 'sites', 'releases', 'verification', 'execution-boundary'])
   if (existsSync(join(builds[1].path, internal, 'index.html')))
@@ -75,6 +81,7 @@ console.log(
       internal_links_and_assets: links,
       local_search: true,
       llms_exports: true,
+      canonical_installer: true,
       broken_links: 0,
     },
     null,

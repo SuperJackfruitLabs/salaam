@@ -1,7 +1,8 @@
 ---
 import { site, docs, repo, description } from '../../../site.config.mjs';
 import '../styles/site.css';
-const install = 'sh install.sh';
+const installer = new URL('/install.sh', site).href;
+const install = `curl -fsSL ${installer} | sh`;
 const journeys = [
   {
     number: '01',
@@ -319,18 +320,15 @@ const journeys = [
           </div>
           <div class="install-card">
             <p class="eyebrow">INSTALL A PUBLISHED RELEASE</p>
-            <p>
-              Node 26.7.0 required. Download and inspect{' '}
-              <a href={`${repo}/releases`}>install.sh from a release</a>, then:
-            </p>
+            <p>Node 26.7.0 required. Install the latest stable release:</p>
             <div class="copy-command">
-              <code>{install}</code>
+              <code id="install-command">{install}</code>
               <button id="copy" aria-label="Copy install command">
                 Copy
               </button>
             </div>
             <p id="copy-status" aria-live="polite">
-              Availability and alternative installs in the{' '}
+              <a href={installer}>Read the installer</a> or find other options in the{' '}
               <a href={`${docs}/install/`}>installation guide</a>.
             </p>
           </div>
@@ -375,10 +373,10 @@ const journeys = [
       document.querySelector('#copy')?.addEventListener('click', async () => {
         const status = document.querySelector('#copy-status');
         try {
-          await navigator.clipboard.writeText('sh install.sh');
-          if (status)
-            status.textContent =
-              'Copied. Download and inspect install.sh from a published release first.';
+          const command = document.querySelector('#install-command')?.textContent;
+          if (!command) return;
+          await navigator.clipboard.writeText(command);
+          if (status) status.textContent = 'Copied. Paste into your terminal to install Salaam.';
         } catch {
           if (status) status.textContent = 'Select the command to copy it manually.';
         }

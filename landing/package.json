@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../scripts/sync-installer.mjs",
     "dev": "astro dev --host 127.0.0.1 --port 4341",
+    "prebuild": "node ../scripts/sync-installer.mjs",
     "build": "astro build",
     "preview": "astro preview --host 127.0.0.1 --port 4341"
   },

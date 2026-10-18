@@ -5,6 +5,10 @@ a separate Astro landing project, a Starlight docs project, matching product
 branding, Markdown source docs, and asset-only Cloudflare Workers.
 
 - `landing/` builds `https://salaam.sh`.
+- Its build and dev hooks copy the canonical root `install.sh` to the ignored
+  `landing/public/install.sh`, served at `https://salaam.sh/install.sh`. Edit the
+  root script; the site build rejects a missing or different copy. Static asset
+  headers serve the script as plain text with MIME sniffing disabled.
 - `docs-site/` builds `https://docs.salaam.sh`, local search and llms.txt exports.
 - `docs/` holds canonical documentation. An explicit user-page allowlist controls site output, search and machine-readable exports. Builds regenerate the ignored content
   collection and convert relative Markdown links to routes. Edit links point back

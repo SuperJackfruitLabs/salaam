@@ -7,22 +7,28 @@ macOS and Linux are supported; Windows is untested. No database server is needed
 With nvm installed, run `nvm install 26.7.0`, `nvm use 26.7.0`, and
 `npm install --global npm@11.19.0 --ignore-scripts`.
 
-## GitHub Release installer
+## Install with one command
 
-Download `install.sh` from the selected
-[GitHub Release](https://github.com/SuperJackfruitLabs/salaam/releases), inspect it,
-then run:
+Install the latest stable GitHub Release:
 
 ```sh
-sh install.sh --version 0.0.1 --prefix "$HOME/.local"
-export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://salaam.sh/install.sh | sh
 salaam --version
 sal --help
 ```
 
-Omit `--prefix` to use npm's global prefix. Omit `--version` to select GitHub's
-latest stable release; prereleases need an explicit version. Installation leaves
-services, state and credentials untouched.
+You can [read the installer](https://salaam.sh/install.sh) before running it. To
+select a version and install under your account, pass arguments after `sh -s --`:
+
+```sh
+curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.1 --prefix "$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Omit `--prefix` to use npm's global prefix. Prereleases require `--version`.
+Installation leaves services, state and credentials untouched. The installer for
+a particular release is also available from its
+[GitHub Release assets](https://github.com/SuperJackfruitLabs/salaam/releases).
 
 The script requires `node`, `npm` and `curl`, enforces Node's version, downloads
 the tarball and `SHA256SUMS` over HTTPS, checks the exact asset's hash, then installs
@@ -48,14 +54,11 @@ development dependencies. No checkout or compiler is needed.
 
 ## npm registry
 
-After `@superjackfruitlabs/salaam` is published to npm:
+Install a specific published version:
 
 ```sh
 npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
 ```
-
-Check registry availability first. A version or changelog entry in Git does not
-establish publication. GitHub tarballs work independently of npm ownership setup.
 
 ## Upgrade deliberately
 
