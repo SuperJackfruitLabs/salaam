@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { digest, textDigest } from './protocol.js';
+import { PI_PROVIDERS } from './provider-config.js';
 import { packageDigest } from './package-digest.js';
 
 let root = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +20,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 6,
+  version: 7,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -40,8 +41,9 @@ export const POLICY = {
   },
   providers: [
     'salaam-proof/scripted',
-    'anthropic/claude-sonnet-5-5',
-    'anthropic/claude-sonnet-4-6',
+    ...PI_PROVIDERS.flatMap((provider) =>
+      provider.getModels().map((model) => provider.id + '/' + model.id),
+    ).sort(),
   ],
   provider_retries: 0,
   compaction: { strategy: 'explicit-task-checkpoint-v1', automatic: false, keepRecentTokens: 512 },
@@ -80,6 +82,14 @@ export function bundleDigest(): string {
     policy: POLICY_DIGEST,
     lock: textDigest(readFileSync(lockPath, 'utf8')),
     house: textDigest(readFileSync(HOUSE_EXTENSION, 'utf8')),
+    provider_usage: textDigest(readFileSync(join(ROOT, 'dist/src/provider-usage.js'), 'utf8')),
+    provider_model: textDigest(readFileSync(join(ROOT, 'dist/src/provider-model.js'), 'utf8')),
+    live_provider: textDigest(readFileSync(join(ROOT, 'dist/src/live-provider.js'), 'utf8')),
+    provider_payload: textDigest(readFileSync(join(ROOT, 'dist/src/provider-payload.js'), 'utf8')),
+    provider_transport: textDigest(
+      readFileSync(join(ROOT, 'dist/src/provider-transport.js'), 'utf8'),
+    ),
+    provider_auth: textDigest(readFileSync(join(ROOT, 'dist/src/provider-auth.js'), 'utf8')),
     claude: textDigest(readFileSync(join(ROOT, 'dist/src/claude-provider.js'), 'utf8')),
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/protocol.js'), 'utf8')),

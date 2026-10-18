@@ -97,3 +97,30 @@ test('schema v4 sessions remain pinned to offline, and a live route persists acr
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('resolved endpoints bind before first dispatch and reject endpoint or environment drift', async () => {
+  const { bindProviderConfiguration } = await import('../../src/provider-model.js');
+  const { InMemoryCredentialStore } = await import('@earendil-works/pi-ai');
+  const { resolveProviderAuth } = await import('../../src/provider-auth.js');
+  const route = providerRoute('openai', 'gpt-4', 512);
+  const bound = bindProviderConfiguration(route, { auth: { apiKey: 'sk-fixture' } });
+  expect(bound.connection?.endpoint).toBe('https://api.openai.com/v1');
+  expect(() =>
+    bindProviderConfiguration(bound, { auth: { baseUrl: 'https://other.invalid/v1' } }),
+  ).toThrow('configuration changed');
+  expect(() =>
+    providerRoute('openai', 'gpt-4', 512, undefined, {
+      endpoint: 'https://api.openai.com/v1',
+      configuration: { HOME: '/foreign' },
+    }),
+  ).toThrow('Unsupported provider configuration');
+  const azure = bindProviderConfiguration(providerRoute('azure', 'gpt-4', 512), {
+    auth: { apiKey: 'fixture' },
+    env: { AZURE_OPENAI_RESOURCE_NAME: 'fixture' },
+  });
+  const credentials = new InMemoryCredentialStore();
+  await credentials.modify('azure', async () => ({ type: 'api_key', key: 'fixture-key' }));
+  const restored = await resolveProviderAuth(azure, credentials, {});
+  expect(bindProviderConfiguration(azure, restored)).toEqual(azure);
+  expect(JSON.stringify(azure)).not.toContain('fixture-key');
+});

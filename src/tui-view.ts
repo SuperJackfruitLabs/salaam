@@ -29,7 +29,11 @@ export function modelLabel(client: OperatorClient): string {
   const route = client.health?.provider_route;
   if (!route) return 'Connect your workspace';
   if (['offline', 'salaam-proof'].includes(route.provider)) return 'Offline demo';
-  return route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2');
+  const warning =
+    client.health?.provider_capabilities?.output_token_cap === false ? ' · no output cap' : '';
+  return (
+    route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2') + warning
+  );
 }
 export class Dynamic implements Component {
   constructor(private readonly content: (width: number) => string[]) {}

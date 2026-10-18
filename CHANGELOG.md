@@ -6,6 +6,9 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+- Add the complete pinned Pi provider catalog, model listing, API-key and OAuth setup, and cloud credentials.
+- Validate all ten chat APIs at dispatch, preserve provider-bound recovery and usage, and restrict uncapped subscription routes to interactive sessions.
+
 ## [0.0.1] - 2026-10-18
 
 Initial release preparation. A version entry is not a published release; see GitHub

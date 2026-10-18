@@ -37,7 +37,7 @@ test('npm link installs both executable names, with help/version and one shared 
     expect(await run(sal, '--version')).toBe(`salaam ${version}\n`);
     expect(await run(salaam, 'auth', '--help')).toContain('hidden prompt');
     expect(await run(sal, 'session', '--help')).toContain('session continue');
-    expect(await run(sal, 'help', 'service')).toContain('--provider offline|anthropic');
+    expect(await run(sal, 'help', 'service')).toContain('--provider PROVIDER');
     expect(await run(sal, 'service', 'start', '--help')).toContain('service start');
     await expect(run(sal, 'nonesuch')).rejects.toThrow('Unknown or incomplete command');
     service = spawn(salaam, ['service', 'start', '--foreground', '--state', state], {

@@ -1,16 +1,41 @@
-import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
+import { builtinProviders } from '@earendil-works/pi-ai/providers/all';
+import type { Api, Model, AuthResult } from '@earendil-works/pi-ai';
 import { ServiceError, object, canonical } from './protocol.js';
-export function getClaudeModel(id: string) {
-  return anthropicProvider()
-    .getModels()
-    .find((model) => model.id === id);
+// Constructing the pinned catalog is offline; never refresh it implicitly during a turn.
+export const PI_PROVIDERS = builtinProviders();
+export function getProvider(id: string) {
+  return PI_PROVIDERS.find((provider) => provider.id === id);
 }
-
+export function getProviderModel(
+  route: Pick<ProviderRoute, 'provider' | 'model'>,
+): Model<Api> | undefined {
+  return getProvider(route.provider)
+    ?.getModels()
+    .find((model) => model.id === route.model);
+}
+export function getClaudeModel(id: string) {
+  return getProviderModel({ provider: 'anthropic', model: id });
+}
+export const ROUTING_FIELDS = [
+  'AWS_REGION',
+  'AWS_DEFAULT_REGION',
+  'AWS_PROFILE',
+  'GOOGLE_CLOUD_PROJECT',
+  'GCLOUD_PROJECT',
+  'GOOGLE_CLOUD_LOCATION',
+  'AZURE_OPENAI_API_VERSION',
+  'AZURE_OPENAI_BASE_URL',
+  'AZURE_OPENAI_RESOURCE_NAME',
+  'AZURE_OPENAI_DEPLOYMENT_NAME_MAP',
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_GATEWAY_ID',
+] as const;
 export interface ProviderRoute {
-  provider: 'salaam-proof' | 'anthropic';
+  provider: string;
   model: string;
   max_tokens: number;
   workspace_id?: string;
+  connection?: { endpoint: string; configuration: Record<string, string> };
 }
 export const OFFLINE_ROUTE: ProviderRoute = {
   provider: 'salaam-proof',
@@ -23,30 +48,63 @@ export function providerRoute(
   model?: string,
   maxTokens?: number,
   workspace?: string,
+  connection?: ProviderRoute['connection'],
 ): ProviderRoute {
   if (provider === 'offline') {
-    if (model || maxTokens || workspace)
-      throw new ServiceError('invalid_provider', 'Offline mode does not take Claude options');
+    if (model || maxTokens !== undefined || workspace)
+      throw new ServiceError('invalid_provider', 'Offline mode does not take provider options');
     return { ...OFFLINE_ROUTE };
   }
-  if (provider !== 'anthropic')
-    throw new ServiceError('invalid_provider', 'Provider must be offline or anthropic');
-  const id = model ?? DEFAULT_CLAUDE_MODEL;
-  if (!['claude-sonnet-5-5', 'claude-sonnet-4-6'].includes(id) || !getClaudeModel(id))
+  const catalog = getProvider(provider);
+  if (!catalog)
+    throw new ServiceError(
+      'invalid_provider',
+      'Provider must be offline or a pinned Pi provider; run salaam providers list',
+    );
+  const id = model ?? (provider === 'anthropic' ? DEFAULT_CLAUDE_MODEL : undefined);
+  if (!id)
+    throw new ServiceError('invalid_model', 'Select --model from salaam models list ' + provider);
+  const entry = getProviderModel({ provider, model: id });
+  if (!entry)
     throw new ServiceError(
       'invalid_model',
-      'This route supports pinned claude-sonnet-5-5 or claude-sonnet-4-6',
+      'This route supports pinned Pi chat models; run salaam models list ' + provider,
     );
-  const cap = maxTokens ?? 4096;
-  if (!Number.isSafeInteger(cap) || cap < 128 || cap > 8192)
-    throw new ServiceError('invalid_limit', 'Max output tokens must be 128–8192');
-  if (workspace && !/^[a-zA-Z0-9_-]{1,128}$/.test(workspace))
+  const cap = maxTokens ?? Math.min(4096, entry.maxTokens);
+  if (!Number.isSafeInteger(cap) || cap < 128 || cap > Math.min(8192, entry.maxTokens))
+    throw new ServiceError(
+      'invalid_limit',
+      'Max output tokens must be 128–' + Math.min(8192, entry.maxTokens),
+    );
+  if (workspace && (provider !== 'anthropic' || !/^[a-zA-Z0-9_-]{1,128}$/.test(workspace)))
     throw new ServiceError('invalid_workspace', 'Invalid Anthropic workspace ID');
+  if (connection) {
+    if (
+      Object.keys(connection).some((key) => !['endpoint', 'configuration'].includes(key)) ||
+      Object.keys(connection.configuration).some(
+        (key) => !ROUTING_FIELDS.includes(key as (typeof ROUTING_FIELDS)[number]),
+      )
+    )
+      throw new ServiceError('invalid_provider', 'Unsupported provider configuration');
+    const url = new URL(connection.endpoint);
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      url.search ||
+      Object.values(connection.configuration).some(
+        (value) => typeof value !== 'string' || value.length > 4096 || /[^\x20-\x7e]/.test(value),
+      )
+    )
+      throw new ServiceError('invalid_provider', 'Invalid provider connection');
+  }
   return {
-    provider: 'anthropic',
+    provider,
     model: id,
     max_tokens: cap,
     ...(workspace ? { workspace_id: workspace } : {}),
+    ...(connection ? { connection } : {}),
   };
 }
 /** Validate the final serialized HTTP payload, after all Pi payload hooks. */
@@ -101,4 +159,17 @@ export function validateClaudePayload(
     'context_management',
   ])
     if (payload[key] !== undefined) throw new Error('Unsupported Claude execution feature');
+}
+
+export function providerHasOutputCap(route: ProviderRoute, auth: AuthResult): boolean {
+  const model = getProviderModel(route);
+  return (
+    model?.api !== 'openai-codex-responses' &&
+    !(
+      model?.compat &&
+      'supportsMaxOutputTokens' in model.compat &&
+      model.compat.supportsMaxOutputTokens === false
+    ) &&
+    !(route.provider === 'openai' && !!auth.auth.apiKey && !auth.auth.apiKey.startsWith('sk-'))
+  );
 }

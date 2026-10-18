@@ -73,7 +73,10 @@ export function saveApiKey(value: string, path = credentialPath()): void {
     closeSync(directory);
   }
 }
-export async function readSecret(): Promise<string> {
+export async function readSecret(
+  label = 'Claude API key (hidden): ',
+  signal?: AbortSignal,
+): Promise<string> {
   if (!process.stdin.isTTY) {
     let input = '';
     for await (const chunk of process.stdin) {
@@ -82,7 +85,7 @@ export async function readSecret(): Promise<string> {
     }
     return input;
   }
-  process.stderr.write('Claude API key (hidden): ');
+  process.stderr.write(label);
   const stdin = process.stdin,
     wasRaw = stdin.isRaw;
   stdin.setRawMode(true);
@@ -90,6 +93,7 @@ export async function readSecret(): Promise<string> {
   return new Promise((resolve, reject) => {
     let key = '';
     const done = (error?: Error) => {
+      signal?.removeEventListener('abort', aborted);
       stdin.off('data', data);
       stdin.setRawMode(wasRaw);
       stdin.pause();
@@ -117,6 +121,9 @@ export async function readSecret(): Promise<string> {
         }
       }
     };
+    const aborted = () => done(new Error('Credential entry cancelled'));
+    signal?.addEventListener('abort', aborted, { once: true });
     stdin.on('data', data);
+    if (signal?.aborted) aborted();
   });
 }

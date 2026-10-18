@@ -60,7 +60,7 @@ After installation, store your key through the hidden terminal prompt:
 salaam auth set anthropic
 ```
 
-The command writes the key to `~/.config/salaam/credentials/anthropic`, with file mode `600` inside a directory with mode `700`. The key is entered at the prompt, so it does not become a shell command or CLI argument. The file is plaintext, protected by OS permissions. `ANTHROPIC_API_KEY` is also supported and takes precedence over this file; unset that environment variable to use the saved key. Salaam does not load `.env` files.
+The command writes the key to `~/.config/salaam/credentials/anthropic.json` (legacy `credentials/anthropic` files remain readable), with file mode `600` inside a directory with mode `700`. The key is entered at the prompt, so it does not become a shell command or CLI argument. The file is plaintext, protected by OS permissions. `ANTHROPIC_API_KEY` is also supported and takes precedence over this file; unset that environment variable to use the saved key. Salaam does not load `.env` files.
 
 Start a separate persistent state directory for Claude, then create a new session:
 
@@ -73,13 +73,17 @@ sal attach SESSION_ID --state "$HOME/.local/state/salaam-claude"
 
 Replace `SESSION_ID` with the ID returned by creation. A short greeting in the attachment exercises authentication and streaming; it is a real, billable request. Creating a session and checking readiness make no model request and do not prove the account's key or billing is valid.
 
-The default model is `claude-sonnet-5-5`, with low reasoning and a maximum of 4,096 output tokens per request. This initial route also accepts `--model claude-sonnet-4-6`. `--max-output-tokens N` permits 128–8,192; output limits and request budgets do not cap total currency spend. Model metadata and estimated prices come from the pinned Pi catalog. The direct endpoint is fixed to `https://api.anthropic.com`; arbitrary proxies, OAuth/subscription tokens, server tools and model fallback are unsupported. See [Anthropic model IDs](https://platform.claude.com/docs/en/models/overview).
+The Anthropic default is `claude-sonnet-5-5`, low reasoning and up to 4,096 output tokens per request. Other providers require `--model`; `sal providers list` and `sal models list PROVIDER` enumerate the pinned registry without network access. `--max-output-tokens N` permits 128–8,192, bounded by the model's smaller maximum. Metadata and estimated prices come from the pinned Pi catalog; account access and currency spend are not guaranteed by those values.
 
-If your API key requires an Anthropic workspace header, add `--workspace-id WORKSPACE_ID` to service startup. This is distinct from `--cwd`. See [Anthropic authentication](https://platform.claude.com/docs/en/manage-claude/authentication). The provider, model, output limit and workspace ID are durably bound to each session. Restart with the same options to resume it. Existing offline sessions retain their offline route; create a new session to use Claude. Starting over an already running daemon with a different route reports a configuration conflict.
+`sal auth set PROVIDER` stores an API key; `sal auth login PROVIDER [--oauth]` runs provider-owned setup. `sal auth status [PROVIDER]` prints non-secret metadata. OAuth and cloud setup details are in [providers and credentials](providers.md).
 
-Only live workers receive `ANTHROPIC_API_KEY`; other inherited provider credentials and global Pi settings remain excluded. Keys are absent from worker configuration JSON, process arguments, journal events and operator responses. Provider error bodies are replaced with safe status messages before they enter transcripts. Rotating the key requires updating the saved key/environment and restarting the service; no credential value or credential digest is persisted in the journal.
+The provider, model, output setting, optional Anthropic workspace ID, and resolved non-secret connection configuration bind durably to each session. Restart with the same configuration to resume it. Existing offline sessions retain their route; create a new session to change providers. Starting over a running daemon with a different route reports a configuration conflict. Cloud regions, projects, account endpoints and Azure deployment mappings cannot change silently on an existing session.
 
-Both SDK and Pi turn retries are disabled. Automatic compaction stays disabled; use the managed manual checkpoint command. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage rather than a zero charge. The service validates the final serialized model, output cap, fixed tool inventory and actual task-context frame before each HTTP dispatch. The private bridge currently bounds request bodies to 1 MiB. Existing approval/effect rules and child authority limits apply to Claude turns too. No live filesystem or shell tool is added by this provider integration.
+Workers receive selected-provider request authentication over the private bridge, with no inherited credential environment or global Pi settings. Only non-secret routing settings are present in worker configuration. API keys and OAuth refresh tokens are absent from arguments, journal events and operator responses. Error bodies are replaced with safe status messages before entering transcripts. Credentials are resolved again for subsequent requests; OAuth refresh is serialized across processes. Rotate credentials at an idle boundary.
+
+SDK and Pi turn retries are disabled. Automatic compaction stays disabled; use the managed manual checkpoint command. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage. Final serialized controls are checked before each request is durably admitted and dispatched. The private bridge bounds request bodies to 1 MiB. Existing approval, coding and child authority limits apply to every provider.
+
+ChatGPT subscription authentication and the legacy `openai-codex` route cannot enforce an output-token ceiling. Service health and the TUI display that limitation. Interactive sessions remain available; durable tasks, scheduled task runs and budgeted children are denied before dispatch on uncapped routes. Request counts still apply.
 
 ## Approvals and managed effects
 
@@ -134,7 +138,7 @@ Parent worker death leaves children running under the service. A replacement par
 
 Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Managed checkpoint compaction has known zero provider usage and reconciles its persisted Pi receipt after worker loss; its tests are part of S5.
 
-Claude is the first live provider. The service defaults to offline and passes only the explicitly configured Anthropic key into live workers. Keep the key outside Git and chat; default tests and demos use fixtures.
+The service defaults to offline and resolves only the selected provider credentials for each live request. Keep credentials outside Git and chat; default tests and demos use fixtures. See [provider support and authentication](providers.md).
 
 ## License
 

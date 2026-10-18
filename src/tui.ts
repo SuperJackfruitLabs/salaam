@@ -410,7 +410,10 @@ export class SalaamApp {
   private async startService(): Promise<void> {
     await this.client.list();
     if (this.client.connection === 'connected') return;
-    const provider = existsSync(credentialPath()) ? 'anthropic' : 'offline';
+    const provider =
+      existsSync(credentialPath()) || existsSync(credentialPath() + '.json')
+        ? 'anthropic'
+        : 'offline';
     await promisify(execFile)(
       process.execPath,
       [

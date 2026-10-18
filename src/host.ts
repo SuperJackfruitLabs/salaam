@@ -16,6 +16,8 @@ import {
 import { join, resolve, isAbsolute, sep } from 'node:path';
 import { ROOT, bundleDigest } from './config.js';
 import { digest, object, string, ServiceError } from './protocol.js';
+import { bindProviderConfiguration } from './provider-model.js';
+import { resolveProviderAuth } from './provider-auth.js';
 import { providerRoute, type ProviderRoute } from './provider-config.js';
 import { engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor } from './coding-executor.js';
@@ -78,6 +80,14 @@ export async function planHost(input: unknown): Promise<HostManifest> {
   mkdirSync(coding_root, { recursive: true, mode: 0o700 });
   const executor = new DockerCodingExecutor(engineRequest(coding_socket));
   await executor.prepare(coding_root);
+  let route = providerRoute(
+    c.provider === undefined ? 'offline' : String(c.provider),
+    c.model as string | undefined,
+    c.max_output_tokens as number | undefined,
+    c.workspace_id as string | undefined,
+  );
+  if (route.provider !== 'salaam-proof')
+    route = bindProviderConfiguration(route, await resolveProviderAuth(route));
   return {
     schema: 1,
     node: realpathSync(process.execPath),
@@ -87,12 +97,7 @@ export async function planHost(input: unknown): Promise<HostManifest> {
     state,
     coding_root: realpathSync(coding_root),
     coding_socket,
-    provider: providerRoute(
-      c.provider === undefined ? 'offline' : String(c.provider),
-      c.model as string | undefined,
-      c.max_output_tokens as number | undefined,
-      c.workspace_id as string | undefined,
-    ),
+    provider: route,
     profile_digest: executor.profileDigest,
     engine_id: executor.engineId,
   };

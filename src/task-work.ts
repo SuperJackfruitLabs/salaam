@@ -65,6 +65,7 @@ export interface WorkTask extends TaskPolicy {
 
 /** Operator-driven task ledger. An attempt outcome never constitutes task success. */
 export class TaskWork {
+  providerCheck?: () => void;
   assertLimits?: (session: string) => void;
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
   private authorizeGrant(task: WorkTask, step: string, grant?: string): void {
@@ -317,6 +318,7 @@ export class TaskWork {
     if (!this.store.db.isTransaction) throw new Error('Task admission requires a transaction');
     const plan = this.parse(input);
     authorize();
+    this.providerCheck?.();
     if (expected !== 0)
       throw new ServiceError('task_revision_conflict', 'New tasks require revision zero');
     this.idle(session);
