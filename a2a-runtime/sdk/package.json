@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@a2a-js/sdk": "1.0.1"
+  },
+  "name": "salaam-a2a-acceptance-peer",
+  "private": true
+}
