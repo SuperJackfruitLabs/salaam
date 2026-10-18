@@ -238,11 +238,13 @@ Task mutations require `request_id`, `expected_revision`, `client_id` and `token
 
 One-shot job routes are `GET/POST /v1/jobs`, `GET /v1/jobs/:id`, `POST /v1/jobs/:id/run`, `POST /v1/jobs/:id/cancel` and `GET /v1/job-occurrences/:id`. Mutations use the private operator socket, controller lease, revision and durable request ID; trigger bodies accept only a stable occurrence key. See [job controls](docs/jobs.md).
 
+Recurring controls use `GET/POST /v1/schedules`, `GET /v1/schedules/:id`, `GET /v1/schedules/:id/occurrences` and `POST /v1/schedules/:id/run|update`. The operator inbox uses `GET /v1/inbox`, `GET /v1/inbox/:id` and `POST /v1/inbox/:id/ack`. These are trusted host-local controls with strict trigger fields and source-session controller checks. [Host manifests](docs/host-operation.md) pin startup/runtime/backend configuration before enabling schedules.
+
 Identical command requests return their original saved result. Reusing a request ID with different logical input conflicts. Controller credentials are excluded from the submission/cancellation logical input so a new controller can recover a lost reply. Request lookup precedes mutation preconditions. Approvals use their own revision, independent of session progress. The local operator identity is derived from the private socket's OS-account boundary; caller-supplied actor IDs confer no authority. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
 
 A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Attempts, submissions, approvals and operations are bounded to 100 each; transcript messages are bounded to 100 with text budgets. Operation values may be truncated and receipts are omitted from snapshots with `value_truncated`/`receipt_available` flags; inspect the full operation before deciding. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
 
-On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version ten upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
+On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version eleven upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
 
 ## Development
 
@@ -277,3 +279,7 @@ Parent worker death leaves children running under the service. A replacement par
 Usage observations have stable provider-request or Pi-entry source keys. Reimporting entries cannot add a second charge; tool results' nested usage totals are ignored. Session usage sums each provider execution in the parent/child tree once. Known offline fixture amounts, estimated Pi pricing amounts and unknown observations are distinguished. Unknown amounts remain null in the ledger and are counted separately from the displayed known subtotal. Compaction, branch-summary and auxiliary usage entries are imported when Pi supplies them; missing receipts remain unknown. Managed checkpoint compaction has known zero provider usage and reconciles its persisted Pi receipt after worker loss; its tests are part of S5.
 
 Claude is the first live provider. The service defaults to offline and passes only the explicitly configured Anthropic key into live workers. Keep the key outside Git and chat; default tests and demos use fixtures.
+
+## License
+
+[Apache License 2.0](LICENSE).

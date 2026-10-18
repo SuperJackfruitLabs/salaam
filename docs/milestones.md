@@ -33,7 +33,7 @@ The [observed acceptance run](https://github.com/SuperJackfruitLabs/salaam/actio
 
 ## Coding in the terminal and on a remote host: M9–M12
 
-Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10 implementation, terminal/SSH/ACP protocol proofs and the named Zed GUI rehearsal have passed. The GUI-found prompt-display duplication is fixed, and the subsequent macOS/Linux acceptance and execution CI run passed. M11 implementation includes task recovery, fresh verification, budgets, checkpoints and bounded progression; observed acceptance is recorded in verification.md. M12.1 implements the one-shot job/recovery gate; later M12 slices remain planned. No delivery dates are assigned.
+Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10 implementation, terminal/SSH/ACP protocol proofs and the named Zed GUI rehearsal have passed. The GUI-found prompt-display duplication is fixed, and the subsequent macOS/Linux acceptance and execution CI run passed. M11 implementation includes task recovery, fresh verification, budgets, checkpoints and bounded progression; observed acceptance is recorded in verification.md. M12 implements one-shot and recurring jobs, schedule revision/DST/missed-run rules, host supervision and the shared operator inbox. The exact-build Mac/Linux pilot passed; final platform acceptance is recorded in verification.md. No delivery dates are assigned.
 
 The release goal is concrete: start a repository task through `sal`, let the same task continue on an execution host after disconnecting, inspect the diff and actual verification results, answer any approval remotely, and return to an accurate final outcome. A proper TUI is part of this set.
 
@@ -91,11 +91,11 @@ The paired proof starts a task in the TUI, lets its steps execute unattended, ki
 
 ### M12: run bounded jobs unattended on a real remote host
 
-**Current slice:** M12.1 implements an immutable one-shot definition bound to a reviewed unstarted task, atomic occurrence/progression admission, independent logical/request deduplication, scope checks on subsequent grants, cancellation recovery and shared TUI/CLI inspection/actions. Its offline process/PTY proofs precede scheduling. See [job controls](jobs.md).
+**Implemented scope:** immutable one-shot admission and recovery; fresh recurring plan/workspace templates; explicit timezone/DST, missed-run and overlap rules; pinned host bootstrap/supervision; and a durable operator inbox shared by TUI, CLI and ACP. The exact-build Mac SSH → native Linux Docker pilot passed checked repair, operation-bound approval and diff review, terminal loss/reconnect, duplicate/overlap rejection, missed schedules, daemon SIGKILL/restart and supervisor-death recovery with owned-resource cleanup. See [job controls](jobs.md), [host operation](host-operation.md) and [verification](verification.md).
 
-Deliver the remaining slices in order:
+The four implementation slices are:
 
-1. **M12.1 — Job admission and recovery:** prove crashes before/after acceptance, lost replies, active interruption, cancellation's commit/abort gap, recording failure and unchanged authority. Implemented with local offline evidence.
+1. **M12.1 — Job admission and recovery:** prove crashes before/after acceptance, lost replies, active interruption, cancellation's commit/abort gap, recording failure and unchanged authority. Implemented with offline process/PTY evidence and platform acceptance.
 2. **M12.2 — Recurring occurrences and schedules:** introduce reviewed immutable task/workspace templates for fresh occurrences; persisted schedule revisions, timezone/DST rules, stable occurrence keys, explicit skip/bounded catch-up and overlap prevention. Never reset/replay the existing one-shot task to simulate a new occurrence.
 3. **M12.3 — Host operation and inbox:** explicit bootstrap/supervision configuration, health/recovery and a durable operator inbox shared by TUI, CLI and ACP.
 4. **M12.4 — Remote release pilot:** a bounded task on the named Linux backend, Mac operator reconnect/approval/diff review, daemon restart, duplicate trigger and missed-schedule rehearsal with source/build/backend/provider evidence.
