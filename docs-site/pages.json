@@ -6,6 +6,7 @@
   "tui",
   "coding",
   "durable-tasks",
+  "agents",
   "jobs",
   "clients",
   "service-reference",

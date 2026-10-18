@@ -1,6 +1,6 @@
 # Multi-agent implementation plan: M13–M18
 
-Planning date: 2026-10-18. M13.1 has a native diagnostic implementation and offline proofs; see the [worker admission boundary](worker-boundary.md). M13.2–M18 remain proposed. Terminal interaction and unattended remote work remain equal priorities. This is contributor planning material and stays outside the public docs site's allowlist, search, and machine-readable exports. No delivery dates are assigned.
+Planning date: 2026-10-18. M13 native profiles, repository readers and reviewer findings, plus M14 task-step claims and passive team messaging, are implemented on the development branch with offline proofs; see the [worker admission boundary](worker-boundary.md). Live usefulness and the remaining M15–M18 exit gates are outstanding. All six milestones are being developed in one PR. Terminal interaction and unattended remote work remain equal priorities. This is contributor planning material and stays outside the public docs site's allowlist, search, and machine-readable exports. No delivery dates are assigned.
 
 The product outcome is concrete: ask Salaam to investigate, implement, and review a repository change using native specialists, a named external coding harness, and a remote A2A specialist. Disconnect and restart the daemon, then recover the same work identities, inspect the actual patches and checks, resolve any approvals, and finish without duplicate dispatch or falsely verified success.
 

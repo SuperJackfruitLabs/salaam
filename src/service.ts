@@ -14,7 +14,7 @@ import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
-import { canonical, integer, object, ServiceError, string } from './protocol.js';
+import { canonical, digest, integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
 import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
@@ -25,6 +25,9 @@ import { engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor, type ExecutionBackend } from './coding-executor.js';
 import { Workspaces } from './workspaces.js';
 import { CodingWork } from './coding.js';
+import { AgentProfiles } from './agent-profiles.js';
+import { RepositorySnapshots } from './repository-snapshots.js';
+import { TeamWork } from './team-work.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
@@ -54,6 +57,9 @@ export class SalaamService {
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
   readonly children: ChildWork;
+  readonly agents: AgentProfiles;
+  readonly repositories: RepositorySnapshots;
+  readonly team: TeamWork;
   readonly workspaces: Workspaces;
   readonly coding: CodingWork;
   readonly codingSocket: string | null;
@@ -131,8 +137,37 @@ export class SalaamService {
           failed: (id, error) => this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
-        this.children = new ChildWork(this.store, this.artifacts, this.supervisor);
+        this.agents = new AgentProfiles(
+          this.store,
+          this.supervisor.route,
+          async (route, session) => {
+            const prepared = await this.supervisor.prepareProviderRoute(route);
+            const task = this.taskWork.forSession(session);
+            if (task) this.supervisor.assertTaskProviderSupported(task.limits, prepared.output_cap);
+            return { route: prepared.route, output_cap: prepared.output_cap };
+          },
+        );
+        this.store.workerBoundary.profiles = this.agents;
+        this.agents.validateFrame = (session) => {
+          this.tasks.frame(session, 'x'.repeat(32));
+        };
+        this.repositories = new RepositorySnapshots(this.store, this.artifacts, this.workspaces);
+        this.supervisor.repositories = this.repositories;
+        this.children = new ChildWork(
+          this.store,
+          this.artifacts,
+          this.supervisor,
+          this.repositories,
+        );
         this.supervisor.children = this.children;
+        this.team = new TeamWork(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.children,
+          this.agents,
+        );
+        this.supervisor.team = this.team;
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
         this.taskDriver = new TaskDriver(
           this.store,
@@ -466,6 +501,72 @@ export class SalaamService {
         throw new ServiceError('not_found', 'Job route not found', 404);
       }
       if (parts[0] === 'v1' && parts[1] === 'tasks') {
+        if (parts[2] && parts[3] === 'team') {
+          const task = this.taskWork.get(parts[2]);
+          if (req.method === 'GET' && parts.length === 4) {
+            this.send(res, 200, this.team.view(task.id));
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            const request = string(body.request_id, 'request_id', 128);
+            const controller = {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            };
+            const authorize = () => this.store.authorizeControl(task.session_id, controller);
+            let result: unknown;
+            if (parts.length === 5 && parts[4] === 'assign') {
+              result = this.team.assign(
+                task.id,
+                string(body.step_id, 'step_id', 128),
+                string(body.profile_id, 'profile_id', 128),
+                integer(body.requests, 'requests'),
+                request,
+                integer(body.expected_revision, 'expected_revision'),
+                controller,
+              );
+            } else if (parts.length === 5 && parts[4] === 'send') {
+              result = this.team.send(
+                task.id,
+                'operator',
+                string(body.recipient, 'recipient', 128),
+                string(body.text, 'text', 4096),
+                request,
+                authorize,
+              );
+            } else if (parts.length === 6 && parts[4]) {
+              const assignment = this.team.get(parts[4]);
+              if (assignment.task_id !== task.id)
+                throw new ServiceError('team_message_scope', 'Assignment belongs to another task');
+              if (parts[5] === 'run')
+                result = this.team.run(
+                  assignment.id,
+                  request,
+                  integer(body.expected_revision, 'expected_revision'),
+                  integer(body.generation, 'generation'),
+                  body.instruction == null ? null : string(body.instruction, 'instruction', 4096),
+                  body.continues_attempt_id == null
+                    ? null
+                    : string(body.continues_attempt_id, 'continues_attempt_id', 128),
+                  controller,
+                );
+              else if (parts[5] === 'receive')
+                result = this.team.receive(assignment.id, request, authorize);
+              else if (parts[5] === 'ack')
+                result = this.team.acknowledge(
+                  assignment.id,
+                  string(body.message_id, 'message_id', 128),
+                  request,
+                  authorize,
+                );
+              else throw new ServiceError('not_found', 'Team action not found', 404);
+            } else throw new ServiceError('not_found', 'Team route not found', 404);
+            this.send(res, 200, result);
+            return;
+          }
+          throw new ServiceError('not_found', 'Team route not found', 404);
+        }
         if (req.method === 'GET' && parts.length === 2) {
           const session = string(url.searchParams.get('session_id'), 'session_id', 128);
           this.store.session(session);
@@ -755,6 +856,60 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts[3] === 'agents') {
+          if (req.method === 'GET') {
+            const profile = url.searchParams.get('profile');
+            this.send(
+              res,
+              200,
+              profile
+                ? {
+                    ...this.agents.inspect(id, profile),
+                    digest: digest(this.agents.inspect(id, profile)),
+                  }
+                : this.agents.list(id).map((p) => ({ ...p, digest: digest(p) })),
+            );
+            return;
+          }
+          const body = object(await readJson(req));
+          const controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          };
+          const request = string(body.request_id, 'request_id', 128);
+          if (parts[4] === 'admit') {
+            const facts =
+              body.fact_ids === undefined
+                ? []
+                : Array.isArray(body.fact_ids)
+                  ? body.fact_ids.map((x) => string(x, 'fact_id', 128))
+                  : (() => {
+                      throw new ServiceError('invalid_field', 'fact_ids must be an array');
+                    })();
+            this.send(
+              res,
+              201,
+              await this.agents.admit(
+                id,
+                request,
+                string(body.profile_id, 'profile_id', 128),
+                string(body.expected_digest, 'expected_digest', 64),
+                facts,
+                controller,
+              ),
+            );
+            return;
+          }
+          if (parts[4] === 'revoke') {
+            this.send(
+              res,
+              200,
+              this.agents.revoke(id, string(body.grant_id, 'grant_id', 128), request, controller),
+            );
+            return;
+          }
+          throw new ServiceError('not_found', 'Agent operation not found', 404);
+        }
         if (parts[3] === 'activity' && req.method === 'GET') {
           this.store.session(id);
           const rows = this.store.db

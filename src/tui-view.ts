@@ -593,7 +593,55 @@ export class DocumentView implements Component {
           ...this.prose(fact.id, fact.text, width - 4).map((line) => t.line(line, width)),
           t.fill('', width),
         );
+      const team = c.snapshot.team as
+        | {
+            assignments: {
+              id: string;
+              profile_id: string;
+              generation: number;
+              step_state: string;
+              stale: boolean;
+            }[];
+            messages: {
+              id: string;
+              sender: string;
+              recipient: string;
+              delivered_at: number | null;
+              acknowledged_at: number | null;
+            }[];
+          }
+        | undefined;
+      if (team?.assignments.length) {
+        lines.push(...this.title('TEAM BOARD', width));
+        for (const a of team.assignments)
+          lines.push(
+            ...this.text(
+              `${shortId(a.id)} · ${a.profile_id} · claim ${a.generation} · ${a.step_state}${a.stale ? ' · stale plan' : ''}`,
+              width,
+            ),
+          );
+        lines.push(
+          ...this.text(
+            'Messages are passive. Starting or continuing work requires a separate grant.',
+            width,
+          ),
+        );
+        for (const m of team.messages)
+          lines.push(
+            ...this.text(
+              `${shortId(m.id)} · ${m.sender === 'operator' ? 'operator' : shortId(m.sender)} → ${shortId(m.recipient)} · ${m.acknowledged_at ? 'acknowledged' : m.delivered_at ? 'delivered' : 'stored'}`,
+              width,
+            ),
+          );
+      }
       lines.push(...this.title('CHILD WORK', width));
+      for (const agent of c.snapshot.agents ?? [])
+        lines.push(
+          ...this.text(
+            `${agent.profile_id} · revision ${agent.revision} · ${agent.state} · ${agent.route.provider}/${agent.route.model} · ${agent.tools.join(', ')}`,
+            width,
+          ),
+        );
       if (!c.snapshot.children.length)
         lines.push(...this.text('No child work in this session.', width));
       for (const child of c.snapshot.children)

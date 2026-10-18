@@ -68,7 +68,9 @@ export class TaskWork {
   providerCheck?: (limits: TaskPolicy['limits']) => void;
   assertLimits?: (session: string) => void;
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
-  private authorizeGrant(task: WorkTask, step: string, grant?: string): void {
+  delegatedStep?: (task: string, step: string) => boolean;
+  advanceDelegate?: (grant: string) => unknown;
+  authorizeGrant(task: WorkTask, step: string, grant?: string): void {
     const row = this.store.db
       .prepare(
         'SELECT * FROM task_grants WHERE id=? AND task_id=? AND step_id=? AND plan_revision=?',
@@ -99,6 +101,7 @@ export class TaskWork {
     const grant = this.store.db.prepare('SELECT * FROM task_grants WHERE id=?').get(grantId) as
       { task_id: string; step_id: string; expected_revision: number } | undefined;
     if (!grant) throw new ServiceError('not_found', 'Task grant not found', 404);
+    if (this.delegatedStep?.(grant.task_id, grant.step_id)) return this.advanceDelegate!(grantId);
     return this.run(
       grant.task_id,
       grant.step_id,
@@ -477,6 +480,11 @@ export class TaskWork {
         if (['cancelled', 'succeeded', 'succeeded_with_exception'].includes(task.state))
           throw new ServiceError('task_settled', 'Revise a settled task before another step');
         const step = task.steps.find((s) => s.id === stepId);
+        if (this.delegatedStep?.(id, stepId))
+          throw new ServiceError(
+            'team_step_required',
+            'Run assigned steps through their durable team assignment',
+          );
         if (!step) throw new ServiceError('invalid_step', 'Step does not belong to this task');
         if (!['pending', 'failed', 'interrupted', 'cancelled'].includes(step.state))
           throw new ServiceError('invalid_step_state', 'Step cannot be run in its current state');
@@ -607,6 +615,7 @@ export class TaskWork {
     const state: WorkStep['state'] = (
       {
         accepted: 'queued',
+        delegated: 'queued',
         dispatching: 'running',
         running: 'running',
         completed: 'awaiting_review',

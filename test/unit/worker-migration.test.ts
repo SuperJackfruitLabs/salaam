@@ -56,7 +56,9 @@ test('v11 child migration preserves ownership, results, acknowledgements, usage 
       usage: store.db.prepare('SELECT * FROM usage_observations').all(),
       events: store.db.prepare('SELECT * FROM events').all(),
     };
-    store.db.exec('DROP TABLE child_workers; DROP TABLE worker_profiles; PRAGMA user_version=11;');
+    store.db.exec(
+      'DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; PRAGMA user_version=11;',
+    );
     store.close();
     store = new Store(path);
     children = new ChildWork(store, new Artifacts(join(dir, 'artifacts'), store), supervisor);

@@ -31,6 +31,7 @@ export class Store {
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
   projectTaskAttempt?: (attempt: Attempt) => void;
+  teamSnapshot?: (session: string) => unknown;
   guardTaskSubmission?: (session: string, step?: string) => void;
   cancelChildren?: (attempt: string) => void;
   recordTaskMutation?: (
@@ -61,7 +62,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 12) {
+    if (version > 14) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -211,6 +212,21 @@ export class Store {
         this.workerBoundary.migrate();
         this.db.exec('PRAGMA user_version=12; COMMIT;');
       }
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 13
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE agent_grants(id TEXT PRIMARY KEY,owner_session TEXT NOT NULL REFERENCES sessions(id),profile_id TEXT NOT NULL,document TEXT NOT NULL,digest TEXT NOT NULL,state TEXT NOT NULL);
+          CREATE TABLE specialist_reports(worker_id TEXT PRIMARY KEY,input_digest TEXT NOT NULL,artifact_id TEXT NOT NULL REFERENCES artifacts(id));
+          PRAGMA user_version=13; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 14
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE team_assignments(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_id TEXT NOT NULL REFERENCES task_steps(id),plan_revision INTEGER NOT NULL,profile_id TEXT NOT NULL,grant_id TEXT NOT NULL REFERENCES agent_grants(id),budget INTEGER NOT NULL,generation INTEGER NOT NULL DEFAULT 0,child_id TEXT REFERENCES child_tasks(id),superseded INTEGER NOT NULL DEFAULT 0);
+          CREATE UNIQUE INDEX team_active_step ON team_assignments(step_id) WHERE superseded=0;
+          CREATE TABLE team_messages(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),sender TEXT NOT NULL,recipient TEXT NOT NULL REFERENCES team_assignments(id),text TEXT NOT NULL,input_digest TEXT NOT NULL,created_at INTEGER NOT NULL,delivered_at INTEGER,acknowledged_at INTEGER);
+          PRAGMA user_version=14; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -802,6 +818,10 @@ export class Store {
         ...child,
         worker: this.workerBoundary.view(child.id),
       })),
+      ...(this.workerBoundary.profiles
+        ? { agents: this.workerBoundary.profiles.snapshot(id) }
+        : {}),
+      ...(this.teamSnapshot ? { team: this.teamSnapshot(id) } : {}),
     };
   }
   cancelled(id: string): boolean {

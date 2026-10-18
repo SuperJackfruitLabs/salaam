@@ -1,4 +1,21 @@
 const commands: Record<string, string> = {
+  team: `salaam team show TASK_ID
+salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --requests N --revision N
+salaam team run TASK_ID --assignment ID --generation N --revision N [--instruction TEXT --continues ATTEMPT_ID]
+salaam team send TASK_ID --to ASSIGNMENT_ID --text TEXT
+salaam team receive TASK_ID --assignment ID
+salaam team ack TASK_ID --assignment ID --message MESSAGE_ID
+
+Mutations accept --request-id ID and --takeover. Claims bind the plan, admitted profile and generation.
+Messages never wake workers. Use run for an explicit new claim or follow-up.`,
+  agents: `salaam agents list --session SESSION_ID
+salaam agents inspect PROFILE_ID --session SESSION_ID
+salaam agents admit PROFILE_ID --session SESSION_ID --digest REVIEWED_DIGEST [--facts ID,ID]
+salaam agents revoke GRANT_ID --session SESSION_ID
+
+Profiles are data in .salaam/agents/*.md with JSON front matter and a prompt body.
+Inspect the effective tools and digest before admission. Project definitions cannot
+grant themselves authority. Mutations accept --request-id and --takeover.`,
   tui: `salaam tui [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
            [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 
@@ -228,6 +245,8 @@ Commands:
   compactions   Inspect or cancel a managed checkpoint
   execution     Prove the container boundary with disposable fixtures
   workspace     Inspect coding copies, review diffs or acknowledge human edits
+  agents        Inspect and admit specialist profiles
+  team          Assign task steps and inspect the durable team inbox
   commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}

@@ -51,9 +51,9 @@ const manifest = {
   session_id: c.session,
   pi_session_id: c.session,
   epoch: c.epoch,
-  capabilities: workerCapabilities(c.coding),
-  tools: workerTools(!!c.effects, !!c.child, c.coding),
-  active_tools: workerTools(!!c.effects, !!c.child, c.coding),
+  capabilities: workerCapabilities(c.coding, c.worker_binding?.binding.tools),
+  tools: workerTools(!!c.effects, !!c.child, c.coding, c.worker_binding?.binding.tools),
+  active_tools: workerTools(!!c.effects, !!c.child, c.coding, c.worker_binding?.binding.tools),
   ...(c.coding ? { coding: c.coding } : {}),
   provider: c.route.provider,
   route: c.route,
@@ -64,7 +64,9 @@ const mutations = {
   'missing-coding-binding': { coding: null },
   'wrong-coding-profile': { coding: { ...c.coding, profile_digest: 'forged' } },
   'missing-file-capability': {
-    capabilities: workerCapabilities(c.coding).filter((x) => x !== 'workspace-files'),
+    capabilities: workerCapabilities(c.coding, c.worker_binding?.binding.tools).filter(
+      (x) => x !== 'workspace-files',
+    ),
   },
   'wrong-version': { protocol_version: 99 },
   'wrong-bundle': { bundle_digest: 'wrong' },

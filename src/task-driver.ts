@@ -153,7 +153,7 @@ export class TaskDriver {
   private async stopActive(task: WorkTask): Promise<void> {
     const attempts = this.store.db
       .prepare(
-        "SELECT id,state,submission_id FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+        "SELECT id,state,submission_id FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running','delegated')",
       )
       .all(task.session_id) as { id: string; state: string; submission_id: string }[];
     this.store.transaction(() => {
@@ -217,6 +217,7 @@ export class TaskDriver {
     if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
       throw new ServiceError('task_settled', 'Task already settled');
     this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
+    this.children.cancelSessionInTransaction(task.session_id);
     this.store.db
       .prepare(
         "UPDATE durable_tasks SET state='cancelled',reason='Operator cancelled the task; inspect any uncertain effects',revision=revision+1 WHERE id=?",
@@ -361,17 +362,31 @@ export class TaskDriver {
       this.stop(task, 'An interrupted or failed step requires explicit operator review');
       return;
     }
-    if (this.budget.active(task) > 0) {
-      const accepted = task.steps.some((s) => s.state === 'queued');
+    const active = this.budget.active(task);
+    if (active > 0) {
+      const accepted = task.steps.some(
+        (s) => s.state === 'queued' && !this.tasks.delegatedStep?.(task.id, s.id),
+      );
       if (
         accepted &&
         !['ready', 'starting'].includes(this.supervisor.inspect(task.session_id).state)
       )
         await this.worker(task);
-      return;
+      const rootActive = this.store.db
+        .prepare(
+          "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+        )
+        .get(task.session_id);
+      if (
+        rootActive ||
+        active >= task.limits.concurrency ||
+        this.children.activeCount(task.session_id) >= 2 ||
+        this.children.activeCount() >= 8
+      )
+        return;
     }
     const reviewing = task.steps.find((s) => s.state === 'awaiting_review');
-    if (reviewing) {
+    if (reviewing && !active) {
       if (!reviewing.checks?.length) {
         this.stop(task, 'Step requires operator review');
         return;
@@ -399,6 +414,7 @@ export class TaskDriver {
       return;
     }
     if (Number(r.remaining_steps) < 1) {
+      if (active) return;
       this.stop(task, 'Bounded progression step limit reached');
       return;
     }
@@ -406,14 +422,18 @@ export class TaskDriver {
     const next = task.steps.find(
       (s) =>
         s.state === 'pending' &&
+        (!active || this.tasks.delegatedStep?.(task.id, s.id)) &&
         s.depends_on.every((k) => task.steps.find((p) => p.key === k)?.state === 'completed'),
     );
     if (!next) {
+      if (active) return;
       this.stop(task, 'No eligible step; inspect the plan');
       return;
     }
-    if (!(await this.worker(task)) || this.stopped) return;
+    const assigned = this.tasks.delegatedStep?.(task.id, next.id);
+    if ((!assigned && !(await this.worker(task))) || this.stopped) return;
     if (
+      !assigned &&
       r.auto_compact &&
       task.steps.some((s) => s.state === 'completed') &&
       !this.compact(task, next.id)

@@ -3,6 +3,7 @@ import type { Store } from './store.js';
 import { canonical, digest, textDigest, ServiceError, type ChildTask } from './protocol.js';
 import { POLICY_DIGEST } from './config.js';
 import type { ProviderRoute } from './provider-config.js';
+import type { AgentProfile, AgentGrant, AgentProfiles } from './agent-profiles.js';
 
 /** Local contract v1. These are enforced capabilities, not upstream feature claims. */
 export const NATIVE_CAPABILITIES = {
@@ -25,6 +26,16 @@ export const DIAGNOSTIC_PROFILE = {
   tools: ['salaam_probe'],
   max_depth: 1,
 } as const;
+export function nativeCapabilities(profile: AgentProfile, coordination = false) {
+  const caps = profile.role
+    ? {
+        ...NATIVE_CAPABILITIES,
+        repository_read: profile.tools.includes('salaam_repository'),
+        findings: profile.tools.includes('salaam_findings'),
+      }
+    : NATIVE_CAPABILITIES;
+  return coordination ? { ...caps, team_messages: true } : caps;
+}
 
 export interface WorkerBinding {
   schema_version: 1;
@@ -38,9 +49,9 @@ export interface WorkerBinding {
   attempt_id: string;
   input_digest: string;
   input_artifact: string | null;
-  profile: typeof DIAGNOSTIC_PROFILE;
+  profile: AgentProfile;
   profile_digest: string;
-  capabilities: typeof NATIVE_CAPABILITIES;
+  capabilities: ReturnType<typeof nativeCapabilities>;
   capability_digest: string;
   tools: string[];
   route: ProviderRoute | null;
@@ -48,6 +59,9 @@ export interface WorkerBinding {
   policy_digest: string;
   bounds: { scope: 'model-requests'; requests: number };
   legacy: boolean;
+  agent?: AgentGrant;
+  repository?: { artifact_id: string; base_artifact: string; digest: string };
+  assignment?: { id: string; generation: number };
 }
 export interface WorkerBoundaryView {
   binding: WorkerBinding;
@@ -72,6 +86,8 @@ export function assertModelRequestBoundary(capabilities: {
 }
 
 export class WorkerBoundary {
+  profiles?: AgentProfiles;
+  assertAssignment?: (binding: WorkerBinding) => void;
   constructor(private store: Store) {}
   /** Called within the schema migration transaction. Cached responses and child rows stay intact. */
   migrate(): void {
@@ -90,21 +106,24 @@ export class WorkerBoundary {
     }
   }
   /** Caller owns the transaction that creates the child, its reservation and input artifact. */
-  freeze(child: ChildTask, inputArtifact: string | null, legacy = false): void {
-    const profileDigest = digest(DIAGNOSTIC_PROFILE);
+  freeze(
+    child: ChildTask,
+    inputArtifact: string | null,
+    legacy = false,
+    agent?: AgentGrant,
+    repository?: WorkerBinding['repository'],
+    assignment?: WorkerBinding['assignment'],
+  ): void {
+    const admittedProfile = agent?.profile ?? DIAGNOSTIC_PROFILE;
+    const profileDigest = digest(admittedProfile);
     this.store.db
       .prepare(
         'INSERT OR IGNORE INTO worker_profiles(id,revision,digest,document) VALUES (?,?,?,?)',
       )
-      .run(
-        DIAGNOSTIC_PROFILE.id,
-        DIAGNOSTIC_PROFILE.revision,
-        profileDigest,
-        canonical(DIAGNOSTIC_PROFILE),
-      );
+      .run(admittedProfile.id, admittedProfile.revision, profileDigest, canonical(admittedProfile));
     const profile = this.store.db
       .prepare('SELECT digest,revoked FROM worker_profiles WHERE id=? AND revision=?')
-      .get(DIAGNOSTIC_PROFILE.id, DIAGNOSTIC_PROFILE.revision);
+      .get(admittedProfile.id, admittedProfile.revision);
     if (profile?.revoked || profile?.digest !== profileDigest)
       throw new ServiceError(
         'worker_profile_revoked',
@@ -128,12 +147,13 @@ export class WorkerBoundary {
       attempt_id: child.child_attempt,
       input_digest: child.input_digest,
       input_artifact: inputArtifact,
-      profile: DIAGNOSTIC_PROFILE,
+      profile: admittedProfile,
       profile_digest: profileDigest,
-      capabilities: NATIVE_CAPABILITIES,
-      capability_digest: digest(NATIVE_CAPABILITIES),
+      capabilities: nativeCapabilities(admittedProfile, !!assignment),
+      capability_digest: digest(nativeCapabilities(admittedProfile, !!assignment)),
       tools: JSON.parse(child.authority),
       route:
+        agent?.route ??
         this.store.providerRoute(child.child_session) ??
         this.store.providerRoute(child.parent_session),
       workspace: workspace
@@ -146,6 +166,9 @@ export class WorkerBoundary {
       policy_digest: POLICY_DIGEST,
       bounds: { scope: 'model-requests', requests: child.budget },
       legacy,
+      ...(agent ? { agent } : {}),
+      ...(repository ? { repository } : {}),
+      ...(assignment ? { assignment } : {}),
     };
     assertModelRequestBoundary(binding.capabilities);
     this.store.db
@@ -175,9 +198,27 @@ export class WorkerBoundary {
   private validate(child: ChildTask, route: ProviderRoute): WorkerBoundaryView {
     const view = this.view(child.id),
       b = view.binding;
+    if (b.agent) {
+      if (
+        !this.profiles ||
+        b.agent.owner_session !== child.parent_session ||
+        b.agent.profile_digest !== b.profile_digest ||
+        canonical(b.agent.route) !== canonical(b.route)
+      )
+        throw new ServiceError(
+          'worker_binding_changed',
+          'Specialist admission belongs to another owner or route',
+        );
+      this.profiles.validate(b.agent);
+    }
     const profile = this.store.db
       .prepare('SELECT * FROM worker_profiles WHERE id=? AND revision=?')
       .get(b.profile.id, b.profile.revision);
+    if (b.assignment) {
+      if (!this.assertAssignment)
+        throw new ServiceError('worker_binding_changed', 'Assignment owner is unavailable');
+      this.assertAssignment(b);
+    }
     const task = this.store.db
       .prepare('SELECT id FROM durable_tasks WHERE session_id=?')
       .get(child.parent_session);
@@ -203,12 +244,14 @@ export class WorkerBoundary {
       b.bounds.scope !== 'model-requests' ||
       b.bounds.requests !== child.budget ||
       canonical(b.tools) !== child.authority ||
-      canonical(b.tools) !== canonical(['salaam_probe']) ||
+      b.tools.some(
+        (tool) => !b.profile.tools.includes(tool) && !(tool === 'salaam_team' && b.assignment),
+      ) ||
       b.policy_digest !== POLICY_DIGEST ||
       canonical(b.route) !== canonical(route) ||
-      b.capability_digest !== digest(NATIVE_CAPABILITIES) ||
+      b.capability_digest !== digest(nativeCapabilities(b.profile, !!b.assignment)) ||
       digest(b.capabilities) !== b.capability_digest ||
-      b.profile_digest !== digest(DIAGNOSTIC_PROFILE) ||
+      (!b.agent && b.profile_digest !== digest(DIAGNOSTIC_PROFILE)) ||
       digest(b.profile) !== b.profile_digest ||
       !profile ||
       profile.revoked ||

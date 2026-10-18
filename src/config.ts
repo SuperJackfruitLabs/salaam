@@ -20,7 +20,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 9,
+  version: 11,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -31,6 +31,9 @@ export const POLICY = {
     'salaam_history',
     'salaam_files',
     'salaam_command',
+    'salaam_repository',
+    'salaam_findings',
+    'salaam_team',
   ],
   children: {
     maxDepth: 1,
@@ -39,6 +42,10 @@ export const POLICY = {
     maxChildRequestBudget: 8,
     authority: ['salaam_probe'],
     worker_boundary: 'frozen-native-model-request-v1',
+    specialist_profiles: 'operator-admitted-snapshot-v1',
+    team_claims: 'task-step-generation-v1',
+    daemon_workers: 8,
+    messages: 'passive-durable-explicit-ack-v1',
   },
   providers: [
     'salaam-proof/scripted',
@@ -96,6 +103,11 @@ export function bundleDigest(): string {
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/protocol.js'), 'utf8')),
     worker_boundary: textDigest(readFileSync(join(ROOT, 'dist/src/worker-boundary.js'), 'utf8')),
+    agent_profiles: textDigest(readFileSync(join(ROOT, 'dist/src/agent-profiles.js'), 'utf8')),
+    team_work: textDigest(readFileSync(join(ROOT, 'dist/src/team-work.js'), 'utf8')),
+    repository_snapshots: textDigest(
+      readFileSync(join(ROOT, 'dist/src/repository-snapshots.js'), 'utf8'),
+    ),
     transport: textDigest(readFileSync(join(ROOT, 'dist/src/transport.js'), 'utf8')),
   });
 }

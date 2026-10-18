@@ -29,16 +29,27 @@ export interface CodingBinding {
   commands: boolean;
   profile_digest: string | null;
 }
-export function workerCapabilities(coding?: CodingBinding): string[] {
+export function workerCapabilities(
+  coding?: CodingBinding,
+  childTools?: readonly string[],
+): string[] {
   return [
     ...CAPABILITIES,
     ...(coding ? ['workspace-files'] : []),
     ...(coding?.commands ? ['command-execution'] : []),
+    ...(childTools?.includes('salaam_repository') ? ['repository-snapshot-read'] : []),
+    ...(childTools?.includes('salaam_findings') ? ['structured-findings'] : []),
+    ...(childTools?.includes('salaam_team') ? ['durable-team-messages'] : []),
   ];
 }
-export function workerTools(effects: boolean, child = false, coding?: CodingBinding): string[] {
+export function workerTools(
+  effects: boolean,
+  child = false,
+  coding?: CodingBinding,
+  childTools?: readonly string[],
+): string[] {
   return child
-    ? ['salaam_probe']
+    ? [...(childTools ?? ['salaam_probe'])].sort()
     : [
         ...TOOLS,
         ...(effects ? ['salaam_effect'] : []),
@@ -93,7 +104,14 @@ export interface DurableEvent {
   payload: unknown;
 }
 export type AttemptState =
-  'accepted' | 'dispatching' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
+  | 'accepted'
+  | 'dispatching'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled'
+  | 'delegated';
 export interface Attempt {
   id: string;
   session_id: string;
@@ -125,6 +143,8 @@ export interface Controller {
   token: string;
 }
 export interface SessionSnapshot extends Session {
+  team?: unknown;
+  agents?: ReturnType<import('./agent-profiles.js').AgentProfiles['snapshot']>;
   inbox?: import('./operator-inbox.js').InboxEntry[];
   recurring_occurrence?: import('./recurring-work.js').RecurringOccurrence | null;
   work_task?: import('./task-work.js').WorkTask | null;

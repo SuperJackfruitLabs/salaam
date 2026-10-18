@@ -78,6 +78,102 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'team') {
+    if (!id) throw new Error('Supply TASK_ID');
+    if (verb === 'show') {
+      console.log(JSON.stringify(await call(socket, `/v1/tasks/${id}/team`), null, 2));
+      return;
+    }
+    if (!['assign', 'run', 'send', 'receive', 'ack'].includes(verb ?? ''))
+      throw new Error('Use team show, assign, run, send, receive or ack');
+    const task = await call<{ session_id: string }>(socket, `/v1/tasks/${id}`);
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, task.session_id, client_id, args.includes('--takeover'));
+    try {
+      const assignment = option('--assignment');
+      if (['run', 'receive', 'ack'].includes(verb!) && !assignment)
+        throw new Error('Supply --assignment ID');
+      const revision = option('--revision'),
+        generation = option('--generation');
+      if (['assign', 'run'].includes(verb!) && revision === undefined)
+        throw new Error('Supply the reviewed --revision N');
+      if (verb === 'run' && generation === undefined)
+        throw new Error('Supply the reviewed --generation N');
+      const path = assignment ? `${assignment}/${verb}` : verb;
+      const result = await call(socket, `/v1/tasks/${id}/team/${path}`, {
+        client_id,
+        token: lease.token,
+        request_id: option('--request-id') ?? randomUUID(),
+        expected_revision: revision === undefined ? undefined : Number(revision),
+        generation: generation === undefined ? undefined : Number(generation),
+        ...(verb === 'assign'
+          ? {
+              step_id: option('--step'),
+              profile_id: option('--profile'),
+              requests: Number(option('--requests')),
+            }
+          : {}),
+        ...(verb === 'run'
+          ? { instruction: option('--instruction'), continues_attempt_id: option('--continues') }
+          : {}),
+        ...(verb === 'send' ? { recipient: option('--to'), text: option('--text') } : {}),
+        ...(verb === 'ack' ? { message_id: option('--message') } : {}),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${task.session_id}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (group === 'agents') {
+    const session = option('--session');
+    if (!session) throw new Error('Supply --session SESSION_ID');
+    if (verb === 'list' || verb === 'inspect') {
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            `/v1/sessions/${session}/agents${verb === 'inspect' ? '?profile=' + encodeURIComponent(id ?? '') : ''}`,
+          ),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (!id || !['admit', 'revoke'].includes(verb ?? ''))
+      throw new Error('Use agents list, inspect, admit or revoke');
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, session, client_id, args.includes('--takeover'));
+    try {
+      const expected_digest = option('--digest');
+      if (verb === 'admit' && !expected_digest)
+        throw new Error('Review agents inspect and supply --digest SHA256');
+      const fact_ids = option('--facts')?.split(',').filter(Boolean) ?? [];
+      const result = await call(socket, `/v1/sessions/${session}/agents/${verb}`, {
+        request_id: option('--request-id') ?? randomUUID(),
+        client_id,
+        token: lease.token,
+        ...(verb === 'admit' ? { profile_id: id, expected_digest, fact_ids } : { grant_id: id }),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${session}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'host') {
     const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
     if (verb === 'plan') {

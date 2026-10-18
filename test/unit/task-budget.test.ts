@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { DatabaseSync } from 'node:sqlite';
-import { digest } from '../../src/protocol.js';
+import { digest, type ChildTask } from '../../src/protocol.js';
 
 test.each([false, true])(
   'parent and child reservations survive restart without refunds (token budget disabled: %s)',
@@ -49,6 +49,15 @@ test.each([false, true])(
             2,
           );
         store.taskChildReserve!(f.session.id, childAttempt.attempt_id, 2);
+        // This test admits model observations manually; give its synthetic child
+        // the same durable identity record required of every real child.
+        store.workerBoundary.freeze(
+          store.db
+            .prepare('SELECT * FROM child_tasks WHERE child_session=?')
+            .get(child.id) as unknown as ChildTask,
+          null,
+          true,
+        );
       });
       expect((await f.task()).runtime.reserved_requests).toBe(2);
       admit(child.id, childAttempt.attempt_id, 'child-one');
@@ -94,7 +103,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
     await f.service.close();
     const db = new DatabaseSync(join(f.state, 'journal.sqlite'));
     db.exec(
-      'DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
+      'DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
     );
     let legacyPlan: unknown;
     for (const row of db.prepare('SELECT task_id,revision,document FROM task_plans').all()) {
@@ -147,7 +156,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
         .get(),
     ).toMatchObject({ status: 'unknown' });
     expect(f.service.store.db.prepare('PRAGMA user_version').get()).toMatchObject({
-      user_version: 12,
+      user_version: 14,
     });
   } finally {
     await f.close();

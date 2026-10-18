@@ -30,6 +30,7 @@ export default defineConfig({
             { label: 'Terminal interface', slug: 'tui' },
             { label: 'Coding and execution', slug: 'coding' },
             { label: 'Durable tasks', slug: 'durable-tasks' },
+            { label: 'Specialists and teams', slug: 'agents' },
             { label: 'Jobs and schedules', slug: 'jobs' },
             { label: 'Editors and SSH', slug: 'clients' },
             { label: 'Session operations', slug: 'service-reference' },
