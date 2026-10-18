@@ -38,27 +38,30 @@ Use **Node 26.7.0** and npm **11.19.0**. macOS and Linux are supported; Windows 
 not currently tested. Packages include compiled CLI code and pinned production
 dependencies. No compiler, checkout or database server is needed.
 
-Download `install.sh` from a [published release](https://github.com/SuperJackfruitLabs/salaam/releases),
-inspect it, then run:
+Install the latest stable release:
 
 ```sh
-sh install.sh --version 0.0.1
+curl -fsSL https://salaam.sh/install.sh | sh
 salaam --version
 sal --help
 ```
 
 The installer verifies the release tarball's SHA-256 checksum and installs both
-executable names. Use `--prefix "$HOME/.local"` for a private prefix and add its
-`bin` directory to `PATH`.
+executable names. You can [read the installer](https://salaam.sh/install.sh) before
+running it. To choose a version or private prefix, pass arguments to `sh`:
 
-An npm registry installation is supported **after the package is published**:
+```sh
+curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.1 --prefix "$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Or install from npm:
 
 ```sh
 npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
 ```
 
-Release preparation does not itself publish a version. Check GitHub Releases and
-npm for availability. See [installation and upgrades](docs/install.md) for direct
+See [installation and upgrades](docs/install.md) for direct
 tarball installation, prerequisites and safe state migration.
 
 ## Your first session

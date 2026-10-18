@@ -65,6 +65,7 @@ test('installer checks the exact checksum before npm and forwards a literal pref
     mkdirSync(bin);
     const bytes = 'test release bytes';
     const asset = 'salaam-cli-0.0.1.tgz';
+    writeFileSync(join(dir, 'latest'), JSON.stringify({ tag_name: 'v0.0.1' }));
     writeFileSync(join(dir, asset), bytes);
     writeFileSync(
       join(dir, 'SHA256SUMS'),
@@ -90,8 +91,13 @@ test('installer checks the exact checksum before npm and forwards a literal pref
       SAL_TEST_LOG: log,
     };
     const run = (...args: string[]) =>
-      spawnSync('sh', [join(ROOT, 'install.sh'), ...args], { encoding: 'utf8', env });
+      spawnSync('sh', ['-s', '--', ...args], {
+        input: readFileSync(join(ROOT, 'install.sh')),
+        encoding: 'utf8',
+        env,
+      });
     // No prefix: fake npm records its arguments; no executable check is requested.
+    expect(run().status).toBe(0);
     expect(run('--version', '0.0.1').status).toBe(0);
     expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(
       expect.arrayContaining(['--ignore-scripts', '--offline', '--global']),
