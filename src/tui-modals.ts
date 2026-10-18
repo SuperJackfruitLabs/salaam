@@ -130,9 +130,14 @@ export class FormModal implements Component, Focusable {
     readonly renderAgain: () => void,
     readonly close: () => void,
     readonly submit: (value: string, coding: boolean) => void,
+    readonly labels?: { field: string; submit: string; hint: string },
   ) {
-    this.input = new Input({ placeholder: 'Absolute project directory', prompt: '› ' });
+    this.input = new Input({
+      placeholder: labels?.field ?? 'Absolute project directory',
+      prompt: '› ',
+    });
     this.input.setValue(initial);
+    if (labels) this.input.handleInput('\x05');
     this.coding = allowCoding;
   }
   invalidate(): void {
@@ -144,7 +149,7 @@ export class FormModal implements Component, Focusable {
       this.theme,
       this.title,
       [
-        this.theme.ink('Project directory', 'muted'),
+        this.theme.ink(this.labels?.field ?? 'Project directory', 'muted'),
         ...this.input.render(Math.max(1, width - 4)).map((line) => this.theme.ink(line)),
         '',
         this.theme.ink(
@@ -152,11 +157,11 @@ export class FormModal implements Component, Focusable {
             ? this.coding
               ? '[✓] Coding workspace · guarded tools'
               : '[ ] Conversation session'
-            : 'Conversation session · coding service is off',
+            : (this.labels?.hint ?? 'Conversation session · coding service is off'),
           this.coding ? 'jade' : 'muted',
         ),
         '',
-        this.theme.key('enter', 'create') +
+        this.theme.key('enter', this.labels?.submit ?? 'create') +
           '   ' +
           (this.allowCoding ? this.theme.key('tab', 'coding tools') + '   ' : '') +
           this.theme.key('esc', 'back'),

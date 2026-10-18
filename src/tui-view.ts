@@ -206,7 +206,17 @@ export class DocumentView implements Component {
     }
     let lines: string[] = [];
     if (tab === 'conversation') {
-      if (!c.snapshot.messages.length && !c.snapshot.submissions.length) {
+      if (c.snapshot.work_task)
+        lines.push(
+          ...this.title('TASK · ' + c.snapshot.work_task.state.toUpperCase(), width),
+          ...this.text(c.snapshot.work_task.objective, width),
+          ...this.text(
+            'Inspect the saved plan in Context. Ctrl+K → Task actions controls explicit or bounded work.',
+            width,
+          ),
+          t.fill('', width),
+        );
+      if (!c.snapshot.work_task && !c.snapshot.messages.length && !c.snapshot.submissions.length) {
         lines = this.welcome(width);
         while (lines.length < this.view.bodyRows()) lines.push(t.fill('', width));
         return lines;
@@ -457,6 +467,73 @@ export class DocumentView implements Component {
           ...this.text('Current root: ' + c.workspace.root, width),
           t.fill('', width),
         );
+      const task = c.snapshot.work_task;
+      if (task) {
+        lines.push(
+          ...this.title('DURABLE TASK · ' + task.state.toUpperCase(), width),
+          ...this.text(
+            task.id + ' · revision ' + task.revision + ' · plan ' + task.plan_revision,
+            width,
+          ),
+          ...this.text(task.objective, width),
+          ...this.text(task.reason, width),
+        );
+        if (task.runtime)
+          lines.push(
+            ...this.text(
+              'Requests ' +
+                task.runtime.requests_spent +
+                ' spent + ' +
+                task.runtime.reserved_requests +
+                ' reserved / ' +
+                task.limits.requests,
+              width,
+            ),
+            ...this.text(
+              'Declared token units ' +
+                task.runtime.token_units +
+                ' + ' +
+                task.runtime.reserved_tokens +
+                ' reserved / ' +
+                task.limits.token_units,
+              width,
+            ),
+            ...this.text(
+              'Bounded progression ' +
+                (task.runtime.auto_enabled
+                  ? 'enabled · ' + task.runtime.remaining_steps + ' new steps remain'
+                  : 'paused') +
+                (task.runtime.auto_error ? ' · ' + task.runtime.auto_error : ''),
+              width,
+            ),
+          );
+        if (task.verification)
+          lines.push(
+            ...this.title('VERIFICATION', width),
+            ...this.text(JSON.stringify(task.verification, null, 2), width),
+          );
+        for (const constraint of task.constraints)
+          lines.push(...this.text('Constraint: ' + constraint, width));
+        for (const step of task.steps)
+          lines.push(
+            ...this.title(step.key + ' · ' + step.state, width, 'muted'),
+            ...this.text(step.title, width),
+            ...this.text(step.instruction, width),
+            ...this.text(
+              'Step ' + step.id + (step.attempt_id ? ' · attempt ' + step.attempt_id : ''),
+              width,
+            ),
+            ...this.text('Depends on: ' + (step.depends_on.join(', ') || 'none'), width),
+            ...(step.review ? this.text('Operator review: ' + step.review, width) : []),
+          );
+        lines.push(
+          ...this.text(
+            'Ctrl+K → Task actions · receipts bind the exact workspace revision.',
+            width,
+          ),
+          t.fill('', width),
+        );
+      }
       lines.push(...this.title('TASK FACTS', width));
       const facts = c.facts.filter((f) => !(f as { superseded_by?: string }).superseded_by);
       if (!facts.length)

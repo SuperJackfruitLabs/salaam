@@ -112,6 +112,7 @@ export class ChildWork {
           JSON.stringify(authority),
           budget,
         );
+      this.store.taskChildReserve?.(parent, childAttempt, budget);
       this.store.usage.budget(childAttempt, budget);
       this.store.event(session, 'session.created', { parent_session: parent, child_id: id });
       this.store.event(session, 'submission.accepted', {

@@ -624,6 +624,7 @@ export class Supervisor extends EventEmitter {
       }
       if (method === 'model') {
         this.coding?.assertSafe(id);
+        this.store.taskGrantCheck?.(id);
         if (
           body.provider !== this.route.provider ||
           body.model !== this.route.model ||
@@ -665,6 +666,7 @@ export class Supervisor extends EventEmitter {
           string(body.source_key, 'source_key', 256),
           String(body.provider),
           String(body.model),
+          { input: Buffer.byteLength(JSON.stringify(body.payload)), output: this.route.max_tokens },
         );
         this.store.transaction(() => {
           this.store.event(id, 'model.admitted', {
@@ -677,6 +679,7 @@ export class Supervisor extends EventEmitter {
           });
         });
       } else if (method === 'policy' || method === 'tool') {
+        this.store.taskGrantCheck?.(id);
         if (!this.tools(id).includes(String(body.tool))) throw new Error('Tool is outside policy');
         this.store.transaction(() => {
           this.store.event(id, method === 'tool' ? 'tool.granted' : 'policy.allowed', {
@@ -688,6 +691,7 @@ export class Supervisor extends EventEmitter {
       } else throw new Error('Unsupported worker operation');
       return { ok: true };
     } catch (error) {
+      this.store.taskBudgetDenied?.(id, error);
       if (
         method.startsWith('coding.') &&
         error instanceof ServiceError &&
@@ -806,7 +810,10 @@ export class Supervisor extends EventEmitter {
   }
   compact(id: string, request: string, expected: number, authorize: () => void): Compaction {
     // Deduplication runs before idle/lease checks, including after a lost response.
-    const work = this.tasks.begin(id, this.store.session(id).epoch, request, expected, authorize);
+    const work = this.tasks.begin(id, this.store.session(id).epoch, request, expected, () => {
+      authorize();
+      this.store.taskGrantCheck?.(id);
+    });
     const w = this.workers.get(id)!;
     if (work.state !== 'running' || w.compaction === work.id) return work;
     w.busy = true;

@@ -577,12 +577,334 @@ export class SalaamApp {
       86,
     );
   }
+  private taskInput(
+    title: string,
+    initial: string,
+    field: string,
+    hint: string,
+    submit: (value: string) => void,
+  ): void {
+    this.showModal(
+      new FormModal(
+        title,
+        initial,
+        this.view.theme,
+        false,
+        () => this.tui.requestRender(),
+        () => this.closeModal(),
+        (value) => {
+          this.closeModal();
+          submit(value);
+        },
+        { field, submit: 'continue', hint },
+      ),
+    );
+  }
+  private taskActions(): void {
+    const task = this.client.snapshot?.work_task;
+    if (!task) {
+      const initial = JSON.stringify({
+        objective: 'Describe the task',
+        constraints: [],
+        steps: [
+          {
+            key: 'work',
+            title: 'Implement and inspect',
+            instruction: 'Describe the task',
+            depends_on: [],
+            checks: ['tests'],
+          },
+        ],
+        acceptance: [{ key: 'tests', command: 'node --test', cwd: '.' }],
+        deliverables: [],
+      });
+      this.taskInput(
+        'Create task · plan JSON',
+        initial,
+        'Paste the objective, steps, checks and deliverables',
+        'Creates a saved plan. No work starts until explicitly requested.',
+        (value) =>
+          void this.execute(async () => {
+            const plan = JSON.parse(value);
+            this.confirm(
+              'Create this task',
+              String(plan.objective).slice(0, 256) +
+                '\n' +
+                (Array.isArray(plan.steps) ? plan.steps.length : 0) +
+                ' saved steps. No work starts yet.\nReview the full plan in Context after creation.',
+              'Create task',
+              () => this.client.taskAction('create', { plan }),
+            );
+          }),
+      );
+      return;
+    }
+    const reviewed = { id: task.id, revision: task.revision };
+    const items = [
+      {
+        value: 'inspect',
+        label: 'Inspect task and verification',
+        description: task.state + ' · revision ' + task.revision,
+      },
+      {
+        value: 'plan',
+        label: 'Revise task plan',
+        description: 'Preserve history; attempted steps remain immutable',
+      },
+      {
+        value: 'run',
+        label: 'Start or continue one step',
+        description: 'Explicit instruction · same durable task',
+      },
+      {
+        value: 'review',
+        label: 'Record operator step review',
+        description: 'A review is separate from verified success',
+      },
+      {
+        value: 'verify',
+        label: 'Run an acceptance check',
+        description: 'Actual isolated command outcome and workspace digest',
+      },
+      {
+        value: 'finish',
+        label: 'Verify task completion',
+        description: 'Requires fresh checks and deliverables',
+      },
+      {
+        value: 'auto',
+        label: 'Run bounded task',
+        description: 'Explicit step limit · checked steps · idle compaction',
+      },
+      {
+        value: 'pause',
+        label: 'Pause task progression',
+        description: 'Current work may settle; no later steps start',
+      },
+      {
+        value: 'checkpoint',
+        label: 'Create task checkpoint',
+        description: 'Capture the owned workspace at an idle boundary',
+      },
+      {
+        value: 'restore',
+        label: 'Restore task checkpoint',
+        description: 'Preserve human edits and report conflicts',
+      },
+      {
+        value: 'cancel',
+        label: 'Cancel task',
+        description: 'Stop work; uncertain external effects remain recorded',
+      },
+    ];
+    this.choice('Salaam · task', items, (action) => {
+      if (action === 'inspect')
+        this.showModal(
+          new TextModal(
+            'Task · ' + task.id,
+            JSON.stringify(task, null, 2),
+            this.view.theme,
+            () => this.view.rows() - 8,
+            () => this.tui.requestRender(),
+            () => this.closeModal(),
+          ),
+        );
+      else if (action === 'plan')
+        this.taskInput(
+          'Revise task · plan JSON',
+          JSON.stringify({
+            objective: task.objective,
+            constraints: task.constraints,
+            steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+              key,
+              title,
+              instruction,
+              depends_on,
+              checks,
+            })),
+            acceptance: task.acceptance,
+            deliverables: task.deliverables,
+            limits: task.limits,
+          }),
+          'Review the complete revised plan',
+          'Revising pauses progression and requires fresh verification.',
+          (value) =>
+            void this.execute(() =>
+              this.client.taskAction('revise', { plan: JSON.parse(value) }, reviewed),
+            ),
+        );
+      else if (action === 'run') {
+        const eligible = task.steps.filter((s) =>
+          ['pending', 'failed', 'cancelled', 'interrupted'].includes(s.state),
+        );
+        if (!eligible.length) {
+          this.client.report('No step is eligible for an explicit run.');
+          return;
+        }
+        this.choice(
+          'Choose a saved step',
+          eligible.map((s) => ({
+            value: s.id,
+            label: s.title,
+            description: s.key + ' · ' + s.state,
+          })),
+          (id) => {
+            const step = eligible.find((s) => s.id === id)!;
+            this.taskInput(
+              'Step instruction',
+              step.state === 'interrupted' ? '' : step.instruction,
+              'Review or enter the instruction',
+              step.state === 'interrupted'
+                ? 'Inspect the interrupted outcome first; this creates a new attempt.'
+                : 'Dependencies and task limits are checked by the service.',
+              (instruction) =>
+                void this.execute(() =>
+                  this.client.taskAction(
+                    `steps/${id}/run`,
+                    {
+                      instruction,
+                      ...(step.state === 'interrupted'
+                        ? { continues_attempt_id: step.attempt_id }
+                        : {}),
+                    },
+                    reviewed,
+                  ),
+                ),
+            );
+          },
+        );
+      } else if (action === 'review') {
+        const steps = task.steps.filter((s) => s.state === 'awaiting_review');
+        if (!steps.length) {
+          this.client.report('No step awaits operator review.');
+          return;
+        }
+        this.choice(
+          'Review a settled step',
+          steps.map((s) => ({ value: s.id, label: s.title, description: s.attempt_id ?? '' })),
+          (id) =>
+            this.taskInput(
+              'Record operator review',
+              '',
+              'What did you inspect?',
+              'This records your decision; fresh command receipts are still required for task success.',
+              (review) =>
+                void this.execute(() =>
+                  this.client.taskAction(`steps/${id}/complete`, { review }, reviewed),
+                ),
+            ),
+        );
+      } else if (action === 'verify') {
+        if (!task.acceptance.length) {
+          this.client.report('Configure acceptance checks in the task plan first.');
+          return;
+        }
+        this.choice(
+          'Choose acceptance check',
+          task.acceptance.map((c) => ({ value: c.key, label: c.key, description: c.command })),
+          (key) =>
+            void this.execute(() => this.client.taskAction('verify', { check_key: key }, reviewed)),
+        );
+      } else if (action === 'finish')
+        this.confirm(
+          'Verify task completion',
+          'The service will recheck every configured command receipt and deliverable against the current workspace.',
+          'Verify completion',
+          () => this.client.taskAction('finish', {}, reviewed),
+        );
+      else if (action === 'auto')
+        this.taskInput(
+          'Bounded progression',
+          String(task.steps.filter((s) => s.state === 'pending').length),
+          'Maximum new steps (1–32)',
+          'Steps advance only after their configured checks pass. Human approvals remain separate.',
+          (value) => {
+            const max_steps = Number(value);
+            this.confirm(
+              'Run this bounded plan',
+              `Task ${shortId(task.id)} · plan revision ${task.plan_revision}\nAt most ${max_steps} new steps; each step needs fresh passing checks.\nLimits: ${task.limits.requests} requests · ${task.limits.runtime_ms} ms · ${task.limits.concurrency} concurrent executions.\n${task.limits.token_units} declared token units · ${task.limits.verification_runs} verification runs.\nChecks: ${task.acceptance.map((c) => c.key).join(', ') || 'none'} · Deliverables: ${task.deliverables.length}.\nDeterministic compaction at idle boundaries. Human approvals remain separate.`,
+              'Run bounded task',
+              () => this.client.taskAction('auto', { max_steps, compact: true }, reviewed),
+            );
+          },
+        );
+      else if (action === 'pause')
+        void this.execute(() =>
+          this.client.taskAction('auto', { max_steps: 0, compact: false }, reviewed),
+        );
+      else if (action === 'checkpoint')
+        void this.execute(() => this.client.taskAction('checkpoint', {}, reviewed));
+      else if (action === 'restore')
+        void this.execute(async () => {
+          const checkpoints = await call<{ id: string; revision: number; digest: string }[]>(
+            this.client.socket,
+            `/v1/tasks/${task.id}/checkpoints`,
+          );
+          if (!checkpoints.length) {
+            this.client.report('No checkpoints have been saved.');
+            return;
+          }
+          this.choice(
+            'Choose checkpoint',
+            checkpoints.map((c) => ({
+              value: c.id,
+              label: 'Workspace revision ' + c.revision,
+              description: c.digest,
+            })),
+            (checkpoint_id) => {
+              const w = this.client.workspace;
+              if (!w?.observed_digest) {
+                this.client.report('Refresh the owned workspace before restoring.');
+                return;
+              }
+              this.confirm(
+                'Restore reviewed task changes',
+                JSON.stringify(
+                  {
+                    checkpoint_id,
+                    current_revision: w.revision,
+                    current_digest: w.observed_digest,
+                    human_edits: 'Preserved; conflicts are reported',
+                    external_effects: 'Not rolled back',
+                  },
+                  null,
+                  2,
+                ),
+                'Restore checkpoint',
+                () =>
+                  this.client.taskAction(
+                    'restore',
+                    {
+                      checkpoint_id,
+                      workspace_revision: w.revision,
+                      workspace_digest: w.observed_digest,
+                    },
+                    reviewed,
+                  ),
+              );
+            },
+          );
+        });
+      else if (action === 'cancel')
+        this.confirm(
+          'Cancel this task',
+          'Current work is cancelled and later steps stop. Inspect any uncertain effects separately.',
+          'Cancel task',
+          () => this.client.taskAction('cancel', {}, reviewed),
+        );
+    });
+  }
   private palette(): void {
     const snapshot = this.client.snapshot;
     const items = [
       { value: 'new', label: 'New session', description: 'ctrl+n' },
       { value: 'sessions', label: 'Switch session', description: 'ctrl+p' },
       { value: 'conversation', label: 'Conversation', description: 'Messages and live progress' },
+      {
+        value: 'task',
+        label: 'Task actions',
+        description: 'Saved plan, verification, bounded progression and checkpoints',
+      },
       { value: 'changes', label: 'Review changes', description: 'ctrl+g · guarded workspace diff' },
       { value: 'commands', label: 'Commands and output', description: 'ctrl+t' },
       {
@@ -662,6 +984,7 @@ export class SalaamApp {
         return;
       }
       if (value === 'new') void this.execute(() => this.newSession());
+      else if (value === 'task') this.taskActions();
       else if (value === 'sessions') void this.execute(() => this.sessions());
       else if (value === 'approvals') this.approvals();
       else if (value === 'history') void this.execute(() => this.history());

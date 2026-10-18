@@ -15,30 +15,40 @@ export class UsageLedger {
     key: string,
     provider: string,
     model: string,
+    bounds?: { input: number; output: number },
   ): void {
-    this.store.transaction(() => {
-      const old = this.store.db
-        .prepare('SELECT * FROM usage_observations WHERE source_key=?')
-        .get(key);
-      if (old)
-        throw new ServiceError('request_replay', 'A provider request cannot be forwarded twice');
-      if (attempt) {
-        this.budget(attempt);
-        const changed = this.store.db
+    try {
+      this.store.transaction(() => {
+        const old = this.store.db
+          .prepare('SELECT * FROM usage_observations WHERE source_key=?')
+          .get(key);
+        if (old)
+          throw new ServiceError('request_replay', 'A provider request cannot be forwarded twice');
+        this.store.taskModelAdmission?.(session, attempt, bounds?.input ?? 0, bounds?.output ?? 0);
+        if (attempt) {
+          this.budget(attempt);
+          const changed = this.store.db
+            .prepare(
+              'UPDATE attempt_budgets SET spent_requests=spent_requests+1 WHERE attempt_id=? AND spent_requests+reserved_requests<limit_requests',
+            )
+            .run(attempt);
+          if (!changed.changes)
+            throw new ServiceError('budget_exhausted', 'No model request budget remains');
+        }
+        this.store.db
           .prepare(
-            'UPDATE attempt_budgets SET spent_requests=spent_requests+1 WHERE attempt_id=? AND spent_requests+reserved_requests<limit_requests',
+            "INSERT INTO usage_observations(source_key,session_id,attempt_id,provider,model,status) VALUES (?,?,?,?,?,'unknown')",
           )
-          .run(attempt);
-        if (!changed.changes)
-          throw new ServiceError('budget_exhausted', 'No model request budget remains');
-      }
-      this.store.db
-        .prepare(
-          "INSERT INTO usage_observations(source_key,session_id,attempt_id,provider,model,status) VALUES (?,?,?,?,?,'unknown')",
-        )
-        .run(key, session, attempt ?? null, provider, model);
-      this.store.event(session, 'usage.admitted', { source_key: key, attempt_id: attempt ?? null });
-    });
+          .run(key, session, attempt ?? null, provider, model);
+        this.store.event(session, 'usage.admitted', {
+          source_key: key,
+          attempt_id: attempt ?? null,
+        });
+      });
+    } catch (error) {
+      this.store.taskBudgetDenied?.(session, error);
+      throw error;
+    }
   }
   observe(
     session: string,

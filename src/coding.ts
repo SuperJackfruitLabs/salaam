@@ -167,6 +167,7 @@ export class CodingWork {
       this.store.transaction(() => {
         authorize();
         this.workspaces.verify(session, id);
+        this.store.taskCommandAdmission?.(session);
         snapshot.commit();
         this.store.db
           .prepare(
@@ -188,7 +189,11 @@ export class CodingWork {
             this.executor!.engineId,
             snapshot.id,
             created,
-            created + COMMAND_LIMITS.runtimeMs,
+            created +
+              Math.min(
+                COMMAND_LIMITS.runtimeMs,
+                this.store.taskRemainingRuntime?.(session) ?? COMMAND_LIMITS.runtimeMs,
+              ),
           );
         this.store.event(session, 'command.accepted', {
           run_id: id,
@@ -204,6 +209,7 @@ export class CodingWork {
       });
     } catch (error) {
       this.workspaces.unlock(session, id);
+      this.store.taskBudgetDenied?.(session, error);
       throw error;
     }
     this.follow(id, session);

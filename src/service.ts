@@ -2,6 +2,11 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { TaskContext } from './task-context.js';
+import { TaskWork } from './task-work.js';
+import { TaskBudget } from './task-budget.js';
+import { TaskVerification } from './task-verification.js';
+import { TaskCheckpoints } from './task-checkpoints.js';
+import { TaskDriver } from './task-driver.js';
 import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
@@ -33,6 +38,11 @@ export class SalaamService {
   readonly store: Store;
   readonly artifacts: Artifacts;
   readonly tasks: TaskContext;
+  readonly taskWork: TaskWork;
+  readonly taskBudget: TaskBudget;
+  readonly taskVerification: TaskVerification;
+  readonly taskCheckpoints: TaskCheckpoints;
+  readonly taskDriver: TaskDriver;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
@@ -63,6 +73,8 @@ export class SalaamService {
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
+        this.taskWork = new TaskWork(this.store, this.tasks);
+        this.taskBudget = new TaskBudget(this.store, this.taskWork);
         this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
         if (options.codingSocket && !options.codingRoot)
           throw new Error('Command execution requires an explicit --coding-root');
@@ -77,6 +89,21 @@ export class SalaamService {
           this.artifacts,
           executor,
           (id, error) => this.supervisor.failControl(id, error),
+        );
+        this.taskVerification = new TaskVerification(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.workspaces,
+          this.coding,
+          this.artifacts,
+        );
+        this.taskCheckpoints = new TaskCheckpoints(
+          this.store,
+          this.taskWork,
+          this.taskVerification,
+          this.workspaces,
+          this.artifacts,
         );
         this.supervisor = new Supervisor(this.store, {
           ...options,
@@ -98,6 +125,15 @@ export class SalaamService {
         this.children = new ChildWork(this.store, this.artifacts, this.supervisor);
         this.supervisor.children = this.children;
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
+        this.taskDriver = new TaskDriver(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.taskVerification,
+          this.supervisor,
+          this.children,
+          this.coding,
+        );
       } catch (error) {
         this.store.close();
         throw error;
@@ -144,14 +180,17 @@ export class SalaamService {
       }
       await service.supervisor.recover();
       service.store.recoverWork();
+      service.taskWork.recover();
       service.tasks.recover();
       service.workspaces.recover();
       service.coding.recover();
       service.children.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
+      service.taskCheckpoints.recover();
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
+      service.taskDriver.start();
       return service;
     } catch (error) {
       await service.close();
@@ -192,10 +231,194 @@ export class SalaamService {
         this.send(res, 200, value);
         return;
       }
+      if (parts[0] === 'v1' && parts[1] === 'tasks') {
+        if (req.method === 'GET' && parts.length === 2) {
+          const session = string(url.searchParams.get('session_id'), 'session_id', 128);
+          this.store.session(session);
+          const current = this.taskWork.forSession(session);
+          this.send(res, 200, current ? this.taskDriver.view(current.id) : null);
+          return;
+        }
+        const taskId = parts[2];
+        if (
+          req.method === 'GET' &&
+          taskId &&
+          parts.length === 4 &&
+          ['checkpoints', 'restores'].includes(parts[3]!)
+        ) {
+          this.taskWork.get(taskId);
+          this.send(
+            res,
+            200,
+            parts[3] === 'checkpoints'
+              ? this.taskCheckpoints.list(taskId)
+              : this.taskCheckpoints.restores(taskId),
+          );
+          return;
+        }
+
+        if (req.method === 'GET' && taskId && parts.length === 3) {
+          this.send(res, 200, this.taskDriver.view(taskId));
+          return;
+        }
+        if (req.method === 'GET' && taskId && parts.length === 4 && parts[3] === 'history') {
+          this.send(
+            res,
+            200,
+            this.taskWork.history(
+              taskId,
+              integer(Number(url.searchParams.get('offset') ?? '0'), 'offset'),
+            ),
+          );
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = object(await readJson(req));
+          const controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          };
+          const request = string(body.request_id, 'request_id', 128);
+          const expected = integer(body.expected_revision, 'expected_revision');
+          if (parts.length === 2) {
+            const task = this.taskWork.create(
+              string(body.session_id, 'session_id', 128),
+              request,
+              expected,
+              body.plan,
+              controller,
+            );
+            this.send(res, 201, this.taskDriver.view(task.id));
+            return;
+          }
+          if (
+            taskId &&
+            parts.length === 4 &&
+            ['verify', 'finish', 'checkpoint', 'restore', 'auto', 'cancel'].includes(parts[3]!)
+          ) {
+            const task = this.taskWork.get(taskId),
+              authorize = () => this.store.authorizeControl(task.session_id, controller);
+            let result: unknown;
+            if (parts[3] === 'verify')
+              result = this.taskVerification.start(
+                taskId,
+                string(body.check_key, 'check_key', 64),
+                body.step_id == null ? null : string(body.step_id, 'step_id', 128),
+                request,
+                expected,
+                authorize,
+              );
+            else if (parts[3] === 'finish') {
+              const exception = body.exception == null ? null : object(body.exception);
+              this.taskVerification.finish(
+                taskId,
+                request,
+                expected,
+                exception
+                  ? {
+                      reason: string(exception.reason, 'reason', 4096),
+                      evidence_artifact: string(
+                        exception.evidence_artifact,
+                        'evidence_artifact',
+                        128,
+                      ),
+                    }
+                  : null,
+                authorize,
+              );
+              result = this.taskDriver.view(taskId);
+            } else if (parts[3] === 'checkpoint')
+              result = this.taskCheckpoints.capture(taskId, request, expected, authorize);
+            else if (parts[3] === 'restore')
+              result = this.taskCheckpoints.restore(
+                taskId,
+                string(body.checkpoint_id, 'checkpoint_id', 128),
+                request,
+                expected,
+                integer(body.workspace_revision, 'workspace_revision'),
+                string(body.workspace_digest, 'workspace_digest', 128),
+                authorize,
+              );
+            else if (parts[3] === 'auto') {
+              if (body.compact !== undefined && typeof body.compact !== 'boolean')
+                throw new ServiceError('invalid_field', 'compact must be boolean', 400);
+              this.taskDriver.configure(
+                taskId,
+                request,
+                expected,
+                integer(body.max_steps, 'max_steps'),
+                body.compact === true,
+                controller,
+              );
+              result = this.taskDriver.view(taskId);
+            } else {
+              await this.taskDriver.cancel(taskId, request, expected, controller);
+              result = this.taskDriver.view(taskId);
+            }
+            this.send(res, 200, result);
+            return;
+          }
+          if (taskId && parts.length === 4 && parts[3] === 'revise') {
+            this.send(
+              res,
+              200,
+              (this.taskWork.revise(taskId, request, expected, body.plan, controller),
+              this.taskDriver.view(taskId)),
+            );
+            return;
+          }
+          if (taskId && parts.length === 6 && parts[3] === 'steps' && parts[4]) {
+            if (parts[5] === 'run') {
+              this.send(
+                res,
+                202,
+                this.taskWork.run(
+                  taskId,
+                  parts[4],
+                  request,
+                  expected,
+                  body.instruction == null ? null : string(body.instruction, 'instruction', 4096),
+                  body.continues_attempt_id == null
+                    ? null
+                    : string(body.continues_attempt_id, 'continues_attempt_id', 128),
+                  controller,
+                ),
+              );
+              return;
+            }
+            if (parts[5] === 'complete') {
+              this.send(
+                res,
+                200,
+                (this.taskWork.complete(
+                  taskId,
+                  parts[4],
+                  request,
+                  expected,
+                  string(body.review, 'review', 4096),
+                  controller,
+                ),
+                this.taskDriver.view(taskId)),
+              );
+              return;
+            }
+          }
+        }
+      }
       if (url.pathname === '/v1/health' && req.method === 'GET') {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          task_execution: {
+            durable_tasks: true,
+            explicit_steps: true,
+            automatic_progression: 'operator-bounded-opt-in',
+            verified_completion: !!this.coding.executor,
+            verification_supported: true,
+            task_budgets: true,
+            checkpoints: true,
+            deterministic_compaction: 'operator-bounded-idle-only',
+          },
           provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
           coding_root: this.workspaces.root ?? null,
@@ -605,7 +828,13 @@ export class SalaamService {
           return;
         }
         if (parts[3] === 'snapshot' && req.method === 'GET') {
-          this.send(res, 200, { ...this.store.snapshot(id), ...this.supervisor.inspect(id) });
+          this.send(res, 200, {
+            ...this.store.snapshot(id),
+            ...this.supervisor.inspect(id),
+            work_task: this.taskWork.forSession(id)
+              ? this.taskDriver.view(this.taskWork.forSession(id)!.id)
+              : null,
+          });
           return;
         }
         if (parts[3] === 'control' && req.method === 'POST') {
@@ -770,6 +999,7 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    await this.taskDriver.close();
     this.dispatcher.pause();
     this.managed.pause();
     this.children.pause();

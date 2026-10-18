@@ -602,6 +602,7 @@ export class ManagedWork {
             .prepare("UPDATE submissions SET state='cancelled' WHERE id=?")
             .run(work.submission_id);
           this.store.finishChild?.(this.store.attempt(attempt));
+          this.store.projectTaskAttempt?.(this.store.attempt(attempt));
         }
         const ops = this.store.db
           .prepare(

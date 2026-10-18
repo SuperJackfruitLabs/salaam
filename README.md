@@ -4,7 +4,9 @@ Salaam is a local session service supervising persistent Pi workers. Terminal an
 
 The current implementation covers **M0–M8**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes, usage accounting, explicit task facts, managed checkpoint compaction and an ACP v1 stdio adapter. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
 
-**M10** adds the Salaam terminal interface: bare `sal`, session switching, a multiline composer, live progress, guarded diffs, command output, bound approvals, and SSH attachment. Night and Paper themes use Salaam branding. See [TUI controls and remote setup](docs/tui.md). The named Zed GUI rehearsal is still pending; protocol tests are separate evidence.
+**M10** adds the Salaam terminal interface: bare `sal`, session switching, a multiline composer, live progress, guarded diffs, command output, bound approvals, and SSH attachment. Night and Paper themes use Salaam branding. See [TUI controls and remote setup](docs/tui.md). The named Zed GUI rehearsal and macOS/Linux acceptance passed; see the recorded scope in [verification](docs/verification.md).
+
+**M11** adds durable task/step recovery, workspace-bound verification, shared task budgets, conflict-preserving checkpoints and opt-in bounded step progression. The TUI and CLI expose the same task controls; model text alone cannot declare verified success. See [durable tasks](docs/durable-tasks.md).
 
 ## Run locally
 
@@ -217,11 +219,26 @@ All endpoints use the operator Unix socket at `STATE_DIR/operator.sock`.
 | `POST /v1/attempts/:id/cancel`        | `{request_id, expected_revision, client_id, token}`; revoke dispatch and request cancellation                                      |
 | `POST /v1/shutdown`                   | Stop the service and its owned workers                                                                                             |
 
+Durable task endpoints use the same private operator socket:
+
+| Endpoint                                                                        | Purpose                                                               |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET /v1/tasks?session_id=ID`, `GET /v1/tasks/:id`                              | Current task, runtime bounds, progression and verification projection |
+| `GET /v1/tasks/:id/history?offset=N`                                            | Immutable plan/attempt history                                        |
+| `POST /v1/tasks`, `POST /v1/tasks/:id/revise`                                   | Create/correct a plan                                                 |
+| `POST /v1/tasks/:id/steps/:step/run`, `POST /v1/tasks/:id/steps/:step/complete` | Explicit attempt admission/continuation and operator review           |
+| `POST /v1/tasks/:id/verify`, `POST /v1/tasks/:id/finish`                        | Isolated check and evidence-bound completion/exception                |
+| `POST /v1/tasks/:id/auto`, `POST /v1/tasks/:id/cancel`                          | Bounded future admissions (zero pauses) and cancellation              |
+| `POST /v1/tasks/:id/checkpoint`, `POST /v1/tasks/:id/restore`                   | Capture and reviewed conflict-preserving restoration                  |
+| `GET /v1/tasks/:id/checkpoints`, `GET /v1/tasks/:id/restores`                   | Recent checkpoint/restore records                                     |
+
+Task mutations require `request_id`, `expected_revision`, `client_id` and `token`. Task revisions are separate from session revisions; saved requests are checked first. Refreshed task responses project current service truth. See [task controls](docs/durable-tasks.md) for plan shape, bounds, review and recovery.
+
 Identical command requests return their original saved result. Reusing a request ID with different logical input conflicts. Controller credentials are excluded from the submission/cancellation logical input so a new controller can recover a lost reply. Request lookup precedes mutation preconditions. Approvals use their own revision, independent of session progress. The local operator identity is derived from the private socket's OS-account boundary; caller-supplied actor IDs confer no authority. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
 
 A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Attempts, submissions, approvals and operations are bounded to 100 each; transcript messages are bounded to 100 with text budgets. Operation values may be truncated and receipts are omitted from snapshots with `value_truncated`/`receipt_available` flags; inspect the full operation before deciding. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
 
-On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version six upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
+On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version nine upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
 
 ## Development
 
