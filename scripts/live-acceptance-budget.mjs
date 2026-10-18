@@ -29,11 +29,25 @@ export class LiveAcceptanceBudget {
       throw new Error('Missing or changed live acceptance authorization');
     this.db = new DatabaseSync(path + '.sqlite');
     chmodSync(path + '.sqlite', 0o600);
-    this.db.exec(
-      'PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS authorization(id INTEGER PRIMARY KEY CHECK(id=1),requests INTEGER NOT NULL,output INTEGER NOT NULL,seed INTEGER NOT NULL,authorized_on TEXT NOT NULL); CREATE TABLE IF NOT EXISTS admissions(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,output_bound INTEGER NOT NULL,created_at INTEGER NOT NULL);',
-    );
-    this.db.exec('BEGIN IMMEDIATE');
     try {
+      this.db.exec('PRAGMA busy_timeout=5000');
+      // SQLite may return BUSY immediately while changing journal mode, despite
+      // busy_timeout. Only idempotent startup statements are retried; admissions
+      // and their charges are never replayed or refunded.
+      const deadline = Date.now() + 5000,
+        pause = new Int32Array(new SharedArrayBuffer(4));
+      for (;;) {
+        try {
+          this.db.exec(
+            'PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS authorization(id INTEGER PRIMARY KEY CHECK(id=1),requests INTEGER NOT NULL,output INTEGER NOT NULL,seed INTEGER NOT NULL,authorized_on TEXT NOT NULL); CREATE TABLE IF NOT EXISTS admissions(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,output_bound INTEGER NOT NULL,created_at INTEGER NOT NULL);',
+          );
+          break;
+        } catch (error) {
+          if (error.errcode !== 5 || Date.now() >= deadline) throw error;
+          Atomics.wait(pause, 0, 0, 10);
+        }
+      }
+      this.db.exec('BEGIN IMMEDIATE');
       this.db
         .prepare('INSERT OR IGNORE INTO authorization VALUES (1,?,?,?,?)')
         .run(
@@ -50,7 +64,7 @@ export class LiveAcceptanceBudget {
         throw new Error('Live authorization changed without explicit reauthorization');
       this.db.exec('COMMIT');
     } catch (error) {
-      this.db.exec('ROLLBACK');
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
       throw error;
     }

@@ -1,13 +1,58 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { ROOT } from '../../src/config.js';
 
 const exec = promisify(execFile),
   moduleUrl = pathToFileURL(join(ROOT, 'scripts/live-acceptance-budget.mjs')).href;
+test('cold startup waits for a competing rollback reader before switching to WAL without losing the seed charge', async () => {
+  const dir = mkdtempSync('/tmp/sal-budget-journal-'),
+    path = join(dir, 'budget.json');
+  writeFileSync(
+    path,
+    JSON.stringify({
+      authorized_on: 'fixture',
+      max_model_requests: 60,
+      max_output_tokens_per_request: 2048,
+      admitted_requests: 3,
+      runs: [],
+    }),
+  );
+  const reader = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1]+'.sqlite');db.exec('PRAGMA journal_mode=DELETE;CREATE TABLE competing_reader(value);BEGIN;SELECT * FROM competing_reader');process.stdout.write('locked');setTimeout(()=>{db.exec('COMMIT');db.close()},500);`,
+      path,
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  try {
+    await new Promise<void>((resolve, reject) => {
+      reader.stdout.once('data', () => resolve());
+      reader.once('error', reject);
+      reader.once('exit', (code) => {
+        if (code) reject(Error('Reader fixture exited'));
+      });
+    });
+    const program = `import {LiveAcceptanceBudget} from ${JSON.stringify(moduleUrl)};const b=new LiveAcceptanceBudget(process.argv[1]);b.admit('after-journal-lock',2048);process.stdout.write(JSON.stringify(b.snapshot()));b.close();`;
+    const result = await exec(process.execPath, ['--input-type=module', '-e', program, path]);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      admitted_requests: 4,
+      remaining_requests: 56,
+    });
+  } finally {
+    reader.kill();
+    await new Promise<void>((resolve) =>
+      reader.exitCode !== null ? resolve() : reader.once('close', () => resolve()),
+    );
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 10000);
 test('concurrent acceptance runners share one durable 60-request cap and preserve charges after reopening', async () => {
   const dir = mkdtempSync('/tmp/sal-live-budget-'),
     path = join(dir, 'budget.json');
