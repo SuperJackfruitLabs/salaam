@@ -1,0 +1,388 @@
+---
+import { site, docs, repo, description } from '../../../site.config.mjs';
+import '../styles/site.css';
+const install = 'sh install.sh';
+const journeys = [
+  {
+    number: '01',
+    title: 'Make yourself at home.',
+    text: 'Open the terminal interface. Review changes, read command output, and give each operation the attention it needs.',
+    link: '/tui/',
+    label: 'Meet the terminal',
+  },
+  {
+    number: '02',
+    title: 'Leave the terminal.',
+    text: 'Your service keeps the session. Come back from another terminal, over SSH, or through an ACP editor. Detaching leaves admitted work running.',
+    link: '/clients/',
+    label: 'Connect from anywhere',
+  },
+  {
+    number: '03',
+    title: 'Return to the same work.',
+    text: 'Task steps, approvals, receipts and results have durable identities. Reconnecting reads what happened; it doesn’t submit your instruction again.',
+    link: '/durable-tasks/',
+    label: 'Understand recovery',
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0c1618" />
+    <title>Salaam — a persistent home for agent work</title>
+    <link rel="canonical" href={site} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Salaam — a persistent home for agent work" />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={site} />
+    <meta property="og:image" content={`${site}/social.svg`} />
+    <meta name="twitter:card" content="summary" />
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem('salaam-theme');
+        if (theme === 'paper' || theme === 'night') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">
+      Skip to content
+    </a>
+    <div class="wrap">
+      <header class="masthead">
+        <a href="/" class="brand" aria-label="Salaam home">
+          <img src="/mark.svg" width="34" height="34" alt="" />
+          <span>
+            salaam<span class="brand-dot">.</span>
+          </span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="#how">How it works</a>
+          <a href={docs}>
+            Docs <span aria-hidden="true">↗</span>
+          </a>
+          <a href={repo}>
+            GitHub <span aria-hidden="true">↗</span>
+          </a>
+          <button
+            id="theme"
+            class="theme"
+            aria-label="Switch Night and Paper themes"
+            title="Switch theme"
+          >
+            <span aria-hidden="true">◐</span>
+          </button>
+        </nav>
+      </header>
+      <main id="main">
+        <section class="hero" aria-labelledby="title">
+          <div class="hero-copy">
+            <p class="eyebrow">
+              <span class="live-dot" aria-hidden="true"></span> A HOME FOR AGENT WORK
+            </p>
+            <h1 id="title">
+              Good work.
+              <br />
+              <em>Still here.</em>
+            </h1>
+            <p class="hero-lede">A coding session should outlast a terminal.</p>
+            <p class="hero-description">
+              Salaam keeps your agent’s work in a persistent session service. Code in the terminal,
+              step away, and return to the same tasks, approvals and results.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href={`${docs}/install/`}>
+                Get started <span aria-hidden="true">↗</span>
+              </a>
+              <a class="text-link" href="#how">
+                Take a look <span aria-hidden="true">↓</span>
+              </a>
+            </div>
+            <p class="fine">
+              Open source <span>·</span> Apache 2.0 <span>·</span> Runs on your machine
+            </p>
+          </div>
+          <div class="session-scene">
+            <div class="scene-label">
+              <span>THE TERMINAL IS A WINDOW.</span>
+              <span>THE SESSION IS HOME.</span>
+            </div>
+            <div
+              class="terminal"
+              role="img"
+              aria-label="Illustrative Salaam session. A coding task has one verified step, one approval awaiting review, and a saved checkpoint. An SSH reconnection opens the same session."
+            >
+              <div class="terminal-top">
+                <span class="terminal-brand">◒ &nbsp; salaam</span>
+                <span class="terminal-meta">night · connected</span>
+              </div>
+              <div class="terminal-tabs">
+                <span class="active">Conversation</span>
+                <span>
+                  Changes <b>2</b>
+                </span>
+                <span>Commands</span>
+                <span>Context</span>
+              </div>
+              <div class="terminal-body">
+                <div class="terminal-path">
+                  ~/projects/a-little-better <span>main</span>
+                </div>
+                <p class="terminal-who">
+                  YOU <span>09:41</span>
+                </p>
+                <p class="prompt">Fix the parser and prove the edge cases.</p>
+                <p class="terminal-who jade">
+                  SALAAM <span>09:42</span>
+                </p>
+                <p>
+                  I’ve prepared the patch in the owned workspace.
+                  <br />
+                  The next operation is ready for your review.
+                </p>
+                <div class="task-line">
+                  <span class="jade">✓</span>
+                  <span>Inspect parser behavior</span>
+                  <span class="pill">verified</span>
+                </div>
+                <div class="task-line">
+                  <span class="amber">◇</span>
+                  <span>Apply reviewed patch</span>
+                  <span class="pill amber">approval</span>
+                </div>
+                <div class="task-line muted">
+                  <span>○</span>
+                  <span>Run acceptance checks</span>
+                  <span>pending</span>
+                </div>
+                <div class="checkpoint">
+                  <span class="jade">↳</span> checkpoint saved <span>·</span> waiting for you
+                </div>
+              </div>
+              <div class="composer">
+                <span class="jade">›</span>
+                <span>Send an instruction…</span>
+                <span class="key">↵</span>
+              </div>
+              <div class="terminal-foot">
+                <span>Ctrl K actions &nbsp; Ctrl O approvals</span>
+                <span class="jade">● session persisted</span>
+              </div>
+            </div>
+            <div class="reconnect">
+              <span class="reconnect-icon" aria-hidden="true">
+                ↳
+              </span>
+              <div>
+                <code>sal remote my-vps --session SESSION_ID</code>
+                <span>Another terminal. The same work.</span>
+              </div>
+              <span class="status-dot" aria-hidden="true"></span>
+            </div>
+            <p class="illustration">
+              Illustrative session · actual controls documented in the{' '}
+              <a href={`${docs}/tui/`}>terminal guide</a>
+            </p>
+          </div>
+        </section>
+        <div class="principles">
+          <p>
+            <span>01 /</span> Work survives detach
+          </p>
+          <p>
+            <span>02 /</span> Decisions stay bound
+          </p>
+          <p>
+            <span>03 /</span> Completion needs evidence
+          </p>
+        </div>
+        <section id="how" class="section journey" aria-labelledby="how-title">
+          <div class="section-heading">
+            <p class="eyebrow">A LITTLE LESS STARTING OVER</p>
+            <h2 id="how-title">
+              Pick up where
+              <br />
+              <em>the work is.</em>
+            </h2>
+            <p>
+              The terminal, SSH and your editor are clients.
+              <br />
+              One service keeps the record.
+            </p>
+          </div>
+          <div class="journey-list">
+            {journeys.map((item) => (
+              <article>
+                <span class="number">{item.number}</span>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.text}</p>
+                  <a class="text-link" href={`${docs}${item.link}`}>
+                    {item.label} <span aria-hidden="true">↗</span>
+                  </a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+        <section class="section evidence" aria-labelledby="trust-title">
+          <div class="section-heading">
+            <p class="eyebrow">A RECORD, NOT A GUESS</p>
+            <h2 id="trust-title">
+              “Done” deserves
+              <br />
+              <em>a little proof.</em>
+            </h2>
+            <p>
+              A model’s final answer is one part of the story. Salaam records the operation, its
+              authority, and its observed outcome.
+            </p>
+            <a class="text-link" href={`${docs}/reliability/`}>
+              Reliability and support <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <div class="ledger">
+            <div class="ledger-heading">
+              <span>THE WORK RECORD</span>
+              <span>saved on your host</span>
+            </div>
+            <div>
+              <span class="ledger-symbol">↗</span>
+              <h3>Intent before dispatch</h3>
+              <p>Instructions and managed operation intent commit before work is sent.</p>
+            </div>
+            <div>
+              <span class="ledger-symbol">◇</span>
+              <h3>Approval for this operation</h3>
+              <p>Decisions bind the arguments, target, version, worker and policy you reviewed.</p>
+            </div>
+            <div>
+              <span class="ledger-symbol">✓</span>
+              <h3>Outcome with evidence</h3>
+              <p>
+                Checked tasks require verification. An uncertain external effect stays unknown until
+                reconciled.
+              </p>
+            </div>
+          </div>
+        </section>
+        <section class="section modes" aria-labelledby="modes-title">
+          <div class="mode-copy">
+            <p class="eyebrow">AT YOUR DESK. ON YOUR HOST.</p>
+            <h2 id="modes-title">
+              A quiet terminal.
+              <br />
+              <em>A durable service.</em>
+            </h2>
+            <p>
+              Night and Paper themes. Reviewed changes, command logs and an operator inbox. When
+              work needs to run unattended, add checked task plans, bounded progression and
+              recurring schedules.
+            </p>
+            <a class="text-link" href={`${docs}/jobs/`}>
+              Explore jobs and schedules <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <figure class="real-tui">
+            <img
+              src="/tui-night.png"
+              alt="Actual Salaam Night terminal showing a guarded diff and the workspace rail."
+              loading="lazy"
+              width="1536"
+              height="960"
+            />
+            <figcaption>Actual Salaam terminal · offline example</figcaption>
+          </figure>
+        </section>
+        <section class="section start" aria-labelledby="start-title">
+          <div>
+            <p class="eyebrow">MAKE ROOM FOR THE WORK</p>
+            <h2 id="start-title">
+              Salaam. <em>Come on in.</em>
+            </h2>
+            <p>Start with a local offline session. Add your Claude key when you’re ready.</p>
+            <div class="hero-actions">
+              <a class="button primary" href={`${docs}/quickstart/`}>
+                Your first session <span aria-hidden="true">↗</span>
+              </a>
+              <a class="text-link" href={`${repo}/releases`}>
+                Releases <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </div>
+          <div class="install-card">
+            <p class="eyebrow">INSTALL A PUBLISHED RELEASE</p>
+            <p>
+              Node 26.7.0 required. Download and inspect{' '}
+              <a href={`${repo}/releases`}>install.sh from a release</a>, then:
+            </p>
+            <div class="copy-command">
+              <code>{install}</code>
+              <button id="copy" aria-label="Copy install command">
+                Copy
+              </button>
+            </div>
+            <p id="copy-status" aria-live="polite">
+              Availability and alternative installs in the{' '}
+              <a href={`${docs}/install/`}>installation guide</a>.
+            </p>
+          </div>
+        </section>
+        <aside class="limits">
+          <span class="eyebrow">BEFORE YOU TRUST IT</span>
+          <p>
+            Salaam is early software. One trusted OS account, private Unix sockets, explicit coding
+            setup. Detach preserves work; daemon death interrupts dispatched attempts and requires
+            explicit continuation. Claude requests are billable.
+          </p>
+          <a class="text-link" href={`${docs}/limitations/`}>
+            Read the boundaries <span aria-hidden="true">↗</span>
+          </a>
+        </aside>
+      </main>
+      <footer>
+        <a class="brand" href="/">
+          <img src="/mark.svg" width="25" height="25" alt="" />
+          <span>salaam.</span>
+        </a>
+        <span>A little more continuity. A little more calm.</span>
+        <nav aria-label="Footer">
+          <a href={docs}>Docs</a>
+          <a href={repo}>Source</a>
+          <a href="https://superjackfruit.com">Super Jackfruit Labs ↗</a>
+        </nav>
+      </footer>
+    </div>
+    <script>
+      const theme = document.querySelector<HTMLButtonElement>('#theme');
+      theme?.addEventListener('click', () => {
+        const current =
+          document.documentElement.dataset.theme ??
+          (matchMedia('(prefers-color-scheme: light)').matches ? 'paper' : 'night');
+        const next = current === 'night' ? 'paper' : 'night';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('salaam-theme', next);
+        } catch {}
+      });
+      document.querySelector('#copy')?.addEventListener('click', async () => {
+        const status = document.querySelector('#copy-status');
+        try {
+          await navigator.clipboard.writeText('sh install.sh');
+          if (status)
+            status.textContent =
+              'Copied. Download and inspect install.sh from a published release first.';
+        } catch {
+          if (status) status.textContent = 'Select the command to copy it manually.';
+        }
+      });
+    </script>
+  </body>
+</html>

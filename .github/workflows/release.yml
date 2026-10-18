@@ -1,0 +1,106 @@
+name: Release Salaam
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag on main (for example v0.1.0)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Validate exact version tag, lockfile, changelog and main ancestry
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: node scripts/release-check.mjs "$RELEASE_TAG"
+      - id: target
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  # The exact release revision reruns all service, boundary, package and site checks.
+  checks:
+    needs: validate
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+  # Manual retries must run on the requested tag as the workflow's ref. Otherwise
+  # a local reusable workflow would test the branch selected in the Run workflow UI.
+  manual-ref:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the selected workflow ref to be the requested tag
+        env:
+          TARGET_SHA: ${{ needs.validate.outputs.sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: test "$TARGET_SHA" = "$WORKFLOW_SHA"
+  manual-checks:
+    needs: manual-ref
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/ci.yml
+  github-release:
+    needs: [validate, checks, manual-checks]
+    if: ${{ !cancelled() && needs.validate.result == 'success' && (needs.checks.result == 'success' || needs.manual-checks.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: salaam-cli
+          path: .state/release/
+      - run: cd .state/release && sha256sum --check SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: .state/release/salaam-cli-*.tgz
+      - name: Upload a complete draft, then publish (never replace published assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/github-release.mjs
+  npm:
+    needs: github-release
+    # Bootstrap package ownership once, then enable this repository variable.
+    if: vars.NPM_PUBLISH_ENABLED == 'true'
+    environment: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: salaam-cli
+          path: .state/release/
+      - name: Publish the exact verified tarball through npm OIDC
+        run: node scripts/npm-release.mjs

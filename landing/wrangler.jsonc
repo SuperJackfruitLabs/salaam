@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "salaam-landing",
+  "compatibility_date": "2026-10-18",
+  "assets": { "directory": "./dist", "not_found_handling": "404-page" },
+  "routes": [{ "pattern": "salaam.sh/*", "zone_name": "salaam.sh" }],
+  "workers_dev": false,
+  "preview_urls": false,
+}

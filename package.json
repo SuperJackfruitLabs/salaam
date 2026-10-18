@@ -1,7 +1,37 @@
 {
   "name": "@sjl/salaam",
   "version": "0.1.0",
-  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuperJackfruitLabs/salaam.git"
+  },
+  "bugs": "https://github.com/SuperJackfruitLabs/salaam/issues",
+  "homepage": "https://salaam.sh",
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "files": [
+    "bin",
+    "dist/src",
+    "src",
+    "pi-pin.json",
+    "npm-shrinkwrap.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "bundleDependencies": [
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-tui",
+    "typebox"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "description": "A persistent Pi-backed agent session service",
   "engines": {
@@ -31,7 +61,13 @@
     "cli": "node bin/salaam.mjs",
     "demo:acceptance": "npm run build && node scripts/demo-acceptance.mjs",
     "test:acceptance": "npm run build && node scripts/acceptance.mjs",
-    "test:tasks:real": "npm run build && vitest run --config vitest.real.config.ts"
+    "test:tasks:real": "npm run build && vitest run --config vitest.real.config.ts",
+    "release:version": "node scripts/release-version.mjs",
+    "release:check": "node scripts/release-check.mjs",
+    "release:pack": "npm run build && node scripts/release-pack.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
+    "sites:build": "npm --prefix landing run build && npm --prefix docs-site run build && node scripts/check-sites.mjs",
+    "prepack": "node scripts/source-pack-guard.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.3.0",
@@ -43,7 +79,10 @@
     "@types/node": "26.6.5",
     "@xterm/headless": "5.5.0",
     "prettier": "3.9.10",
+    "prettier-plugin-astro": "1.1.1",
+    "semver": "7.8.5",
     "typescript": "7.0.2",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "wrangler": "4.151.1"
   }
 }

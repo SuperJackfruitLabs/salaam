@@ -3,3 +3,6 @@ dist
 package-lock.json
 .state
 coverage
+.astro
+.wrangler
+docs-site/src/content/docs

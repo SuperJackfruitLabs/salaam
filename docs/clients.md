@@ -25,7 +25,7 @@ sal remote USER@HOST --remote-bin /absolute/path/to/sal \
 ssh USER@HOST 'sal session inspect SESSION_ID --state /absolute/path/to/salaam-state'
 ```
 
-Use an absolute installed `sal` path if the remote noninteractive shell does not include its npm bin directory in `PATH`. Workspace and state paths are on the execution host. Copying a state directory to another computer does not connect to its existing worker. This path uses SSH authentication and no public Salaam listener. The opt-in M10 rehearsal exercises actual macOS-to-Linux SSH; named editor GUI acceptance is tracked separately in verification evidence.
+Use an absolute installed `sal` path if the remote noninteractive shell does not include its npm bin directory in `PATH`. Workspace and state paths are on the execution host. Copying a state directory to another computer does not connect to its existing worker. This path uses SSH authentication and no public Salaam listener.
 
 ## ACP v1 stdio
 
@@ -76,22 +76,9 @@ The transport request ID `42` is not the logical submission identity. Salaam fsy
 
 Permission replies are correlated to the exact persisted binding. Malformed, expired or mismatched replies cannot grant execution. Concurrent replies serialize their durable outbox writes. A disconnected approver leaves decisions pending. A cancelled permission response from a controlling client requests explicit session cancellation; it never counts as permission to execute.
 
-## Demonstrate and verify
+## Configure Zed
 
-```sh
-npm run demo:acceptance
-npm run test:acceptance
-# Faster development run; explicitly recorded as partial acceptance:
-npm run test:acceptance -- --repeats 1
-```
-
-The combined demo starts disposable offline service/effect fixtures, submits from the installed terminal, kills that client with two pending approvals, loads the same session over ACP, approves one effect, recovers child results, performs three checkpoints and retrieves old evidence. It inspects the same final session through the installed CLI.
-
-The acceptance runner records source-file hashes, worker bundle digest, runtime/platform, command exit codes, log digests, JSON reports and all six proof suites repeated 20 times by default. Reports live under `.state/evidence/acceptance/RUN_ID/`; `latest-acceptance.json` points to the last successful run. A shorter repetition run is marked partial. CI retains separate macOS and Linux artifacts. Platform success means an observed passing run for that revision; it does not imply a deployment, SSH rehearsal, live-model behavior evaluation or production isolation.
-
-## Zed rehearsal template
-
-Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#custom-agents) accepts an `agent_servers` entry. This template pins the executable runtime explicitly; replace the absolute paths for a disposable rehearsal service:
+Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#custom-agents) accepts an `agent_servers` entry. This template pins the executable runtime explicitly; replace the absolute paths for your installed CLI and service state:
 
 ```json
 {
@@ -104,7 +91,7 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
         "acp",
         "--coding",
         "--state",
-        "/absolute/path/to/rehearsal-state"
+        "/absolute/path/to/salaam-state"
       ],
       "env": {}
     }
@@ -112,9 +99,9 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
 }
 ```
 
-Start the rehearsal service first with its coding root and selected executor. Use one disposable project and no forwarded MCP servers or additional directories; Salaam rejects those unsupported additions. Select Salaam as the external agent, send a coding instruction and inspect actual tool outcomes and the workspace diff through the same session ID. The guarded owned copy holds edits; the original project checkout remains the baseline.
+Start the service first with its coding root and selected executor. Do not forward MCP servers or additional directories; Salaam rejects those unsupported additions. Select Salaam as the external agent, send a coding instruction and inspect actual tool outcomes and the workspace diff through the same session ID. The guarded owned copy holds edits; the original project checkout remains the baseline.
 
-Zed may forward existing MCP configuration when starting an external agent. If Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the disposable project in `.zed/settings.json`:
+Zed may forward existing MCP configuration when starting an external agent. If Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the project in `.zed/settings.json`:
 
 ```json
 {
@@ -124,12 +111,8 @@ Zed may forward existing MCP configuration when starting an external agent. If S
 }
 ```
 
-The named Zed 1.24.2 GUI rehearsal passed on 2026-10-18. It observed the Salaam selector/composer, live tools, actual isolated command exit 0, two separately reviewed approval bindings, the real owned file and an exported checked diff opened in the editor. `Reload Agent` restored the same session and committed history without another patch or command. After an abrupt adapter reload, the prior controller lease may remain valid briefly; wait for expiry or use an explicitly authorized controller takeover. A rejected prompt is not an accepted attempt. See [GUI evidence](evidence/m10-zed-gui.json).
-
-Live prompts are displayed by the editor; Salaam does not echo them as extra user chunks. Explicit history loading replays committed user turns once. The checked diff in this rehearsal was exported from the service and opened as a diff document; native ACP edit/diff rendering is not claimed.
-
-## M12 operator attention
+## Operator attention
 
 ACP carries the service's durable inbox entries in `session/update` metadata `salaam.dev/inbox` with a textual attention summary. `_salaam/inbox/list` accepts an optional pagination offset. `_salaam/inbox/ack` accepts the exact item ID, expected revision and stable request ID; the source session must already be connected and its controller acquired. Acknowledgement never decides a permission or retries work. Normal operation-bound `session/request_permission` remains the approval path.
 
-These are Salaam ACP extensions and protocol-tested behavior. The M12 pilot uses actual SSH terminals; it does not claim a new native Zed inbox GUI rehearsal. See [jobs and inbox](jobs.md).
+These are Salaam ACP extensions. Inbox acknowledgement does not approve an operation or retry work. See [jobs and inbox](jobs.md).

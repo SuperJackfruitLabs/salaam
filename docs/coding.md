@@ -1,10 +1,10 @@
-# Guarded coding: M9
+# Guarded coding
 
-**M9.2 enables file tools** for explicitly created coding sessions. **M9.3 enables commands** after the configured executor passes its startup proof. **M9.4** supplies the versioned acceptance portfolio and separate live-model observations. Ordinary sessions and read-only children retain their earlier tool inventory.
+File tools are available in explicitly created coding sessions. Commands require the configured executor to pass its startup proof. Ordinary sessions and read-only children do not receive these coding tools.
 
 ## Setup
 
-Use the pinned Node/npm installation and `npm run build`. Create a private, persistent coding root outside the source checkout. File tools need `--coding-root`; commands also need an explicit local Docker Unix socket and the pre-provisioned pinned Node image.
+[Install Salaam](install.md) with the pinned Node/npm runtime. Create a private, persistent coding root outside the source checkout. File tools need `--coding-root`; commands also need an explicit local Docker Unix socket and the pre-provisioned pinned Node image.
 
 ```sh
 mkdir -p "$HOME/.local/share/salaam-coding"
@@ -19,7 +19,7 @@ sal attach SESSION_ID --state "$HOME/.local/state/salaam-coding"
 
 The existing local Claude credential is used by the provider worker and stays outside command containers. The separate state path above preserves another running daemon/session.
 
-On macOS, use a dedicated Colima Linux VM and share only the coding root at the same absolute path. The [execution-boundary document](execution-boundary.md) records the observed VM/backend versions and trust model.
+On macOS, use a dedicated Colima Linux VM and share only the coding root at the same absolute path. See [security and isolation](security.md) for the backend trust model.
 
 ```sh
 colima start salaam-coding --activate=false --template=false --cpus 2 --memory 2 \
@@ -81,13 +81,3 @@ Engine mutations follow committed intent. Container and exec IDs are journaled b
 Restart resumes observation of a known execution under its original IDs. Ambiguous create/launch boundaries are reconciled or marked interrupted; commands are never blindly resent. Backend/cleanup uncertainty blocks new grants and invalidates readiness. Restore the original backend/profile and reconcile the saved run. Starting without an executor preserves its recovery phase.
 
 The wall deadline requires a running broker; Docker has no separate daemon-side TTL here. After broker death, bounded container work can survive until restart reconciles its persisted deadline.
-
-## Acceptance and observed scope
-
-Default tests remain offline, with no image pulls or real credentials. `npm run test:coding -- --docker-socket PATH --scratch-root SHARED_DIR` separately runs ten versioned repository tasks: discovery, precise edit/crash recovery, multi-file changes, test failure/repair, new module, deletion, human conflict, authority boundaries, daemon SIGKILL/reconnect and descendant cancellation/output/runtime limits.
-
-Reports under `.state/evidence/coding/` record fixture/build/backend identities, captured input snapshots, final trees/digests, real exit/output receipts, events, interventions and cleanup. Linux CI provisions the pinned images and runs the portfolio alongside M9.1. Existing macOS/Linux acceptance jobs retain S1–S6. Only observed job results count as platform evidence.
-
-The Claude evaluation had an approved eight-request total budget and 1,024 maximum output tokens per request. An autonomous clamp fix used five requests. A supplied-patch integration check used the remaining three after immutable revision publication was introduced. Both preserved the tests and passed a separate operator-run behavioral check. These are small functional observations; a matched plain-Pi performance comparison has not been run.
-
-Observed command backends are macOS arm64 → Colima/vz → Linux arm64 and native Linux x64 CI. The [verification record](verification.md#m9-guarded-coding-observations--2026-10-17) binds both to their build/backend identities. Host-local reconnect and daemon replacement are proven. The separate M10 SSH/editor and M12 job pilots cover two-machine operation. TUI, task-level verification/budgets/checkpoints and unattended scheduling are implemented in M10–M12; each has its own source-bound evidence. The existing user daemon is not automatically restarted or reconfigured by this implementation.
