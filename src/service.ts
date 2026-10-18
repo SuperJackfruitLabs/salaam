@@ -31,6 +31,13 @@ import { TeamWork } from './team-work.js';
 import { WorkerWorkspaces } from './worker-workspaces.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  /** Trusted host admission, installed before any startup/recovery dispatch; throws deny a request. */
+  admitModelRequest?: (
+    session: string,
+    attempt: string | undefined,
+    input: number,
+    output: number,
+  ) => void;
   stateDir: string;
   effectConnector?: EffectConnector;
   approvalTtlMs?: number;
@@ -90,6 +97,13 @@ export class SalaamService {
         this.tasks = new TaskContext(this.store, this.artifacts);
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
+        if (options.admitModelRequest) {
+          const taskAdmission = this.store.taskModelAdmission!;
+          this.store.taskModelAdmission = (session, attempt, input, output) => {
+            taskAdmission(session, attempt, input, output);
+            options.admitModelRequest!(session, attempt, input, output);
+          };
+        }
         this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
         if (options.codingSocket && !options.codingRoot)
           throw new Error('Command execution requires an explicit --coding-root');

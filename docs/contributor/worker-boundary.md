@@ -137,3 +137,23 @@ profile, runtime, generation, dispatch state and request scope from the same dat
 
 These are offline host-local proofs. CI supplies separate macOS/Linux evidence;
 live model usefulness, peer interoperability and deployment remain separate.
+
+### Native live usefulness evidence
+
+On 2026-10-19, the default house extension completed a live Sonnet 5.5 parent and
+explorer investigation with a separately admitted Haiku 4.5 reviewer. Nine actual
+model requests produced file/line evidence for the seeded defect and a checked
+findings artifact. The parent route stayed unchanged, an unselected private fact
+was absent from child submissions, no workspace mutation occurred, and restart
+preserved child/result identities. The source/build/runtime-bound report is
+`.state/evidence/m13/native-specialists-2df80999-ba4a-4ac3-93a5-3baebb520942.json`.
+An earlier six-request run exhausted its reviewer reservation and failed closed;
+those requests remain charged. This establishes native live usefulness for the
+named artifact, not external-harness or A2A compatibility.
+
+Internal live runners share `scripts/live-acceptance-budget.mjs`: SQLite commits
+admission before forwarding a model request, including failed requests. An explicit
+operator reauthorization can change the limits without resetting spent requests;
+editing its JSON export cannot raise the durable allowance. The trusted host hook
+is installed before service recovery dispatch and can only deny an existing
+model admission. It is unavailable through the session API or project profiles.

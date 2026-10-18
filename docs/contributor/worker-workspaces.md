@@ -80,3 +80,29 @@ continuation identity.
 Live comparisons against a single-agent baseline and the final mixed-runtime
 portfolio remain acceptance gates. Their model requests share the separately
 authorized overall live budget.
+
+### Live comparison: answer-and-documentation-v1
+
+The authorized Claude run on 2026-10-19 used the default house extension, actual
+Sonnet 5.5 model requests, and the dedicated proven Docker backend. Both cases
+received identical limits of 16 requests, 4,096 output tokens per request and five
+minutes. Two private builders plus an independent reviewer passed exact proposal
+inspection, explicit integration, protected-input assertions and fresh combined
+checks. A single native agent passed the same repair and preservation assertions.
+
+| Case                           | Actual model requests | Coding elapsed time | Outcome                           |
+| ------------------------------ | --------------------: | ------------------: | --------------------------------- |
+| Parallel builders and reviewer |                    11 |            17.747 s | Verified by fresh combined checks |
+| Single agent                   |                     5 |            14.523 s | Verified by fresh combined checks |
+
+This small fixture shows coordination overhead, not a general performance benefit.
+The reviewer inspected the integrated diff; the independent command receipts and
+hidden byte assertions establish correctness. Usage was observable, with estimated
+pricing and no unknown observations. Scripted operator admissions/reviews are
+recorded separately from zero unscripted human interventions. One earlier run
+expired its test-runner controller lease before single-agent final verification;
+its 16 requests remain charged. The runner now renews its lease during long turns.
+The successful report is
+`.state/evidence/m15/native-coding-2fb01da4-b956-4905-af88-d7dafe64dad9.json`.
+Run `node scripts/native-coding-live.mjs --run` only with an explicit live budget
+and the pre-provisioned `SALAAM_TASK_REAL_SOCKET` / `SALAAM_TASK_REAL_SCRATCH` backend.
