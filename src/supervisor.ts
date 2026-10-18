@@ -25,11 +25,14 @@ import type { ChildWork } from './children.js';
 import {
   OFFLINE_ROUTE,
   providerRoute,
-  validateClaudePayload,
+  providerHasOutputCap,
   type ProviderRoute,
 } from './provider-config.js';
 import type { TaskContext, Compaction } from './task-context.js';
-import { loadApiKey, validateApiKey } from './credentials.js';
+import { validateApiKey } from './credentials.js';
+import { resolveProviderAuth } from './provider-auth.js';
+import { bindProviderConfiguration } from './provider-model.js';
+import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
 import type { CodingWork } from './coding.js';
 
@@ -49,8 +52,11 @@ export interface SupervisorOptions {
   effectsEnabled?: boolean;
   providerRoute?: ProviderRoute;
   anthropicApiKey?: string;
+  providerCredentials?: import('@earendil-works/pi-ai').CredentialStore;
+  providerEnvironment?: NodeJS.ProcessEnv;
 }
 interface Worker {
+  providerOutputCap?: boolean;
   id: string;
   epoch: number;
   token: string;
@@ -112,6 +118,22 @@ export class Supervisor extends EventEmitter {
   }
   readonly route: ProviderRoute;
   private apiKey?: string;
+  private outputCap = true;
+  private authInitialized = false;
+  providerCapabilities() {
+    return {
+      output_token_cap: this.outputCap,
+      durable_tasks: this.outputCap,
+      warning: this.outputCap ? null : 'No provider-enforced output cap; interactive sessions only',
+    };
+  }
+  assertTaskProviderSupported() {
+    if (!this.outputCap)
+      throw new ServiceError(
+        'provider_capability',
+        'This provider authentication has no output cap; durable tasks are disabled',
+      );
+  }
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
   private monitor: NodeJS.Timeout;
@@ -121,19 +143,17 @@ export class Supervisor extends EventEmitter {
     readonly options: SupervisorOptions,
   ) {
     super();
-    this.route = options.providerRoute ?? { ...OFFLINE_ROUTE };
+    this.route = structuredClone(options.providerRoute ?? OFFLINE_ROUTE);
     // Validate public configuration without trusting programmatic callers.
     const checked = providerRoute(
       this.route.provider === 'salaam-proof' ? 'offline' : this.route.provider,
-      this.route.provider === 'anthropic' ? this.route.model : undefined,
-      this.route.provider === 'anthropic' ? this.route.max_tokens : undefined,
+      this.route.provider !== 'salaam-proof' ? this.route.model : undefined,
+      this.route.provider !== 'salaam-proof' ? this.route.max_tokens : undefined,
       this.route.workspace_id,
+      this.route.connection,
     );
     if (canonical(checked) !== canonical(this.route)) throw new Error('Invalid provider route');
-    if (this.route.provider === 'anthropic')
-      this.apiKey = options.anthropicApiKey
-        ? validateApiKey(options.anthropicApiKey)
-        : loadApiKey();
+    if (options.anthropicApiKey) this.apiKey = validateApiKey(options.anthropicApiKey);
     this.bundle = bundleDigest();
     this.monitor = setInterval(() => {
       for (const worker of this.workers.values())
@@ -141,6 +161,25 @@ export class Supervisor extends EventEmitter {
           this.invalidate(worker, 'Worker heartbeat expired');
     }, 250);
     this.monitor.unref();
+  }
+  async providerAuth() {
+    if (this.route.provider === 'salaam-proof') return undefined;
+    if (this.route.provider === 'anthropic' && this.apiKey)
+      return { auth: { apiKey: this.apiKey }, env: {} };
+    const auth = await resolveProviderAuth(
+      this.route,
+      this.options.providerCredentials,
+      this.options.providerEnvironment,
+    );
+    Object.assign(this.route, bindProviderConfiguration(this.route, auth));
+    const outputCap = providerHasOutputCap(this.route, auth);
+    if (this.authInitialized && this.outputCap !== outputCap)
+      throw new Error(
+        'Provider output-cap capability changed; restart the service before using the new authentication',
+      );
+    this.outputCap = outputCap;
+    this.authInitialized = true;
+    return auth;
   }
   async recover(): Promise<void> {
     const rows = this.store.db.prepare("SELECT * FROM workers WHERE state!='exited'").all() as {
@@ -293,7 +332,7 @@ export class Supervisor extends EventEmitter {
         LANG: process.env.LANG ?? 'en_US.UTF-8',
         PI_CODING_AGENT_DIR: join(workerDir, 'agent'),
         SALAAM_WORKER_CONFIG: JSON.stringify(config),
-        ...(this.apiKey ? { ANTHROPIC_API_KEY: this.apiKey } : {}),
+        ...(this.route.connection?.configuration ?? {}),
       };
       worker.pi = (this.options.launch ?? ((x) => new PiProcess(x.command, x.args, x.cwd, x.env)))({
         command: process.execPath,
@@ -499,6 +538,17 @@ export class Supervisor extends EventEmitter {
     if (w.attempt && this.store.cancelled(w.attempt))
       throw new ServiceError('attempt_cancelled', 'Attempt cancellation revoked further grants');
     try {
+      if (method === 'provider.auth') {
+        const auth = await this.providerAuth();
+        w.providerOutputCap = this.outputCap;
+        if (
+          !this.outputCap &&
+          (this.children?.owned(id) ||
+            this.store.db.prepare('SELECT 1 FROM durable_tasks WHERE session_id=?').get(id))
+        )
+          this.assertTaskProviderSupported();
+        return auth;
+      }
       if (method === 'coding.files' || method === 'coding.command') {
         if (this.children?.owned(id) || !this.coding || !this.codingBinding(id) || !w.attempt)
           throw new Error('Coding authority is unavailable');
@@ -558,6 +608,11 @@ export class Supervisor extends EventEmitter {
       if (method.startsWith('child.')) {
         if (!this.children || !w.attempt) throw new Error('No active parent attempt');
         this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'child.spawn' && !this.outputCap)
+          throw new ServiceError(
+            'authority_denied',
+            'Budgeted children require a provider output cap',
+          );
         if (method === 'child.spawn')
           return this.children.spawn(
             id,
@@ -617,7 +672,7 @@ export class Supervisor extends EventEmitter {
             this.route.provider,
             this.route.model,
             body.usage,
-            this.route.provider === 'anthropic' ? 'estimated' : 'known',
+            this.route.provider !== 'salaam-proof' ? 'estimated' : 'known',
           ),
         );
         return { ok: true };
@@ -631,15 +686,24 @@ export class Supervisor extends EventEmitter {
           body.context_digest !== textDigest(this.tasks.frame(id, w.binding))
         )
           throw new Error('Provider or task context is invalid');
-        if (this.route.provider === 'anthropic') {
-          validateClaudePayload(
+        if (this.route.provider !== 'salaam-proof') {
+          if (w.providerOutputCap === undefined)
+            throw new Error('Provider authentication was not admitted');
+          if (
+            !w.providerOutputCap &&
+            (this.children?.owned(id) ||
+              this.store.db.prepare('SELECT 1 FROM durable_tasks WHERE session_id=?').get(id))
+          )
+            throw new Error('Budgeted tasks require a provider output cap');
+          validateProviderPayload(
             body.payload,
             this.route,
             this.tasks.frame(id, w.binding),
             this.tools(id),
+            !w.providerOutputCap,
           );
           if (body.payload_digest !== digest(body.payload))
-            throw new Error('Claude payload digest changed');
+            throw new Error('Provider payload digest changed');
         }
         if (this.route.provider === 'salaam-proof') {
           const payload = object(body.payload);
@@ -743,6 +807,7 @@ export class Supervisor extends EventEmitter {
     const state = {
       ...this.store.session(id),
       provider_route: this.store.providerRoute(id) ?? undefined,
+      provider_capabilities: this.providerCapabilities(),
     };
     const w = this.workers.get(id);
     if (w?.invalid) return { ...state, state: 'unhealthy', capabilities: [], error: w.invalid };

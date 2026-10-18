@@ -123,18 +123,31 @@ Updates are explicit and versioned. Corrections retain the original fact and its
 Read bounded evidence/history pages, including entries preceding compaction.`,
   compactions: `salaam compactions inspect COMPACTION_ID
 salaam compactions cancel COMPACTION_ID [--takeover] [--request-id ID]`,
-  auth: `salaam auth set anthropic
+  providers: `salaam providers list
 
-Enter a Claude API key at a hidden prompt. It is saved privately under
-~/.config/salaam/credentials/anthropic. ANTHROPIC_API_KEY takes precedence.`,
-  service: `salaam service start [--foreground] [--provider offline|anthropic]
+List every provider in the pinned Pi registry, its chat APIs and auth methods.
+Catalog support does not imply live account access or verification.`,
+  models: `salaam models list [PROVIDER]
+
+List pinned chat model IDs without network requests or credentials.`,
+  auth: `salaam auth set PROVIDER
+salaam auth login PROVIDER [--oauth]
+salaam auth status [PROVIDER]
+salaam auth logout PROVIDER
+
+Set an API key at a hidden prompt (or pipe it on stdin). Login uses Pi's provider-owned
+setup, including cloud configuration and browser OAuth. Credentials are private under
+~/.config/salaam/credentials; refresh is serialized across processes.
+Status prints metadata only. Existing Anthropic keys remain compatible.`,
+  service: `salaam service start [--foreground] [--provider PROVIDER]
                      [--model MODEL] [--max-output-tokens N] [--workspace-id ID]
                      [--effect-socket PATH] [--effect-opaque]
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 salaam service status
 salaam service stop
 
-The default provider is offline. Claude defaults to claude-sonnet-5-5.
+The default provider is offline. Anthropic defaults to claude-sonnet-5-5.
+Other providers require --model; use salaam providers list and salaam models list PROVIDER.
 Start with --foreground for process-supervisor use; otherwise the service detaches.`,
   session: `salaam session create [--cwd DIR] [--request-id ID] [--coding]
 salaam session list
@@ -192,7 +205,9 @@ Usage: salaam <command> [options]
 Commands:
   tui           Open the Salaam terminal interface (also bare sal)
   remote        Open the same session over SSH
-  auth          Configure the Claude API key locally
+  providers     List pinned Pi providers and capabilities
+  models        List pinned chat models
+  auth          Configure provider credentials or OAuth
   service       Start, inspect or stop the session service
   session       Create, inspect, submit, resume or cancel work
   attach        Open an interactive terminal on a session

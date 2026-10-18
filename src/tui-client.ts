@@ -18,6 +18,11 @@ import type { Workspace } from './workspaces.js';
 export interface OperatorHealth {
   service: string;
   provider_route: { provider: string; model: string; max_tokens: number };
+  provider_capabilities?: {
+    output_token_cap: boolean;
+    durable_tasks: boolean;
+    warning: string | null;
+  };
   coding_root?: string | null;
   execution?: { commands?: boolean; available: boolean; backend?: Record<string, unknown> };
 }

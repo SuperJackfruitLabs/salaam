@@ -21,7 +21,7 @@ export default defineConfig({
             { label: 'Meet Salaam', slug: '' },
             { label: 'Install and upgrade', slug: 'install' },
             { label: 'Your first session', slug: 'quickstart' },
-            { label: 'Claude and credentials', slug: 'providers' },
+            { label: 'Providers and credentials', slug: 'providers' },
           ],
         },
         {

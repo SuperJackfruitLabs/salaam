@@ -12,8 +12,23 @@ import { SalaamService } from './service.js';
 import { call } from './transport.js';
 import { attach, acquireControl, Outbox } from './attach.js';
 import type { SessionSnapshot, Approval, Operation } from './protocol.js';
-import { providerRoute } from './provider-config.js';
-import { credentialPath, loadApiKey, readSecret, saveApiKey } from './credentials.js';
+import {
+  providerRoute,
+  PI_PROVIDERS,
+  getProvider,
+  providerHasOutputCap,
+} from './provider-config.js';
+import { readSecret, validateApiKey } from './credentials.js';
+import {
+  authDirectory,
+  ProviderCredentialStore,
+  providerModels,
+  loginProvider,
+  resolveProviderAuth,
+} from './provider-auth.js';
+import { bindProviderConfiguration } from './provider-model.js';
+import { createInterface } from 'node:readline/promises';
+import type { AuthInteraction } from '@earendil-works/pi-ai';
 import { canonical } from './protocol.js';
 import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
@@ -300,10 +315,147 @@ async function main(): Promise<void> {
     await acp(state, { coding: args.includes('--coding') });
     return;
   }
-  if (group === 'auth' && verb === 'set' && id === 'anthropic') {
-    saveApiKey(await readSecret());
-    console.log('Claude API key saved to ' + credentialPath() + ' (mode 600).');
+  if (group === 'providers' && verb === 'list') {
+    console.log(
+      JSON.stringify(
+        PI_PROVIDERS.map((p) => ({
+          id: p.id,
+          name: p.name,
+          chat_models: p.getModels().length,
+          apis: [...new Set(p.getModels().map((m) => m.api))],
+          auth: [p.auth.apiKey ? 'api_key' : null, p.auth.oauth ? 'oauth' : null].filter(Boolean),
+          limitation: !p.getModels().length
+            ? 'Classifier only; no chat route'
+            : p.id === 'openai-codex'
+              ? 'No provider-enforced output cap; interactive sessions only'
+              : null,
+        })),
+        null,
+        2,
+      ),
+    );
     return;
+  }
+  if (group === 'models' && verb === 'list') {
+    const providers = id ? [getProvider(id)] : PI_PROVIDERS;
+    if (providers.some((p) => !p)) throw new Error('Unknown Pi provider');
+    console.log(
+      JSON.stringify(
+        providers.flatMap((p) =>
+          p!.getModels().map((m) => ({
+            provider: p!.id,
+            id: m.id,
+            name: m.name,
+            api: m.api,
+            context_window: m.contextWindow,
+            max_output_tokens: m.maxTokens,
+          })),
+        ),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'auth') {
+    const store = new ProviderCredentialStore();
+    if (verb === 'status') {
+      const models = providerModels(store),
+        entries = id ? [getProvider(id)] : PI_PROVIDERS;
+      if (entries.some((p) => !p)) throw new Error('Unknown Pi provider');
+      const statuses = [];
+      for (const p of entries) {
+        try {
+          const auth = await models.checkAuth(p!.id);
+          statuses.push({
+            provider: p!.id,
+            configured: !!auth,
+            type: auth?.type ?? null,
+            source: auth?.source ?? null,
+          });
+        } catch {
+          statuses.push({ provider: p!.id, configured: false, error: 'Credential check failed' });
+        }
+      }
+      console.log(JSON.stringify(statuses, null, 2));
+      return;
+    }
+    if (!id || !getProvider(id)) throw new Error('Choose a provider from salaam providers list');
+    if (verb === 'logout') {
+      await store.delete(id);
+      console.log(
+        'Stored credential removed for ' + id + '. Environment credentials remain external.',
+      );
+      return;
+    }
+    if (verb === 'set') {
+      if (!getProvider(id)!.auth.apiKey)
+        throw new Error('This provider needs salaam auth login ' + id + ' --oauth');
+      const key = (await readSecret(id + ' API key (hidden): ')).trim();
+      if (
+        !key ||
+        key.length > 4096 ||
+        /[^\x21-\x7e]/.test(key) ||
+        (id === 'anthropic' && key.includes('sk-ant-oat'))
+      )
+        throw new Error('Supply a provider API key, not an OAuth token');
+      if (id === 'anthropic') validateApiKey(key);
+      await store.modify(id, async () => ({ type: 'api_key', key }));
+      console.log(
+        'API key saved privately for ' + id + ' under ' + authDirectory() + ' (mode 600).',
+      );
+      return;
+    }
+    if (verb === 'login') {
+      if (!process.stdin.isTTY)
+        throw new Error(
+          'Interactive login needs a terminal; use auth set PROVIDER for a piped API key',
+        );
+      const provider = getProvider(id)!;
+      const type = args.includes('--oauth') || !provider.auth.apiKey ? 'oauth' : 'api_key';
+      const interaction: AuthInteraction = {
+        async prompt(prompt) {
+          if (prompt.type === 'secret')
+            return readSecret(prompt.message + ' (hidden): ', prompt.signal);
+          const rl = createInterface({ input: process.stdin, output: process.stderr });
+          try {
+            const choices =
+              prompt.type === 'select'
+                ? '\n' + prompt.options.map((v, i) => `${i + 1}. ${v.label} (${v.id})`).join('\n')
+                : '';
+            const answer = await rl.question(prompt.message + choices + '\n> ', {
+              signal: prompt.signal,
+            });
+            return prompt.type === 'select' && /^\d+$/.test(answer)
+              ? (prompt.options[Number(answer) - 1]?.id ?? answer)
+              : answer;
+          } finally {
+            rl.close();
+          }
+        },
+        notify(event) {
+          if (event.type === 'auth_url')
+            console.error(
+              'Open in your browser: ' +
+                event.url +
+                (event.instructions ? '\n' + event.instructions : ''),
+            );
+          else if (event.type === 'device_code')
+            console.error('Open ' + event.verificationUri + ' and enter ' + event.userCode);
+          else console.error(event.message);
+        },
+      };
+      await loginProvider(id, type, interaction);
+      console.log(
+        'Signed in to ' +
+          id +
+          ' with ' +
+          type +
+          '. Restart the service to use a different provider route.',
+      );
+      return;
+    }
+    throw new Error('Run salaam auth --help');
   }
   if (group === 'schedules' && verb) {
     if (verb === 'list' || (id && ['inspect', 'occurrences'].includes(verb))) {
@@ -874,12 +1026,20 @@ async function main(): Promise<void> {
     const model = option('--model');
     const cap = option('--max-output-tokens');
     const workspace = option('--workspace-id');
-    const route = providerRoute(
+    let route = providerRoute(
       provider,
       model,
       cap === undefined ? undefined : Number(cap),
       workspace,
     );
+    if (route.provider !== 'salaam-proof') {
+      const auth = await resolveProviderAuth(route);
+      if (cap !== undefined && !providerHasOutputCap(route, auth))
+        throw new Error(
+          'This authentication cannot enforce --max-output-tokens; omit it for an interactive-only session',
+        );
+      route = bindProviderConfiguration(route, auth);
+    }
     const effectSocket = option('--effect-socket');
     const opaque = args.includes('--effect-opaque');
     const codingRoot = option('--coding-root'),
@@ -894,6 +1054,8 @@ async function main(): Promise<void> {
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
       });
+      const warning = service.supervisor.providerCapabilities().warning;
+      if (warning) console.error(warning);
       process.stdout.write(JSON.stringify({ socket, service: 'started' }) + '\n');
       for (const signal of ['SIGINT', 'SIGTERM'] as const)
         process.once(signal, () => {
@@ -924,7 +1086,6 @@ async function main(): Promise<void> {
       console.log('Salaam service already running');
       return;
     }
-    if (route.provider === 'anthropic') loadApiKey();
     mkdirSync(state, { recursive: true, mode: 0o700 });
     const fd = openSync(join(state, 'service.log'), 'a', 0o600);
     const child = spawn(
@@ -952,7 +1113,12 @@ async function main(): Promise<void> {
     child.unref();
     for (let i = 0; i < 150; i++) {
       try {
-        await call(socket, '/v1/health');
+        const health = await call<{ provider_capabilities?: { warning: string | null } }>(
+          socket,
+          '/v1/health',
+        );
+        if (health.provider_capabilities?.warning)
+          console.error(health.provider_capabilities.warning);
         console.log(JSON.stringify({ socket, service: 'started' }));
         return;
       } catch {

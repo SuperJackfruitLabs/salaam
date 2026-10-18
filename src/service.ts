@@ -119,6 +119,7 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
+        this.taskWork.providerCheck = () => this.supervisor.assertTaskProviderSupported();
         this.supervisor.coding = this.coding;
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
@@ -207,6 +208,7 @@ export class SalaamService {
           service.coding.executor?.engineId !== options.expectedExecution.engine_id)
       )
         throw new Error('Host executor does not match reviewed manifest');
+      await service.supervisor.providerAuth();
       await service.supervisor.recover();
       service.store.recoverWork();
       service.taskWork.recover();
@@ -651,16 +653,17 @@ export class SalaamService {
             control_error: this.jobs.controlError,
           },
           task_execution: {
-            durable_tasks: true,
+            durable_tasks: this.supervisor.providerCapabilities().durable_tasks,
             explicit_steps: true,
             automatic_progression: 'operator-bounded-opt-in',
             verified_completion: !!this.coding.executor,
             verification_supported: true,
-            task_budgets: true,
+            task_budgets: this.supervisor.providerCapabilities().output_token_cap,
             checkpoints: true,
             deterministic_compaction: 'operator-bounded-idle-only',
           },
           provider_route: this.supervisor.route,
+          provider_capabilities: this.supervisor.providerCapabilities(),
           effect_connector: this.managed.options.connector?.id ?? null,
           coding_root: this.workspaces.root ?? null,
           coding_socket: this.codingSocket,

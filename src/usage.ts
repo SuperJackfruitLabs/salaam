@@ -115,6 +115,23 @@ export class UsageLedger {
         typeof m?.responseId === 'string' && m.responseId.startsWith('salaam-request:')
           ? m.responseId
           : `pi:${session}:${entry.id}`;
+      // Managed live streams report receipts through the authenticated bridge.
+      // Pi normalizes a missing receipt to zeros; importing that transcript must
+      // never upgrade a conservatively unknown observation to a zero charge.
+      if (key.startsWith('salaam-request:')) {
+        const managed = this.store.db
+          .prepare('SELECT session_id,provider FROM usage_observations WHERE source_key=?')
+          .get(key);
+        if (managed && managed.provider !== 'salaam-proof') {
+          if (managed.session_id !== session)
+            throw new ServiceError('invalid_usage', 'Usage does not belong to this session');
+          continue;
+        }
+        // A rejected live request can still produce a Pi error transcript. Its
+        // absence from admission is definitive: no request was dispatched.
+        const route = this.store.providerRoute(session);
+        if (!managed && route && route.provider !== 'salaam-proof') continue;
+      }
       // An aborted provider message may carry placeholder zeros. They are not evidence of zero spend.
       const complete = m && !['error', 'aborted'].includes(String(m.stopReason));
       if ((complete && m.usage) || entry.usage)

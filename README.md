@@ -78,6 +78,8 @@ sal attach SESSION_ID --state /tmp/salaam-try
 Replace `SESSION_ID` with the returned ID. Enter an instruction, detach with
 Ctrl+D, then attach again. Ctrl+K opens actions; Ctrl+O opens approvals.
 
+Choose a provider with `sal providers list` and a model with `sal models list PROVIDER`. Salaam exposes all 41 chat providers in pinned Pi, including API-key, OAuth and cloud authentication. ChatGPT subscription routes are interactive-only because they lack an output-token ceiling.
+
 For Claude, use the hidden terminal prompt and a separate provider-bound service:
 
 ```sh

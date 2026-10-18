@@ -7,11 +7,11 @@ user. There is no public multi-tenant listener.
 
 ## Credentials and providers
 
-Claude is opt-in. Its key is supplied to live provider workers and kept out of
+Live providers are opt-in. Only the selected provider authentication reaches a worker over the private bridge and kept out of
 operator replies, journal events and command arguments. Saved credentials are
 plaintext files protected by OS permissions; use the service user's private
 credential store, never a coding workspace. The provider endpoint and tool
-inventory are fixed by the admitted session route.
+inventory are fixed by the admitted session route. OAuth refresh is serialized across processes. ChatGPT subscription routes without provider-enforced output caps are limited to interactive sessions; durable tasks and budgeted children are denied before dispatch.
 
 ## Workspace and command boundary
 

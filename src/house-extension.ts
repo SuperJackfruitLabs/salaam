@@ -46,7 +46,7 @@ export default function house(pi: ExtensionAPI): void {
       `/worker/${c.session}/${method}`,
       { epoch: c.epoch, ...(data as object) },
       c.token,
-      2000,
+      method === 'provider.auth' ? 120000 : 2000,
     );
   let timer: NodeJS.Timeout | undefined;
   let shutdown: (() => void) | undefined;
@@ -445,7 +445,7 @@ export default function house(pi: ExtensionAPI): void {
       ],
     };
   });
-  if (route.provider === 'anthropic')
+  if (route.provider !== 'salaam-proof')
     registerClaude(
       pi,
       route,

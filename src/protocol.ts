@@ -75,6 +75,11 @@ export interface Session {
   capabilities: string[];
   seq: number;
   provider_route?: ProviderRoute;
+  provider_capabilities?: {
+    output_token_cap: boolean;
+    durable_tasks: boolean;
+    warning: string | null;
+  };
 }
 export interface DurableEvent {
   schema_version: 1;
