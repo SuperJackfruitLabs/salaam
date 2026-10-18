@@ -7,6 +7,9 @@ import { TaskBudget } from './task-budget.js';
 import { TaskVerification } from './task-verification.js';
 import { TaskCheckpoints } from './task-checkpoints.js';
 import { TaskDriver } from './task-driver.js';
+import { OperatorInbox } from './operator-inbox.js';
+import { RecurringWork } from './recurring-work.js';
+import { JobWork } from './job-work.js';
 import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
@@ -30,6 +33,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   codingRoot?: string;
   codingSocket?: string;
   codingBackend?: ExecutionBackend;
+  expectedExecution?: { profile_digest: string; engine_id: string };
 }
 export class SalaamService {
   readonly stateDir: string;
@@ -43,6 +47,9 @@ export class SalaamService {
   readonly taskVerification: TaskVerification;
   readonly taskCheckpoints: TaskCheckpoints;
   readonly taskDriver: TaskDriver;
+  readonly jobs: JobWork;
+  readonly recurring: RecurringWork;
+  readonly inbox: OperatorInbox;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
@@ -134,6 +141,22 @@ export class SalaamService {
           this.children,
           this.coding,
         );
+        this.jobs = new JobWork(
+          this.store,
+          this.taskWork,
+          this.taskDriver,
+          this.taskVerification,
+          this.managed,
+        );
+        this.recurring = new RecurringWork(this.jobs);
+        this.inbox = new OperatorInbox(this.store, (error) => {
+          for (const session of this.store.sessions())
+            this.supervisor.failControl(session.id, error);
+        });
+        this.jobs.requiredControl = () => {
+          const error = this.recurring.controlError ?? this.inbox.controlError;
+          if (error) throw new ServiceError('host_control_unavailable', error, 503);
+        };
       } catch (error) {
         this.store.close();
         throw error;
@@ -178,6 +201,12 @@ export class SalaamService {
           closeSync(fd);
         }
       }
+      if (
+        options.expectedExecution &&
+        (service.coding.executor?.profileDigest !== options.expectedExecution.profile_digest ||
+          service.coding.executor?.engineId !== options.expectedExecution.engine_id)
+      )
+        throw new Error('Host executor does not match reviewed manifest');
       await service.supervisor.recover();
       service.store.recoverWork();
       service.taskWork.recover();
@@ -188,9 +217,15 @@ export class SalaamService {
       service.managed.recover();
       await service.managed.reconcileAll();
       service.taskCheckpoints.recover();
+      await service.jobs.recover();
+      await service.recurring.recover();
+      service.inbox.reconcile();
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
       service.taskDriver.start();
+      service.jobs.start();
+      service.recurring.start();
+      service.inbox.start();
       return service;
     } catch (error) {
       await service.close();
@@ -230,6 +265,202 @@ export class SalaamService {
         );
         this.send(res, 200, value);
         return;
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'job-occurrences' &&
+        parts.length === 3 &&
+        req.method === 'GET'
+      ) {
+        this.send(res, 200, this.jobs.occurrence(parts[2]!));
+        return;
+      }
+      if (parts[0] === 'v1' && parts[1] === 'inbox') {
+        if (req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            parts.length === 2
+              ? this.inbox.list(
+                  integer(Number(url.searchParams.get('offset') ?? 0), 'offset'),
+                  url.searchParams.get('session_id') ?? undefined,
+                )
+              : this.inbox.get(parts[2]!),
+          );
+          return;
+        }
+        if (req.method === 'POST' && parts.length === 4 && parts[3] === 'ack') {
+          const body = object(await readJson(req));
+          if (
+            Object.keys(body).some(
+              (k) => !['client_id', 'token', 'request_id', 'expected_revision'].includes(k),
+            )
+          )
+            throw new ServiceError('invalid_field', 'Unexpected inbox field', 400);
+          this.send(
+            res,
+            200,
+            this.inbox.ack(
+              parts[2]!,
+              string(body.request_id, 'request_id', 128),
+              integer(body.expected_revision, 'expected_revision'),
+              {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              },
+            ),
+          );
+          return;
+        }
+        throw new ServiceError('not_found', 'Inbox route not found', 404);
+      }
+      if (parts[0] === 'v1' && parts[1] === 'schedules') {
+        const offset = integer(Number(url.searchParams.get('offset') ?? 0), 'offset');
+        if (req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            parts.length === 2
+              ? this.recurring.list(offset)
+              : parts[3] === 'occurrences'
+                ? this.recurring.occurrences(parts[2]!, offset)
+                : this.recurring.view(parts[2]!),
+          );
+          return;
+        }
+        if (
+          req.method === 'POST' &&
+          (parts.length === 2 || (parts.length === 4 && ['update', 'run'].includes(parts[3]!)))
+        ) {
+          const body = object(await readJson(req));
+          const allowed = [
+            'client_id',
+            'token',
+            'request_id',
+            'expected_revision',
+            ...(parts.length === 2
+              ? ['task_id', 'name', 'max_steps', 'compact', 'schedule']
+              : parts[3] === 'run'
+                ? ['occurrence_key']
+                : ['schedule', 'state']),
+          ];
+          if (Object.keys(body).some((k) => !allowed.includes(k)))
+            throw new ServiceError(
+              'invalid_field',
+              'Unexpected schedule field; triggers cannot change template authority',
+              400,
+            );
+          const actor = {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            },
+            request = string(body.request_id, 'request_id', 128),
+            expected = integer(body.expected_revision, 'expected_revision');
+          const result =
+            parts.length === 2
+              ? this.recurring.create(
+                  string(body.task_id, 'task_id', 128),
+                  request,
+                  expected,
+                  string(body.name, 'name', 256),
+                  integer(body.max_steps, 'max_steps'),
+                  body.compact as boolean,
+                  body.schedule,
+                  actor,
+                )
+              : parts[3] === 'run'
+                ? this.recurring.trigger(
+                    parts[2]!,
+                    request,
+                    expected,
+                    string(body.occurrence_key, 'occurrence_key', 128),
+                    actor,
+                  )
+                : this.recurring.update(
+                    parts[2]!,
+                    request,
+                    expected,
+                    body.schedule,
+                    body.state,
+                    actor,
+                  );
+          this.send(res, parts[3] === 'run' ? 202 : 200, result);
+          return;
+        }
+        throw new ServiceError('not_found', 'Schedule route not found', 404);
+      }
+      if (parts[0] === 'v1' && parts[1] === 'jobs') {
+        if (req.method === 'GET' && parts.length === 2) {
+          this.send(
+            res,
+            200,
+            this.jobs.list(integer(Number(url.searchParams.get('offset') ?? 0), 'offset')),
+          );
+          return;
+        }
+        if (req.method === 'GET' && parts.length === 3) {
+          this.send(res, 200, this.jobs.view(parts[2]!));
+          return;
+        }
+        if (
+          req.method === 'POST' &&
+          (parts.length === 2 || (parts.length === 4 && ['run', 'cancel'].includes(parts[3]!)))
+        ) {
+          const body = object(await readJson(req));
+          const allowed = new Set([
+            'client_id',
+            'token',
+            'request_id',
+            'expected_revision',
+            ...(parts.length === 2
+              ? ['task_id', 'name', 'max_steps', 'compact']
+              : parts[3] === 'run'
+                ? ['occurrence_key']
+                : []),
+          ]);
+          if (Object.keys(body).some((key) => !allowed.has(key)))
+            throw new ServiceError(
+              'invalid_field',
+              'Unexpected job field; triggers cannot change reviewed authority',
+              400,
+            );
+          const controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          };
+          const request = string(body.request_id, 'request_id', 128),
+            expected = integer(body.expected_revision, 'expected_revision');
+          if (parts.length === 2) {
+            const compact = body.compact ?? false;
+            if (typeof compact !== 'boolean')
+              throw new ServiceError('invalid_field', 'compact must be boolean', 400);
+            const job = this.jobs.create(
+              string(body.task_id, 'task_id', 128),
+              request,
+              expected,
+              string(body.name, 'name', 256),
+              integer(body.max_steps, 'max_steps'),
+              compact,
+              controller,
+            );
+            this.send(res, 201, this.jobs.view(job.id));
+          } else if (parts[3] === 'run')
+            this.send(
+              res,
+              202,
+              this.jobs.trigger(
+                parts[2]!,
+                request,
+                expected,
+                string(body.occurrence_key, 'occurrence_key', 128),
+                controller,
+              ),
+            );
+          else
+            this.send(res, 200, await this.jobs.cancel(parts[2]!, request, expected, controller));
+          return;
+        }
+        throw new ServiceError('not_found', 'Job route not found', 404);
       }
       if (parts[0] === 'v1' && parts[1] === 'tasks') {
         if (req.method === 'GET' && parts.length === 2) {
@@ -409,6 +640,16 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          job_execution: {
+            durable_jobs: true,
+            one_shot_triggers: !!this.coding.executor,
+            recurring_schedules: !!this.coding.executor,
+            schedule_control_error: this.recurring.controlError,
+            inbox_control_error: this.inbox.controlError,
+            durable_operator_inbox: true,
+            public_triggers: false,
+            control_error: this.jobs.controlError,
+          },
           task_execution: {
             durable_tasks: true,
             explicit_steps: true,
@@ -830,7 +1071,13 @@ export class SalaamService {
         if (parts[3] === 'snapshot' && req.method === 'GET') {
           this.send(res, 200, {
             ...this.store.snapshot(id),
+            inbox: this.inbox.list(0, id).items,
+            recurring_occurrence:
+              this.store.db
+                .prepare('SELECT * FROM recurring_occurrences WHERE session_id=?')
+                .get(id) ?? null,
             ...this.supervisor.inspect(id),
+            job: this.jobs.forSession(id) ? this.jobs.view(this.jobs.forSession(id)!.id) : null,
             work_task: this.taskWork.forSession(id)
               ? this.taskDriver.view(this.taskWork.forSession(id)!.id)
               : null,
@@ -999,6 +1246,9 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    this.inbox.close();
+    this.recurring.close();
+    this.jobs.close();
     await this.taskDriver.close();
     this.dispatcher.pause();
     this.managed.pause();

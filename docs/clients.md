@@ -127,3 +127,9 @@ Zed may forward existing MCP configuration when starting an external agent. If S
 The named Zed 1.24.2 GUI rehearsal passed on 2026-10-18. It observed the Salaam selector/composer, live tools, actual isolated command exit 0, two separately reviewed approval bindings, the real owned file and an exported checked diff opened in the editor. `Reload Agent` restored the same session and committed history without another patch or command. After an abrupt adapter reload, the prior controller lease may remain valid briefly; wait for expiry or use an explicitly authorized controller takeover. A rejected prompt is not an accepted attempt. See [GUI evidence](evidence/m10-zed-gui.json).
 
 Live prompts are displayed by the editor; Salaam does not echo them as extra user chunks. Explicit history loading replays committed user turns once. The checked diff in this rehearsal was exported from the service and opened as a diff document; native ACP edit/diff rendering is not claimed.
+
+## M12 operator attention
+
+ACP carries the service's durable inbox entries in `session/update` metadata `salaam.dev/inbox` with a textual attention summary. `_salaam/inbox/list` accepts an optional pagination offset. `_salaam/inbox/ack` accepts the exact item ID, expected revision and stable request ID; the source session must already be connected and its controller acquired. Acknowledgement never decides a permission or retries work. Normal operation-bound `session/request_permission` remains the approval path.
+
+These are Salaam ACP extensions and protocol-tested behavior. The M12 pilot uses actual SSH terminals; it does not claim a new native Zed inbox GUI rehearsal. See [jobs and inbox](jobs.md).

@@ -60,6 +60,7 @@ export class TaskBudget {
   check(session: string): void {
     const task = this.task(session);
     if (!task) return;
+    this.store.jobGrantCheck?.(task.session_id);
     const r = this.state(task.id);
     if (r.blocked_reason) this.deny(task.session_id, String(r.blocked_reason));
     if (r.started_at !== null && Date.now() - Number(r.started_at) >= task.limits.runtime_ms)

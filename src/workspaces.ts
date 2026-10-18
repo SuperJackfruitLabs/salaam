@@ -265,6 +265,48 @@ export class Workspaces {
     });
     return this.get(session);
   }
+  /** Publish a fresh, deterministic occurrence root; never overwrite a partial or edited root. */
+  cloneSnapshot(session: string, tree: WorkspaceTree): Workspace {
+    validateTree(tree);
+    const prior = this.find(session);
+    if (prior) {
+      this.verify(session);
+      return prior;
+    }
+    if (!this.root) throw new ServiceError('coding_disabled', 'No coding root');
+    const root = join(this.root, session);
+    if (!existsSync(root)) {
+      const staging = join(this.root, session + '-staging-' + randomUUID());
+      mkdirSync(staging, { mode: 0o700 });
+      this.writeTree(staging, {}, tree);
+      renameSync(staging, root);
+      const fd = openSync(this.root, 'r');
+      try {
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    }
+    if (digest(readTree(root)) !== digest(tree))
+      throw new ServiceError(
+        'workspace_conflict',
+        'Occurrence workspace changed before publication',
+      );
+    const baseline = this.artifacts.prepare(session, JSON.stringify(tree));
+    this.store.transaction(() => {
+      baseline.commit();
+      this.store.db
+        .prepare("INSERT INTO workspaces VALUES (?,?,?,?,0,?,?,'ready')")
+        .run(session, session, root, root, digest(tree), baseline.id);
+      this.store.event(session, 'workspace.created', {
+        workspace_id: session,
+        revision: 0,
+        digest: digest(tree),
+        cloned: true,
+      });
+    });
+    return this.get(session);
+  }
   inspect(session: string): unknown {
     const w = this.get(session);
     let observed_digest: string | null = null;

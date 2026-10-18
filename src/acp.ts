@@ -26,6 +26,7 @@ interface Connection {
   operations: Map<string, string>;
   permissions: Set<string>;
   cursor: number;
+  inboxDigest?: string;
   feed?: Feed;
   refresh?: Promise<void>;
   dirty: boolean;
@@ -211,6 +212,15 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         const view = await snapshot(c.id);
         await replay(c, true);
         await approvals(c, view);
+        const inbox = JSON.stringify(view.inbox ?? []);
+        if (c.inboxDigest !== inbox && (inbox !== '[]' || c.inboxDigest !== undefined)) {
+          c.inboxDigest = inbox;
+          await update(c.id, {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Salaam operator inbox: ' + inbox },
+            _meta: { 'salaam.dev/inbox': view.inbox ?? [] },
+          });
+        }
         delete c.failed;
         for (const op of view.operations) {
           const status =
@@ -270,6 +280,9 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       }
       if (
         [
+          'inbox.changed',
+          'inbox.resolved',
+          'inbox.acknowledged',
           'transcript.synced',
           'approval.requested',
           'approval.decided',
@@ -375,6 +388,19 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       };
     }
     if (!initialized) throw new Error('Initialize ACP v1 first');
+    if (method === '_salaam/inbox/list')
+      return call(socket, '/v1/inbox?offset=' + encodeURIComponent(String(params.offset ?? 0)));
+    if (method === '_salaam/inbox/ack') {
+      const id = string(params.id, 'id', 128),
+        item = await call<{ session_id: string }>(socket, `/v1/inbox/${id}`),
+        c = sessions.get(item.session_id);
+      if (!c) throw new Error('Connect the attention session before acknowledgement');
+      return call(socket, `/v1/inbox/${id}/ack`, {
+        ...(await controller(c)),
+        request_id: string(params.request_id, 'request_id', 128),
+        expected_revision: params.expected_revision,
+      });
+    }
     if (['session/new', 'session/load', 'session/resume'].includes(method)) {
       const cwd = string(params.cwd, 'cwd');
       if (

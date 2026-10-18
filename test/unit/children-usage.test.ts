@@ -265,7 +265,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     store.finish(receipt.attempt_id, 'completed', 'preserved', null);
     const revision = store.session(session.id).revision;
     store.db.exec(
-      'DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
+      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
     );
     store.close();
     store = new Store(path);
@@ -275,7 +275,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     });
     expect(store.create(dir, 'create')).toEqual(session);
     expect(store.session(session.id).revision).toBe(revision);
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

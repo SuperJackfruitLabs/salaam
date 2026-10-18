@@ -38,7 +38,7 @@ interface Pending {
         decision: 'approve' | 'deny';
       }
     | { kind: 'cancel'; attempt_id: string }
-    | { kind: 'task'; path: string; body: Record<string, unknown> };
+    | { kind: 'task' | 'job'; path: string; body: Record<string, unknown> };
 }
 function syncDirectory(path: string): void {
   const fd = openSync(path, 'r');
@@ -150,6 +150,23 @@ export class Outbox {
       command: { kind: 'task', path, body },
     });
   }
+  enqueueJob(path: string, body: Record<string, unknown>, request = randomUUID()): Pending {
+    if (
+      !/^\/v1\/(?:jobs(?:\/[a-f0-9-]{36}\/(?:run|cancel))?|schedules(?:\/[a-f0-9-]{36}\/(?:run|update))?)$/i.test(
+        path,
+      ) ||
+      !/^[a-f0-9-]{36}$/i.test(request) ||
+      Buffer.byteLength(JSON.stringify(body)) > 16384
+    )
+      throw new Error('Invalid job action');
+    return this.enqueueCommand({
+      created_at: Date.now(),
+      request_id: request,
+      expected_revision: Number(body.expected_revision),
+      text: '',
+      command: { kind: 'job', path, body },
+    });
+  }
   private enqueueCommand(record: Pending): Pending {
     const records = this.records();
     const prior = records.find((prior) => prior.request_id === record.request_id);
@@ -183,7 +200,7 @@ export class Outbox {
               ...record.command,
               request_id: record.request_id,
             });
-          else if (record.command?.kind === 'task')
+          else if (record.command?.kind === 'task' || record.command?.kind === 'job')
             await call(socket, record.command.path, {
               ...record.command.body,
               request_id: record.request_id,
@@ -213,7 +230,7 @@ export class Outbox {
               'attempt_settled',
             ].includes(error.code) ||
               (record.command && error.code === 'not_found') ||
-              (record.command?.kind === 'task' &&
+              (['task', 'job'].includes(record.command?.kind ?? '') &&
                 error.status >= 400 &&
                 error.status < 500 &&
                 !['control_required', 'control_conflict'].includes(error.code)))

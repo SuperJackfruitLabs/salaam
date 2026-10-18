@@ -38,6 +38,7 @@ export class Store {
     after: import('./workspaces.js').WorkspaceTree,
   ) => void;
   taskGrantCheck?: (session: string) => void;
+  jobGrantCheck?: (session: string) => void;
   taskModelAdmission?: (
     session: string,
     attempt: string | undefined,
@@ -58,7 +59,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 9) {
+    if (version > 11) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -185,6 +186,22 @@ export class Store {
             SELECT c.child_attempt,t.id,max(0,c.budget-(SELECT count(*) FROM usage_observations WHERE session_id=c.child_session)),max(0,c.budget-(SELECT count(*) FROM usage_observations WHERE session_id=c.child_session))*139264 FROM child_tasks c JOIN durable_tasks t ON t.session_id=c.parent_session WHERE c.state!='completed';
           UPDATE task_runtime SET reserved_requests=(SELECT coalesce(sum(remaining_requests),0) FROM task_reservations WHERE task_id=task_runtime.task_id),reserved_tokens=(SELECT coalesce(sum(remaining_tokens),0) FROM task_reservations WHERE task_id=task_runtime.task_id);
           PRAGMA user_version=9; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 10
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE jobs(id TEXT PRIMARY KEY,task_id TEXT NOT NULL UNIQUE REFERENCES durable_tasks(id),session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),name TEXT NOT NULL,revision INTEGER NOT NULL,binding TEXT NOT NULL,binding_digest TEXT NOT NULL,max_steps INTEGER NOT NULL,compact INTEGER NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL);
+          CREATE TABLE job_occurrences(id TEXT PRIMARY KEY,job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id),occurrence_key TEXT NOT NULL,binding_digest TEXT NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+          PRAGMA user_version=10; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 11
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE recurring_jobs(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),name TEXT NOT NULL,revision INTEGER NOT NULL,template TEXT NOT NULL,template_digest TEXT NOT NULL,state TEXT NOT NULL,next_due INTEGER,created_at INTEGER NOT NULL);
+          CREATE TABLE schedule_revisions(job_id TEXT NOT NULL REFERENCES recurring_jobs(id),revision INTEGER NOT NULL,definition TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(job_id,revision));
+          CREATE TABLE recurring_occurrences(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES recurring_jobs(id),occurrence_key TEXT NOT NULL,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),job_run_id TEXT UNIQUE REFERENCES jobs(id),schedule_revision INTEGER NOT NULL,due_at INTEGER,state TEXT NOT NULL,error TEXT,created_at INTEGER NOT NULL,UNIQUE(job_id,occurrence_key));
+          CREATE TABLE operator_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),source_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL,detail TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,ack_revision INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL);
+          PRAGMA user_version=11; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

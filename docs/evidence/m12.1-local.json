@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-18T08:08:45.946Z",
+  "milestone": "M12.1",
+  "status": "implemented-locally-with-offline-job-admission-and-recovery-proofs",
+  "source": {
+    "base_main_commit": "01a7300cf447113f05f6b4974b074d36968dba21",
+    "branch": "m12-durable-jobs",
+    "uncommitted": true,
+    "runtime_source_digest": "8dae2b0d595d8a2103291f1a9e7a56993303c7992d40791d785114d92db908f4",
+    "implementation_and_tests_digest": "dd4a5ed5a581bd2d58a1f334c17ea70ae52abbd0b2d69883d2e33adead5e9e39"
+  },
+  "build": {
+    "node": "v26.7.0",
+    "npm": "11.19.0",
+    "pi": "1.3.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "compiled_source_digest": "4590c17cacbe576a24ca7ff618bb07173d723dc46c23a5c1ae3255fa427a2c16",
+    "worker_bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d"
+  },
+  "scope": {
+    "immutable_one_shot_definition": true,
+    "atomic_occurrence_and_task_grant": true,
+    "stable_logical_trigger_deduplication": true,
+    "per_grant_authority_fence": true,
+    "durable_cancellation_before_process_abort": true,
+    "CLI_and_TUI_controls": true,
+    "recurring_schedules": false,
+    "public_trigger_gateway": false,
+    "remote_installation": false
+  },
+  "verification": {
+    "full_source_suite": {
+      "path": ".state/evidence/m12.1/full-tests.json",
+      "sha256": "b765786de88ac4dc4a06490d48380425a46395dc1965bf74c8c2fd2add7523f1",
+      "tests": 239,
+      "failed": 0,
+      "started_at": "2026-10-18T08:02:53.812Z"
+    },
+    "job_domain_cases": 11,
+    "schema_9_upgrade_cases": 1,
+    "job_crash_and_terminal_cases": 5,
+    "additional_named_repetitions": 3,
+    "additional_named_case_executions": 15,
+    "reports": [
+      {
+        "path": ".state/evidence/m12.1/jobs-repeat-1.json",
+        "sha256": "c919cef296b37219d80535c15691cdad326fbe01b95cf07067dd0db9e615b9b6",
+        "tests": 5,
+        "failed": 0,
+        "started_at": "2026-10-18T08:05:30.997Z"
+      },
+      {
+        "path": ".state/evidence/m12.1/jobs-repeat-2.json",
+        "sha256": "0c9848e14cca3231fe6dfe619f4fa938f40c40c1bcdaeeac2fcfdeae19de5d73",
+        "tests": 5,
+        "failed": 0,
+        "started_at": "2026-10-18T08:05:39.698Z"
+      },
+      {
+        "path": ".state/evidence/m12.1/jobs-repeat-3.json",
+        "sha256": "ff00a2577fbf6c31cd849a78d07ac9e165a9b2723237f59ec96b12419aad20c3",
+        "tests": 5,
+        "failed": 0,
+        "started_at": "2026-10-18T08:05:47.710Z"
+      }
+    ],
+    "format": "passed",
+    "types": "passed",
+    "diff": "passed",
+    "required_job_projection_failure_fences_readiness": true,
+    "changed_connector_before_model_admission_spends_zero_requests": true
+  },
+  "observations": [
+    "SIGKILL before occurrence commit leaves no attempt, runtime start, occurrence or grant",
+    "SIGKILL after commit recovers one occurrence/task/grant and one instruction after a lost response",
+    "SIGKILL during a dispatched job preserves the interrupted attempt without replay",
+    "SIGKILL after cancellation commit does not restore the grant",
+    "Hard terminal loss and observer reconnect retain one running occurrence and one attempt",
+    "A failing configured check cannot become job success from model completion",
+    "Schema 9 upgrade preserves task/attempt IDs, usage charges and cached replies"
+  ],
+  "cleanup": {
+    "job_fixture_processes_remaining": 0,
+    "leftover_failed_fixture_directories_removed": [
+      "sal-job-proof-6fhDeV",
+      "sal-job-proof-voFIrV",
+      "sal-job-proof-HWnR6j"
+    ],
+    "temporary_source_preparation_files_removed": true,
+    "live_provider_calls": 0,
+    "user_provider_state_unchanged": true
+  },
+  "raw_evidence": [
+    {
+      "path": ".state/evidence/m12.1/source-build.json",
+      "sha256": "50ef87e621fafc194199e7b01462814d6a0819556e773270e0d865b99c13a3d5"
+    },
+    {
+      "path": ".state/evidence/m12.1/implementation-manifest.json",
+      "sha256": "11f16d9275e40e3831d78e53ea4c14fe2654a2553ddc6add914ed44ca1514b35"
+    },
+    {
+      "path": ".state/evidence/m12.1/cleanup.json",
+      "sha256": "efc1b135caed4b94c094440b29fe2798910c6c64eb6216e5044933490bee36d8"
+    },
+    {
+      "path": ".state/evidence/m12.1/format.log",
+      "sha256": "efa12bade7f9e873ec6d1d407a0feff4df2724979678cea1d8e4f6025b1ed6eb"
+    },
+    {
+      "path": ".state/evidence/m12.1/types.log",
+      "sha256": "30c185ab253f1ad909cc09adf97de5a19c9ca957745a8f31a2f3fa4bdb7fd2a3"
+    },
+    {
+      "path": ".state/evidence/m12.1/diff.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "terminal_captures": [
+    {
+      "path": ".state/evidence/m12.1/screens/job-completed.svg",
+      "sha256": "8067cc2734174a4188d99ffeaae15d6630de18558adc624711ff571c1b589691",
+      "provenance": "Actual captured macOS PTY terminal cells using the pinned terminal parser; simulated command executor, offline Pi; not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m12.1/screens/job-completed.txt",
+      "sha256": "059a8480cbf752b3222bc2b3daca88b99315de202a6aa7529af87c8358455834",
+      "provenance": "Actual captured macOS PTY terminal cells using the pinned terminal parser; simulated command executor, offline Pi; not a desktop screenshot"
+    }
+  ],
+  "remaining_M12": [
+    "M12.2 recurring template occurrences, timezone/DST schedules, skip/bounded catch-up and overlap",
+    "M12.3 explicit remote host operation/supervision and durable operator inbox",
+    "M12.4 source-bound remote release pilot"
+  ],
+  "limits": [
+    "Local macOS arm64 observations; new M12 jobs have not been run on Linux or in CI",
+    "Command execution is simulated in these job proofs; real M11 Docker/SSH acceptance is separate historical evidence",
+    "No live Claude or paid provider requests",
+    "No new Zed GUI task/job rehearsal",
+    "No power-loss durability or production daemon deployment claim",
+    "Existing user provider daemon and credentials were not reconfigured"
+  ]
+}

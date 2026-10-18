@@ -300,30 +300,41 @@ export class TaskWork {
       request,
       { kind: 'work-task-create', session, expected, plan: this.requestPlan(input, plan) },
       () => {
-        this.store.authorizeControl(session, controller);
-        if (expected !== 0)
-          throw new ServiceError('task_revision_conflict', 'New tasks require revision zero');
-        this.idle(session);
-        if (this.store.db.prepare('SELECT 1 FROM child_tasks WHERE child_session=?').get(session))
-          throw new ServiceError(
-            'invalid_task_session',
-            'Child sessions cannot own operator tasks',
-          );
-        if (this.forSession(session))
-          throw new ServiceError('task_exists', 'This session already has a durable task');
-        const id = randomUUID();
-        this.store.db
-          .prepare(
-            "INSERT INTO durable_tasks VALUES (?,?,0,1,'accepted',?,?,'Waiting for an explicit step run')",
-          )
-          .run(id, session, plan.objective, canonical(plan.constraints));
-        this.store.db.prepare('INSERT INTO task_runtime(task_id) VALUES (?)').run(id);
-        this.savePlan(id, request, plan);
-        this.context.frame(session, 'x'.repeat(32));
-        this.changed(id, 'created', { plan_revision: 1 }, request);
-        return this.get(id);
+        return this.createInTransaction(session, request, expected, input, () =>
+          this.store.authorizeControl(session, controller),
+        );
       },
     );
+  }
+  /** Internal admission for an already committed, immutable recurring occurrence. */
+  createInTransaction(
+    session: string,
+    request: string,
+    expected: number,
+    input: unknown,
+    authorize: () => void,
+  ): WorkTask {
+    if (!this.store.db.isTransaction) throw new Error('Task admission requires a transaction');
+    const plan = this.parse(input);
+    authorize();
+    if (expected !== 0)
+      throw new ServiceError('task_revision_conflict', 'New tasks require revision zero');
+    this.idle(session);
+    if (this.store.db.prepare('SELECT 1 FROM child_tasks WHERE child_session=?').get(session))
+      throw new ServiceError('invalid_task_session', 'Child sessions cannot own operator tasks');
+    if (this.forSession(session))
+      throw new ServiceError('task_exists', 'This session already has a durable task');
+    const id = randomUUID();
+    this.store.db
+      .prepare(
+        "INSERT INTO durable_tasks VALUES (?,?,0,1,'accepted',?,?,'Waiting for an explicit step run')",
+      )
+      .run(id, session, plan.objective, canonical(plan.constraints));
+    this.store.db.prepare('INSERT INTO task_runtime(task_id) VALUES (?)').run(id);
+    this.savePlan(id, request, plan);
+    this.context.frame(session, 'x'.repeat(32));
+    this.changed(id, 'created', { plan_revision: 1 }, request);
+    return this.get(id);
   }
   private savePlan(id: string, request: string, plan: TaskPlan): void {
     const task = this.get(id);

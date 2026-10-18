@@ -63,6 +63,71 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'host') {
+    const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
+    if (verb === 'plan') {
+      const file = option('--config');
+      if (!file) throw new Error('Supply --config FILE');
+      console.log(
+        JSON.stringify(await planHost(JSON.parse(readFileSync(resolve(file), 'utf8'))), null, 2),
+      );
+      return;
+    }
+    const file = option('--manifest');
+    if (!file) throw new Error('Supply --manifest FILE');
+    if (verb === 'inspect') {
+      const m = readHost(file);
+      let supervisor: unknown = null;
+      try {
+        supervisor = JSON.parse(readFileSync(join(m.state, 'host/status.json'), 'utf8'));
+      } catch {}
+      console.log(
+        JSON.stringify(
+          {
+            manifest: m,
+            supervisor,
+            health: await call(join(m.state, 'operator.sock'), '/v1/health').catch((error) => ({
+              service: 'unavailable',
+              error: error.message,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (verb === 'unit') {
+      console.log(
+        hostUnit(
+          file,
+          option('--platform') ?? (process.platform === 'darwin' ? 'launchd' : 'systemd'),
+        ),
+      );
+      return;
+    }
+    if (verb === 'run') {
+      await runHost(file);
+      return;
+    }
+    if (verb === 'serve') {
+      const m = readHost(file),
+        service = await SalaamService.open({
+          stateDir: m.state,
+          codingRoot: m.coding_root,
+          codingSocket: m.coding_socket,
+          providerRoute: m.provider,
+          expectedExecution: m,
+        });
+      if (process.connected) process.once('disconnect', () => void service.close());
+      for (const signal of ['SIGTERM', 'SIGINT'] as const)
+        process.once(signal, () => void service.close());
+      await service.closed;
+      if (process.connected) process.disconnect?.();
+      return;
+    }
+    throw new Error('Use host plan, unit, run or inspect');
+  }
   if (group === 'remote' && verb) {
     const { remote } = await import('./remote.js');
     const theme = option('--theme');
@@ -239,6 +304,205 @@ async function main(): Promise<void> {
     saveApiKey(await readSecret());
     console.log('Claude API key saved to ' + credentialPath() + ' (mode 600).');
     return;
+  }
+  if (group === 'schedules' && verb) {
+    if (verb === 'list' || (id && ['inspect', 'occurrences'].includes(verb))) {
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            verb === 'list'
+              ? '/v1/schedules?offset=' + (option('--offset') ?? '0')
+              : `/v1/schedules/${id}` +
+                  (verb === 'occurrences'
+                    ? '/occurrences?offset=' + (option('--offset') ?? '0')
+                    : ''),
+          ),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (id && ['create', 'update', 'run'].includes(verb)) {
+      const revision = Number(option('--revision'));
+      if (!Number.isSafeInteger(revision) || revision < 0)
+        throw new Error('Supply reviewed --revision');
+      const target = await call<{ session_id: string }>(
+        socket,
+        verb === 'create' ? `/v1/tasks/${id}` : `/v1/schedules/${id}`,
+      );
+      const client_id = randomUUID(),
+        lease = await acquireControl(
+          socket,
+          target.session_id,
+          client_id,
+          args.includes('--takeover'),
+        );
+      try {
+        const file = option('--schedule');
+        const body = {
+          client_id,
+          token: lease.token,
+          request_id: option('--request-id') ?? randomUUID(),
+          expected_revision: revision,
+          ...(verb === 'run'
+            ? { occurrence_key: option('--key') }
+            : verb === 'create'
+              ? {
+                  task_id: id,
+                  name: option('--name'),
+                  max_steps: Number(option('--max-steps')),
+                  compact: args.includes('--compact'),
+                  schedule: file ? JSON.parse(readFileSync(resolve(file), 'utf8')) : null,
+                }
+              : {
+                  schedule: file ? JSON.parse(readFileSync(resolve(file), 'utf8')) : null,
+                  state: option('--status'),
+                }),
+        };
+        console.log(
+          JSON.stringify(
+            await call(
+              socket,
+              verb === 'create' ? '/v1/schedules' : `/v1/schedules/${id}/${verb}`,
+              body,
+            ),
+            null,
+            2,
+          ),
+        );
+      } finally {
+        await call(socket, `/v1/sessions/${target.session_id}/control`, {
+          request_id: randomUUID(),
+          action: 'release',
+          client_id,
+          token: lease.token,
+          expected_epoch: lease.epoch,
+        }).catch(() => {});
+      }
+      return;
+    }
+  }
+  if (group === 'inbox' && verb) {
+    if (verb === 'list' || (verb === 'inspect' && id)) {
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            verb === 'list' ? '/v1/inbox?offset=' + (option('--offset') ?? '0') : `/v1/inbox/${id}`,
+          ),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (verb === 'ack' && id) {
+      const entry = await call<{ session_id: string }>(socket, `/v1/inbox/${id}`),
+        client_id = randomUUID(),
+        lease = await acquireControl(
+          socket,
+          entry.session_id,
+          client_id,
+          args.includes('--takeover'),
+        );
+      try {
+        console.log(
+          JSON.stringify(
+            await call(socket, `/v1/inbox/${id}/ack`, {
+              client_id,
+              token: lease.token,
+              request_id: option('--request-id') ?? randomUUID(),
+              expected_revision: Number(option('--revision')),
+            }),
+            null,
+            2,
+          ),
+        );
+      } finally {
+        await call(socket, `/v1/sessions/${entry.session_id}/control`, {
+          request_id: randomUUID(),
+          action: 'release',
+          client_id,
+          token: lease.token,
+          expected_epoch: lease.epoch,
+        }).catch(() => {});
+      }
+      return;
+    }
+  }
+  if (group === 'jobs' && verb) {
+    if (verb === 'list') {
+      console.log(
+        JSON.stringify(
+          await call(socket, '/v1/jobs?offset=' + encodeURIComponent(option('--offset') ?? '0')),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (id && ['inspect', 'occurrence'].includes(verb)) {
+      console.log(
+        JSON.stringify(
+          await call(socket, verb === 'inspect' ? `/v1/jobs/${id}` : `/v1/job-occurrences/${id}`),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (id && ['create', 'run', 'cancel'].includes(verb)) {
+      const expected = Number(option('--revision'));
+      if (!Number.isSafeInteger(expected) || expected < 0)
+        throw new Error('Supply the reviewed --revision');
+      const target = await call<{ session_id: string }>(
+        socket,
+        verb === 'create' ? `/v1/tasks/${id}` : `/v1/jobs/${id}`,
+      );
+      const client_id = randomUUID(),
+        lease = await acquireControl(
+          socket,
+          target.session_id,
+          client_id,
+          args.includes('--takeover'),
+        );
+      try {
+        const body = {
+          request_id: option('--request-id') ?? randomUUID(),
+          expected_revision: expected,
+          client_id,
+          token: lease.token,
+          ...(verb === 'create'
+            ? {
+                task_id: id,
+                name: option('--name'),
+                max_steps: Number(option('--max-steps')),
+                compact: args.includes('--compact'),
+              }
+            : verb === 'run'
+              ? { occurrence_key: option('--key') }
+              : {}),
+        };
+        console.log(
+          JSON.stringify(
+            await call(socket, verb === 'create' ? '/v1/jobs' : `/v1/jobs/${id}/${verb}`, body),
+            null,
+            2,
+          ),
+        );
+      } finally {
+        await call(socket, `/v1/sessions/${target.session_id}/control`, {
+          request_id: randomUUID(),
+          action: 'release',
+          client_id,
+          token: lease.token,
+          expected_epoch: lease.epoch,
+        }).catch(() => {});
+      }
+      return;
+    }
   }
   if (group === 'tasks' && verb && id) {
     if (['inspect', 'history', 'current', 'checkpoints', 'restores'].includes(verb)) {
