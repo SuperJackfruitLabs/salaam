@@ -130,7 +130,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Prepare integrity-pinned peer runtimes outside model turns
-        run: node scripts/prepare-a2a-peers.mjs .state/a2a-peer-runtimes "$(command -v python)" > .state/a2a-peer-preparation.json
+        run: |
+          mkdir -p .state
+          node scripts/prepare-a2a-peers.mjs .state/a2a-peer-runtimes "$(command -v python)" > .state/a2a-peer-preparation.json
       - name: Prove actual pinned peer transports and native inbound recovery
         env:
           SALAAM_A2A_OPENCLAW_ROOT: ${{ github.workspace }}/.state/a2a-peer-runtimes/openclaw-plugin
