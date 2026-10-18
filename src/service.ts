@@ -32,10 +32,14 @@ import { WorkerWorkspaces } from './worker-workspaces.js';
 import { ExternalWork } from './external-work.js';
 import type { ExternalBackend } from './external-runtime.js';
 import { DockerHarnessBackend } from './harness-backend.js';
+import { A2AInbound } from './a2a-inbound.js';
+import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
+  a2aConfig?: string;
+  a2aListenConfig?: string;
   /** Trusted host admission, installed before any startup/recovery dispatch; throws deny a request. */
   admitModelRequest?: (
     session: string,
@@ -53,6 +57,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly external: ExternalWork;
+  a2aInbound?: A2AInbound;
   readonly stateDir: string;
   readonly socket: string;
   readonly bridgeSocket: string;
@@ -128,16 +133,25 @@ export class SalaamService {
           throw Error(
             'Harness configuration requires the real configured Docker executor and an exclusive backend',
           );
+        if (options.a2aConfig && (options.externalBackend || !options.codingRoot || !executor))
+          throw Error(
+            'A2A configuration requires an owned coding root/executor and an exclusive backend',
+          );
         const externalBackend =
           options.externalBackend ??
-          (options.harnessConfig
-            ? new DockerHarnessBackend(
-                resolve(options.harnessConfig),
-                join(resolve(options.codingRoot!), 'external'),
-                options.codingSocket!,
-                executor as DockerCodingExecutor,
-              )
-            : undefined);
+          new ExternalBackends([
+            ...(options.harnessConfig
+              ? [
+                  new DockerHarnessBackend(
+                    resolve(options.harnessConfig),
+                    join(resolve(options.codingRoot!), 'external'),
+                    options.codingSocket!,
+                    executor as DockerCodingExecutor,
+                  ),
+                ]
+              : []),
+            ...(options.a2aConfig ? [new A2ABackend(resolve(options.a2aConfig))] : []),
+          ]);
         this.coding = new CodingWork(
           this.store,
           this.workspaces,
@@ -347,6 +361,10 @@ export class SalaamService {
       await service.jobs.recover();
       await service.recurring.recover();
       service.inbox.reconcile();
+      if (options.a2aListenConfig) {
+        service.a2aInbound = new A2AInbound(service, resolve(options.a2aListenConfig));
+        await service.a2aInbound.listen();
+      }
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
       service.taskDriver.start();
@@ -380,6 +398,18 @@ export class SalaamService {
       if (this.stopping) throw new ServiceError('stopping', 'Service is stopping', 503);
       const url = new URL(req.url ?? '/', 'http://local');
       const parts = url.pathname.split('/').filter(Boolean);
+      if (
+        !bridge &&
+        req.method === 'GET' &&
+        parts[0] === 'v1' &&
+        parts[1] === 'a2a' &&
+        parts[2] === 'grants' &&
+        parts[3] &&
+        parts.length === 4
+      ) {
+        this.send(res, 200, A2AInbound.binding(this, parts[3]));
+        return;
+      }
       if (!bridge && parts[0] === 'v1' && parts[1] === 'harnesses') {
         if (req.method === 'GET' && parts.length === 2) {
           this.send(res, 200, this.external.runtimes());
@@ -965,6 +995,13 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          a2a: {
+            inbound_enabled: !!this.a2aInbound,
+            listener: this.a2aInbound?.server.address() ?? null,
+            wire_version: '1.0',
+            remote_execution: 'unobserved',
+            inbound_authority: 'one-use-native-analysis-assignment',
+          },
           external_workers: {
             control: this.external.status(),
             runtimes: this.external.runtimes(),
@@ -1651,6 +1688,7 @@ export class SalaamService {
     this.children.pause();
     const errors: unknown[] = [];
     try {
+      await this.a2aInbound?.close();
       await this.external.close();
       await this.coding.close();
       try {

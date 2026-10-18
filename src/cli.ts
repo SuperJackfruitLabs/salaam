@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 import { acp } from './acp.js';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { digest } from './protocol.js';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { digest, object } from './protocol.js';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, openSync, closeSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  mkdirSync,
+  openSync,
+  closeSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+  fsyncSync,
+} from 'node:fs';
 import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
 import { SalaamService } from './service.js';
@@ -85,6 +93,145 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'a2a' && verb === 'credential') {
+    const file = option('--file');
+    if (!id || !file) throw Error('Supply PEER_ID and --file NEW_OWNER_ONLY_FILE');
+    const { a2aIdentity } = await import('./a2a-peer.js');
+    a2aIdentity(id);
+    const path = resolve(file),
+      value = { peer: id, token: randomBytes(32).toString('base64url') };
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const fd = openSync(path, 'wx', 0o600);
+    try {
+      writeFileSync(fd, JSON.stringify(value) + '\n');
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    console.log(
+      JSON.stringify(
+        { peer: id, file: realpathSync(path), credential_digest: digest(value) },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'a2a' && verb === 'discover') {
+    const peer = option('--peer'),
+      endpoint = option('--endpoint'),
+      card_url = option('--card-url'),
+      credential = option('--credential-file'),
+      addresses = option('--addresses');
+    if (!peer || !endpoint || !card_url || !credential || !addresses)
+      throw Error('Supply --peer, --endpoint, --card-url, --credential-file and --addresses');
+    const { privateJSON, validatePeer, A2AHttp } = await import('./a2a-peer.js');
+    const credential_file = realpathSync(resolve(credential)),
+      value = privateJSON(credential_file);
+    const pin = validatePeer({
+      id: peer,
+      endpoint,
+      card_url,
+      card_digest: digest(null),
+      tenant: option('--tenant') ?? '',
+      skill: 'pending-review',
+      addresses: addresses.split(','),
+      local: args.includes('--local'),
+      credential_file,
+      credential_digest: digest(value),
+      files: [],
+      retention: 'unknown',
+      cancel: false,
+      streaming: false,
+    });
+    console.log(JSON.stringify(await new A2AHttp(pin).request(card_url), null, 2));
+    return;
+  }
+  if (group === 'a2a' && verb === 'pin') {
+    const peer = option('--peer'),
+      endpoint = option('--endpoint'),
+      cardFile = option('--card-file'),
+      credential = option('--credential-file'),
+      addresses = option('--addresses'),
+      skill = option('--skill');
+    if (!peer || !endpoint || !cardFile || !credential || !addresses || !skill)
+      throw Error(
+        'Supply --peer, --endpoint, --card-file, --credential-file, --addresses and --skill',
+      );
+    const { privateJSON, validatePeer, A2AHttp } = await import('./a2a-peer.js');
+    const card = JSON.parse(readFileSync(resolve(cardFile), 'utf8')),
+      credential_file = realpathSync(resolve(credential)),
+      value = privateJSON(credential_file),
+      card_url = option('--card-url');
+    if (!card_url) throw Error('Supply the exact --card-url that was reviewed');
+    const pin = validatePeer({
+      id: peer,
+      endpoint,
+      card_url,
+      card_digest: digest(card),
+      tenant: option('--tenant') ?? '',
+      skill,
+      addresses: addresses.split(','),
+      local: args.includes('--local'),
+      credential_file,
+      credential_digest: digest(value),
+      files: option('--files')?.split(',').filter(Boolean) ?? [],
+      retention: option('--retention') ?? 'unknown',
+      cancel: args.includes('--supports-cancel'),
+      streaming: args.includes('--supports-streaming'),
+    });
+    new A2AHttp(pin).assertCard(card);
+    console.log(JSON.stringify(pin, null, 2));
+    return;
+  }
+  if (group === 'a2a' && verb === 'grant') {
+    const assignment = option('--assignment'),
+      peer = option('--peer'),
+      credential = option('--credential-file');
+    if (!assignment || !peer || !credential)
+      throw Error('Supply --assignment, --peer and --credential-file');
+    const { privateJSON } = await import('./a2a-peer.js');
+    const credential_file = realpathSync(resolve(credential)),
+      value = object(privateJSON(credential_file));
+    if (
+      value.peer !== peer ||
+      Object.keys(value).sort().join(',') !== 'peer,token' ||
+      typeof value.token !== 'string' ||
+      !/^[A-Za-z0-9._~-]{32,512}$/.test(value.token)
+    )
+      throw Error('Use a dedicated peer credential JSON {peer,token}');
+    const peerClient = option('--peer-client');
+    if (peerClient && peerClient !== 'openclaw-2026.10.5')
+      throw Error('Only the explicitly pinned OpenClaw client adapter is available');
+    const binding = await call(socket, `/v1/a2a/grants/${encodeURIComponent(assignment)}`);
+    console.log(
+      JSON.stringify(
+        {
+          peer,
+          tenant: option('--tenant') ?? '',
+          skill: option('--skill') ?? 'review',
+          assignment_id: assignment,
+          binding_digest: digest(binding),
+          credential_file,
+          credential_digest: digest(value),
+          ...(peerClient ? { client: peerClient } : {}),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'a2a' && verb === 'peers') {
+    console.log(
+      JSON.stringify(
+        (await call<any[]>(socket, '/v1/harnesses')).filter((r) => r.kind === 'a2a'),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (group === 'harness' && verb === 'probe') {
     const path = option('--pin');
     if (!path) throw new Error('Supply an operator-reviewed --pin FILE');
@@ -132,7 +279,10 @@ async function main(): Promise<void> {
     );
     return;
   }
-  if (group === 'harness' && ['list', 'inspect', 'reconcile'].includes(verb ?? '')) {
+  if (
+    ['harness', 'a2a'].includes(group ?? '') &&
+    ['list', 'inspect', 'reconcile'].includes(verb ?? '')
+  ) {
     if (verb === 'list') {
       console.log(JSON.stringify(await call(socket, '/v1/harnesses'), null, 2));
       return;
@@ -1309,7 +1459,9 @@ async function main(): Promise<void> {
     const opaque = args.includes('--effect-opaque');
     const codingRoot = option('--coding-root'),
       codingSocket = option('--coding-socket'),
-      harnessConfig = option('--harness-config');
+      harnessConfig = option('--harness-config'),
+      a2aConfig = option('--a2a-config'),
+      a2aListenConfig = option('--a2a-listen-config');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
@@ -1317,6 +1469,8 @@ async function main(): Promise<void> {
         codingRoot: codingRoot ? resolve(codingRoot) : undefined,
         codingSocket: codingSocket ? resolve(codingSocket) : undefined,
         harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
+        a2aConfig: a2aConfig ? resolve(a2aConfig) : undefined,
+        a2aListenConfig: a2aListenConfig ? resolve(a2aListenConfig) : undefined,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1374,6 +1528,8 @@ async function main(): Promise<void> {
         ...(codingRoot ? ['--coding-root', resolve(codingRoot)] : []),
         ...(codingSocket ? ['--coding-socket', resolve(codingSocket)] : []),
         ...(harnessConfig ? ['--harness-config', resolve(harnessConfig)] : []),
+        ...(a2aConfig ? ['--a2a-config', resolve(a2aConfig)] : []),
+        ...(a2aListenConfig ? ['--a2a-listen-config', resolve(a2aListenConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

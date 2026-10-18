@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "protocol": {
+    "specification": "1.0.0",
+    "wire": "1.0",
+    "sdk": "1.0.1"
+  },
+  "openclaw": {
+    "version": "2026.10.5",
+    "commit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+    "npm_integrity": "sha512-9rCuXMweqVKZIK3KBtGcLzesz9G6+FmQ30lvwomRhmcNWDcOtlBoqdLbPditoJMuTP55jPqXpt1AA0L8tSzFHg==",
+    "sources": [
+      {
+        "path": "extensions/a2a/src/accounts.ts",
+        "git_blob": "d2be2ad1902409bf60bc39765b829948581cbc8b"
+      },
+      {
+        "path": "extensions/a2a/src/channel-base.ts",
+        "git_blob": "5473330aa299d27da53f92b1a070701256b68a1c"
+      },
+      {
+        "path": "extensions/a2a/src/channel.setup.ts",
+        "git_blob": "6f85d58cabf69ffa78e3b883ebc62079bc5307cd"
+      },
+      {
+        "path": "extensions/a2a/src/channel.ts",
+        "git_blob": "e71ce6bc0e51b8b16c7d49656a2ba3cdc4ea5bc3"
+      },
+      {
+        "path": "extensions/a2a/src/config-schema.ts",
+        "git_blob": "a262b242c5a9f8244e09f64a5cc345f543d4894b"
+      },
+      {
+        "path": "extensions/a2a/src/gateway.ts",
+        "git_blob": "5581ed74d7d4dc1bea139690140a2d35532b525c"
+      },
+      {
+        "path": "extensions/a2a/src/http.ts",
+        "git_blob": "ad884f00a27f18f522a3dab5a2c65361ea4ff79e"
+      },
+      {
+        "path": "extensions/a2a/src/inbound.ts",
+        "git_blob": "a5931715d92aeb4ed2ad6ceb75ffd808e59204b0"
+      },
+      {
+        "path": "extensions/a2a/src/outbound.ts",
+        "git_blob": "f2f058639c67dc70661537769a5d5e9d8968ab67"
+      },
+      {
+        "path": "extensions/a2a/src/protocol.ts",
+        "git_blob": "8363ed8d71abe832bb9ae53064380d09f504a4aa"
+      },
+      {
+        "path": "extensions/a2a/src/runtime.ts",
+        "git_blob": "39ade026cc50d0a29bd4b2bb4df55396f6d148b8"
+      },
+      {
+        "path": "extensions/a2a/src/status-issues.ts",
+        "git_blob": "749ef7a90acd9fcd76822bab653a491daa18cab2"
+      },
+      {
+        "path": "extensions/a2a/src/status.ts",
+        "git_blob": "5cda1b75269ee6bd6a33637be330f2b38db43443"
+      },
+      {
+        "path": "extensions/a2a/src/task-store.ts",
+        "git_blob": "3e145979861942213be1b2276b5624182ea80812"
+      },
+      {
+        "path": "extensions/a2a/src/types.ts",
+        "git_blob": "731662803be450c57f0c9c25286621225e423654"
+      }
+    ]
+  },
+  "hermes": {
+    "version": "0.22.2",
+    "commit": "d923a5eb487a17c0a68801bba9ef0f56c81040a8",
+    "archive": "https://api.github.com/repos/NousResearch/hermes-agent/tarball/d923a5eb487a17c0a68801bba9ef0f56c81040a8",
+    "archive_sha256": "5edfd880860fd908336565c9aef337a9ba6557a1d5d28aa983ed33a2febf8768"
+  }
+}

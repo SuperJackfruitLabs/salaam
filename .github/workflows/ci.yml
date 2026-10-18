@@ -113,6 +113,37 @@ jobs:
             .state/evidence/m15
             .state/evidence/m16
           retention-days: 14
+  a2a-peer-interop:
+    name: Pinned A2A peer interoperability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14.5'
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Prepare integrity-pinned peer runtimes outside model turns
+        run: node scripts/prepare-a2a-peers.mjs .state/a2a-peer-runtimes "$(command -v python)" > .state/a2a-peer-preparation.json
+      - name: Prove actual pinned peer transports and native inbound recovery
+        env:
+          SALAAM_A2A_OPENCLAW_ROOT: ${{ github.workspace }}/.state/a2a-peer-runtimes/openclaw-plugin
+          SALAAM_A2A_HERMES_ROOT: ${{ github.workspace }}/.state/a2a-peer-runtimes/hermes
+          SALAAM_A2A_HERMES_PYTHON: ${{ github.workspace }}/.state/a2a-peer-runtimes/hermes-venv/bin/python
+        run: npx vitest run --config vitest.real.config.ts test/acceptance/a2a-interop.test.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: a2a-peer-interop-linux
+          path: .state/evidence/m17/
+          if-no-files-found: error
+          retention-days: 14
   service:
     env:
       SALAAM_TUI_CAPTURE_DIR: .state/evidence/m10/screens

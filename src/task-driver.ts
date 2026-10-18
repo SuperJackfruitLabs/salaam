@@ -210,7 +210,12 @@ export class TaskDriver {
     return this.tasks.get(id);
   }
   /** Revocation is durable before any process abort, including a job cancellation. */
-  cancelInTransaction(id: string, expected: number, authorize: () => void): { id: string } {
+  cancelInTransaction(
+    id: string,
+    expected: number,
+    authorize: () => void,
+    peer?: { peer: string; tenant: string },
+  ): { id: string } {
     if (!this.store.db.isTransaction) throw new Error('Task cancellation requires a transaction');
     authorize();
     const task = this.tasks.get(id);
@@ -221,11 +226,17 @@ export class TaskDriver {
     this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
     this.children.cancelSessionInTransaction(task.session_id);
     this.store.db
-      .prepare(
-        "UPDATE durable_tasks SET state='cancelled',reason='Operator cancelled the task; inspect any uncertain effects',revision=revision+1 WHERE id=?",
-      )
-      .run(id);
-    this.store.event(task.session_id, 'work_task.cancelled', { task_id: id });
+      .prepare("UPDATE durable_tasks SET state='cancelled',reason=?,revision=revision+1 WHERE id=?")
+      .run(
+        peer
+          ? 'Authenticated peer cancelled its dedicated task; inspect any uncertain effects'
+          : 'Operator cancelled the task; inspect any uncertain effects',
+        id,
+      );
+    this.store.event(task.session_id, 'work_task.cancelled', {
+      task_id: id,
+      ...(peer ? { peer } : {}),
+    });
     return { id };
   }
   async stopCancelled(id: string): Promise<void> {

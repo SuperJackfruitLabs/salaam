@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "openclaw": "2026.10.5"
+  },
+  "name": "salaam-a2a-interop",
+  "private": true
+}

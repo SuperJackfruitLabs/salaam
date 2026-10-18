@@ -66,7 +66,12 @@ export function externalCapabilities(runtime: ExternalRuntime, tools: readonly s
     files: runtime.files && tools.includes('salaam_files'),
     commands: runtime.commands && tools.includes('salaam_command'),
     model_usage: 'unknown' as const,
-    isolation: runtime.evidence === 'fixture' ? 'simulated-whole-runtime' : 'proven-whole-runtime',
+    isolation:
+      runtime.kind === 'a2a'
+        ? 'remote-peer-no-local-tool-authority'
+        : runtime.evidence === 'fixture'
+          ? 'simulated-whole-runtime'
+          : 'proven-whole-runtime',
   };
 }
 export interface WorkerBinding {

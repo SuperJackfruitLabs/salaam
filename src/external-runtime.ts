@@ -2,6 +2,9 @@ import type { HarnessCheckpoint } from './harness-protocol.js';
 import type { HarnessTarget } from './harness-probe.js';
 import type { WorkerBinding } from './worker-boundary.js';
 import type { WorkspaceTree } from './workspaces.js';
+import type { A2ACheckpoint } from './a2a-protocol.js';
+
+export type ExternalCheckpoint = HarnessCheckpoint | A2ACheckpoint;
 
 /** Operator configuration only. Project profiles cannot select executables, endpoints or credentials. */
 export interface ExternalRuntime {
@@ -25,7 +28,7 @@ export interface ExternalRuntime {
 export interface ExternalHooks {
   failed(error: Error): void;
   modelRequest(id: string, bytes: number, output: number): void;
-  checkpoint(value: HarnessCheckpoint): undefined;
+  checkpoint(value: ExternalCheckpoint): undefined;
   receipt(value: unknown): undefined;
   permission(method: string, params: Record<string, unknown>): Promise<'approve' | 'deny'>;
   toolResult(id: string, success: boolean, receipt: unknown): void;
@@ -33,6 +36,7 @@ export interface ExternalHooks {
 }
 export interface ExternalBackend {
   prepare?(): Promise<void>;
+  close?(): Promise<void>;
   runtimes(): ExternalRuntime[];
   validate(runtime: ExternalRuntime): void;
   assertAuthority?(runtime: ExternalRuntime, tools: readonly string[]): void;
@@ -46,5 +50,5 @@ export interface ExternalBackend {
   /** Read only after stop has confirmed all owned processes are gone. */
   collect(run: string, runtime: ExternalRuntime): WorkspaceTree;
   /** Must reconcile owned resources by durable run ID even if creation's reply was lost. */
-  stop(run: string, runtime: ExternalRuntime, receipt: unknown): Promise<void>;
+  stop(run: string, runtime: ExternalRuntime, receipt: unknown): Promise<unknown>;
 }

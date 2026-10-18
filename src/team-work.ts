@@ -145,10 +145,16 @@ export class TeamWork {
     continuation: string | null,
     controller: Controller | null,
     grantId?: string,
+    peerAdmission?: {
+      scope: string;
+      digest: string;
+      authorize: () => void;
+      committed: (child: ChildTask) => void;
+    },
   ): TeamAssignment {
     let launch: ChildTask | undefined;
     const result = this.store.request(
-      'local-operator',
+      peerAdmission?.scope ?? 'local-operator',
       request,
       {
         kind: 'team-run',
@@ -158,11 +164,13 @@ export class TeamWork {
         instruction,
         continuation,
         ...(grantId ? { grantId } : {}),
+        ...(peerAdmission ? { peer_admission: peerAdmission.digest } : {}),
       },
       () => {
         const row = this.get(id),
           task = this.tasks.get(row.task_id);
-        if (controller) this.store.authorizeControl(task.session_id, controller);
+        if (peerAdmission) peerAdmission.authorize();
+        else if (controller) this.store.authorizeControl(task.session_id, controller);
         else this.tasks.authorizeGrant(task, row.step_id, grantId);
         this.expect(task.id, expected);
         if (
@@ -292,6 +300,7 @@ export class TeamWork {
           child_id: child.id,
           attempt_id: child.child_attempt,
         });
+        peerAdmission?.committed(child);
         launch = child;
         return this.get(id);
       },
@@ -395,6 +404,28 @@ export class TeamWork {
           ? {
               state: this.children.external!.row(a.child_id).state,
               stopped: this.children.external!.stopped(a.child_id),
+              stop_scope:
+                this.children.external!.assignment(a.id)?.kind === 'a2a'
+                  ? (() => {
+                      const receipt = this.children.external!.row(a.child_id).receipt;
+                      return receipt
+                        ? (JSON.parse(receipt).scope ?? 'remote-terminal-receipt')
+                        : 'remote-terminal-receipt';
+                    })()
+                  : 'owned-processes',
+              peer: (() => {
+                const row = this.children.external!.row(a.child_id);
+                const cp = row.checkpoint ? JSON.parse(row.checkpoint) : null;
+                return cp?.dialect === 'a2a'
+                  ? {
+                      peer_id: cp.peer_id,
+                      task_id: cp.task_id,
+                      context_id: cp.context_id,
+                      cancel_state: cp.cancel_state ?? null,
+                      remote_state: cp.result?.status?.state ?? null,
+                    }
+                  : null;
+              })(),
             }
           : null,
     }));

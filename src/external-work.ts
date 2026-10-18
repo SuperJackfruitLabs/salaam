@@ -5,9 +5,8 @@ import type { ChildWork } from './children.js';
 import type { TaskBudget } from './task-budget.js';
 import type { WorkTask } from './task-work.js';
 import type { ManagedWork } from './managed.js';
-import type { ExternalBackend, ExternalRuntime } from './external-runtime.js';
+import type { ExternalBackend, ExternalRuntime, ExternalCheckpoint } from './external-runtime.js';
 import { externalCapabilities, type WorkerBinding } from './worker-boundary.js';
-import type { HarnessCheckpoint } from './harness-protocol.js';
 import { readTree, validateTree, type Workspaces, type WorkspaceTree } from './workspaces.js';
 import { canonical, digest, ServiceError, type ChildTask } from './protocol.js';
 import { POLICY_DIGEST } from './config.js';
@@ -218,7 +217,7 @@ export class ExternalWork {
       throw new ServiceError('invocation_inactive', 'External invocation is inactive');
     const row = this.row(child.id);
     const worker = this.store.workerBoundary.view(child.id);
-    const cp = row.checkpoint ? (JSON.parse(row.checkpoint) as HarnessCheckpoint) : null;
+    const cp = row.checkpoint ? (JSON.parse(row.checkpoint) as ExternalCheckpoint) : null;
     if (
       row.epoch !== epoch ||
       this.store.session(session).epoch !== epoch ||
@@ -278,7 +277,7 @@ export class ExternalWork {
               this.assertActive(child.child_session, 1, child.child_attempt);
               const current = this.row(child.id);
               const checkpoint = current.checkpoint
-                ? (JSON.parse(current.checkpoint) as HarnessCheckpoint)
+                ? (JSON.parse(current.checkpoint) as ExternalCheckpoint)
                 : null;
               if (!checkpoint || !['dispatching', 'running'].includes(checkpoint.state))
                 throw new ServiceError(
@@ -326,6 +325,8 @@ export class ExternalWork {
             checkpoint: (cp) => {
               if (cp.worker_id !== b.worker_id || cp.attempt_id !== b.attempt_id)
                 throw new ServiceError('harness_identity', 'Checkpoint belongs to another worker');
+              if (cp.dialect === 'a2a' && cp.run_id !== row.run_id)
+                throw Error('Peer checkpoint belongs to another run');
               this.save(child, 'checkpoint', cp);
               return undefined;
             },
@@ -379,27 +380,21 @@ export class ExternalWork {
         failure = error;
       }
       try {
-        await this.backend!.stop(
-          String(row.run_id),
-          b.external!,
-          this.row(child.id).receipt ? JSON.parse(this.row(child.id).receipt) : null,
-        );
-        this.store.transaction(() => {
-          this.store.db
-            .prepare('UPDATE external_runs SET stopped=1 WHERE child_id=?')
-            .run(child.id);
-          this.store.event(child.parent_session, 'external.stop_confirmed', {
-            child_id: child.id,
-            run_id: row.run_id,
-          });
-        });
+        let receipt: unknown = null;
+        try {
+          receipt = this.cleanupReceipt(child, b.external!);
+        } catch (error) {
+          failure ??= error;
+        }
+        const stopped = await this.backend!.stop(String(row.run_id), b.external!, receipt);
+        this.recordStop(child, String(row.run_id), b.external!, stopped);
       } catch (error) {
         failure = error;
       }
       try {
         if (this.failed.has(child.id)) failure ??= Error('Required external worker control failed');
         if (!failure && !this.store.cancelled(child.child_attempt)) {
-          const cp = JSON.parse(String(this.row(child.id).checkpoint)) as HarnessCheckpoint;
+          const cp = JSON.parse(String(this.row(child.id).checkpoint)) as ExternalCheckpoint;
           if (!this.stopped(child.id) || cp.state !== 'terminal')
             throw Error('No confirmed terminal invocation');
           const after = this.backend!.collect(String(row.run_id), b.external!);
@@ -485,7 +480,7 @@ export class ExternalWork {
     this.store.transaction(() => {
       if (
         field === 'checkpoint' &&
-        ['dispatching', 'running'].includes((value as HarnessCheckpoint).state)
+        ['dispatching', 'running'].includes((value as ExternalCheckpoint).state)
       ) {
         this.store.db
           .prepare("UPDATE external_runs SET state='running' WHERE child_id=?")
@@ -517,13 +512,71 @@ export class ExternalWork {
       failure = error;
     }
     if (this.backend && runtime) {
-      await this.backend.stop(run, runtime, null);
-      this.store.transaction(() => {
-        this.store.db.prepare('UPDATE external_runs SET stopped=1 WHERE child_id=?').run(child.id);
-        this.store.event(child.parent_session, 'external.stop_confirmed', { child_id: child.id });
-      });
+      let receipt: unknown = null;
+      try {
+        receipt = this.cleanupReceipt(child, runtime);
+      } catch (error) {
+        failure ??= error;
+      }
+      const stopped = await this.backend.stop(run, runtime, receipt);
+      this.recordStop(child, run, runtime, stopped);
     }
     if (failure) throw failure;
+  }
+  private cleanupReceipt(child: ChildTask, runtime: ExternalRuntime): unknown {
+    const row = this.row(child.id);
+    if (runtime.kind === 'a2a' && row.checkpoint) {
+      const cp = JSON.parse(row.checkpoint),
+        b = this.store.workerBoundary.view(child.id).binding;
+      if (
+        cp.dialect !== 'a2a' ||
+        cp.worker_id !== b.worker_id ||
+        cp.attempt_id !== child.child_attempt ||
+        cp.run_id !== row.run_id
+      )
+        throw Error('Peer cleanup identity changed');
+      return cp;
+    }
+    return row.receipt ? JSON.parse(row.receipt) : null;
+  }
+  private recordStop(
+    child: ChildTask,
+    run: string,
+    runtime: ExternalRuntime,
+    evidence: unknown,
+  ): void {
+    const bytes = evidence === undefined ? null : canonical(evidence);
+    if (bytes && bytes.length > 1048576) throw Error('Stop receipt exceeds bound');
+    const cp =
+      runtime.kind === 'a2a'
+        ? (evidence as { checkpoint?: import('./a2a-protocol.js').A2ACheckpoint } | undefined)
+            ?.checkpoint
+        : undefined;
+    if (cp) {
+      const b = this.store.workerBoundary.view(child.id).binding;
+      if (
+        cp.worker_id !== b.worker_id ||
+        cp.attempt_id !== child.child_attempt ||
+        cp.run_id !== run
+      )
+        throw Error('Stop receipt belongs to another worker');
+    }
+    this.store.transaction(() => {
+      this.store.db
+        .prepare(
+          'UPDATE external_runs SET stopped=1,receipt=coalesce(?,receipt),checkpoint=coalesce(?,checkpoint) WHERE child_id=? AND run_id=?',
+        )
+        .run(bytes, cp ? canonical(cp) : null, child.id, run);
+      this.store.event(child.parent_session, 'external.stop_confirmed', {
+        child_id: child.id,
+        run_id: run,
+        scope:
+          runtime.kind === 'a2a'
+            ? ((evidence as { scope?: string } | undefined)?.scope ?? 'remote-terminal-receipt')
+            : 'owned-processes',
+        evidence_digest: bytes ? digest(evidence) : null,
+      });
+    });
   }
   async recover(): Promise<void> {
     for (const r of this.store.db.prepare('SELECT * FROM external_runs WHERE stopped=0').all()) {
@@ -605,5 +658,6 @@ export class ExternalWork {
       } catch {}
     }
     await Promise.allSettled(this.active.values());
+    await this.backend?.close?.();
   }
 }

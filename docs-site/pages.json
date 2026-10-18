@@ -8,6 +8,7 @@
   "durable-tasks",
   "agents",
   "external-harnesses",
+  "a2a",
   "jobs",
   "clients",
   "service-reference",

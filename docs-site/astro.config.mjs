@@ -32,6 +32,7 @@ export default defineConfig({
             { label: 'Durable tasks', slug: 'durable-tasks' },
             { label: 'Specialists and teams', slug: 'agents' },
             { label: 'External harnesses', slug: 'external-harnesses' },
+            { label: 'A2A peers', slug: 'a2a' },
             { label: 'Jobs and schedules', slug: 'jobs' },
             { label: 'Editors and SSH', slug: 'clients' },
             { label: 'Session operations', slug: 'service-reference' },

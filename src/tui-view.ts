@@ -602,7 +602,17 @@ export class DocumentView implements Component {
               step_state: string;
               stale: boolean;
               runtime?: { id: string; provider_route?: { provider: string; model: string } } | null;
-              execution?: { state: string; stopped: boolean } | null;
+              execution?: {
+                state: string;
+                stopped: boolean;
+                stop_scope?: string;
+                peer?: {
+                  peer_id: string;
+                  task_id: string | null;
+                  cancel_state: string | null;
+                  remote_state: string | null;
+                } | null;
+              } | null;
             }[];
             messages: {
               id: string;
@@ -626,6 +636,22 @@ export class DocumentView implements Component {
             lines.push(
               ...this.text(a.runtime.id + ' · invocation budget · model usage unknown', width),
             );
+          if (a.execution?.peer)
+            lines.push(
+              ...this.text(
+                'Peer ' +
+                  a.execution.peer.peer_id +
+                  ' · task ' +
+                  (a.execution.peer.task_id ?? 'acceptance unknown'),
+                width,
+              ),
+              ...this.text(
+                (a.execution.peer.remote_state ?? 'remote state unknown') +
+                  ' · ' +
+                  (a.execution.peer.cancel_state ?? 'no cancel requested'),
+                width,
+              ),
+            );
           if (a.runtime?.provider_route)
             lines.push(
               ...this.text(
@@ -641,7 +667,15 @@ export class DocumentView implements Component {
               ...this.text(
                 a.execution.state +
                   ' · ' +
-                  (a.execution.stopped ? 'stop confirmed' : 'stop unconfirmed'),
+                  (a.execution.stop_scope === 'never-dispatched'
+                    ? 'not dispatched'
+                    : a.execution.stop_scope === 'remote-terminal-receipt'
+                      ? a.execution.stopped
+                        ? 'remote terminal receipt'
+                        : 'remote stop unconfirmed'
+                      : a.execution.stopped
+                        ? 'stop confirmed'
+                        : 'stop unconfirmed'),
                 width,
               ),
             );

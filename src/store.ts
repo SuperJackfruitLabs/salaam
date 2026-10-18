@@ -62,7 +62,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 16) {
+    if (version > 17) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -243,6 +243,12 @@ export class Store {
           CREATE TABLE task_invocations(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),task_id TEXT NOT NULL REFERENCES durable_tasks(id),runtime_id TEXT NOT NULL,input_digest TEXT NOT NULL,created_at INTEGER NOT NULL);
           CREATE TABLE external_model_requests(id TEXT PRIMARY KEY,child_id TEXT NOT NULL REFERENCES external_runs(child_id),input_bytes INTEGER NOT NULL,output_bound INTEGER NOT NULL);
           PRAGMA user_version=16; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 17
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE a2a_inbound(id TEXT PRIMARY KEY,peer TEXT NOT NULL,tenant TEXT NOT NULL,message_id TEXT NOT NULL,input_digest TEXT NOT NULL,assignment_id TEXT NOT NULL UNIQUE REFERENCES team_assignments(id),grant_digest TEXT NOT NULL,context_id TEXT NOT NULL UNIQUE,child_id TEXT NOT NULL UNIQUE REFERENCES child_tasks(id),created_at INTEGER NOT NULL,skill TEXT NOT NULL,cancel_requested INTEGER NOT NULL DEFAULT 0,UNIQUE(peer,tenant,message_id));
+          PRAGMA user_version=17; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

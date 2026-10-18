@@ -1,4 +1,15 @@
 const commands: Record<string, string> = {
+  a2a: `salaam a2a credential PEER_ID --file NEW_OWNER_ONLY_FILE
+salaam a2a discover --peer ID --endpoint URL --card-url URL --credential-file FILE --addresses IP[,IP] [--local]
+salaam a2a pin --peer ID --endpoint URL --card-url URL --card-file REVIEWED_JSON --credential-file FILE --addresses IP[,IP] --skill SKILL [--tenant TENANT --files PATH[,PATH] --local]
+salaam a2a peers
+salaam a2a grant --assignment ID --peer ID --credential-file OWNER_ONLY_JSON [--tenant TENANT --skill SKILL] [--peer-client openclaw-2026.10.5]
+salaam a2a inspect CHILD_ID
+salaam a2a reconcile CHILD_ID --run-id EXACT_RUN_ID
+
+Use --a2a-config FILE for outbound peers and --a2a-listen-config FILE for private
+inbound one-use analysis grants. Peer credentials grant no human/operator powers.
+Remote internal model usage and execution remain unobserved.`,
   harness: `salaam harness probe --pin FILE
 salaam harness prepare --runtime-root NEW_DIR --arch linux-arm64|linux-x64
 salaam harness config --target TARGET --runtime-root PREPARED_DIR [--id ID]
@@ -188,7 +199,8 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--model MODEL] [--max-output-tokens N] [--workspace-id ID]
                      [--effect-socket PATH] [--effect-opaque]
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
-                     [--harness-config OWNER_ONLY_FILE]
+                     [--harness-config OWNER_ONLY_FILE] [--a2a-config OWNER_ONLY_FILE]
+                     [--a2a-listen-config OWNER_ONLY_FILE]
 salaam service status
 salaam service stop
 
@@ -275,7 +287,8 @@ Commands:
   agents        Inspect and admit specialist profiles
   team          Assign task steps and inspect the durable team inbox
   workers       Inspect and explicitly integrate isolated coding proposals
-  harness       Probe pinned external-harness negotiation without credentials
+  harness       Prepare, inspect and reconcile pinned external workers
+  a2a           Configure bounded peer analysis and inspect remote work
   commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}
@@ -321,6 +334,21 @@ const valueOptions = new Set([
   '--coding-root',
   '--coding-socket',
   '--harness-config',
+  '--a2a-config',
+  '--a2a-listen-config',
+  '--assignment',
+  '--peer',
+  '--peer-client',
+  '--file',
+  '--endpoint',
+  '--card-url',
+  '--card-file',
+  '--addresses',
+  '--files',
+  '--retention',
+  '--credential-file',
+  '--tenant',
+  '--skill',
   '--runtime-root',
   '--arch',
   '--target',
