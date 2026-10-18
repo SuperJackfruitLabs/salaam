@@ -84,7 +84,9 @@ continue work. Stored, delivered and acknowledged are separate states. Use an
 explicit run or follow-up to authorize another worker turn. The TUI Context view
 shows the team board and inbox status from the same durable records.
 
-All team workers share the task's request, token, runtime and concurrency limits.
+Native team workers share the task's model-request and token limits. All workers
+share its runtime and concurrency limits. [External harness workers](external-harnesses.md)
+require a separate explicit invocation allowance and report unknown internal model usage.
 Cancelling the task revokes active worker authority before attempting process stop.
 A worker's final answer cannot declare a failed check successful or complete an
 unrelated task.

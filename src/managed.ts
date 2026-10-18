@@ -139,7 +139,7 @@ export class ManagedWork {
     epoch: number,
     attempt: string,
     call: string,
-    kind: 'review' | 'effect',
+    kind: 'review' | 'effect' | 'harness',
     target: string,
     value: string,
   ): Promise<{ operation: Operation; approval: Approval }> {
@@ -167,7 +167,11 @@ export class ManagedWork {
     if (kind === 'effect' && !connector)
       throw new ServiceError('effect_disabled', 'No external effect connector is configured');
     const version =
-      kind === 'review' ? 'read-only' : await connector!.version(target, AbortSignal.timeout(2500));
+      kind === 'harness'
+        ? 'owned-once-only'
+        : kind === 'review'
+          ? 'read-only'
+          : await connector!.version(target, AbortSignal.timeout(2500));
     return this.store.transaction(() => {
       this.options.assertActive(session, epoch, attempt);
       const existing = this.store.db
@@ -204,8 +208,13 @@ export class ManagedWork {
         value,
         target_version: version,
         policy_digest: POLICY_DIGEST,
-        connector: kind === 'review' ? 'local-review-v1' : connector!.id,
-        replay: kind === 'review' ? 'read-only' : connector!.replay,
+        connector:
+          kind === 'harness'
+            ? 'external-harness-once-v1'
+            : kind === 'review'
+              ? 'local-review-v1'
+              : connector!.id,
+        replay: kind === 'harness' ? 'opaque' : kind === 'review' ? 'read-only' : connector!.replay,
         revision: 1,
         state: 'prepared',
         receipt: null,
@@ -389,6 +398,11 @@ export class ManagedWork {
   }
   start(id: string, session: string, epoch: number, attempt: string): Operation {
     const op = this.operation(id);
+    if (op.kind === 'harness')
+      throw new ServiceError(
+        'operation_scope',
+        'A harness permission can only be consumed by its owned runtime',
+      );
     if (op.session_id !== session || op.worker_epoch !== epoch || op.attempt_id !== attempt)
       throw new ServiceError('operation_scope', 'Operation belongs to another invocation', 403);
     if (op.state !== 'prepared' || this.active.has(id)) return op;
@@ -409,6 +423,31 @@ export class ManagedWork {
       target_version: op.target_version,
       argument_digest: op.argument_digest,
     };
+  }
+  /** Commit a one-time grant handoff before replying to the owned runtime. This is not a tool receipt. */
+  takePermission(id: string): boolean {
+    return this.store.transaction(() => {
+      const op = this.operation(id);
+      if (op.kind !== 'harness' || op.state !== 'prepared') return false;
+      this.fresh(op);
+      const approval = this.forOperation(id);
+      if (approval.state !== 'decided' || approval.decision !== 'approve') return false;
+      this.transition(op, 'dispatching');
+      return true;
+    });
+  }
+  permissionResult(id: string, success: boolean, receipt: unknown): void {
+    const op = this.operation(id);
+    if (op.kind !== 'harness' || op.state !== 'dispatching') return;
+    this.store.transaction(() =>
+      this.transition(
+        op,
+        success ? 'succeeded' : 'outcome_unknown',
+        success ? null : 'Harness tool failed after permission delivery; inspect actual effects',
+        JSON.stringify(receipt),
+        'owned-harness-tool-return',
+      ),
+    );
   }
   private async dispatch(id: string, signal: AbortSignal): Promise<void> {
     try {

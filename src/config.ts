@@ -20,7 +20,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 12,
+  version: 13,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -47,6 +47,7 @@ export const POLICY = {
     daemon_workers: 8,
     messages: 'passive-durable-explicit-ack-v1',
     writing: 'owned-draft-explicit-hash-bound-integration-v1',
+    external: 'operator-pinned-whole-runtime-explicit-invocation-v1',
   },
   providers: [
     'salaam-proof/scripted',

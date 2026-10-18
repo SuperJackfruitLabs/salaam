@@ -1,7 +1,7 @@
 # External harness boundary and negotiation
 
 This is contributor evidence for the M16 development slices. External worker
-assignment, permission delivery and recovery are still being implemented. A
+assignment, permission delivery and recovery use the existing daemon task ledger. A
 successful probe does not admit a harness to a task or grant tools.
 
 ## Bounded protocol negotiation
@@ -158,8 +158,47 @@ backend and is never counted as live-model proof. Default tests exercise the wir
 translation using independent pinned Google/OpenAI SDK clients and verify that a
 scope-persistence failure prevents tool delivery after model admission.
 
-The service assignment, explicit invocation-budget policy, shared approval inbox,
-worker views and daemon recovery integration remain outstanding. External worker
-assignment is not enabled by these standalone proofs. Claude ACP still requires
-the separate approve/deny and process-reconnect portfolio beyond its earlier live
-repair and same-connection history reload.
+## Durable daemon and task integration
+
+External assignments now use the existing task, team, child, managed approval and
+workspace integration records. Schema 16 adds explicit opaque invocation charges,
+external run/checkpoint receipts and durable gateway model admissions. Native
+model-request budgets retain their original meaning. Opaque work requires an
+explicit invocation cap and disabled aggregate token budgeting; UI and CLI expose
+unknown internal model usage alongside the declared backend route.
+
+Service restart interrupts an in-flight attempt, reconciles only its owned run,
+and never resends its prompt. Unconfirmed cleanup holds its slot. Saved request
+replies survive expired controllers. Required-control or storage failure denies
+new grants and attempts cleanup through cached owned resource identities.
+Executable project settings, unrelated credentials and control files are excluded
+from admitted repository snapshots. Runtime preparation is an explicit operator
+command outside model turns, using a fixed lock, disabled install scripts and
+integrity-checked Linux Codex artifacts.
+
+Local macOS arm64 daemon/task live receipts:
+
+| Target                       | Model requests | Receipt under `.state/evidence/m16/`                                         |
+| ---------------------------- | -------------: | ---------------------------------------------------------------------------- |
+| Claude ACP 0.23.1            |              4 | `harness-service-claude-acp-74fe9cdf-8880-4498-b189-3fe6d2ec4604.json`       |
+| Codex 0.163.0                |              5 | `harness-service-codex-app-server-e9dee001-46b6-470f-b8a7-a4f007cac7d3.json` |
+| Gemini 0.64.0                |              5 | `harness-service-gemini-acp-8a908c77-3247-4096-a4c7-5358ee953f24.json`       |
+| CLI-prepared Gemini artifact |              4 | `harness-service-gemini-acp-ecddee5d-292b-4a1e-9bbb-75c32f3dd57b.json`       |
+
+Each proves actual repair, scoped permissions, confirmed stop, explicit parent
+integration, fresh parent test success, protected bytes and daemon reopen without
+a new invocation/model request. The gateway backend is Anthropic Sonnet 4.6 with
+4,096 output tokens per request; frontend Google/Responses aliases do not claim
+native Google or OpenAI authentication support.
+
+Claude's separate deny/approve and fresh-process same-session reload also passed
+with six requests: `claude-acp-fef830fb-1235-42aa-b67c-7c061d66d79b.json`.
+Workspace hash, API count and actual command counter stayed unchanged on reload.
+Unknown ACP acceptance remains unrecoverable without explicit continuation.
+
+The full local suite passed 2,117 tests before final packaging/configuration
+checks. Fixture proofs cover restart, cancellation, warm-up model rejection,
+changed runtime, lost cleanup, storage failure and a real PTY team board. These
+are local revision-bound observations; M17 federation, M18 mixed workflows and
+independent final Linux/package evidence remain separate gates. All failed live
+requests remain charged: the shared allowance stands at 115 of 200 requests.

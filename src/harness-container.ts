@@ -521,4 +521,23 @@ export class DockerHarnessBoundary {
     this.active.get(receipt.run_id)?.kill('SIGKILL');
     this.active.delete(receipt.run_id);
   }
+  /** Lost create replies are reconciled by deterministic names and exact owner/profile labels. */
+  async cleanupRun(run: string): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/.test(run)) throw Error('Invalid owned harness run');
+    const info = engineJson(await this.engine('GET', '/info'));
+    if (info.ID !== this.engineId)
+      throw new ServiceError('harness_engine_changed', 'Cannot reconcile on a changed engine');
+    for (const kind of ['worker', 'gateway'] as const) {
+      const name = 'salaam-harness-' + run + '-' + kind;
+      const found = await this.engine('GET', '/containers/' + name + '/json');
+      if (found.status === 404) continue;
+      const data = engineJson(found);
+      await this.owned(String(data.Id), run, kind);
+      const removed = await this.engine('DELETE', '/containers/' + data.Id + '?force=true');
+      if (![204, 404].includes(removed.status))
+        throw Error('Owned harness reconciliation remains uncertain');
+    }
+    this.active.get(run)?.kill('SIGKILL');
+    this.active.delete(run);
+  }
 }

@@ -39,19 +39,22 @@ export class TaskBudget {
     return child ? this.tasks.forSession(child.parent_session) : null;
   }
   state(id: string): Record<string, any> {
-    return this.store.db.prepare('SELECT * FROM task_runtime WHERE task_id=?').get(id) as Record<
-      string,
-      any
-    >;
+    const runtime = this.store.db.prepare('SELECT * FROM task_runtime WHERE task_id=?').get(id)!;
+    const n = Number(
+      this.store.db.prepare('SELECT count(*) AS n FROM task_invocations WHERE task_id=?').get(id)!
+        .n,
+    );
+    return { ...runtime, invocations_spent: n, external_model_usage: n ? 'unknown' : 'none' };
   }
   active(task: WorkTask): number {
     const row = this.store.db
       .prepare(
         `WITH tree(id) AS (SELECT ? UNION ALL SELECT child_session FROM child_tasks WHERE parent_session=?) SELECT
       (SELECT count(*) FROM attempts WHERE session_id IN (SELECT id FROM tree) AND state IN ('accepted','dispatching','running')) +
-      (SELECT count(*) FROM command_runs WHERE session_id IN (SELECT id FROM tree) AND state NOT IN ('succeeded','failed','cancelled','timed_out','output_limited','interrupted')) AS n`,
+      (SELECT count(*) FROM command_runs WHERE session_id IN (SELECT id FROM tree) AND state NOT IN ('succeeded','failed','cancelled','timed_out','output_limited','interrupted')) +
+      (SELECT count(*) FROM external_runs e JOIN child_tasks c ON c.id=e.child_id JOIN attempts a ON a.id=c.child_attempt WHERE c.parent_session=? AND e.stopped=0 AND a.state NOT IN ('accepted','dispatching','running')) AS n`,
       )
-      .get(task.session_id, task.session_id)!;
+      .get(task.session_id, task.session_id, task.session_id)!;
     return Number(row.n);
   }
   private deny(session: string, message: string): never {

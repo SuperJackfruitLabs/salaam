@@ -94,15 +94,16 @@ by OS permissions. See [providers and credentials](docs/providers.md).
 
 ## What stays with the work
 
-| Capability                               | What it means                                                                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [Sessions](docs/service-reference.md)    | Durable dispatch, client outboxes, controller leases and committed event replay.                                             |
-| [Coding](docs/coding.md)                 | Owned workspace copies, hash-bound patches and isolated commands through a proven Docker backend.                            |
-| [Tasks](docs/durable-tasks.md)           | Stable steps, checked plans, budgets, checkpoints and opt-in bounded progression. Model text cannot complete a checked task. |
-| [Specialists and teams](docs/agents.md)  | Admitted profiles, isolated coding proposals, explicit integration, durable task-step claims and passive messages.           |
-| [Jobs and schedules](docs/jobs.md)       | Occurrence deduplication, immutable recurring templates and explicit missed-run and timezone/DST policies.                   |
-| [Host operation](docs/host-operation.md) | Reviewed runtime/backend manifests, bounded supervisor restart and a shared CLI/TUI/ACP inbox.                               |
-| [Clients](docs/clients.md)               | Terminal attachment, SSH and ACP v1 against the same service.                                                                |
+| Capability                                       | What it means                                                                                                                |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Sessions](docs/service-reference.md)            | Durable dispatch, client outboxes, controller leases and committed event replay.                                             |
+| [Coding](docs/coding.md)                         | Owned workspace copies, hash-bound patches and isolated commands through a proven Docker backend.                            |
+| [Tasks](docs/durable-tasks.md)                   | Stable steps, checked plans, budgets, checkpoints and opt-in bounded progression. Model text cannot complete a checked task. |
+| [Specialists and teams](docs/agents.md)          | Admitted profiles, isolated coding proposals, explicit integration, durable task-step claims and passive messages.           |
+| [External harnesses](docs/external-harnesses.md) | Pinned Gemini, Claude ACP and Codex workers with explicit invocation limits and shared approvals.                            |
+| [Jobs and schedules](docs/jobs.md)               | Occurrence deduplication, immutable recurring templates and explicit missed-run and timezone/DST policies.                   |
+| [Host operation](docs/host-operation.md)         | Reviewed runtime/backend manifests, bounded supervisor restart and a shared CLI/TUI/ACP inbox.                               |
+| [Clients](docs/clients.md)                       | Terminal attachment, SSH and ACP v1 against the same service.                                                                |
 
 ## Read this before trusting it
 

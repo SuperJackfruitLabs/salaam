@@ -601,6 +601,8 @@ export class DocumentView implements Component {
               generation: number;
               step_state: string;
               stale: boolean;
+              runtime?: { id: string; provider_route?: { provider: string; model: string } } | null;
+              execution?: { state: string; stopped: boolean } | null;
             }[];
             messages: {
               id: string;
@@ -613,13 +615,37 @@ export class DocumentView implements Component {
         | undefined;
       if (team?.assignments.length) {
         lines.push(...this.title('TEAM BOARD', width));
-        for (const a of team.assignments)
+        for (const a of team.assignments) {
           lines.push(
             ...this.text(
               `${shortId(a.id)} · ${a.profile_id} · claim ${a.generation} · ${a.step_state}${a.stale ? ' · stale plan' : ''}`,
               width,
             ),
           );
+          if (a.runtime)
+            lines.push(
+              ...this.text(a.runtime.id + ' · invocation budget · model usage unknown', width),
+            );
+          if (a.runtime?.provider_route)
+            lines.push(
+              ...this.text(
+                'Backend ' +
+                  a.runtime.provider_route.provider +
+                  '/' +
+                  a.runtime.provider_route.model,
+                width,
+              ),
+            );
+          if (a.execution)
+            lines.push(
+              ...this.text(
+                a.execution.state +
+                  ' · ' +
+                  (a.execution.stopped ? 'stop confirmed' : 'stop unconfirmed'),
+                width,
+              ),
+            );
+        }
         lines.push(
           ...this.text(
             'Messages are passive. Starting or continuing work requires a separate grant.',
@@ -657,7 +683,7 @@ export class DocumentView implements Component {
           ),
           ...(child.worker
             ? this.text(
-                `${child.worker.binding.profile.id} · ${child.worker.binding.runtime} · generation ${child.worker.generation} · ${child.worker.dispatch_state} · ${child.worker.binding.bounds.requests} model requests`,
+                `${child.worker.binding.profile.id} · ${child.worker.binding.runtime} · generation ${child.worker.generation} · ${child.worker.dispatch_state} · ${child.worker.binding.bounds.scope === 'model-requests' ? child.worker.binding.bounds.requests + ' model requests' : child.worker.binding.bounds.invocations + ' invocation · internal model usage unknown'}`,
                 width,
               )
             : []),

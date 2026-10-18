@@ -1,11 +1,18 @@
 const commands: Record<string, string> = {
   harness: `salaam harness probe --pin FILE
+salaam harness prepare --runtime-root NEW_DIR --arch linux-arm64|linux-x64
+salaam harness config --target TARGET --runtime-root PREPARED_DIR [--id ID]
+salaam harness list
+salaam harness inspect CHILD_ID
+salaam harness reconcile CHILD_ID --run-id RUN_ID
 
 Negotiate an operator-pinned external harness in a disposable empty home, with no
 repository, credentials or model request. FILE contains target, executable,
 executable_digest and version. Targets: gemini-acp, claude-acp, codex-app-server.
 Advertised capabilities are separate from enforced authority. A probe grants no
-file, command or worker-dispatch permission.`,
+file, command or worker-dispatch permission. A service started with an owner-only
+--harness-config FILE runs fresh Docker readiness proofs before admitting configured
+targets. Reconcile confirms stopped resources; it never resends a prompt.`,
   workers: `salaam workers proposal CHILD_ID [--offset N]
 salaam workers integrate CHILD_ID --revision N --root-digest SHA256 --patch-digest SHA256
 salaam workers integration RECEIPT_ID
@@ -16,6 +23,7 @@ Integration does not verify a task. Resolution explicitly admits a new apply onl
 Mutations accept --request-id ID and --takeover.`,
   team: `salaam team show TASK_ID
 salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --requests N --revision N
+salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --runtime RUNTIME_ID --invocations 1 --revision N
 salaam team run TASK_ID --assignment ID --generation N --revision N [--instruction TEXT --continues ATTEMPT_ID]
 salaam team send TASK_ID --to ASSIGNMENT_ID --text TEXT
 salaam team receive TASK_ID --assignment ID
@@ -23,7 +31,9 @@ salaam team ack TASK_ID --assignment ID --message MESSAGE_ID
 salaam team reject TASK_ID --assignment ID --generation N --revision N --reason TEXT
 
 Mutations accept --request-id ID and --takeover. Claims bind the plan, admitted profile and generation.
-Messages never wake workers. Use run for an explicit new claim or follow-up.`,
+Messages never wake workers. Use run for an explicit new claim or follow-up.
+External assignments require a task with explicit limits.invocations and
+token_units:null. Their internal model usage is reported as unknown.`,
   agents: `salaam agents list --session SESSION_ID
 salaam agents inspect PROFILE_ID --session SESSION_ID
 salaam agents admit PROFILE_ID --session SESSION_ID --digest REVIEWED_DIGEST [--facts ID,ID]
@@ -178,6 +188,7 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--model MODEL] [--max-output-tokens N] [--workspace-id ID]
                      [--effect-socket PATH] [--effect-opaque]
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
+                     [--harness-config OWNER_ONLY_FILE]
 salaam service status
 salaam service stop
 
@@ -309,6 +320,13 @@ const valueOptions = new Set([
   '--run-id',
   '--coding-root',
   '--coding-socket',
+  '--harness-config',
+  '--runtime-root',
+  '--arch',
+  '--target',
+  '--id',
+  '--runtime',
+  '--invocations',
   '--step-key',
   '--command',
   '--plan',

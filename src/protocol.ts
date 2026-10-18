@@ -177,7 +177,7 @@ export interface Operation {
   attempt_id: string;
   worker_epoch: number;
   tool_call_id: string;
-  kind: 'review' | 'effect';
+  kind: 'review' | 'effect' | 'harness';
   action_key: string;
   argument_digest: string;
   operation_digest: string;

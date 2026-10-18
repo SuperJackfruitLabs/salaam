@@ -11,7 +11,7 @@ export function repositoryPath(value: unknown): string {
     path
       .split('/')
       .some((part) =>
-        /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.aws|\.ssh|\.codex|\.pi|\.agents|\.state|credentials)$/i.test(
+        /^(?:\.env(?:\..*)?|\.npmrc|\.netrc|\.aws|\.ssh|\.codex|\.gemini|\.claude|\.mcp\.json|\.salaam|\.pi|\.agents|\.state|credentials)$/i.test(
           part,
         ),
       )

@@ -75,6 +75,7 @@ export class WorkerWorkspaces {
       binding = child.worker!.binding;
     if (
       !binding.isolation ||
+      (binding.external && !this.children.external?.stopped(child.id)) ||
       (complete ? child.state !== 'completed' : child.state === 'accepted') ||
       this.store.db
         .prepare("SELECT 1 FROM workers WHERE session_id=? AND state!='exited'")

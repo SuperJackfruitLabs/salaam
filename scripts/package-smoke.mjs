@@ -48,6 +48,8 @@ const wait = async (observe, accepts = Boolean) => {
 try {
   const listing = (await run('tar', '-tzf', tarball)).trim().split('\n');
   assert(listing.includes('package/npm-shrinkwrap.json'));
+  for (const name of ['package.json', 'package-lock.json', 'codex-pins.json'])
+    assert(listing.includes('package/harness-runtime/' + name));
   assert(listing.includes('package/src/host.ts'));
   assert(listing.includes('package/dist/src/house-extension.js'));
   assert(

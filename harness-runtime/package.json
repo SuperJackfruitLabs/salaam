@@ -1,0 +1,9 @@
+{
+  "name": "salaam-harness-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@google/gemini-cli": "0.64.0",
+    "@zed-industries/claude-agent-acp": "0.23.1"
+  }
+}

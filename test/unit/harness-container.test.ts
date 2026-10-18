@@ -12,6 +12,7 @@ function fixture() {
   const containers = new Map<string, any>(),
     calls: { method: string; path: string }[] = [];
   let engineId = 'engine-fixture';
+  let loseCreate = false;
   const engine: EngineRequest = async (method, path, body) => {
     calls.push({ method, path });
     let status = 200,
@@ -33,6 +34,7 @@ function fixture() {
         c = structuredClone(body) as any;
       containers.set(id, {
         Id: id,
+        Name: path.split('?name=')[1],
         Image: 'sha256:' + 'a'.repeat(64),
         Config: c,
         HostConfig: c.HostConfig,
@@ -44,10 +46,17 @@ function fixture() {
           Propagation: m.BindOptions.Propagation,
         })),
       });
+      if (loseCreate) {
+        loseCreate = false;
+        throw Error('Create reply lost after engine acceptance');
+      }
       status = 201;
       value = { Id: id };
     } else {
-      const id = path.split('/')[2]!.split('?')[0]!,
+      const lookup = path.split('/')[2]!.split('?')[0]!,
+        id = containers.has(lookup)
+          ? lookup
+          : ([...containers].find(([, c]) => c.Name === lookup)?.[0] ?? lookup),
         c = containers.get(id);
       if (!c) status = 404;
       else if (method === 'DELETE') {
@@ -70,11 +79,31 @@ function fixture() {
     setEngine(id: string) {
       engineId = id;
     },
+    loseNextCreate() {
+      loseCreate = true;
+    },
     close() {
       rmSync(dir, { recursive: true, force: true });
     },
   };
 }
+test('lost create acceptance is cleaned by deterministic name without an acceptance receipt or a second create', async () => {
+  const f = fixture(),
+    run = randomUUID();
+  try {
+    f.loseNextCreate();
+    await expect(
+      f.boundary.prepare(run, f.paths[0]!, f.paths[1]!, f.paths[2]!, ['node']),
+    ).rejects.toThrow('reply lost');
+    expect(f.containers.size).toBe(1);
+    await f.boundary.cleanupRun(run);
+    expect(f.containers.size).toBe(0);
+    await f.boundary.cleanupRun(run);
+    expect(f.calls.filter((c) => c.path.startsWith('/containers/create'))).toHaveLength(1);
+  } finally {
+    f.close();
+  }
+});
 for (const mutate of [
   'network',
   'memory',

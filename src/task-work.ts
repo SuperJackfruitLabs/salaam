@@ -392,10 +392,22 @@ export class TaskWork {
         const runtime = this.store.db
           .prepare('SELECT * FROM task_runtime WHERE task_id=?')
           .get(id)!;
+        const invocations = Number(
+          this.store.db
+            .prepare('SELECT count(*) AS n FROM task_invocations WHERE task_id=?')
+            .get(id)!.n,
+        );
+        if (plan.limits.invocations !== undefined && plan.limits.invocations < invocations)
+          throw new ServiceError(
+            'invalid_budget',
+            'Invocation limits cannot discard admitted work',
+          );
         if (
           task.limits.token_units === null &&
           plan.limits.token_units !== null &&
-          (Number(runtime.requests_spent) > 0 || Number(runtime.reserved_requests) > 0)
+          (Number(runtime.requests_spent) > 0 ||
+            Number(runtime.reserved_requests) > 0 ||
+            invocations > 0)
         )
           throw new ServiceError(
             'invalid_budget',

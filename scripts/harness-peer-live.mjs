@@ -23,12 +23,19 @@ if (!process.argv.includes('--run'))
   throw Error('Use --run for the authorized named-harness acceptance');
 const target = process.argv[process.argv.indexOf('--target') + 1];
 const offline = process.argv.includes('--offline-peer');
-if (!['gemini-acp', 'codex-app-server'].includes(target))
-  throw Error('Select gemini-acp or codex-app-server');
+if (!['gemini-acp', 'claude-acp', 'codex-app-server'].includes(target))
+  throw Error('Select gemini-acp, claude-acp or codex-app-server');
+const claude = target === 'claude-acp';
+if (claude && offline)
+  throw Error('The Claude path requires its separately authorized live rehearsal');
 const socket = process.env.SALAAM_TASK_REAL_SOCKET,
   scratch = process.env.SALAAM_TASK_REAL_SCRATCH;
 if (!socket || !scratch) throw Error('Select the proven executor');
-const runtime = JSON.parse(fs.readFileSync(join(ROOT, '.state/m16-runtime-path.json'))).root;
+const runtimeArg = process.argv.indexOf('--runtime-root');
+const runtime =
+  runtimeArg >= 0
+    ? fs.realpathSync(process.argv[runtimeArg + 1])
+    : JSON.parse(fs.readFileSync(join(ROOT, '.state/m16-runtime-path.json'))).root;
 const budget = new LiveAcceptanceBudget(join(ROOT, '.state/m13-m18-live-budget.json')),
   run = (offline ? 'offline-' : '') + target + '-' + randomUUID(),
   dir = fs.mkdtempSync(join(fs.realpathSync(scratch), 'm16-peer-live-')),
@@ -63,9 +70,21 @@ const model = 'claude-sonnet-4-6',
           'write_file',
           'run_shell_command',
         ]
-      : ['exec_command', 'write_stdin'];
+      : claude
+        ? ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']
+        : ['exec_command', 'write_stdin'];
+const claudeOptions = {
+  model,
+  settingSources: [],
+  plugins: [],
+  tools,
+  disallowedTools: ['Skill', 'Task', 'Agent', 'WebFetch', 'WebSearch', 'AskUserQuestion'],
+  maxTurns: 8,
+  maxThinkingTokens: 1024,
+};
 const repairCommand = `node -e 'require("node:fs").writeFileSync("app.js","export const answer = 42;\\n")'`,
   testCommand = 'node --test app.test.js';
+const harnessTestCommand = claude ? 'node --test /workspace/app.test.js' : testCommand;
 const report = {
   schema_version: 1,
   run_id: run,
@@ -76,8 +95,9 @@ const report = {
     .update(fs.readFileSync(new URL(import.meta.url)))
     .digest('hex'),
   ...hostDigests(),
-  scope:
-    'Named isolated harness with explicit Google/Responses wire translation to live Claude; no native Google/OpenAI account claim; service assignment integration remains separate',
+  scope: claude
+    ? 'Named isolated Claude ACP harness with native Anthropic gateway, separate deny/approve and fresh-process owned-session reload; daemon integration has a separate runner'
+    : 'Named isolated harness with explicit Google/Responses wire translation to live Claude; no native Google/OpenAI account claim; service assignment integration remains separate',
   backend: { provider: offline ? 'offline-fixture' : 'anthropic', model, output: 4096 },
   wire_model: wireModel,
   allowed_tools: tools,
@@ -144,6 +164,23 @@ async function check(key) {
   return verifier.coding.get(session.id, command.id);
 }
 function launch() {
+  if (claude)
+    return {
+      args: [
+        '/usr/local/bin/node',
+        '/runtime/node_modules/@zed-industries/claude-agent-acp/dist/index.js',
+      ],
+      env: {
+        ANTHROPIC_BASE_URL: 'http://127.0.0.1:47123',
+        ANTHROPIC_API_KEY: token,
+        ANTHROPIC_MODEL: model,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+        DISABLE_TELEMETRY: '1',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      },
+    };
   if (target === 'gemini-acp')
     return {
       args: [
@@ -283,19 +320,28 @@ async function connect(checkpoint) {
         }
       : {}),
   });
-  const bridge = new HarnessWireBridge(
-    backend,
-    { protocol: target === 'gemini-acp' ? 'google' : 'responses', model: wireModel, tools },
-    (intent) => {
-      for (const id of harnessToolIds(
-        target,
-        target === 'gemini-acp' ? '0.64.0' : '0.163.0',
-        intent,
-      ))
-        intents.set(id, intent);
-      activeCase.tool_intents.push(intent);
-    },
-  );
+  const bridge = claude
+    ? {
+        request: async (request) => {
+          const body = JSON.parse(request.body.toString());
+          if (Array.isArray(body.tools))
+            body.tools = body.tools.filter((t) => tools.includes(t.name));
+          return backend.request({ ...request, body: Buffer.from(JSON.stringify(body)) });
+        },
+      }
+    : new HarnessWireBridge(
+        backend,
+        { protocol: target === 'gemini-acp' ? 'google' : 'responses', model: wireModel, tools },
+        (intent) => {
+          for (const id of harnessToolIds(
+            target,
+            target === 'gemini-acp' ? '0.64.0' : '0.163.0',
+            intent,
+          ))
+            intents.set(id, intent);
+          activeCase.tool_intents.push(intent);
+        },
+      );
   await boundary.gateway(receipt, async (request) => {
     try {
       const response = await bridge.request(request);
@@ -307,7 +353,7 @@ async function connect(checkpoint) {
     }
   });
   protocol = new HarnessProtocol(
-    await boundary.launchHarness(receipt, target === 'gemini-acp' ? 'acp' : 'codex'),
+    await boundary.launchHarness(receipt, target === 'codex-app-server' ? 'codex' : 'acp'),
     checkpoint,
     {
       save: (cp) => {
@@ -319,10 +365,20 @@ async function connect(checkpoint) {
         const params = binding.params,
           call = params.toolCall,
           known = call ? intents.get(call.toolCallId) : intents.get(params.itemId);
-        const action = target === 'gemini-acp' ? known?.arguments : params;
+        const action = claude
+          ? call?.rawInput
+          : target === 'gemini-acp'
+            ? known?.arguments
+            : params;
         let approved = false;
         if (activeCase.kind === 'positive') {
-          if (target === 'gemini-acp')
+          if (claude)
+            approved =
+              !!action &&
+              (typeof action.command === 'string'
+                ? action.command === harnessTestCommand
+                : action.file_path === '/workspace/app.js');
+          else if (target === 'gemini-acp')
             approved =
               known?.name === 'run_shell_command'
                 ? action.command === testCommand
@@ -364,7 +420,7 @@ async function connect(checkpoint) {
       activeCase.stderr += bytes.toString().replaceAll(token, '[redacted]');
   });
   activeCase.initialization.push(await protocol.initialize(true));
-  if (target === 'gemini-acp')
+  if (target !== 'codex-app-server')
     await protocol.rpc.request(
       'authenticate',
       {
@@ -451,7 +507,7 @@ try {
     report.cases.push(activeCase);
     const cp = {
       schema_version: 1,
-      dialect: target === 'gemini-acp' ? 'acp' : 'codex',
+      dialect: target === 'codex-app-server' ? 'codex' : 'acp',
       worker_id: randomUUID(),
       attempt_id: randomUUID(),
       state: 'prepared',
@@ -467,8 +523,12 @@ try {
       .run(cp.worker_id, JSON.stringify(cp));
     await connect(cp);
     await protocol.create(
-      target === 'gemini-acp'
-        ? { cwd: '/workspace', mcpServers: [] }
+      target !== 'codex-app-server'
+        ? {
+            cwd: '/workspace',
+            mcpServers: [],
+            ...(claude ? { _meta: { claudeCode: { options: claudeOptions } } } : {}),
+          }
         : {
             cwd: '/workspace',
             model,
@@ -477,8 +537,11 @@ try {
             approvalPolicy: 'untrusted',
           },
     );
-    const instruction =
-      kind === 'negative'
+    const instruction = claude
+      ? kind === 'negative'
+        ? 'Create /workspace/denied.txt containing should-not-appear by calling Write once. Do not read files, run shell, retry or edit other files. Stop and report the outcome if permission is denied.'
+        : 'Read app.js and repair ONLY /workspace/app.js to export answer=42 using Edit or Write. Preserve package.json, app.test.js and human.txt exactly. Then run exactly node --test /workspace/app.test.js through Bash. The outer Docker boundary is proven; set dangerouslyDisableSandbox:true if the inner sandbox is unavailable. Do not change other files, delegate, install or use network. Return actual outcomes.'
+      : kind === 'negative'
         ? target === 'gemini-acp'
           ? 'Create /workspace/denied.txt with text should-not-appear using write_file exactly once. Do not read files, use shell, retry or edit other files. If permission is denied, stop and report that outcome.'
           : 'Create denied.txt with text should-not-appear by calling exec_command exactly once with sandbox_permissions=require_escalated and justification=Create requested fixture file to run node -e \'require("node:fs").writeFileSync("denied.txt","should-not-appear")\' in /workspace. If permission is declined, stop and report that outcome. Do not retry or use another command.'
@@ -526,7 +589,11 @@ try {
     assert.equal(treeDigest(), before.digest, 'Late reconnect event changed workspace bytes');
     assert.equal(counter(), before.counter, 'Late reconnect event repeated the test command');
     await connect(saved);
-    const read = await protocol.inspect({ cwd: '/workspace', mcpServers: [] });
+    const read = await protocol.inspect({
+      cwd: '/workspace',
+      mcpServers: [],
+      ...(claude ? { _meta: { claudeCode: { options: claudeOptions } } } : {}),
+    });
     assert.equal(protocol.view().session_id, before.session);
     assert.equal(report.admissions.length, before.requests, 'Reconnect made a new model request');
     assert.equal(treeDigest(), before.digest, 'Reconnect changed workspace bytes');

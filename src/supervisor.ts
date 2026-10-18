@@ -275,6 +275,12 @@ export class Supervisor extends EventEmitter {
     }
   }
   async start(id: string): Promise<void> {
+    const child = this.children?.owned(id);
+    if (child && this.store.workerBoundary.view(child.id).binding.runtime !== 'native-pi')
+      throw new ServiceError(
+        'external_worker_owned',
+        'Use the external worker lifecycle; Pi cannot claim this session',
+      );
     const route = this.routeFor(id);
     const prior = this.workers.get(id);
     if (prior && !prior.stopping)
@@ -967,6 +973,9 @@ export class Supervisor extends EventEmitter {
     }
   }
   inspect(id: string): Session {
+    const externalChild = this.children?.owned(id);
+    if (externalChild && this.store.workerBoundary.view(externalChild.id).binding.external)
+      return this.store.session(id);
     const child = this.children?.owned(id);
     const cap = child
       ? this.store.workerBoundary.view(child.id).binding.agent?.output_cap

@@ -5,8 +5,11 @@ import type { Supervisor } from './supervisor.js';
 import { digest, ServiceError, type Attempt, type ChildTask } from './protocol.js';
 import type { RepositorySnapshots } from './repository-snapshots.js';
 import type { WorkerWorkspaces } from './worker-workspaces.js';
+import type { ExternalRuntime } from './external-runtime.js';
+import type { ExternalWork } from './external-work.js';
 
 export class ChildWork {
+  external?: ExternalWork;
   workspaces?: WorkerWorkspaces;
   private paused = false;
   private starts = new Set<Promise<void>>();
@@ -51,6 +54,7 @@ export class ChildWork {
       authorize: () => void;
       defer: true;
       assignment: { id: string; generation: number };
+      runtime?: ExternalRuntime;
     },
   ): ChildTask {
     if (!Number.isSafeInteger(budget) || budget < 1 || budget > 8)
@@ -70,6 +74,7 @@ export class ChildWork {
       requested: [...new Set(requested)].sort(),
       ...(profileId ? { profile: profileId } : {}),
       ...(admission ? { assignment: admission.assignment } : {}),
+      ...(admission?.runtime ? { runtime: admission.runtime } : {}),
     });
     let fresh = false;
     if (this.store.db.isTransaction && !admission?.defer)
@@ -91,12 +96,13 @@ export class ChildWork {
         : undefined;
       if (profileId && !agent)
         throw new ServiceError('authority_denied', 'Agent profile is unavailable');
-      this.supervisor.assertSessionProviderSupported(parent, agent?.output_cap);
-      if (agent && budget > (agent.profile.max_requests ?? 8))
+      if (!admission?.runtime)
+        this.supervisor.assertSessionProviderSupported(parent, agent?.output_cap);
+      if (!admission?.runtime && agent && budget > (agent.profile.max_requests ?? 8))
         throw new ServiceError('invalid_budget', 'Budget exceeds the admitted profile limit');
       const available = [
         ...(agent?.profile.tools ?? ['salaam_probe']),
-        ...(admission ? ['salaam_team'] : []),
+        ...(admission && !admission.runtime ? ['salaam_team'] : []),
       ];
       const authority = [
         ...new Set(
@@ -104,7 +110,7 @@ export class ChildWork {
         ),
       ].sort();
       const effectivePrompt = agent
-        ? `${agent.profile.prompt ?? 'Run the diagnostic probe.'}\n\nGoal:\n${prompt}\n\nExplicitly selected facts:\n${JSON.stringify(agent.facts)}`
+        ? `${agent.profile.prompt ?? 'Run the diagnostic probe.'}${admission?.runtime ? '\n\nRuntime binding: use the admitted external harness tools for the corresponding file and command actions. Its private draft is /workspace. Return evidence for explicit root integration; this invocation cannot verify the root task.' : ''}\n\nGoal:\n${prompt}\n\nExplicitly selected facts:\n${JSON.stringify(agent.facts)}`
         : prompt;
       if (Buffer.byteLength(effectivePrompt) > 65536)
         throw new ServiceError('invalid_child', 'Specialist context exceeds 64 KiB');
@@ -116,14 +122,16 @@ export class ChildWork {
         throw new ServiceError('child_limit', 'At most two children may be active');
       if (this.activeCount() >= 8)
         throw new ServiceError('child_limit', 'Daemon worker admission limit reached');
-      this.store.usage.budget(attempt);
-      const changed = this.store.db
-        .prepare(
-          'UPDATE attempt_budgets SET reserved_requests=reserved_requests+? WHERE attempt_id=? AND spent_requests+reserved_requests+?<=limit_requests',
-        )
-        .run(budget, attempt, budget);
-      if (!changed.changes)
-        throw new ServiceError('budget_exhausted', 'Parent cannot reserve this child budget');
+      if (!admission?.runtime) {
+        this.store.usage.budget(attempt);
+        const changed = this.store.db
+          .prepare(
+            'UPDATE attempt_budgets SET reserved_requests=reserved_requests+? WHERE attempt_id=? AND spent_requests+reserved_requests+?<=limit_requests',
+          )
+          .run(budget, attempt, budget);
+        if (!changed.changes)
+          throw new ServiceError('budget_exhausted', 'Parent cannot reserve this child budget');
+      }
       const id = randomUUID(),
         session = randomUUID(),
         submission = randomUUID(),
@@ -154,8 +162,10 @@ export class ChildWork {
           JSON.stringify(authority),
           budget,
         );
-      this.store.taskChildReserve?.(parent, childAttempt, budget);
-      this.store.usage.budget(childAttempt, budget);
+      if (!admission?.runtime) {
+        this.store.taskChildReserve?.(parent, childAttempt, budget);
+        this.store.usage.budget(childAttempt, budget);
+      }
       const artifact = this.artifacts.prepare(session, effectivePrompt);
       artifact.commit();
       const repository = agent?.profile.role
@@ -165,7 +175,9 @@ export class ChildWork {
         throw new ServiceError('workspace_unavailable', 'No specialist snapshot boundary');
       const writing = authority.some((tool) => ['salaam_files', 'salaam_command'].includes(tool));
       const isolation =
-        writing && repository ? this.workspaces?.prepare(session, repository) : undefined;
+        (writing || admission?.runtime) && repository
+          ? this.workspaces?.prepare(session, repository)
+          : undefined;
       if (writing && !isolation)
         throw new ServiceError('authority_denied', 'No isolated coding boundary');
       this.store.workerBoundary.freeze(
@@ -176,7 +188,13 @@ export class ChildWork {
         repository,
         admission?.assignment,
         isolation,
+        admission?.runtime,
       );
+      if (admission?.runtime) {
+        if (!this.external)
+          throw new ServiceError('runtime_unavailable', 'External runtime is unavailable');
+        this.external.prepare(this.owned(session)!);
+      }
       this.store.event(session, 'session.created', { parent_session: parent, child_id: id });
       this.store.event(session, 'submission.accepted', {
         attempt_id: childAttempt,
@@ -207,7 +225,7 @@ export class ChildWork {
     return Number(
       this.store.db
         .prepare(
-          `SELECT count(*) AS n FROM child_tasks c WHERE (? IS NULL OR c.parent_session=?) AND (c.state='accepted' OR EXISTS(SELECT 1 FROM workers w WHERE w.session_id=c.child_session AND w.state!='exited'))`,
+          `SELECT count(*) AS n FROM child_tasks c WHERE (? IS NULL OR c.parent_session=?) AND (c.state='accepted' OR EXISTS(SELECT 1 FROM workers w WHERE w.session_id=c.child_session AND w.state!='exited') OR EXISTS(SELECT 1 FROM external_runs e WHERE e.child_id=c.id AND e.stopped=0))`,
         )
         .get(parent ?? null, parent ?? null)!.n,
     );
@@ -221,8 +239,10 @@ export class ChildWork {
     if (child) this.cancelIntents(child.parent_attempt);
   }
   private start(child: ChildTask): void {
-    const task = this.supervisor
-      .start(child.child_session)
+    const external = this.store.workerBoundary.view(child.id).binding.external;
+    const task = (
+      external ? this.external!.start(child) : this.supervisor.start(child.child_session)
+    )
       .catch((error) => {
         this.store.transaction(() => {
           const attempt = this.store.attempt(child.child_attempt);
@@ -394,7 +414,11 @@ export class ChildWork {
     await Promise.all(
       children
         .filter((child) => this.store.cancelled(child.child_attempt))
-        .map((child) => this.supervisor.cancelAttempt(child.child_attempt)),
+        .map((child) =>
+          this.store.workerBoundary.view(child.id).binding.external
+            ? this.external!.cancel(child)
+            : this.supervisor.cancelAttempt(child.child_attempt),
+        ),
     );
   }
   pause(): void {

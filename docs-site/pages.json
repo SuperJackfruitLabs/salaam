@@ -7,6 +7,7 @@
   "coding",
   "durable-tasks",
   "agents",
+  "external-harnesses",
   "jobs",
   "clients",
   "service-reference",

@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { digest } from './protocol.js';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
+import { mkdirSync, openSync, closeSync, readFileSync, realpathSync } from 'node:fs';
 import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
 import { SalaamService } from './service.js';
@@ -35,7 +35,12 @@ import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
 import { BoundaryBroker, engineRequest } from './execution-boundary.js';
 import { workspaceDiff, type WorkspaceChange } from './workspace-diff.js';
-import { probeHarness, type HarnessPin } from './harness-probe.js';
+import {
+  probeHarness,
+  HARNESS_TARGETS,
+  type HarnessPin,
+  type HarnessTarget,
+} from './harness-probe.js';
 interface WorkspaceDiffPage {
   revision: number;
   digest: string;
@@ -85,6 +90,86 @@ async function main(): Promise<void> {
     if (!path) throw new Error('Supply an operator-reviewed --pin FILE');
     const pin = JSON.parse(readFileSync(resolve(path), 'utf8')) as HarnessPin;
     console.log(JSON.stringify(await probeHarness(pin), null, 2));
+    return;
+  }
+  if (group === 'harness' && verb === 'prepare') {
+    const path = option('--runtime-root'),
+      arch = option('--arch');
+    if (!path || !arch) throw Error('Supply a new --runtime-root and execution-host --arch');
+    const { prepareHarnessRuntime } = await import('./harness-prepare.js');
+    console.log(JSON.stringify(await prepareHarnessRuntime(path, arch), null, 2));
+    return;
+  }
+  if (group === 'harness' && verb === 'config') {
+    const target = option('--target'),
+      path = option('--runtime-root');
+    if (!target || !Object.hasOwn(HARNESS_TARGETS, target) || !path)
+      throw Error('Supply a named --target and dedicated --runtime-root');
+    const runtime_root = realpathSync(resolve(path));
+    const { assertHarnessArtifactRoot, harnessRuntimeDigest } =
+      await import('./harness-backend.js');
+    assertHarnessArtifactRoot(runtime_root);
+    console.log(
+      JSON.stringify(
+        {
+          schema: 1,
+          runtimes: [
+            {
+              id: option('--id') ?? target,
+              target,
+              version: HARNESS_TARGETS[target as HarnessTarget].version,
+              runtime_root,
+              runtime_digest: await harnessRuntimeDigest(runtime_root),
+              model: 'claude-sonnet-4-6',
+              output: 4096,
+              requests: 12,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'harness' && ['list', 'inspect', 'reconcile'].includes(verb ?? '')) {
+    if (verb === 'list') {
+      console.log(JSON.stringify(await call(socket, '/v1/harnesses'), null, 2));
+      return;
+    }
+    if (!id) throw Error('Supply an external CHILD_ID');
+    const current = await call<any>(socket, `/v1/harnesses/${id}`);
+    if (verb === 'inspect') {
+      console.log(JSON.stringify(current, null, 2));
+      return;
+    }
+    const run_id = option('--run-id');
+    if (!run_id) throw Error('Supply the exact --run-id from harness inspect');
+    const client_id = randomUUID(),
+      owner = current.child.parent_session,
+      lease = await acquireControl(socket, owner, client_id, args.includes('--takeover'));
+    try {
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/harnesses/${id}/reconcile`, {
+            client_id,
+            token: lease.token,
+            run_id,
+            request_id: option('--request-id') ?? randomUUID(),
+          }),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${owner}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
     return;
   }
   if (group === 'workers') {
@@ -188,7 +273,12 @@ async function main(): Promise<void> {
           ? {
               step_id: option('--step'),
               profile_id: option('--profile'),
-              requests: Number(option('--requests')),
+              ...(() => {
+                const runtime = option('--runtime');
+                return runtime
+                  ? { runtime, invocations: Number(option('--invocations')) }
+                  : { requests: Number(option('--requests')) };
+              })(),
             }
           : {}),
         ...(verb === 'run'
@@ -1218,13 +1308,15 @@ async function main(): Promise<void> {
     const effectSocket = option('--effect-socket');
     const opaque = args.includes('--effect-opaque');
     const codingRoot = option('--coding-root'),
-      codingSocket = option('--coding-socket');
+      codingSocket = option('--coding-socket'),
+      harnessConfig = option('--harness-config');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
         providerRoute: route,
         codingRoot: codingRoot ? resolve(codingRoot) : undefined,
         codingSocket: codingSocket ? resolve(codingSocket) : undefined,
+        harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1281,6 +1373,7 @@ async function main(): Promise<void> {
         ...(opaque ? ['--effect-opaque'] : []),
         ...(codingRoot ? ['--coding-root', resolve(codingRoot)] : []),
         ...(codingSocket ? ['--coding-socket', resolve(codingSocket)] : []),
+        ...(harnessConfig ? ['--harness-config', resolve(harnessConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

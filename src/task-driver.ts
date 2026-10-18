@@ -42,6 +42,7 @@ export class TaskDriver {
     this.active = this.tick()
       .catch((error) => {
         // A persistence failure cannot authorize more work. Fence all affected task workers.
+        this.children.external?.failAll(error as Error);
         for (const row of this.store.db.prepare('SELECT session_id FROM durable_tasks').all())
           this.supervisor.failControl(String(row.session_id), error as Error);
       })
@@ -179,6 +180,7 @@ export class TaskDriver {
       await this.children.cancelOwned(attempt.id);
       await this.supervisor.cancelAttempt(attempt.id);
     }
+    await this.children.external?.cancelRoot(task.session_id);
     const compactions = this.store.db
       .prepare("SELECT id FROM compactions WHERE session_id=? AND state='running'")
       .all(task.session_id) as { id: string }[];
@@ -490,8 +492,10 @@ export class TaskDriver {
           reason = 'Explicit step attempt in progress';
         if (
           this.store.db
-            .prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'")
-            .get(task.session_id)
+            .prepare(
+              "SELECT 1 FROM approvals WHERE state='pending' AND (session_id=? OR session_id IN (SELECT child_session FROM child_tasks WHERE parent_session=?))",
+            )
+            .get(task.session_id, task.session_id)
         ) {
           state = 'waiting_for_person';
           reason = 'An operation-bound human approval is pending';
@@ -501,7 +505,7 @@ export class TaskDriver {
             .get(task.session_id)
         ) {
           state = 'waiting_for_child';
-          reason = 'Read-only child work is pending';
+          reason = 'A child worker is pending';
         } else if (this.supervisor.inspect(task.session_id).state !== 'ready') {
           state = 'waiting_for_infrastructure';
           reason = 'Waiting for worker readiness';

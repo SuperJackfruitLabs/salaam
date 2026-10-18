@@ -17,6 +17,7 @@
     "dist/src",
     "src",
     "pi-pin.json",
+    "harness-runtime",
     "npm-shrinkwrap.json",
     "LICENSE",
     "README.md",

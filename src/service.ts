@@ -29,8 +29,13 @@ import { AgentProfiles } from './agent-profiles.js';
 import { RepositorySnapshots } from './repository-snapshots.js';
 import { TeamWork } from './team-work.js';
 import { WorkerWorkspaces } from './worker-workspaces.js';
+import { ExternalWork } from './external-work.js';
+import type { ExternalBackend } from './external-runtime.js';
+import { DockerHarnessBackend } from './harness-backend.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  externalBackend?: ExternalBackend;
+  harnessConfig?: string;
   /** Trusted host admission, installed before any startup/recovery dispatch; throws deny a request. */
   admitModelRequest?: (
     session: string,
@@ -47,6 +52,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   expectedExecution?: { profile_digest: string; engine_id: string };
 }
 export class SalaamService {
+  readonly external: ExternalWork;
   readonly stateDir: string;
   readonly socket: string;
   readonly bridgeSocket: string;
@@ -112,6 +118,26 @@ export class SalaamService {
           (options.codingSocket
             ? new DockerCodingExecutor(engineRequest(options.codingSocket))
             : undefined);
+        if (
+          options.harnessConfig &&
+          (options.externalBackend ||
+            !(executor instanceof DockerCodingExecutor) ||
+            !options.codingSocket ||
+            !options.codingRoot)
+        )
+          throw Error(
+            'Harness configuration requires the real configured Docker executor and an exclusive backend',
+          );
+        const externalBackend =
+          options.externalBackend ??
+          (options.harnessConfig
+            ? new DockerHarnessBackend(
+                resolve(options.harnessConfig),
+                join(resolve(options.codingRoot!), 'external'),
+                options.codingSocket!,
+                executor as DockerCodingExecutor,
+              )
+            : undefined);
         this.coding = new CodingWork(
           this.store,
           this.workspaces,
@@ -147,10 +173,16 @@ export class SalaamService {
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
           approvalTtlMs: options.approvalTtlMs,
-          assertActive: (id, epoch, attempt) => this.supervisor.assertActive(id, epoch, attempt),
+          assertActive: (id, epoch, attempt) =>
+            this.external?.owns(id)
+              ? this.external.assertActive(id, epoch, attempt)
+              : this.supervisor.assertActive(id, epoch, attempt),
           reply: (id, epoch, request, confirmed) =>
             this.supervisor.replyUI(id, epoch, request, confirmed),
-          failed: (id, error) => this.supervisor.failControl(id, error),
+          failed: (id, error) =>
+            this.external?.owns(id)
+              ? this.external.failControl(id, error)
+              : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
         this.agents = new AgentProfiles(
@@ -200,6 +232,27 @@ export class SalaamService {
           this.agents,
         );
         this.supervisor.team = this.team;
+        this.external = new ExternalWork(
+          this.store,
+          this.artifacts,
+          this.children,
+          this.taskBudget,
+          this.managed,
+          this.workspaces,
+          externalBackend,
+          options.admitModelRequest,
+        );
+        this.children.external = this.external;
+        const guardSubmission = this.store.guardTaskSubmission!;
+        this.store.guardTaskSubmission = (session, step) => {
+          const child = this.children.owned(session);
+          if (child && this.store.workerBoundary.view(child.id).binding.external)
+            throw new ServiceError(
+              'external_worker_owned',
+              'Use the owning team assignment and an explicit continuation',
+            );
+          guardSubmission(session, step);
+        };
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
         this.taskDriver = new TaskDriver(
           this.store,
@@ -219,6 +272,7 @@ export class SalaamService {
         );
         this.recurring = new RecurringWork(this.jobs);
         this.inbox = new OperatorInbox(this.store, (error) => {
+          this.external.failAll(error);
           for (const session of this.store.sessions())
             this.supervisor.failControl(session.id, error);
         });
@@ -277,7 +331,9 @@ export class SalaamService {
       )
         throw new Error('Host executor does not match reviewed manifest');
       await service.supervisor.providerAuth();
+      await service.external.backend?.prepare?.();
       await service.supervisor.recover();
+      await service.external.recover();
       service.store.recoverWork();
       service.taskWork.recover();
       service.tasks.recover();
@@ -324,6 +380,42 @@ export class SalaamService {
       if (this.stopping) throw new ServiceError('stopping', 'Service is stopping', 503);
       const url = new URL(req.url ?? '/', 'http://local');
       const parts = url.pathname.split('/').filter(Boolean);
+      if (!bridge && parts[0] === 'v1' && parts[1] === 'harnesses') {
+        if (req.method === 'GET' && parts.length === 2) {
+          this.send(res, 200, this.external.runtimes());
+          return;
+        }
+        if (parts[2]) {
+          const raw = this.store.db
+            .prepare('SELECT * FROM child_tasks WHERE id=?')
+            .get(parts[2]) as unknown as import('./protocol.js').ChildTask | undefined;
+          if (!raw || !this.store.workerBoundary.view(raw.id).binding.external)
+            throw new ServiceError('not_found', 'External worker not found', 404);
+          if (req.method === 'GET' && parts.length === 3) {
+            this.send(res, 200, {
+              child: this.children.inspect(raw.parent_session, raw.id),
+              execution: this.external.view(raw.id),
+            });
+            return;
+          }
+          if (req.method === 'POST' && parts.length === 4 && parts[3] === 'reconcile') {
+            const body = object(await readJson(req));
+            const result = await this.external.reconcile(
+              raw,
+              string(body.request_id, 'request_id', 128),
+              string(body.run_id, 'run_id', 128),
+              () =>
+                this.store.authorizeControl(raw.parent_session, {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                }),
+            );
+            this.send(res, 200, result);
+            return;
+          }
+        }
+        throw new ServiceError('not_found', 'External worker route not found', 404);
+      }
       if (bridge) {
         if (req.method !== 'POST' || parts.length !== 3 || parts[0] !== 'worker')
           throw new ServiceError('not_found', 'Bridge route not found', 404);
@@ -627,14 +719,24 @@ export class SalaamService {
             const authorize = () => this.store.authorizeControl(task.session_id, controller);
             let result: unknown;
             if (parts.length === 5 && parts[4] === 'assign') {
+              if (body.runtime !== undefined && body.requests !== undefined)
+                throw new ServiceError(
+                  'worker_budget_scope',
+                  'Use invocations for an external runtime; requests always means model requests',
+                  400,
+                );
               result = this.team.assign(
                 task.id,
                 string(body.step_id, 'step_id', 128),
                 string(body.profile_id, 'profile_id', 128),
-                integer(body.requests, 'requests'),
+                integer(
+                  body.runtime === undefined ? body.requests : body.invocations,
+                  body.runtime === undefined ? 'requests' : 'invocations',
+                ),
                 request,
                 integer(body.expected_revision, 'expected_revision'),
                 controller,
+                body.runtime === undefined ? undefined : string(body.runtime, 'runtime', 128),
               );
             } else if (parts.length === 5 && parts[4] === 'send') {
               result = this.team.send(
@@ -863,6 +965,19 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          external_workers: {
+            control: this.external.status(),
+            runtimes: this.external.runtimes(),
+            opaque_budget: 'explicit-invocations-only',
+            unknown_model_usage: true,
+            uncertain_stops: Number(
+              this.store.db
+                .prepare(
+                  "SELECT count(*) AS n FROM external_runs WHERE stopped=0 AND state='unknown'",
+                )
+                .get()!.n,
+            ),
+          },
           job_execution: {
             durable_jobs: true,
             one_shot_triggers: !!this.coding.executor,
@@ -1290,12 +1405,14 @@ export class SalaamService {
           },
         );
         this.coding.cancelAttempt(attempt);
-        void this.children
-          .cancelOwned(attempt)
-          .then(() => this.supervisor.cancelAttempt(attempt))
-          .catch((error) =>
-            this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
-          );
+        const owned = this.children.owned(this.store.attempt(attempt).session_id);
+        void (
+          owned && this.store.workerBoundary.view(owned.id).binding.external
+            ? this.external.cancel(owned)
+            : this.children.cancelOwned(attempt).then(() => this.supervisor.cancelAttempt(attempt))
+        ).catch((error) =>
+          this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
+        );
         this.send(res, 202, receipt);
         return;
       }
@@ -1534,6 +1651,7 @@ export class SalaamService {
     this.children.pause();
     const errors: unknown[] = [];
     try {
+      await this.external.close();
       await this.coding.close();
       try {
         await this.children.close();

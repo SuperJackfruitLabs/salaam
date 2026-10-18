@@ -62,7 +62,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 15) {
+    if (version > 16) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -234,6 +234,15 @@ export class Store {
           CREATE TABLE worker_integrations(id TEXT PRIMARY KEY,parent_session TEXT NOT NULL REFERENCES sessions(id),child_id TEXT NOT NULL UNIQUE REFERENCES child_tasks(id),worker_id TEXT NOT NULL,patch_digest TEXT NOT NULL,before_revision INTEGER NOT NULL,before_digest TEXT NOT NULL,after_artifact TEXT NOT NULL REFERENCES artifacts(id),state TEXT NOT NULL,mutation_id TEXT REFERENCES workspace_mutations(id),mutation_key TEXT NOT NULL UNIQUE,generation INTEGER NOT NULL DEFAULT 1);
           CREATE TABLE team_rejections(step_id TEXT NOT NULL REFERENCES task_steps(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),request_id TEXT NOT NULL,reason TEXT NOT NULL,PRIMARY KEY(step_id,attempt_id));
           PRAGMA user_version=15; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 16
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE external_assignments(assignment_id TEXT PRIMARY KEY REFERENCES team_assignments(id),runtime TEXT NOT NULL,digest TEXT NOT NULL);
+          CREATE TABLE external_runs(child_id TEXT PRIMARY KEY REFERENCES child_tasks(id),run_id TEXT NOT NULL UNIQUE,state TEXT NOT NULL,epoch INTEGER NOT NULL,checkpoint TEXT,receipt TEXT,stopped INTEGER NOT NULL DEFAULT 0,error TEXT,result TEXT,import_artifact TEXT REFERENCES artifacts(id));
+          CREATE TABLE task_invocations(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),task_id TEXT NOT NULL REFERENCES durable_tasks(id),runtime_id TEXT NOT NULL,input_digest TEXT NOT NULL,created_at INTEGER NOT NULL);
+          CREATE TABLE external_model_requests(id TEXT PRIMARY KEY,child_id TEXT NOT NULL REFERENCES external_runs(child_id),input_bytes INTEGER NOT NULL,output_bound INTEGER NOT NULL);
+          PRAGMA user_version=16; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

@@ -279,7 +279,7 @@ test.each(['before-intent', 'after-intent', 'after-dispatch', 'after-acceptance'
 test('opaque adapter capability fixture cannot satisfy model-request bounds even with no token budget', () => {
   assertModelRequestBoundary(NATIVE_CAPABILITIES);
   expect(() => assertModelRequestBoundary({ schema_version: 1, model_requests: false })).toThrow(
-    'invocation-only workers are disabled',
+    'opaque workers need explicit invocation bounds',
   );
   expect(() => assertModelRequestBoundary({ schema_version: 99, model_requests: true })).toThrow(
     'Unsupported worker capability version',

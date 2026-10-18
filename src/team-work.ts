@@ -76,11 +76,20 @@ export class TeamWork {
     request: string,
     expected: number,
     controller: Controller,
+    runtime?: string,
   ): TeamAssignment {
     return this.store.request(
       'local-operator',
       request,
-      { kind: 'team-assign', taskId, stepId, profile, requests, expected },
+      {
+        kind: 'team-assign',
+        taskId,
+        stepId,
+        profile,
+        requests,
+        expected,
+        ...(runtime ? { runtime } : {}),
+      },
       () => {
         const task = this.tasks.get(taskId);
         this.store.authorizeControl(task.session_id, controller);
@@ -110,6 +119,14 @@ export class TeamWork {
         this.store.db
           .prepare('INSERT INTO team_assignments VALUES (?,?,?,?,?,?,?,0,NULL,0)')
           .run(id, taskId, stepId, task.plan_revision, profile, grant.id, requests);
+        if (runtime) {
+          if (!this.children.external || requests !== 1)
+            throw new ServiceError(
+              'runtime_unavailable',
+              'External assignments require one invocation and a configured runtime',
+            );
+          this.children.external.assign(id, task, runtime, grant.profile.tools);
+        }
         this.changed(taskId, 'assigned', {
           assignment_id: id,
           step_id: stepId,
@@ -188,6 +205,7 @@ export class TeamWork {
           const prior = this.children.inspect(task.session_id, row.child_id);
           if (
             prior.state === 'accepted' ||
+            (prior.worker?.binding.external && !this.children.external?.stopped(prior.id)) ||
             this.store.db
               .prepare("SELECT 1 FROM workers WHERE session_id=? AND state!='exited'")
               .get(prior.child_session)
@@ -204,6 +222,7 @@ export class TeamWork {
             'Assignment requires its original profile admission',
           );
         this.budget.check(task.session_id);
+        this.children.external?.validateAssignment(id, task);
         if (this.budget.active(task) >= task.limits.concurrency)
           throw new ServiceError('task_busy', 'Root task concurrency is full');
         if (
@@ -237,7 +256,12 @@ export class TeamWork {
           row.budget,
           [],
           row.profile_id,
-          { authorize: () => {}, defer: true, assignment: { id, generation: next } },
+          {
+            authorize: () => {},
+            defer: true,
+            assignment: { id, generation: next },
+            runtime: this.children.external?.assignment(id),
+          },
         );
         this.store.db
           .prepare('UPDATE team_assignments SET generation=?,child_id=? WHERE id=?')
@@ -365,6 +389,14 @@ export class TeamWork {
       stale: a.plan_revision !== current.plan_revision,
       step_state: current.steps.find((s) => s.id === a.step_id)?.state,
       worker: a.child_id ? this.children.inspect(current.session_id, a.child_id).worker : null,
+      runtime: this.children.external?.assignment(a.id) ?? null,
+      execution:
+        a.child_id && this.children.inspect(current.session_id, a.child_id).worker?.binding.external
+          ? {
+              state: this.children.external!.row(a.child_id).state,
+              stopped: this.children.external!.stopped(a.child_id),
+            }
+          : null,
     }));
     const messages = this.store.db
       .prepare(

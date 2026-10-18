@@ -4,6 +4,7 @@ import { canonical, digest, textDigest, ServiceError, type ChildTask } from './p
 import { POLICY_DIGEST } from './config.js';
 import type { ProviderRoute } from './provider-config.js';
 import type { AgentProfile, AgentGrant, AgentProfiles } from './agent-profiles.js';
+import type { ExternalRuntime } from './external-runtime.js';
 
 /** Local contract v1. These are enforced capabilities, not upstream feature claims. */
 export const NATIVE_CAPABILITIES = {
@@ -56,10 +57,22 @@ export function nativeCapabilities(
   };
 }
 
+export function externalCapabilities(runtime: ExternalRuntime, tools: readonly string[]) {
+  return {
+    schema_version: 1 as const,
+    runtime: runtime.kind,
+    model_requests: false as const,
+    output_cap: runtime.output_cap,
+    files: runtime.files && tools.includes('salaam_files'),
+    commands: runtime.commands && tools.includes('salaam_command'),
+    model_usage: 'unknown' as const,
+    isolation: runtime.evidence === 'fixture' ? 'simulated-whole-runtime' : 'proven-whole-runtime',
+  };
+}
 export interface WorkerBinding {
   schema_version: 1;
   worker_id: string;
-  runtime: 'native-pi';
+  runtime: 'native-pi' | 'harness' | 'a2a';
   owner_session: string;
   owner_task: string | null;
   parent_attempt: string;
@@ -70,13 +83,14 @@ export interface WorkerBinding {
   input_artifact: string | null;
   profile: AgentProfile;
   profile_digest: string;
-  capabilities: ReturnType<typeof nativeCapabilities>;
+  capabilities: ReturnType<typeof nativeCapabilities> | ReturnType<typeof externalCapabilities>;
   capability_digest: string;
   tools: string[];
   route: ProviderRoute | null;
   workspace: { id: string; revision: number; digest: string } | null;
   policy_digest: string;
-  bounds: { scope: 'model-requests'; requests: number };
+  bounds: { scope: 'model-requests'; requests: number } | { scope: 'invocations'; invocations: 1 };
+  external?: ExternalRuntime;
   legacy: boolean;
   agent?: AgentGrant;
   repository?: { artifact_id: string; base_artifact: string; digest: string };
@@ -96,7 +110,7 @@ export interface WorkerBoundaryView {
   dispatch_state: 'intent' | 'dispatching' | 'accepted' | 'interrupted' | 'terminal';
 }
 
-/** Never equate one opaque invocation with one model request. No opaque adapter is enabled. */
+/** Never equate one opaque invocation with one model request. Invocation admission is separate. */
 export function assertModelRequestBoundary(capabilities: {
   schema_version: number;
   model_requests: boolean;
@@ -106,7 +120,7 @@ export function assertModelRequestBoundary(capabilities: {
   if (capabilities.model_requests !== true)
     throw new ServiceError(
       'worker_budget_scope',
-      'Model-request bounds require enforced model-request admission; invocation-only workers are disabled',
+      'Model-request bounds require enforced admission; opaque workers need explicit invocation bounds',
     );
 }
 
@@ -140,6 +154,7 @@ export class WorkerBoundary {
     repository?: WorkerBinding['repository'],
     assignment?: WorkerBinding['assignment'],
     isolation?: WorkerBinding['isolation'],
+    external?: ExternalRuntime,
   ): void {
     const admittedProfile = agent?.profile ?? DIAGNOSTIC_PROFILE;
     const profileDigest = digest(admittedProfile);
@@ -165,7 +180,7 @@ export class WorkerBoundary {
     const binding: WorkerBinding = {
       schema_version: 1,
       worker_id: randomUUID(),
-      runtime: 'native-pi',
+      runtime: external?.kind ?? 'native-pi',
       owner_session: child.parent_session,
       owner_task: task ? String(task.id) : null,
       parent_attempt: child.parent_attempt,
@@ -179,10 +194,11 @@ export class WorkerBoundary {
       capabilities: nativeCapabilities(admittedProfile, !!assignment, isolation),
       capability_digest: digest(nativeCapabilities(admittedProfile, !!assignment, isolation)),
       tools: JSON.parse(child.authority),
-      route:
-        agent?.route ??
-        this.store.providerRoute(child.child_session) ??
-        this.store.providerRoute(child.parent_session),
+      route: external
+        ? null
+        : (agent?.route ??
+          this.store.providerRoute(child.child_session) ??
+          this.store.providerRoute(child.parent_session)),
       workspace: workspace
         ? {
             id: String(workspace.id),
@@ -191,14 +207,20 @@ export class WorkerBoundary {
           }
         : null,
       policy_digest: POLICY_DIGEST,
-      bounds: { scope: 'model-requests', requests: child.budget },
+      bounds: external
+        ? { scope: 'invocations', invocations: 1 }
+        : { scope: 'model-requests', requests: child.budget },
+      ...(external ? { external } : {}),
       legacy,
       ...(agent ? { agent } : {}),
       ...(repository ? { repository } : {}),
       ...(assignment ? { assignment } : {}),
       ...(isolation ? { isolation } : {}),
     };
-    assertModelRequestBoundary(binding.capabilities);
+    if (external) {
+      binding.capabilities = externalCapabilities(external, binding.tools);
+      binding.capability_digest = digest(binding.capabilities);
+    } else assertModelRequestBoundary(binding.capabilities);
     this.store.db
       .prepare(
         "INSERT INTO child_workers(child_id,binding,binding_digest,dispatch_state) VALUES (?,?,?,'intent')",
