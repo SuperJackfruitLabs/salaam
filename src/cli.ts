@@ -35,6 +35,7 @@ import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
 import { BoundaryBroker, engineRequest } from './execution-boundary.js';
 import { workspaceDiff, type WorkspaceChange } from './workspace-diff.js';
+import { probeHarness, type HarnessPin } from './harness-probe.js';
 interface WorkspaceDiffPage {
   revision: number;
   digest: string;
@@ -79,6 +80,13 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'harness' && verb === 'probe') {
+    const path = option('--pin');
+    if (!path) throw new Error('Supply an operator-reviewed --pin FILE');
+    const pin = JSON.parse(readFileSync(resolve(path), 'utf8')) as HarnessPin;
+    console.log(JSON.stringify(await probeHarness(pin), null, 2));
+    return;
+  }
   if (group === 'workers') {
     if (!id) throw new Error('Supply a child or integration receipt ID');
     if (verb === 'proposal' || verb === 'integration') {

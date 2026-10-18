@@ -1,4 +1,11 @@
 const commands: Record<string, string> = {
+  harness: `salaam harness probe --pin FILE
+
+Negotiate an operator-pinned external harness in a disposable empty home, with no
+repository, credentials or model request. FILE contains target, executable,
+executable_digest and version. Targets: gemini-acp, claude-acp, codex-app-server.
+Advertised capabilities are separate from enforced authority. A probe grants no
+file, command or worker-dispatch permission.`,
   workers: `salaam workers proposal CHILD_ID [--offset N]
 salaam workers integrate CHILD_ID --revision N --root-digest SHA256 --patch-digest SHA256
 salaam workers integration RECEIPT_ID
@@ -257,6 +264,7 @@ Commands:
   agents        Inspect and admit specialist profiles
   team          Assign task steps and inspect the durable team inbox
   workers       Inspect and explicitly integrate isolated coding proposals
+  harness       Probe pinned external-harness negotiation without credentials
   commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}
@@ -320,6 +328,7 @@ const valueOptions = new Set([
   '--status',
   '--manifest',
   '--config',
+  '--pin',
   '--platform',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
