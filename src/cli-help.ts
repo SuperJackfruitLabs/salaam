@@ -51,11 +51,21 @@ salaam tasks revise TASK_ID --plan FILE --revision TASK_REVISION
 salaam tasks run TASK_ID --step STEP_ID --revision TASK_REVISION [--text INSTRUCTION]
                  [--continue-attempt INTERRUPTED_ATTEMPT_ID]
 salaam tasks complete TASK_ID --step STEP_ID --revision TASK_REVISION --review TEXT
+salaam tasks verify TASK_ID --check KEY --revision N [--step STEP_ID]
+salaam tasks finish TASK_ID --revision N [--exception-reason TEXT --evidence-artifact ID]
+salaam tasks checkpoint TASK_ID --revision N
+salaam tasks checkpoints TASK_ID
+salaam tasks restore TASK_ID --checkpoint ID --revision N --workspace-revision N --workspace-digest DIGEST
+salaam tasks restores TASK_ID
+salaam tasks auto TASK_ID --revision N --max-steps N [--compact]
+salaam tasks pause TASK_ID --revision N
+salaam tasks cancel TASK_ID --revision N
 
 Mutations accept --request-id ID and --takeover. Reuse the same request ID and input
-when retrying a lost response. One task per session; steps run only by explicit request.
-Resume the session worker separately if stopped. Attempt completion awaits operator
-review; completing a step records that review, not verified task success.
+when retrying a lost response. One task per session. Automatic progression is opt-in
+and bounded by step, request, runtime, concurrency and declared token limits.
+Success requires fresh command receipts and deliverables at the exact workspace revision.
+Operator exceptions are reported separately. Checkpoints preserve conflicting human edits.
 Legacy task facts remain under the singular task command.`,
   task: `salaam task inspect SESSION_ID
 salaam task update SESSION_ID --task-version N --kind objective|constraint|completed|outstanding|evidence --text TEXT
@@ -200,6 +210,13 @@ const valueOptions = new Set([
   '--step',
   '--review',
   '--continue-attempt',
+  '--check',
+  '--exception-reason',
+  '--evidence-artifact',
+  '--checkpoint',
+  '--workspace-revision',
+  '--workspace-digest',
+  '--max-steps',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
 export function hasHelpFlag(args: string[]): boolean {

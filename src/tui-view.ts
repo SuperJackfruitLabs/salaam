@@ -211,7 +211,7 @@ export class DocumentView implements Component {
           ...this.title('TASK · ' + c.snapshot.work_task.state.toUpperCase(), width),
           ...this.text(c.snapshot.work_task.objective, width),
           ...this.text(
-            'Inspect the saved plan in Context. Start or continue steps with sal tasks.',
+            'Inspect the saved plan in Context. Ctrl+K → Task actions controls explicit or bounded work.',
             width,
           ),
           t.fill('', width),
@@ -478,6 +478,40 @@ export class DocumentView implements Component {
           ...this.text(task.objective, width),
           ...this.text(task.reason, width),
         );
+        if (task.runtime)
+          lines.push(
+            ...this.text(
+              'Requests ' +
+                task.runtime.requests_spent +
+                ' spent + ' +
+                task.runtime.reserved_requests +
+                ' reserved / ' +
+                task.limits.requests,
+              width,
+            ),
+            ...this.text(
+              'Declared token units ' +
+                task.runtime.token_units +
+                ' + ' +
+                task.runtime.reserved_tokens +
+                ' reserved / ' +
+                task.limits.token_units,
+              width,
+            ),
+            ...this.text(
+              'Bounded progression ' +
+                (task.runtime.auto_enabled
+                  ? 'enabled · ' + task.runtime.remaining_steps + ' new steps remain'
+                  : 'paused') +
+                (task.runtime.auto_error ? ' · ' + task.runtime.auto_error : ''),
+              width,
+            ),
+          );
+        if (task.verification)
+          lines.push(
+            ...this.title('VERIFICATION', width),
+            ...this.text(JSON.stringify(task.verification, null, 2), width),
+          );
         for (const constraint of task.constraints)
           lines.push(...this.text('Constraint: ' + constraint, width));
         for (const step of task.steps)
@@ -494,7 +528,7 @@ export class DocumentView implements Component {
           );
         lines.push(
           ...this.text(
-            'Steps require explicit sal tasks commands. Task verification is pending M11.2.',
+            'Ctrl+K → Task actions · receipts bind the exact workspace revision.',
             width,
           ),
           t.fill('', width),

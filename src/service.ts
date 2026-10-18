@@ -3,6 +3,10 @@ import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } 
 import { join, resolve } from 'node:path';
 import { TaskContext } from './task-context.js';
 import { TaskWork } from './task-work.js';
+import { TaskBudget } from './task-budget.js';
+import { TaskVerification } from './task-verification.js';
+import { TaskCheckpoints } from './task-checkpoints.js';
+import { TaskDriver } from './task-driver.js';
 import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
@@ -35,6 +39,10 @@ export class SalaamService {
   readonly artifacts: Artifacts;
   readonly tasks: TaskContext;
   readonly taskWork: TaskWork;
+  readonly taskBudget: TaskBudget;
+  readonly taskVerification: TaskVerification;
+  readonly taskCheckpoints: TaskCheckpoints;
+  readonly taskDriver: TaskDriver;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
@@ -66,6 +74,7 @@ export class SalaamService {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
         this.taskWork = new TaskWork(this.store, this.tasks);
+        this.taskBudget = new TaskBudget(this.store, this.taskWork);
         this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
         if (options.codingSocket && !options.codingRoot)
           throw new Error('Command execution requires an explicit --coding-root');
@@ -80,6 +89,21 @@ export class SalaamService {
           this.artifacts,
           executor,
           (id, error) => this.supervisor.failControl(id, error),
+        );
+        this.taskVerification = new TaskVerification(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.workspaces,
+          this.coding,
+          this.artifacts,
+        );
+        this.taskCheckpoints = new TaskCheckpoints(
+          this.store,
+          this.taskWork,
+          this.taskVerification,
+          this.workspaces,
+          this.artifacts,
         );
         this.supervisor = new Supervisor(this.store, {
           ...options,
@@ -101,6 +125,15 @@ export class SalaamService {
         this.children = new ChildWork(this.store, this.artifacts, this.supervisor);
         this.supervisor.children = this.children;
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
+        this.taskDriver = new TaskDriver(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.taskVerification,
+          this.supervisor,
+          this.children,
+          this.coding,
+        );
       } catch (error) {
         this.store.close();
         throw error;
@@ -154,8 +187,10 @@ export class SalaamService {
       service.children.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
+      service.taskCheckpoints.recover();
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
+      service.taskDriver.start();
       return service;
     } catch (error) {
       await service.close();
@@ -200,12 +235,30 @@ export class SalaamService {
         if (req.method === 'GET' && parts.length === 2) {
           const session = string(url.searchParams.get('session_id'), 'session_id', 128);
           this.store.session(session);
-          this.send(res, 200, this.taskWork.forSession(session));
+          const current = this.taskWork.forSession(session);
+          this.send(res, 200, current ? this.taskDriver.view(current.id) : null);
           return;
         }
         const taskId = parts[2];
+        if (
+          req.method === 'GET' &&
+          taskId &&
+          parts.length === 4 &&
+          ['checkpoints', 'restores'].includes(parts[3]!)
+        ) {
+          this.taskWork.get(taskId);
+          this.send(
+            res,
+            200,
+            parts[3] === 'checkpoints'
+              ? this.taskCheckpoints.list(taskId)
+              : this.taskCheckpoints.restores(taskId),
+          );
+          return;
+        }
+
         if (req.method === 'GET' && taskId && parts.length === 3) {
-          this.send(res, 200, this.taskWork.get(taskId));
+          this.send(res, 200, this.taskDriver.view(taskId));
           return;
         }
         if (req.method === 'GET' && taskId && parts.length === 4 && parts[3] === 'history') {
@@ -228,24 +281,89 @@ export class SalaamService {
           const request = string(body.request_id, 'request_id', 128);
           const expected = integer(body.expected_revision, 'expected_revision');
           if (parts.length === 2) {
-            this.send(
-              res,
-              201,
-              this.taskWork.create(
-                string(body.session_id, 'session_id', 128),
+            const task = this.taskWork.create(
+              string(body.session_id, 'session_id', 128),
+              request,
+              expected,
+              body.plan,
+              controller,
+            );
+            this.send(res, 201, this.taskDriver.view(task.id));
+            return;
+          }
+          if (
+            taskId &&
+            parts.length === 4 &&
+            ['verify', 'finish', 'checkpoint', 'restore', 'auto', 'cancel'].includes(parts[3]!)
+          ) {
+            const task = this.taskWork.get(taskId),
+              authorize = () => this.store.authorizeControl(task.session_id, controller);
+            let result: unknown;
+            if (parts[3] === 'verify')
+              result = this.taskVerification.start(
+                taskId,
+                string(body.check_key, 'check_key', 64),
+                body.step_id == null ? null : string(body.step_id, 'step_id', 128),
                 request,
                 expected,
-                body.plan,
+                authorize,
+              );
+            else if (parts[3] === 'finish') {
+              const exception = body.exception == null ? null : object(body.exception);
+              this.taskVerification.finish(
+                taskId,
+                request,
+                expected,
+                exception
+                  ? {
+                      reason: string(exception.reason, 'reason', 4096),
+                      evidence_artifact: string(
+                        exception.evidence_artifact,
+                        'evidence_artifact',
+                        128,
+                      ),
+                    }
+                  : null,
+                authorize,
+              );
+              result = this.taskDriver.view(taskId);
+            } else if (parts[3] === 'checkpoint')
+              result = this.taskCheckpoints.capture(taskId, request, expected, authorize);
+            else if (parts[3] === 'restore')
+              result = this.taskCheckpoints.restore(
+                taskId,
+                string(body.checkpoint_id, 'checkpoint_id', 128),
+                request,
+                expected,
+                integer(body.workspace_revision, 'workspace_revision'),
+                string(body.workspace_digest, 'workspace_digest', 128),
+                authorize,
+              );
+            else if (parts[3] === 'auto') {
+              if (body.compact !== undefined && typeof body.compact !== 'boolean')
+                throw new ServiceError('invalid_field', 'compact must be boolean', 400);
+              this.taskDriver.configure(
+                taskId,
+                request,
+                expected,
+                integer(body.max_steps, 'max_steps'),
+                body.compact === true,
                 controller,
-              ),
-            );
+              );
+              result = this.taskDriver.view(taskId);
+            } else {
+              await this.taskDriver.cancel(taskId, request, expected, controller);
+              result = this.taskDriver.view(taskId);
+            }
+            this.send(res, 200, result);
             return;
           }
           if (taskId && parts.length === 4 && parts[3] === 'revise') {
             this.send(
               res,
               200,
-              this.taskWork.revise(taskId, request, expected, body.plan, controller),
+              (this.taskWork.revise(taskId, request, expected, body.plan, controller),
+              this.taskDriver.view(taskId)),
             );
             return;
           }
@@ -272,7 +390,7 @@ export class SalaamService {
               this.send(
                 res,
                 200,
-                this.taskWork.complete(
+                (this.taskWork.complete(
                   taskId,
                   parts[4],
                   request,
@@ -280,6 +398,7 @@ export class SalaamService {
                   string(body.review, 'review', 4096),
                   controller,
                 ),
+                this.taskDriver.view(taskId)),
               );
               return;
             }
@@ -293,10 +412,12 @@ export class SalaamService {
           task_execution: {
             durable_tasks: true,
             explicit_steps: true,
-            automatic_progression: false,
-            verified_completion: false,
-            task_budgets: false,
-            checkpoints: false,
+            automatic_progression: 'operator-bounded-opt-in',
+            verified_completion: !!this.coding.executor,
+            verification_supported: true,
+            task_budgets: true,
+            checkpoints: true,
+            deterministic_compaction: 'operator-bounded-idle-only',
           },
           provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
@@ -710,7 +831,9 @@ export class SalaamService {
           this.send(res, 200, {
             ...this.store.snapshot(id),
             ...this.supervisor.inspect(id),
-            work_task: this.taskWork.forSession(id),
+            work_task: this.taskWork.forSession(id)
+              ? this.taskDriver.view(this.taskWork.forSession(id)!.id)
+              : null,
           });
           return;
         }
@@ -876,6 +999,7 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    await this.taskDriver.close();
     this.dispatcher.pause();
     this.managed.pause();
     this.children.pause();

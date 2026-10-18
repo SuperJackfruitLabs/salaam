@@ -31,6 +31,24 @@ export class Store {
   projectTaskAttempt?: (attempt: Attempt) => void;
   guardTaskSubmission?: (session: string, step?: string) => void;
   cancelChildren?: (attempt: string) => void;
+  recordTaskMutation?: (
+    session: string,
+    mutation: string,
+    before: import('./workspaces.js').WorkspaceTree,
+    after: import('./workspaces.js').WorkspaceTree,
+  ) => void;
+  taskGrantCheck?: (session: string) => void;
+  taskModelAdmission?: (
+    session: string,
+    attempt: string | undefined,
+    input: number,
+    output: number,
+  ) => void;
+  taskBudgetDenied?: (session: string, error: unknown) => void;
+  taskChildReserve?: (session: string, attempt: string, count: number) => void;
+  taskChildFinished?: (attempt: string) => void;
+  taskCommandAdmission?: (session: string) => void;
+  taskRemainingRuntime?: (session: string) => number;
   private committed: DurableEvent[] | null = null;
   constructor(path: string) {
     this.db = new DatabaseSync(path);
@@ -40,7 +58,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 8) {
+    if (version > 9) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -146,6 +164,27 @@ export class Store {
           CREATE TABLE task_steps(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_key TEXT NOT NULL,ordinal INTEGER NOT NULL,title TEXT NOT NULL,instruction TEXT NOT NULL,dependencies TEXT NOT NULL,state TEXT NOT NULL,attempt_id TEXT REFERENCES attempts(id),review TEXT,UNIQUE(task_id,step_key),UNIQUE(task_id,ordinal));
           CREATE TABLE task_step_attempts(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),step_id TEXT NOT NULL REFERENCES task_steps(id),plan_revision INTEGER NOT NULL,instruction TEXT NOT NULL);
           PRAGMA user_version=8; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 9
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          ALTER TABLE task_steps ADD COLUMN checks TEXT NOT NULL DEFAULT '[]';
+          CREATE TABLE task_runtime(task_id TEXT PRIMARY KEY REFERENCES durable_tasks(id),started_at INTEGER,blocked_reason TEXT,requests_spent INTEGER NOT NULL DEFAULT 0,reserved_requests INTEGER NOT NULL DEFAULT 0,token_units INTEGER NOT NULL DEFAULT 0,reserved_tokens INTEGER NOT NULL DEFAULT 0,verification_runs INTEGER NOT NULL DEFAULT 0,auto_enabled INTEGER NOT NULL DEFAULT 0,remaining_steps INTEGER NOT NULL DEFAULT 0,auto_plan_revision INTEGER NOT NULL DEFAULT 0,auto_compact INTEGER NOT NULL DEFAULT 0,auto_error TEXT,auto_binding TEXT,auto_epoch INTEGER NOT NULL DEFAULT 0);
+          CREATE TABLE task_reservations(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),task_id TEXT NOT NULL REFERENCES durable_tasks(id),remaining_requests INTEGER NOT NULL,remaining_tokens INTEGER NOT NULL);
+          CREATE TABLE task_checks(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_id TEXT REFERENCES task_steps(id),check_key TEXT NOT NULL,plan_revision INTEGER NOT NULL,workspace_id TEXT NOT NULL,workspace_revision INTEGER NOT NULL,workspace_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,engine_id TEXT NOT NULL,command_run_id TEXT REFERENCES command_runs(id),state TEXT NOT NULL,artifact_id TEXT REFERENCES artifacts(id));
+          CREATE TABLE task_completions(task_id TEXT PRIMARY KEY REFERENCES durable_tasks(id),plan_revision INTEGER NOT NULL,workspace_id TEXT,workspace_revision INTEGER,workspace_digest TEXT,artifact_id TEXT NOT NULL REFERENCES artifacts(id),state TEXT NOT NULL,exception TEXT);
+          CREATE TABLE task_checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),workspace_id TEXT NOT NULL,revision INTEGER NOT NULL,digest TEXT NOT NULL,tree_artifact TEXT NOT NULL REFERENCES artifacts(id),mutation_cursor INTEGER NOT NULL);
+          CREATE TABLE task_mutations(mutation_id TEXT PRIMARY KEY REFERENCES workspace_mutations(id),task_id TEXT NOT NULL REFERENCES durable_tasks(id),change_artifact TEXT NOT NULL REFERENCES artifacts(id));
+          CREATE TABLE task_restores(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),checkpoint_id TEXT NOT NULL REFERENCES task_checkpoints(id),before_artifact TEXT NOT NULL REFERENCES artifacts(id),after_artifact TEXT NOT NULL REFERENCES artifacts(id),expected_revision INTEGER NOT NULL,expected_digest TEXT NOT NULL,mutation_id TEXT,state TEXT NOT NULL,conflicts TEXT NOT NULL);
+          CREATE TABLE task_grants(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_id TEXT NOT NULL REFERENCES task_steps(id),plan_revision INTEGER NOT NULL,expected_revision INTEGER NOT NULL,state TEXT NOT NULL,binding TEXT NOT NULL,epoch INTEGER NOT NULL,UNIQUE(task_id,step_id,plan_revision,epoch));
+          CREATE TABLE task_compactions(task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_id TEXT NOT NULL REFERENCES task_steps(id),plan_revision INTEGER NOT NULL,request_id TEXT NOT NULL,compaction_id TEXT,task_version INTEGER NOT NULL,skip_reason TEXT,epoch INTEGER NOT NULL,PRIMARY KEY(task_id,step_id,plan_revision,epoch));
+          INSERT INTO task_runtime(task_id,started_at,requests_spent,token_units)
+            SELECT t.id,CASE WHEN count(u.source_key)>0 THEN unixepoch('now')*1000 ELSE NULL END,count(u.source_key),count(u.source_key)*139264
+            FROM durable_tasks t LEFT JOIN usage_observations u ON (u.session_id=t.session_id OR u.session_id IN (SELECT child_session FROM child_tasks WHERE parent_session=t.session_id)) AND u.provider!='salaam-checkpoint' GROUP BY t.id;
+          INSERT INTO task_reservations(attempt_id,task_id,remaining_requests,remaining_tokens)
+            SELECT c.child_attempt,t.id,max(0,c.budget-(SELECT count(*) FROM usage_observations WHERE session_id=c.child_session)),max(0,c.budget-(SELECT count(*) FROM usage_observations WHERE session_id=c.child_session))*139264 FROM child_tasks c JOIN durable_tasks t ON t.session_id=c.parent_session WHERE c.state!='completed';
+          UPDATE task_runtime SET reserved_requests=(SELECT coalesce(sum(remaining_requests),0) FROM task_reservations WHERE task_id=task_runtime.task_id),reserved_tokens=(SELECT coalesce(sum(remaining_tokens),0) FROM task_reservations WHERE task_id=task_runtime.task_id);
+          PRAGMA user_version=9; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -193,25 +232,33 @@ export class Store {
     });
   }
   request<T>(actor: string, id: string, input: unknown, fn: () => T): T {
-    return this.transaction(() => {
-      const hash = digest(input);
-      const prior = this.db
-        .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
-        .get(actor, id) as { hash: string; response: string } | undefined;
-      if (prior) {
-        if (prior.hash !== hash)
-          throw new ServiceError(
-            'request_conflict',
-            'Request ID was already used with different input',
-          );
-        return JSON.parse(prior.response) as T;
+    try {
+      return this.transaction(() => {
+        const hash = digest(input);
+        const prior = this.db
+          .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
+          .get(actor, id) as { hash: string; response: string } | undefined;
+        if (prior) {
+          if (prior.hash !== hash)
+            throw new ServiceError(
+              'request_conflict',
+              'Request ID was already used with different input',
+            );
+          return JSON.parse(prior.response) as T;
+        }
+        const response = fn();
+        this.db
+          .prepare('INSERT INTO requests VALUES (?,?,?,?)')
+          .run(actor, id, hash, JSON.stringify(response));
+        return response;
+      });
+    } catch (error) {
+      if (error instanceof ServiceError && error.code === 'task_budget_exhausted') {
+        const session = (error as ServiceError & { session_id?: unknown }).session_id;
+        if (typeof session === 'string') this.taskBudgetDenied?.(session, error);
       }
-      const response = fn();
-      this.db
-        .prepare('INSERT INTO requests VALUES (?,?,?,?)')
-        .run(actor, id, hash, JSON.stringify(response));
-      return response;
-    });
+      throw error;
+    }
   }
   cachedRequest<T>(actor: string, id: string, input: unknown): T | undefined {
     const prior = this.db
@@ -616,6 +663,7 @@ export class Store {
       });
       this.projectTaskAttempt?.(this.attempt(id));
       this.finishChild?.(this.attempt(id));
+      this.taskChildFinished?.(id);
     });
   }
   recoverWork(): void {

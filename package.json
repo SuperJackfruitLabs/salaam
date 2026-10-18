@@ -30,7 +30,8 @@
     "setup:cli": "npm run build && npm link --ignore-scripts --offline --no-audit --no-fund",
     "cli": "node bin/salaam.mjs",
     "demo:acceptance": "npm run build && node scripts/demo-acceptance.mjs",
-    "test:acceptance": "npm run build && node scripts/acceptance.mjs"
+    "test:acceptance": "npm run build && node scripts/acceptance.mjs",
+    "test:tasks:real": "npm run build && vitest run --config vitest.real.config.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.3.0",

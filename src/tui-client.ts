@@ -218,6 +218,27 @@ export class OperatorClient extends EventEmitter {
     this.changed();
     return record.request_id;
   }
+  async taskAction(
+    action: string,
+    body: Record<string, unknown>,
+    reviewed?: { id: string; revision: number },
+  ): Promise<void> {
+    this.actor();
+    if (!this.snapshot || !this.outbox) throw new Error('Open a session first');
+    const task = reviewed ?? this.snapshot.work_task;
+    let path = '/v1/tasks';
+    if (action !== 'create') {
+      if (!task) throw new Error('Create a task first');
+      path += `/${task.id}/${action}`;
+    }
+    this.outbox.enqueueTask(path, {
+      ...body,
+      expected_revision: action === 'create' ? 0 : task!.revision,
+      ...(action === 'create' ? { session_id: this.snapshot.id } : {}),
+    });
+    await this.flush();
+    await this.refresh();
+  }
   async resume(): Promise<void> {
     if (!this.snapshot) return;
     await call(this.socket, `/v1/sessions/${this.snapshot.id}/resume`, this.actor());

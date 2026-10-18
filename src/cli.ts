@@ -241,15 +241,29 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'tasks' && verb && id) {
-    if (['inspect', 'history', 'current'].includes(verb)) {
+    if (['inspect', 'history', 'current', 'checkpoints', 'restores'].includes(verb)) {
       const path =
         verb === 'current'
           ? `/v1/tasks?session_id=${encodeURIComponent(id)}`
-          : `/v1/tasks/${id}${verb === 'history' ? '/history?offset=' + encodeURIComponent(option('--offset') ?? '0') : ''}`;
+          : `/v1/tasks/${id}${verb === 'history' ? '/history?offset=' + encodeURIComponent(option('--offset') ?? '0') : ['checkpoints', 'restores'].includes(verb) ? '/' + verb : ''}`;
       console.log(JSON.stringify(await call(socket, path), null, 2));
       return;
     }
-    if (['create', 'revise', 'run', 'complete'].includes(verb)) {
+    if (
+      [
+        'create',
+        'revise',
+        'run',
+        'complete',
+        'verify',
+        'finish',
+        'checkpoint',
+        'restore',
+        'auto',
+        'pause',
+        'cancel',
+      ].includes(verb)
+    ) {
       const expected = Number(option('--revision'));
       if (!Number.isSafeInteger(expected) || expected < 0)
         throw new Error('Supply the reviewed --revision');
@@ -275,6 +289,32 @@ async function main(): Promise<void> {
           body.plan = JSON.parse(readFileSync(resolve(file), 'utf8'));
           if (verb === 'create') body.session_id = id;
           else path += `/${id}/revise`;
+        } else if (
+          ['verify', 'finish', 'checkpoint', 'restore', 'auto', 'pause', 'cancel'].includes(verb)
+        ) {
+          path += `/${id}/${verb === 'pause' ? 'auto' : verb}`;
+          if (verb === 'verify') {
+            body.check_key = option('--check');
+            body.step_id = option('--step') ?? null;
+          }
+          if (verb === 'finish') {
+            const reason = option('--exception-reason'),
+              evidence = option('--evidence-artifact');
+            if (reason || evidence) {
+              if (!reason || !evidence)
+                throw new Error('Supply both --exception-reason and --evidence-artifact');
+              body.exception = { reason, evidence_artifact: evidence };
+            }
+          }
+          if (verb === 'restore') {
+            body.checkpoint_id = option('--checkpoint');
+            body.workspace_revision = Number(option('--workspace-revision'));
+            body.workspace_digest = option('--workspace-digest');
+          }
+          if (verb === 'auto' || verb === 'pause') {
+            body.max_steps = verb === 'pause' ? 0 : Number(option('--max-steps'));
+            body.compact = args.includes('--compact');
+          }
         } else {
           const step = option('--step');
           if (!step) throw new Error('Supply the reviewed --step ID');

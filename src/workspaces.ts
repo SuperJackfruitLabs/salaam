@@ -491,6 +491,7 @@ export class Workspaces {
           w.root,
           nextRoot,
         );
+      this.store.recordTaskMutation?.(session, id, before, after);
       this.store.event(session, 'workspace.mutation_prepared', {
         mutation_id: id,
         revision,

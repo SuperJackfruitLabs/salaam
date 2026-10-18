@@ -28,6 +28,11 @@ jobs:
         run: |
           mkdir -p /tmp/salaam-coding
           npm run test:coding -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-coding
+      - name: Prove real task completion and daemon restart
+        env:
+          SALAAM_TASK_REAL_SOCKET: /var/run/docker.sock
+          SALAAM_TASK_REAL_SCRATCH: /tmp/salaam-task
+        run: npm run test:tasks:real
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -35,6 +40,7 @@ jobs:
           path: |
             .state/evidence/execution
             .state/evidence/coding
+            .state/evidence/m11
           retention-days: 14
   service:
     env:

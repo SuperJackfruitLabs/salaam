@@ -48,7 +48,12 @@ const evidence = {
   completed_repeats: 0,
   operator_proofs: operatorProofs,
   operator_requested_repeats: 3,
-  task_proofs: ['test/proofs/task-recovery.test.ts'],
+  task_proofs: [
+    'test/proofs/task-recovery.test.ts',
+    'test/proofs/task-completion.test.ts',
+    'test/proofs/task-lifecycle.test.ts',
+    'test/proofs/task-gates.test.ts',
+  ],
   task_requested_repeats: 3,
   task_completed_repeats: 0,
   operator_completed_repeats: 0,

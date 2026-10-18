@@ -37,7 +37,8 @@ interface Pending {
         expected_revision: number;
         decision: 'approve' | 'deny';
       }
-    | { kind: 'cancel'; attempt_id: string };
+    | { kind: 'cancel'; attempt_id: string }
+    | { kind: 'task'; path: string; body: Record<string, unknown> };
 }
 function syncDirectory(path: string): void {
   const fd = openSync(path, 'r');
@@ -132,6 +133,23 @@ export class Outbox {
     };
     return this.enqueueCommand(record);
   }
+  enqueueTask(path: string, body: Record<string, unknown>, request = randomUUID()): Pending {
+    if (
+      !/^\/v1\/tasks(?:\/[a-f0-9-]{36}\/(?:revise|auto|verify|finish|checkpoint|restore|cancel)|\/[a-f0-9-]{36}\/steps\/[a-f0-9-]{36}\/(?:run|complete))?$/i.test(
+        path,
+      )
+    )
+      throw new Error('Invalid task action path');
+    if (!/^[a-f0-9-]{36}$/i.test(request) || Buffer.byteLength(JSON.stringify(body)) > 256 * 1024)
+      throw new Error('Invalid task action');
+    return this.enqueueCommand({
+      created_at: Date.now(),
+      request_id: request,
+      expected_revision: Number(body.expected_revision),
+      text: '',
+      command: { kind: 'task', path, body },
+    });
+  }
   private enqueueCommand(record: Pending): Pending {
     const records = this.records();
     const prior = records.find((prior) => prior.request_id === record.request_id);
@@ -165,6 +183,12 @@ export class Outbox {
               ...record.command,
               request_id: record.request_id,
             });
+          else if (record.command?.kind === 'task')
+            await call(socket, record.command.path, {
+              ...record.command.body,
+              request_id: record.request_id,
+              ...controller,
+            });
           else if (record.command?.kind === 'cancel')
             await call(socket, `/v1/attempts/${record.command.attempt_id}/cancel`, {
               request_id: record.request_id,
@@ -188,7 +212,11 @@ export class Outbox {
               'binding_changed',
               'attempt_settled',
             ].includes(error.code) ||
-              (record.command && error.code === 'not_found'))
+              (record.command && error.code === 'not_found') ||
+              (record.command?.kind === 'task' &&
+                error.status >= 400 &&
+                error.status < 500 &&
+                !['control_required', 'control_conflict'].includes(error.code)))
           ) {
             const rejected = join(this.dir, record.request_id + '.rejected.json');
             renameSync(join(this.dir, record.request_id + '.json'), rejected);

@@ -105,7 +105,7 @@ test('task admissions are idempotent before revisions/leases, dependency-bound a
       f.controller,
     );
     expect(task.state).toBe('verifying');
-    expect(task.reason).toContain('verification is not implemented');
+    expect(task.reason).toContain('verification required');
     expect(f.context.frame(f.session.id, 'binding')).toContain(task.id);
     expect(() =>
       f.tasks.run(task.id, fix!.id, 'repeat-completed', task.revision, null, null, f.controller),
@@ -227,16 +227,16 @@ test('v7 migration and repeated v8 opens preserve the ledger; newer schemas fail
   try {
     store.create(dir, 'old-session');
     store.db.exec(
-      'DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; PRAGMA user_version=7;',
+      'DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; PRAGMA user_version=7;',
     );
     store.close();
     store = new Store(path);
     expect(store.sessions()).toHaveLength(1);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 8 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 9 });
     store.close();
     store = new Store(path);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 8 });
-    store.db.exec('PRAGMA user_version=9');
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 9 });
+    store.db.exec('PRAGMA user_version=10');
     store.close();
     expect(() => new Store(path)).toThrow('newer');
   } finally {

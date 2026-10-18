@@ -1,0 +1,261 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-18T07:13:11.869Z",
+  "milestone": "M11.2–M11.5",
+  "status": "implemented-with-observed-offline-macOS-Linux-and-real-SSH-evidence",
+  "source": {
+    "repository": "SuperJackfruitLabs/salaam",
+    "branch": "m11-1-durable-tasks",
+    "base_commit": "51619ca854374c155876d8595afa58017146f161",
+    "remaining_implementation_uncommitted": true,
+    "runtime_source_digest": "229ff285f593efb4269d66a252f4a941e1544c4ce98003352208c7b5c4ba976b",
+    "implementation_and_tests_manifest": ".state/evidence/m11/source-manifest.json",
+    "manifest_sha256": "c2e293a0972e2dba6473fa93c87f658d69da3c4a733c19829c2083522e3dbd81"
+  },
+  "prior_pushed_slice": {
+    "milestone": "M11.1",
+    "commit": "51619ca854374c155876d8595afa58017146f161",
+    "ci": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39102526731",
+    "ci_status": "passed"
+  },
+  "build": {
+    "node": "v26.7.0",
+    "npm": "11.19.0",
+    "pi": "1.3.0",
+    "compiled_source_digest": "10789300b9b28a7865022ccb65a4d06232a1efc4b83ec6c507ae10bd89411eec",
+    "worker_bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+    "linux_compiled_source_matches": true,
+    "verified_transferred_files": 133
+  },
+  "verification": {
+    "macOS_arm64": {
+      "report": ".state/evidence/m11/full-tests.json",
+      "sha256": "5ecf196de9c39ad6612a928a92fe7be31b39c4aadde2cad7365c534f8362c6ca",
+      "passed": 222,
+      "failed": 0,
+      "started_at": "2026-10-18T07:08:15.073Z"
+    },
+    "Linux_x64": {
+      "report": ".state/evidence/m11/linux-full.json",
+      "sha256": "1e1abf19ac3191eb97e02c8ae0bb91ea49fd9de1de481df95cc4b4f99209239c",
+      "passed": 222,
+      "failed": 0,
+      "started_at": "2026-10-18T07:07:52.687Z"
+    },
+    "additional_task_repeats": 3,
+    "task_cases_per_repeat": 25,
+    "additional_task_case_executions": 75,
+    "task_reports": [
+      {
+        "report": ".state/evidence/m11/tasks-1.json",
+        "sha256": "24f07be65387cf961a1cc2c3f401668a5f30f30eeeacd7783b3115c158006fcf",
+        "passed": 25,
+        "failed": 0,
+        "started_at": "2026-10-18T07:10:22.240Z"
+      },
+      {
+        "report": ".state/evidence/m11/tasks-2.json",
+        "sha256": "dc10f741cd07731dff8c3a9ccec558052dd6a03dfa315c477663644e5ebc66d3",
+        "passed": 25,
+        "failed": 0,
+        "started_at": "2026-10-18T07:11:00.081Z"
+      },
+      {
+        "report": ".state/evidence/m11/tasks-3.json",
+        "sha256": "d1373090817b0fe70b6ae04c9ef432e6a835e041b1241d555e872829d97517bf",
+        "passed": 25,
+        "failed": 0,
+        "started_at": "2026-10-18T07:11:37.845Z"
+      }
+    ],
+    "task_budget_unit_cases": 5,
+    "format": "passed",
+    "types": "passed",
+    "pi_pin": "passed",
+    "diff_check": "passed",
+    "new_full_twenty_repeat_S1_S6_acceptance": "not run locally for this slice; existing proofs passed in the full source suites; CI runner retains twenty repetitions",
+    "remaining_M11_CI": "not run; source is local and uncommitted"
+  },
+  "rehearsals": {
+    "macOS_PTY_Colima_Linux_arm64": {
+      "success": true,
+      "session_id": "cb52f33a-66d1-4449-8156-9fadb6206a10",
+      "task_id": "8de952ea-646f-4423-94b4-0f7a1df3d6ee",
+      "step_ids": [
+        "a4de9837-6eae-40da-a5d5-ad71f3ba2392",
+        "b99fb6d7-f378-4a3a-a051-64f847101eca",
+        "d6318f23-813e-41e1-9f9b-2b1d31af0a7a"
+      ],
+      "engine_id": "9787f71b-0d92-4cd3-9ea0-bc0b737e38ba",
+      "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+      "baseline_exit_code": 1,
+      "passing_verification_commands": 4,
+      "offline_provider_requests": 6,
+      "paid_provider_requests": 0,
+      "daemon_sigkill_between_verified_steps": true,
+      "bound_human_approvals": 1,
+      "completion_fresh": true,
+      "original_source_unchanged": true,
+      "preexisting_human_work_preserved": true,
+      "owned_containers_remaining": 0
+    },
+    "macOS_PTY_SSH_native_Linux_x64": {
+      "success": true,
+      "session_id": "be930f74-be44-45a1-83ea-cb6151fb4c85",
+      "task_id": "83bb685f-ec5d-4e37-976d-019b0ef3faf4",
+      "step_ids": [
+        "cd0e4554-0377-47fd-ab38-b158dc047e50",
+        "64f01f33-f815-4678-92d7-8e5acb0ec0d4",
+        "d00bac82-ed9b-4854-84a1-2da04a9979da"
+      ],
+      "engine_id": "8f2a61d5-6c38-417c-a45a-c6facb3c484c",
+      "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+      "baseline_exit_code": 1,
+      "passing_verification_commands": 4,
+      "offline_provider_requests": 6,
+      "paid_provider_requests": 0,
+      "daemon_sigkill_between_verified_steps": true,
+      "bound_human_approvals": 1,
+      "completion_fresh": true,
+      "original_source_unchanged": true,
+      "preexisting_human_work_preserved": true,
+      "owned_containers_remaining": 0,
+      "host_alias": "superprocess-remote-dev",
+      "source_digest": "229ff285f593efb4269d66a252f4a941e1544c4ce98003352208c7b5c4ba976b",
+      "actual_SSH_terminal": true,
+      "disposable_state_removed": true,
+      "disposable_workspace_removed": true
+    }
+  },
+  "cleanup": {
+    "local_VM_returned_to_stopped_baseline": true,
+    "docker_context": "default",
+    "local_rehearsal_processes_remaining": 0,
+    "local_rehearsal_containers_remaining": 0,
+    "remote_rehearsal_containers_remaining": 0,
+    "remote_disposable_state_and_workspaces_removed": true,
+    "private_source_checkout_retained_for_inspection": true,
+    "existing_user_provider_daemons_unchanged": true,
+    "remote_rehearsal_processes_remaining": 0,
+    "local_source_transfer_archive_removed": true
+  },
+  "raw_evidence": [
+    {
+      "path": ".state/evidence/m11/source-manifest.json",
+      "sha256": "c2e293a0972e2dba6473fa93c87f658d69da3c4a733c19829c2083522e3dbd81"
+    },
+    {
+      "path": ".state/evidence/m11/final-runtime.json",
+      "sha256": "29268ecb7643f29b1e824e80e2e9683c9181f07f6cc393ff373b47be6616fdf3"
+    },
+    {
+      "path": ".state/evidence/m11/build-manifest.json",
+      "sha256": "cd88bfea1093c0a52e903cde20fdcbee1c138c47adfc97c2bc798d12f0188d2a"
+    },
+    {
+      "path": ".state/evidence/m11/linux-build.json",
+      "sha256": "0749160fde0adbaa964dada5ab9b0535a1793c4c621f05ed92df3aa85fcfc772"
+    },
+    {
+      "path": ".state/evidence/m11/real-local.json",
+      "sha256": "4db6c2dc9df7b6ab7b72c1dc8ac818c3c4e9b27ae4e0aa2ae60ccdce639585e2"
+    },
+    {
+      "path": ".state/evidence/m11/real-tests.json",
+      "sha256": "1c0de90d7084f28d9736e9a7268fd9d5a9d4dae38e1ad980c3e8a3c3590b4dc0"
+    },
+    {
+      "path": ".state/evidence/m11/remote.json",
+      "sha256": "8e28d6c4b84305ecdee383a67333cce6f8b67c1b73d25a6e72bfba98c43ddeb0"
+    },
+    {
+      "path": ".state/evidence/m11/cleanup-local.json",
+      "sha256": "65d3e36ac24c752207bdaff2c163c82f8fec0b579330afff6d6784bf0a6773aa"
+    },
+    {
+      "path": ".state/evidence/m11/budget-final.json",
+      "sha256": "aaea93d04aa4bb5d8350a6e7f2ecab5db75014729ef2d38a8a61c733e4224182"
+    },
+    {
+      "path": ".state/evidence/m11/format.log",
+      "sha256": "efa12bade7f9e873ec6d1d407a0feff4df2724979678cea1d8e4f6025b1ed6eb"
+    },
+    {
+      "path": ".state/evidence/m11/types.log",
+      "sha256": "30c185ab253f1ad909cc09adf97de5a19c9ca957745a8f31a2f3fa4bdb7fd2a3"
+    },
+    {
+      "path": ".state/evidence/m11/pin.log",
+      "sha256": "5768875fd8e70fd4698aa1214ee59bd5dc8496c057bdb308d4225519035869e1"
+    },
+    {
+      "path": ".state/evidence/m11/diff.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": ".state/evidence/m11/cleanup-remote-processes.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "meaning": "No matching disposable fixture processes; rg exit 1 is the expected no-match result"
+    }
+  ],
+  "terminal_captures": [
+    {
+      "path": ".state/evidence/m11/screens/real-approval.svg",
+      "sha256": "ed24b90b32f88c3f79acef2c093071d4acc3a8049d755ceea9723d6642521a62",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/real-approval.txt",
+      "sha256": "a965d499dce143d8f151a52bdfc61c6bbaf3d78ad303e073e55f23e78cb56ebb",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/real-completed.svg",
+      "sha256": "3ec8b69a25c0e942731686ce9e63aedc44454de604637a162d6333b175f5a1a5",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/real-completed.txt",
+      "sha256": "49b9488425172677bcf981b2bc24a9b78af7f14640ecd30bca29cf5a6abd3d68",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-approval.svg",
+      "sha256": "30cb56e153a7f557fae9e0178e0ce17484c9e73b67799e72895d341bb5d9b400",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-approval.txt",
+      "sha256": "3296826c13173069fbdb6d4a94a39fcf645fd6fa65528e63dffc7246af2a1735",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-between-steps.svg",
+      "sha256": "7c204390738d670557fb1dbb3941bc028ecbbc9d9735adabf6723a19472f38b5",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-between-steps.txt",
+      "sha256": "19894e558d194acc808013acb9ec2cf8982341a14038b393c50e6bccb3bf120b",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-completed.svg",
+      "sha256": "69659fbc7b93bd7528f88b76fef349e4915b2a4b7d885dc3c3960e0a64035647",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    },
+    {
+      "path": ".state/evidence/m11/screens/ssh-completed.txt",
+      "sha256": "c0d2af3022efb03b3f5345e70abbb297c4cc0de42b81a9c35b11c77f748d3422",
+      "provenance": "Captured real terminal cells, not a desktop screenshot"
+    }
+  ],
+  "limits": [
+    "Offline provider behavior only; no live Claude task evaluation",
+    "No new Zed GUI task-control rehearsal",
+    "No power-loss durability or production deployment claim",
+    "Declared token units are admission accounting, not exact billed tokens or a currency cap",
+    "Checkpoints restore owned filesystem changes; they do not undo external effects",
+    "M12 jobs and schedules remain planned"
+  ]
+}
