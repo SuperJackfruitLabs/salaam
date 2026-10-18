@@ -87,9 +87,16 @@ location. Cloud credential files stay on the execution host.
 **ChatGPT subscription routes have no provider-enforced output-token cap.**
 Salaam permits them for interactive sessions and displays the limitation in service
 health, startup output, and the TUI. Omit `--max-output-tokens` on these routes; supplying it reports an error.
-Durable tasks, scheduled task runs, and budgeted child work are rejected before dispatch.
-The same restriction applies to any catalog route that cannot enforce an output cap.
-Request-count limits still apply; an output limit or request budget is never a currency spending cap.
+For durable tasks, explicitly set `limits.token_units` to `null` in the plan and
+omit `output_token_bound` (or set it to `null`). This disables the aggregate token
+budget and its default per-request output bound. A numeric output bound is still
+an explicit cap and is rejected on these routes. Omitted task limits retain the
+capped defaults, so Salaam never silently removes a requested token budget.
+Scheduled runs preserve the plan's choice, and children share its remaining request
+allowance. Request counts, runtime, concurrency, verification limits, cancellation,
+and approval controls remain active. The same capability check applies to any
+catalog route that cannot enforce an output cap. A token or request budget is
+never a currency spending cap. See [task limits](durable-tasks.md).
 
 ## Routing and recovery
 

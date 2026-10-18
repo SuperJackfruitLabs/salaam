@@ -10,9 +10,9 @@ export interface TaskLimits {
   requests: number;
   runtime_ms: number;
   concurrency: number;
-  token_units: number;
+  token_units: number | null;
   input_token_bound: number;
-  output_token_bound: number;
+  output_token_bound: number | null;
   verification_runs: number;
 }
 export interface TaskPolicy {
@@ -63,10 +63,22 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
     output_token_bound: 8192,
     verification_runs: 256,
   };
+  // Explicit opt-out; omitted limits retain the existing capped defaults.
+  if (input.token_units === null) {
+    limits.token_units = null;
+    if (input.output_token_bound === undefined) limits.output_token_bound = null;
+  }
   for (const key of Object.keys(limits) as (keyof TaskLimits)[]) {
+    if ((key === 'token_units' || key === 'output_token_bound') && input[key] === null) {
+      limits[key] = null;
+      continue;
+    }
     if (input[key] !== undefined) limits[key] = integer(input[key], key);
-    if (limits[key] < 1 || limits[key] > max[key])
+    const bound = limits[key];
+    if (bound !== null && (bound < 1 || bound > max[key]!))
       throw new ServiceError('invalid_budget', 'Task limit out of range: ' + key, 400);
   }
+  if (limits.output_token_bound === null && limits.token_units !== null)
+    throw new ServiceError('invalid_budget', 'A token budget requires an output token bound', 400);
   return { acceptance, deliverables, limits };
 }

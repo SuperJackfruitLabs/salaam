@@ -6,8 +6,15 @@ import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
 import { RecurringWork } from '../../src/recurring-work.js';
 import { call } from '../../src/transport.js';
-const define = async (f: Awaited<ReturnType<typeof taskFixture>>, def: unknown = null) => {
-  const t = await f.plan();
+const define = async (
+  f: Awaited<ReturnType<typeof taskFixture>>,
+  def: unknown = null,
+  uncapped = false,
+) => {
+  const t = await f.plan({
+    ...checkedPlan(),
+    ...(uncapped ? { limits: { token_units: null } } : {}),
+  });
   return f.service.recurring.create(
     t.id,
     randomUUID(),
@@ -19,63 +26,69 @@ const define = async (f: Awaited<ReturnType<typeof taskFixture>>, def: unknown =
     f.actor,
   );
 };
-test('each stable recurring key owns a fresh immutable workspace/task/session; retries and restart preserve reservation IDs', async () => {
-  const f = await taskFixture();
-  try {
-    f.service.recurring.close();
-    await f.service.taskDriver.close();
-    const job = await define(f),
-      r = f.service.recurring.trigger(job.id, 'trigger', 1, 'first', f.actor);
-    expect(
-      f.service.recurring.trigger(job.id, 'retry', 0, 'first', {
-        client_id: 'expired',
-        token: 'expired',
-      }),
-    ).toEqual(r);
-    expect(() => f.service.recurring.trigger(job.id, 'overlap', 1, 'second', f.actor)).toThrow(
-      'settlement',
-    );
-    writeFileSync(
-      join(f.service.workspaces.get(f.session.id).root, 'app.js'),
-      'changed reviewed source after definition',
-    );
-    await f.restart();
-    await until(
-      () => f.service.recurring.occurrences(job.id).occurrences[0],
-      (r) => !!r?.job_run_id,
-    );
-    const first = f.service.recurring.occurrences(job.id).occurrences[0]!;
-    await until(
-      () => f.service.jobs.view(first.job_run_id!),
-      (j) => j.state === 'succeeded',
-      20000,
-    );
-    expect(
-      f.service.workspaces.read(first.session_id, { action: 'read', path: 'app.js' }),
-    ).toMatchObject({
-      lines: expect.arrayContaining([{ line: 1, text: 'export const answer = 42;' }]),
-    });
-    expect(f.service.store.snapshot(first.session_id).attempts).toHaveLength(1);
-    const second = f.service.recurring.trigger(job.id, 'second', 1, 'second', f.actor);
-    expect(second.session_id).not.toBe(first.session_id);
-    await until(
-      () => f.service.recurring.occurrences(job.id).occurrences[0],
-      (r) => !!r?.job_run_id,
-    );
-    const run = f.service.recurring.occurrences(job.id).occurrences[0]!;
-    await until(
-      () => f.service.jobs.view(run.job_run_id!),
-      (j) => j.state === 'succeeded',
-      20000,
-    );
-    expect(f.service.jobs.get(run.job_run_id!).task_id).not.toBe(
-      f.service.jobs.get(first.job_run_id!).task_id,
-    );
-    expect(f.service.store.snapshot(f.session.id).attempts).toHaveLength(0);
-  } finally {
-    await f.close();
-  }
-});
+test.each([false, true])(
+  'recurring templates preserve limits and deduplication across restart (token budget disabled: %s)',
+  async (uncapped) => {
+    const f = await taskFixture();
+    try {
+      f.service.recurring.close();
+      await f.service.taskDriver.close();
+      const job = await define(f, null, uncapped),
+        r = f.service.recurring.trigger(job.id, 'trigger', 1, 'first', f.actor);
+      expect(
+        f.service.recurring.trigger(job.id, 'retry', 0, 'first', {
+          client_id: 'expired',
+          token: 'expired',
+        }),
+      ).toEqual(r);
+      expect(() => f.service.recurring.trigger(job.id, 'overlap', 1, 'second', f.actor)).toThrow(
+        'settlement',
+      );
+      writeFileSync(
+        join(f.service.workspaces.get(f.session.id).root, 'app.js'),
+        'changed reviewed source after definition',
+      );
+      await f.restart();
+      await until(
+        () => f.service.recurring.occurrences(job.id).occurrences[0],
+        (r) => !!r?.job_run_id,
+      );
+      const first = f.service.recurring.occurrences(job.id).occurrences[0]!;
+      await until(
+        () => f.service.jobs.view(first.job_run_id!),
+        (j) => j.state === 'succeeded',
+        20000,
+      );
+      expect(
+        f.service.workspaces.read(first.session_id, { action: 'read', path: 'app.js' }),
+      ).toMatchObject({
+        lines: expect.arrayContaining([{ line: 1, text: 'export const answer = 42;' }]),
+      });
+      expect(f.service.store.snapshot(first.session_id).attempts).toHaveLength(1);
+      expect(f.service.taskWork.forSession(first.session_id)!.limits.token_units).toBe(
+        uncapped ? null : 16777216,
+      );
+      const second = f.service.recurring.trigger(job.id, 'second', 1, 'second', f.actor);
+      expect(second.session_id).not.toBe(first.session_id);
+      await until(
+        () => f.service.recurring.occurrences(job.id).occurrences[0],
+        (r) => !!r?.job_run_id,
+      );
+      const run = f.service.recurring.occurrences(job.id).occurrences[0]!;
+      await until(
+        () => f.service.jobs.view(run.job_run_id!),
+        (j) => j.state === 'succeeded',
+        20000,
+      );
+      expect(f.service.jobs.get(run.job_run_id!).task_id).not.toBe(
+        f.service.jobs.get(first.job_run_id!).task_id,
+      );
+      expect(f.service.store.snapshot(f.session.id).attempts).toHaveLength(0);
+    } finally {
+      await f.close();
+    }
+  },
+);
 test('schedule cursor, bounded missed slots and overlap receipts survive restart and revisions never widen templates', async () => {
   const f = await taskFixture();
   try {

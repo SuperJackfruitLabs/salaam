@@ -119,7 +119,8 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
-        this.taskWork.providerCheck = () => this.supervisor.assertTaskProviderSupported();
+        this.taskWork.providerCheck = (limits) =>
+          this.supervisor.assertTaskProviderSupported(limits);
         this.supervisor.coding = this.coding;
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
@@ -658,7 +659,8 @@ export class SalaamService {
             automatic_progression: 'operator-bounded-opt-in',
             verified_completion: !!this.coding.executor,
             verification_supported: true,
-            task_budgets: this.supervisor.providerCapabilities().output_token_cap,
+            task_budgets: true,
+            task_token_budgets: this.supervisor.providerCapabilities().output_token_cap,
             checkpoints: true,
             deterministic_compaction: 'operator-bounded-idle-only',
           },

@@ -20,7 +20,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 7,
+  version: 8,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -46,6 +46,7 @@ export const POLICY = {
     ).sort(),
   ],
   provider_retries: 0,
+  task_token_budget: 'capped-default-explicit-null-opt-out-v1',
   compaction: { strategy: 'explicit-task-checkpoint-v1', automatic: false, keepRecentTokens: 512 },
   external_effects: 'explicit-connector-and-operation-approval',
   coding: {

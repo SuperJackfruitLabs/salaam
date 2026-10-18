@@ -829,7 +829,7 @@ export class SalaamApp {
             const max_steps = Number(value);
             this.confirm(
               'Run this bounded plan',
-              `Task ${shortId(task.id)} · plan revision ${task.plan_revision}\nAt most ${max_steps} new steps; each step needs fresh passing checks.\nLimits: ${task.limits.requests} requests · ${task.limits.runtime_ms} ms · ${task.limits.concurrency} concurrent executions.\n${task.limits.token_units} declared token units · ${task.limits.verification_runs} verification runs.\nChecks: ${task.acceptance.map((c) => c.key).join(', ') || 'none'} · Deliverables: ${task.deliverables.length}.\nDeterministic compaction at idle boundaries. Human approvals remain separate.`,
+              `Task ${shortId(task.id)} · plan revision ${task.plan_revision}\nAt most ${max_steps} new steps; each step needs fresh passing checks.\nLimits: ${task.limits.requests} requests · ${task.limits.runtime_ms} ms · ${task.limits.concurrency} concurrent executions.\n${task.limits.token_units === null ? 'Token budget disabled' : task.limits.token_units + ' declared token units'} · ${task.limits.verification_runs} verification runs.\nChecks: ${task.acceptance.map((c) => c.key).join(', ') || 'none'} · Deliverables: ${task.deliverables.length}.\nDeterministic compaction at idle boundaries. Human approvals remain separate.`,
               'Run bounded task',
               () => this.client.taskAction('auto', { max_steps, compact: true }, reviewed),
             );

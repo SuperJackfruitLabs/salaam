@@ -327,7 +327,7 @@ async function main(): Promise<void> {
           limitation: !p.getModels().length
             ? 'Classifier only; no chat route'
             : p.id === 'openai-codex'
-              ? 'No provider-enforced output cap; interactive sessions only'
+              ? 'No provider-enforced output cap; tasks must explicitly disable token budgeting'
               : null,
         })),
         null,
@@ -1036,7 +1036,7 @@ async function main(): Promise<void> {
       const auth = await resolveProviderAuth(route);
       if (cap !== undefined && !providerHasOutputCap(route, auth))
         throw new Error(
-          'This authentication cannot enforce --max-output-tokens; omit it for an interactive-only session',
+          'This authentication cannot enforce --max-output-tokens; omit it and explicitly disable token budgeting in task plans',
         );
       route = bindProviderConfiguration(route, auth);
     }

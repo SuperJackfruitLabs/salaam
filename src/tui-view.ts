@@ -534,12 +534,17 @@ export class DocumentView implements Component {
               width,
             ),
             ...this.text(
-              'Declared token units ' +
-                task.runtime.token_units +
-                ' + ' +
-                task.runtime.reserved_tokens +
-                ' reserved / ' +
-                task.limits.token_units,
+              task.limits.token_units === null
+                ? 'Token budget disabled · ' +
+                    (task.limits.output_token_bound === null
+                      ? 'no task output-token bound'
+                      : 'output bound ' + task.limits.output_token_bound)
+                : 'Declared token units ' +
+                    task.runtime.token_units +
+                    ' + ' +
+                    task.runtime.reserved_tokens +
+                    ' reserved / ' +
+                    task.limits.token_units,
               width,
             ),
             ...this.text(

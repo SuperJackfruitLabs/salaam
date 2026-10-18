@@ -176,7 +176,7 @@ test.each(routes)(
 );
 
 test.each(['openai', 'openai-codex'])(
-  '%s OAuth is interactive only and rejects durable task admission',
+  '%s OAuth requires explicit token-budget opt-out and preserves durable task admission across restart',
   async (provider) => {
     const api = provider === 'openai' ? 'openai-responses' : 'openai-codex-responses';
     const f = await setup(provider, api, 'tool', true);
@@ -185,7 +185,7 @@ test.each(['openai', 'openai-codex'])(
       await ready(f.service, session.id);
       expect(f.service.supervisor.providerCapabilities()).toMatchObject({
         output_token_cap: false,
-        durable_tasks: false,
+        durable_tasks: true,
       });
       const request = await submit(f.service, session.id, 'Probe then reply.');
       const final = await until(
@@ -204,6 +204,9 @@ test.each(['openai', 'openai-codex'])(
       expect((await f.stats()).count).toBe(2);
       const actor = await control(f.service, session.id, true);
       const { call } = await import('../../src/transport.js');
+      expect(await call(f.service.socket, '/v1/health')).toMatchObject({
+        task_execution: { durable_tasks: true, task_budgets: true, task_token_budgets: false },
+      });
       await expect(
         call(f.service.socket, '/v1/tasks', {
           ...actor,
@@ -221,6 +224,67 @@ test.each(['openai', 'openai-codex'])(
         f.service.store.db.prepare('SELECT count(*) AS n FROM durable_tasks').get(),
       ).toMatchObject({ n: 0 });
       expect((await f.stats()).count).toBe(2);
+      const plan = {
+        objective: 'Do durable work',
+        constraints: [],
+        limits: { token_units: null, requests: 1 },
+        steps: [{ key: 'one', title: 'One', instruction: 'Probe then reply.', depends_on: [] }],
+      };
+      const taskBody = { ...actor, session_id: session.id, expected_revision: 0, plan };
+      await expect(
+        call(f.service.socket, '/v1/tasks', {
+          ...taskBody,
+          request_id: 'explicit-unsupported-cap',
+          plan: { ...plan, limits: { token_units: null, output_token_bound: 512 } },
+        }),
+      ).rejects.toThrow('no output cap');
+      const task = await call<import('../../src/task-work.js').WorkTask>(
+        f.service.socket,
+        '/v1/tasks',
+        {
+          ...taskBody,
+          request_id: 'uncapped-durable-task',
+        },
+      );
+      expect(task.limits).toMatchObject({
+        token_units: null,
+        output_token_bound: null,
+        requests: 1,
+      });
+      const path = `/v1/tasks/${task.id}/steps/${task.steps[0]!.id}/run`;
+      const stepBody = { ...actor, expected_revision: task.revision, request_id: 'uncapped-step' };
+      const accepted = await call<{ attempt_id: string }>(f.service.socket, path, stepBody);
+      await until(
+        () => f.service.store.attempt(accepted.attempt_id),
+        (a) => a.state === 'completed',
+      );
+      expect((await f.stats()).count).toBe(3);
+      expect((await f.stats()).bodies.every((b) => b.body.max_output_tokens === undefined)).toBe(
+        true,
+      );
+      await f.restart();
+      const restored = f.service.taskWork.get(task.id);
+      expect(restored.steps[0]!.attempt_id).toBe(accepted.attempt_id);
+      expect(restored.limits.token_units).toBeNull();
+      expect(f.service.taskBudget.state(task.id)).toMatchObject({
+        requests_spent: 1,
+        token_units: 0,
+        reserved_tokens: 0,
+      });
+      expect(await call(f.service.socket, path, stepBody)).toEqual(accepted);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect((await f.stats()).count).toBe(3);
+      expect(() =>
+        f.service.store.usage.admit(
+          session.id,
+          accepted.attempt_id,
+          'over-limit',
+          provider,
+          f.options.providerRoute.model,
+          { input: 10, output: 999999 },
+        ),
+      ).toThrow('request limit');
+      expect((await f.stats()).count).toBe(3);
     } finally {
       await f.close();
     }
@@ -549,6 +613,130 @@ test('changing output-cap capabilities requires restart before another interacti
     expect((await f.stats()).count).toBe(0);
     expect(f.service.supervisor.providerCapabilities().output_token_cap).toBe(true);
     expect(f.service.store.session(session.id).error).toContain('restart');
+  } finally {
+    await f.close();
+  }
+});
+
+test.each(['openai', 'openai-codex'])(
+  '%s OAuth children share request reservations without a token cap',
+  async (provider) => {
+    const api = provider === 'openai' ? 'openai-responses' : 'openai-codex-responses';
+    const f = await setup(provider, api, 'child', true);
+    try {
+      const session = await create(f.service, f.dir);
+      await ready(f.service, session.id);
+      const actor = await control(f.service, session.id);
+      const plan = {
+        objective: 'Delegate read-only work',
+        constraints: [],
+        limits: { token_units: null, requests: 3 },
+        steps: [
+          {
+            key: 'one',
+            title: 'Delegate',
+            instruction: 'Spawn a child then reply',
+            depends_on: [],
+          },
+        ],
+      };
+      const task = f.service.taskWork.create(session.id, 'create-child-task', 0, plan, actor);
+      const accepted = f.service.taskWork.run(
+        task.id,
+        task.steps[0]!.id,
+        'run-child-task',
+        task.revision,
+        null,
+        null,
+        actor,
+      );
+      await until(
+        () => f.service.store.attempt(accepted.attempt_id),
+        (a) => ['completed', 'failed', 'interrupted'].includes(a.state),
+      );
+      expect(f.service.store.attempt(accepted.attempt_id)).toMatchObject({ state: 'completed' });
+      const children = f.service.children.list(session.id);
+      expect(children).toHaveLength(1);
+      expect(children[0]!.state).toBe('completed');
+      expect(f.service.taskBudget.state(task.id)).toMatchObject({
+        requests_spent: 3,
+        reserved_requests: 0,
+        token_units: 0,
+        reserved_tokens: 0,
+      });
+      expect((await f.stats()).count).toBe(3);
+      await f.restart();
+      expect(f.service.children.list(session.id).map((c) => c.id)).toEqual(
+        children.map((c) => c.id),
+      );
+      expect((await f.stats()).count).toBe(3);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test('switching to subscription auth requires an existing capped plan to explicitly opt out before any task dispatch', async () => {
+  const f = await setup('openai', 'openai-responses', 'text');
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    let actor = await control(f.service, session.id);
+    const plan = {
+      objective: 'Preserve requested caps',
+      constraints: [],
+      steps: [{ key: 'one', title: 'One', instruction: 'Reply', depends_on: [] }],
+    };
+    let task = f.service.taskWork.create(session.id, 'create-capped', 0, plan, actor);
+    await f.credentials.modify('openai', async () => ({
+      type: 'oauth',
+      access: 'fixture-provider-key.subscription.token',
+      refresh: 'fixture',
+      expires: Date.now() + 3600000,
+    }));
+    await f.restart();
+    actor = await control(f.service, session.id, true);
+    expect(() =>
+      f.service.taskWork.run(
+        task.id,
+        task.steps[0]!.id,
+        'blocked-cap',
+        task.revision,
+        null,
+        null,
+        actor,
+      ),
+    ).toThrow('no output cap');
+    expect((await f.stats()).count).toBe(0);
+    expect(f.service.store.snapshot(session.id).attempts).toHaveLength(0);
+    expect(
+      f.service.taskWork.create(session.id, 'create-capped', 0, plan, {
+        client_id: 'expired',
+        token: 'expired',
+      }).id,
+    ).toBe(task.id);
+    task = f.service.taskWork.revise(
+      task.id,
+      'explicit-opt-out',
+      task.revision,
+      { ...plan, limits: { token_units: null } },
+      actor,
+    );
+    await f.service.supervisor.start(session.id);
+    const accepted = f.service.taskWork.run(
+      task.id,
+      task.steps[0]!.id,
+      'allowed-uncapped',
+      task.revision,
+      null,
+      null,
+      actor,
+    );
+    await until(
+      () => f.service.store.attempt(accepted.attempt_id),
+      (a) => a.state === 'completed',
+    );
+    expect((await f.stats()).count).toBe(1);
   } finally {
     await f.close();
   }
