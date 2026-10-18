@@ -1,5 +1,7 @@
 # Implementation scope
 
+The proposed next sequence is [M13–M18: native specialists, durable teams, parallel coding, external harnesses, A2A and mixed-runtime acceptance](contributor/multi-agent-milestones.md). It is contributor planning, not a claim that those capabilities ship today.
+
 M0–M8 implement the Pi session service foundation, reconnectable terminals, durable approvals and managed fixture effects, child work, usage accounting, durable task facts, managed compaction and an ACP client. M9 adds explicitly enabled owned coding workspaces and isolated durable commands. Verification records the observed platforms and acceptance runs.
 
 | Package | Current scope                                                                                                                                                          |
