@@ -70,3 +70,44 @@ An earlier macOS sandbox experiment failed and establishes no supported boundary
 The execution CI job runs the same real proof on Linux. Named harness turns,
 independent approve/deny decisions, owned-session reconnect, durable invocation
 admission and the final mixed-runtime portfolio remain required gates.
+
+## Live Claude gateway and protocol checkpoints
+
+The pinned Claude ACP adapter completed a live private-draft repair on the tested
+Sonnet 4.6 route, using five real model requests capped at 4,096 output tokens each.
+Exact edit and command permission scopes were recorded. The SDK's inner command
+sandbox failed initially; an explicitly scoped retry used the already proven
+outer Docker boundary. The test file, package metadata and human bytes survived,
+and a fresh independent Salaam command receipt passed with exit code zero.
+Reloading that owned session's history made no additional model requests. This was
+history loading on the same connection, not a transport/daemon reconnect proof.
+The report is
+`.state/evidence/m16/claude-acp-0a7d5ae8-d075-46a3-8cb0-7a48714e8c08.json`.
+An earlier Sonnet 5.5 request failed because this pinned SDK used an incompatible
+thinking format; it remains charged, and that adapter/model combination is not
+claimed. No promotional-credit assumption changes the numerical admission cap.
+
+The host Anthropic gateway authenticates the run's ephemeral local token, accepts
+only its fixed API path and declared model, denies remote images/server tools,
+replaces client authentication with host-resolved credentials, enforces the output
+cap and records admission before forwarding. Budget or payload rejection forwards
+nothing. HTTP failure retains its charge and has no gateway retry. It does not
+change model-specific thinking semantics to force compatibility.
+
+The protocol core now requires a synchronous durable checkpoint before session
+creation, prompt dispatch and cancellation. A new adapter converts recovered
+in-flight state to unknown before opening a connection. ACP refuses to load an
+uncertain prompt because history cannot prove which invocation completed. Codex binds both thread and turn IDs;
+owned readback can reconcile a known terminal turn. Lost acceptance never sends a
+second prompt. Early or duplicate terminal events cannot duplicate completion.
+Cancellation acknowledgement leaves work running until an actual terminal receipt;
+cancel intent revokes pending permission grants immediately. Permission replies
+map local approve/deny only to once-only ACP options or Codex accept/decline.
+Storage failure closes control and denies all later grants.
+
+Independent SQLite-backed protocol fixtures exercise these barriers and wrong-owner
+cases. The core still needs connection to the service's assignment, invocation,
+approval and recovery records; standalone conformance and live scripts do not
+establish that integration. Gemini/Codex preflight captured their actual provider
+payloads inside the boundary without forwarding to a live provider. Their named
+live turns and transport reconnect remain separate gates.

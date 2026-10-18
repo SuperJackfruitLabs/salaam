@@ -77,9 +77,9 @@ continuation identity.
   runtime execution evidence, not live-model usefulness, an independent native Linux
   host, external ACP/Codex isolation, or a power-loss durability claim.
 
-Live comparisons against a single-agent baseline and the final mixed-runtime
-portfolio remain acceptance gates. Their model requests share the separately
-authorized overall live budget.
+The native live comparison is recorded below. The final mixed-runtime portfolio
+remains an acceptance gate. All model requests share the separately authorized
+overall live budget.
 
 ### Live comparison: answer-and-documentation-v1
 
@@ -106,3 +106,15 @@ The successful report is
 `.state/evidence/m15/native-coding-2fb01da4-b956-4905-af88-d7dafe64dad9.json`.
 Run `node scripts/native-coding-live.mjs --run` only with an explicit live budget
 and the pre-provisioned `SALAAM_TASK_REAL_SOCKET` / `SALAAM_TASK_REAL_SCRATCH` backend.
+
+### Independent Linux CI receipt
+
+[The Ubuntu x64 execution job at afc8582](https://github.com/SuperJackfruitLabs/salaam/actions/runs/39161503834)
+also passed the real native-team rehearsal. Its downloaded
+`execution-boundary-linux/m15/real-local.json` records source digest
+`c56c72b8211012431db4791d2bfd69364b2ef97ce5ed35fd8b21ed787c925cd6`,
+build digest `6ed68285ee6424dbcfab30d0cf1ee09f43d32db9fa28b050ac4981698a713c77`,
+Docker 28.0.4, initially failing checks, fresh passing combined checks and preserved
+results across restart. The corresponding macOS/Linux service and install checks
+are green for that revision. Later commits require their own CI; this receipt does
+not establish the unfinished external-harness or A2A gates.

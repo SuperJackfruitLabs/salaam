@@ -170,3 +170,17 @@ test('cleanup never deletes a container belonging to an unrelated owner', async 
     f.close();
   }
 });
+test('engine replacement after preparation prevents both dispatch and cleanup on the wrong engine', async () => {
+  const f = fixture();
+  try {
+    const r = await f.boundary.prepare(randomUUID(), f.paths[0]!, f.paths[1]!, f.paths[2]!, [
+      'node',
+    ]);
+    f.setEngine('replacement');
+    await expect(f.boundary.assert(r)).rejects.toMatchObject({ code: 'harness_engine_changed' });
+    await expect(f.boundary.cleanup(r)).rejects.toMatchObject({ code: 'harness_engine_changed' });
+    expect(f.calls.some((c) => c.method === 'DELETE')).toBe(false);
+  } finally {
+    f.close();
+  }
+});

@@ -106,6 +106,12 @@ export class HarnessRpc {
     if (this.launch.dialect === 'acp' ? message.jsonrpc !== '2.0' : message.jsonrpc !== undefined)
       throw new Error('Harness RPC dialect mismatch');
     if (typeof message.method === 'string') {
+      if (
+        message.method.length > 192 ||
+        Object.hasOwn(message, 'result') ||
+        Object.hasOwn(message, 'error')
+      )
+        throw new Error('Invalid harness request envelope');
       const params = message.params === undefined ? {} : this.object(message.params);
       if (message.id === undefined) {
         this.handlers.notification?.(message.method, params);
@@ -113,6 +119,7 @@ export class HarnessRpc {
       }
       if (
         (typeof message.id !== 'string' && typeof message.id !== 'number') ||
+        (typeof message.id === 'string' && message.id.length > 256) ||
         (typeof message.id === 'number' && !Number.isSafeInteger(message.id))
       )
         throw new Error('Invalid harness request ID');
@@ -218,7 +225,11 @@ export class HarnessRpc {
     }
     this.pending.clear();
     this.process.kill('SIGKILL');
-    this.handlers.failed?.(error);
+    // A failed persistence observer must not leave the transport usable or make a timer throw.
+    // Pending callers already reject; the committed dispatch intent remains for recovery.
+    try {
+      this.handlers.failed?.(error);
+    } catch {}
   }
   async close(): Promise<void> {
     this.stopping = true;

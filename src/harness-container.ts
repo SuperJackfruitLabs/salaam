@@ -25,7 +25,7 @@ export const HARNESS_CONTAINER_PROFILE = {
   response_bytes: 8 * 1024 * 1024,
 } as const;
 /** Fixed relay: neither this container nor the harness has an external network. Real keys stay in the host callback. */
-const GATEWAY = String.raw`const http=require('node:http'),rl=require('node:readline');let serial=0;const pending=new Map();const server=http.createServer(async(req,res)=>{if(pending.size>=8){res.writeHead(429);res.end();return}let size=0,chunks=[];try{for await(const chunk of req){size+=chunk.length;if(size>2097152)throw Error('body limit');chunks.push(chunk)}const id=++serial;pending.set(id,res);res.on('close',()=>pending.delete(id));const frame=JSON.stringify({id,method:req.method,path:req.url,headers:{'content-type':req.headers['content-type'],'x-api-key':req.headers['x-api-key'],authorization:req.headers.authorization},body:Buffer.concat(chunks).toString('base64')})+'\n';if(process.stdout.writableLength+frame.length>4194304)throw Error('relay backpressure');process.stdout.write(frame);}catch{res.destroy()}});rl.createInterface({input:process.stdin}).on('line',line=>{try{if(line.length>4194304)throw Error('frame limit');const m=JSON.parse(line),res=pending.get(m.id);if(!res)return;if(m.status!==undefined)res.writeHead(m.status,{'content-type':m.content_type??'application/json'});if(m.chunk)res.write(Buffer.from(m.chunk,'base64'));if(m.end){res.end();pending.delete(m.id)}}catch{process.exit(2)}}).on('close',()=>{for(const res of pending.values())res.destroy();server.close();process.exit(0)});server.listen(47123,'127.0.0.1',()=>process.stdout.write(JSON.stringify({ready:true})+'\n'));setTimeout(()=>process.exit(3),300000);`;
+const GATEWAY = String.raw`const http=require('node:http'),rl=require('node:readline');let serial=0;const pending=new Map();const server=http.createServer(async(req,res)=>{if(pending.size>=8){res.writeHead(429);res.end();return}let size=0,chunks=[];try{for await(const chunk of req){size+=chunk.length;if(size>2097152)throw Error('body limit');chunks.push(chunk)}const id=++serial;pending.set(id,res);res.on('close',()=>pending.delete(id));const frame=JSON.stringify({id,method:req.method,path:req.url,headers:{'content-type':req.headers['content-type'],'x-api-key':req.headers['x-api-key'],authorization:req.headers.authorization,'anthropic-beta':req.headers['anthropic-beta']},body:Buffer.concat(chunks).toString('base64')})+'\n';if(process.stdout.writableLength+frame.length>4194304)throw Error('relay backpressure');process.stdout.write(frame);}catch{res.destroy()}});rl.createInterface({input:process.stdin}).on('line',line=>{try{if(line.length>4194304)throw Error('frame limit');const m=JSON.parse(line),res=pending.get(m.id);if(!res)return;if(m.status!==undefined)res.writeHead(m.status,{'content-type':m.content_type??'application/json'});if(m.chunk)res.write(Buffer.from(m.chunk,'base64'));if(m.end){res.end();pending.delete(m.id)}}catch{process.exit(2)}}).on('close',()=>{for(const res of pending.values())res.destroy();server.close();process.exit(0)});server.listen(47123,'127.0.0.1',()=>process.stdout.write(JSON.stringify({ready:true})+'\n'));setTimeout(()=>process.exit(3),300000);`;
 // PID 1 owns the wall clock and exits with the harness, killing detached descendants.
 const BOOT = `const {spawn}=require('node:child_process');const child=spawn(process.argv[1],process.argv.slice(2),{stdio:'inherit',env:process.env});setTimeout(()=>process.exit(124),300000);child.on('error',()=>process.exit(126));child.on('exit',code=>process.exit(code??125));`;
 export interface GatewayRequest {
@@ -340,6 +340,13 @@ export class DockerHarnessBoundary {
     return c;
   }
   async assert(receipt: HarnessContainers): Promise<void> {
+    const info = engineJson(await this.engine('GET', '/info'));
+    if (
+      info.ID !== this.engineId ||
+      info.CgroupVersion !== '2' ||
+      !info.SecurityOptions?.includes('name=seccomp,profile=builtin')
+    )
+      throw new ServiceError('harness_engine_changed', 'Proven engine changed before dispatch');
     if (receipt.engine_id !== this.engineId || receipt.profile_digest !== this.profileDigest)
       throw new ServiceError('harness_container_changed', 'Boundary receipt changed');
     const [g, h] = await Promise.all([
@@ -493,6 +500,12 @@ export class DockerHarnessBoundary {
     return this.launch(receipt.harness, dialect);
   }
   async cleanup(receipt: HarnessContainers): Promise<void> {
+    const info = engineJson(await this.engine('GET', '/info'));
+    if (info.ID !== this.engineId)
+      throw new ServiceError(
+        'harness_engine_changed',
+        'Cannot confirm ownership on a changed engine',
+      );
     for (const [id, kind] of [
       [receipt.harness, 'worker'],
       [receipt.gateway, 'gateway'],
