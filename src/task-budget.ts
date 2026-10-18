@@ -84,8 +84,11 @@ export class TaskBudget {
     if (!attempt) this.deny(task.session_id, 'Task model work must belong to a durable attempt');
     const l = task.limits,
       r = this.state(task.id),
-      charge = l.input_token_bound + l.output_token_bound;
-    if (input > l.input_token_bound || output > l.output_token_bound)
+      charge = l.token_units === null ? 0 : l.input_token_bound + l.output_token_bound!;
+    if (
+      input > l.input_token_bound ||
+      (l.output_token_bound !== null && output > l.output_token_bound)
+    )
       this.deny(task.session_id, 'Provider payload exceeds declared per-request token bounds');
     const reservation = this.store.db
       .prepare('SELECT * FROM task_reservations WHERE attempt_id=? AND task_id=?')
@@ -107,7 +110,10 @@ export class TaskBudget {
     } else {
       if (Number(r.requests_spent) + Number(r.reserved_requests) >= l.requests)
         this.deny(task.session_id, 'Task request limit reached');
-      if (Number(r.token_units) + Number(r.reserved_tokens) + charge > l.token_units)
+      if (
+        l.token_units !== null &&
+        Number(r.token_units) + Number(r.reserved_tokens) + charge > l.token_units
+      )
         this.deny(task.session_id, 'Task declared token budget reached');
       this.store.db
         .prepare(
@@ -121,10 +127,14 @@ export class TaskBudget {
     if (!task) return;
     this.check(session);
     const r = this.state(task.id),
-      tokens = count * (task.limits.input_token_bound + task.limits.output_token_bound);
+      tokens =
+        task.limits.token_units === null
+          ? 0
+          : count * (task.limits.input_token_bound + task.limits.output_token_bound!);
     if (
       Number(r.requests_spent) + Number(r.reserved_requests) + count > task.limits.requests ||
-      Number(r.token_units) + Number(r.reserved_tokens) + tokens > task.limits.token_units
+      (task.limits.token_units !== null &&
+        Number(r.token_units) + Number(r.reserved_tokens) + tokens > task.limits.token_units)
     )
       this.deny(task.session_id, 'Task cannot reserve the child request/token bounds');
     this.store.db

@@ -135,3 +135,30 @@ test('indexed palettes preserve distinct surfaces when SSH does not advertise tr
     setCapabilityOverrides({ trueColor: undefined });
   }
 });
+
+test('task context labels a disabled token budget instead of showing a numeric allowance', () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-token-budget-display' });
+  app.client.snapshot = {
+    id: 'session',
+    epoch: 1,
+    state: 'ready',
+    children: [],
+    work_task: {
+      id: 'task',
+      revision: 1,
+      plan_revision: 1,
+      state: 'accepted',
+      objective: 'Review work',
+      reason: 'Waiting',
+      constraints: [],
+      steps: [],
+      limits: { requests: 3, token_units: null, output_token_bound: null },
+      runtime: { requests_spent: 0, reserved_requests: 0, token_units: 0, reserved_tokens: 0 },
+    },
+  } as unknown as SessionSnapshot;
+  app.setTab('context');
+  const text = app.document.render(100).join('\n');
+  expect(text).toContain('Token budget disabled');
+  expect(text).toContain('no task output-token bound');
+  expect(text).not.toContain('Declared token units');
+});

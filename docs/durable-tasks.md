@@ -108,6 +108,35 @@ A progression grant starts at most the declared number of new steps (maximum 32)
 
 Default task limits are 64 provider requests, 15 minutes from first admission, concurrency 3, 16,777,216 declared token units, per-request input/output bounds 131,072/8,192 and 32 verification runs. Parent and read-only children share the limits; child work reserves its request/token allowance before admission. Completed children release unused reservations; uncertain work retains them. Verification commands consume the verification count and remaining runtime. Restart and plan edits preserve accumulated charges and the original start time. A limit produces a durable blocked reason and stops progression. The elapsed runtime includes time spent disconnected or waiting for a person.
 
+To run without token budgeting, explicitly set `limits.token_units` to `null`:
+
+```json
+"limits": {
+  "requests": 12,
+  "runtime_ms": 900000,
+  "token_units": null
+}
+```
+
+This disables the aggregate token budget and defaults `output_token_bound` to
+`null`. It enables durable and scheduled tasks on ChatGPT subscription routes
+that cannot enforce an output cap. An explicit numeric `output_token_bound`
+remains a per-request cap and requires provider support, even without an aggregate
+budget. A numeric aggregate budget requires a numeric output bound. Omitting
+these fields preserves the existing capped defaults.
+
+Without a token budget, request counts and child request reservations, elapsed
+runtime, concurrency, verification-run limits, cancellation, and tool approvals
+remain active. Serialized input still has its per-request size bound. The TUI
+labels the disabled token budget; token admission counters do not estimate the
+unbounded output. Actual provider usage is reported separately, with missing
+receipts remaining unknown. The token-budget mode is saved in each plan and
+recurring template. An explicit plan revision can disable token budgeting at an
+idle boundary while preserving accumulated request/token charges and the original
+runtime clock. After uncapped model work has been admitted or reserved, create a
+new task to enable token budgeting; a revision cannot claim a bound on earlier
+uncapped work.
+
 Token units are conservative application admission units: each request charges its full declared input plus output bound. Serialized input bytes are checked against the input allowance and provider output limits against the output allowance. This is not exact tokenization or a currency/billing cap. Known, estimated and unknown provider billing remain separately reported; missing usage never becomes a free request.
 
 With `--compact`, the service may use the existing deterministic managed compaction only at idle boundaries. The persisted receipt is reconciled across daemon death. Pi's definitive “session too small” outcome records a skip, not successful compaction. Ambiguous/interrupted compaction stops progression. Model-generated compaction remains disabled.

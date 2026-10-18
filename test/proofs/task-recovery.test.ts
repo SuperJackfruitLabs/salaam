@@ -56,13 +56,13 @@ const stepState = (socket: string, id: string, index: number, state: string) =>
     () => task(socket, id),
     (t) => t.steps[index]?.state === state,
   );
-async function createTask(socket: string, session: string, c: Controller) {
+async function createTask(socket: string, session: string, c: Controller, uncapped = false) {
   return call<WorkTask>(socket, '/v1/tasks', {
     ...c,
     request_id: randomUUID(),
     session_id: session,
     expected_revision: 0,
-    plan,
+    plan: { ...plan, ...(uncapped ? { limits: { token_units: null } } : {}) },
   });
 }
 async function run(socket: string, t: WorkTask, index: number, c: Controller, extra = {}) {
@@ -79,154 +79,157 @@ const ready = (socket: string, id: string) =>
     (s) => s.state === 'ready',
   );
 
-for (const boundary of ['worker', 'daemon'] as const)
-  test(`${boundary} death preserves corrected plan, reviewed work and step identity; continuation is explicit`, async () => {
-    const dir = mkdtempSync('/tmp/sal-task-recovery-'),
-      socket = join(dir, 'operator.sock');
-    let child: ChildProcess | undefined,
-      service: SalaamService | undefined,
-      observer: OperatorClient | undefined;
-    try {
-      if (boundary === 'daemon') child = await boot(dir);
-      else
-        service = await SalaamService.open({
-          stateDir: dir,
-          extensionPath: join(ROOT, 'test/fixtures/task-work-extension.mjs'),
+for (const uncapped of [false, true])
+  for (const boundary of ['worker', 'daemon'] as const)
+    test(`${boundary} death preserves corrected plan and explicit continuation (token budget disabled: ${uncapped})`, async () => {
+      const dir = mkdtempSync('/tmp/sal-task-recovery-'),
+        socket = join(dir, 'operator.sock');
+      let child: ChildProcess | undefined,
+        service: SalaamService | undefined,
+        observer: OperatorClient | undefined;
+      try {
+        if (boundary === 'daemon') child = await boot(dir);
+        else
+          service = await SalaamService.open({
+            stateDir: dir,
+            extensionPath: join(ROOT, 'test/fixtures/task-work-extension.mjs'),
+          });
+        const session = await call<Session>(socket, '/v1/sessions', {
+          request_id: 'session',
+          cwd: dir,
         });
-      const session = await call<Session>(socket, '/v1/sessions', {
-        request_id: 'session',
-        cwd: dir,
-      });
-      const initial = await ready(socket, session.id);
-      let c = await controller(socket, session.id),
-        t = await createTask(socket, session.id, c);
-      writeFileSync(join(dir, 'release-probe'), 'go');
-      const first = await run(socket, t, 0, c);
-      t = await stepState(socket, t.id, 0, 'awaiting_review');
-      expect(t.state).toBe('blocked');
-      t = await call<WorkTask>(socket, `/v1/tasks/${t.id}/steps/${t.steps[0]!.id}/complete`, {
-        ...c,
-        request_id: 'review-first',
-        expected_revision: t.revision,
-        review: 'Operator reviewed first result; verification remains pending',
-      });
-      const corrected = {
-        ...plan,
-        objective: 'Repair addition once and preserve exports',
-        constraints: ['Keep the existing API', 'Use the full offline suite'],
-        steps: [
-          plan.steps[0],
-          { ...plan.steps[1], instruction: 'Run the full offline suite once' },
-          plan.steps[2],
-        ],
-      };
-      t = await call<WorkTask>(socket, `/v1/tasks/${t.id}/revise`, {
-        ...c,
-        request_id: 'correction',
-        expected_revision: t.revision,
-        plan: corrected,
-      });
-      const ids = t.steps.map((s) => s.id),
-        taskId = t.id;
-      unlinkSync(join(dir, 'release-probe'));
-      unlinkSync(join(dir, 'probe-entered'));
-      const second = await run(socket, t, 1, c);
-      await until(() => existsSync(join(dir, 'probe-entered')), Boolean);
-      if (boundary === 'daemon') {
-        await kill(child!);
-        service = await SalaamService.open({ stateDir: dir });
-        c = await controller(socket, session.id);
-      } else {
-        const worker = service!.store.db
-          .prepare('SELECT pid FROM workers WHERE session_id=? AND epoch=?')
-          .get(session.id, initial.epoch) as { pid: number };
-        process.kill(-worker.pid, 'SIGKILL');
+        const initial = await ready(socket, session.id);
+        let c = await controller(socket, session.id),
+          t = await createTask(socket, session.id, c, uncapped);
+        writeFileSync(join(dir, 'release-probe'), 'go');
+        const first = await run(socket, t, 0, c);
+        t = await stepState(socket, t.id, 0, 'awaiting_review');
+        expect(t.state).toBe('blocked');
+        t = await call<WorkTask>(socket, `/v1/tasks/${t.id}/steps/${t.steps[0]!.id}/complete`, {
+          ...c,
+          request_id: 'review-first',
+          expected_revision: t.revision,
+          review: 'Operator reviewed first result; verification remains pending',
+        });
+        const corrected = {
+          ...plan,
+          ...(uncapped ? { limits: { token_units: null } } : {}),
+          objective: 'Repair addition once and preserve exports',
+          constraints: ['Keep the existing API', 'Use the full offline suite'],
+          steps: [
+            plan.steps[0],
+            { ...plan.steps[1], instruction: 'Run the full offline suite once' },
+            plan.steps[2],
+          ],
+        };
+        t = await call<WorkTask>(socket, `/v1/tasks/${t.id}/revise`, {
+          ...c,
+          request_id: 'correction',
+          expected_revision: t.revision,
+          plan: corrected,
+        });
+        const ids = t.steps.map((s) => s.id),
+          taskId = t.id;
+        unlinkSync(join(dir, 'release-probe'));
+        unlinkSync(join(dir, 'probe-entered'));
+        const second = await run(socket, t, 1, c);
+        await until(() => existsSync(join(dir, 'probe-entered')), Boolean);
+        if (boundary === 'daemon') {
+          await kill(child!);
+          service = await SalaamService.open({ stateDir: dir });
+          c = await controller(socket, session.id);
+        } else {
+          const worker = service!.store.db
+            .prepare('SELECT pid FROM workers WHERE session_id=? AND epoch=?')
+            .get(session.id, initial.epoch) as { pid: number };
+          process.kill(-worker.pid, 'SIGKILL');
+        }
+        t = await stepState(socket, taskId, 1, 'interrupted');
+        expect(t.limits.token_units).toBe(uncapped ? null : 16777216);
+        expect(t).toMatchObject({
+          id: taskId,
+          objective: corrected.objective,
+          constraints: corrected.constraints,
+          plan_revision: 2,
+          state: 'blocked',
+          steps: [
+            { state: 'completed', attempt_id: first.attempt_id },
+            {
+              state: 'interrupted',
+              attempt_id: second.attempt_id,
+              instruction: corrected.steps[1]!.instruction,
+            },
+            { state: 'pending', attempt_id: null },
+          ],
+        });
+        expect(t.steps.map((s) => s.id)).toEqual(ids);
+        writeFileSync(join(dir, 'release-probe'), 'go');
+        await call(socket, `/v1/sessions/${session.id}/resume`, c);
+        const resumed = await ready(socket, session.id);
+        expect(resumed.epoch).toBeGreaterThan(initial.epoch);
+        expect(resumed.pi_session_file).toBe(initial.pi_session_file);
+        expect(await service!.supervisor.dispatchNext(session.id)).toBe(false);
+        expect(service!.store.attempt(second.attempt_id).state).toBe('interrupted');
+        await expect(run(socket, t, 1, c)).rejects.toThrow('exact attempt');
+        const continued = await run(socket, t, 1, c, {
+          continues_attempt_id: second.attempt_id,
+          instruction: 'Inspect the interrupted result and continue only the check',
+        });
+        t = await stepState(socket, taskId, 1, 'awaiting_review');
+        expect(t.steps[0]!.state).toBe('completed');
+        expect(t.steps[2]!.attempt_id).toBeNull();
+        expect(service!.store.attempt(second.attempt_id)).toMatchObject({
+          state: 'interrupted',
+          resolved_by: continued.attempt_id,
+        });
+        const dispatches = service!.store
+          .events(session.id, 0)
+          .filter((e) => e.kind === 'attempt.dispatching')
+          .map((e) => (e.payload as { attempt_id: string }).attempt_id);
+        expect(dispatches).toEqual([first.attempt_id, second.attempt_id, continued.attempt_id]);
+        const history = await call<{ plans: unknown[]; attempts: unknown[] }>(
+          socket,
+          `/v1/tasks/${taskId}/history`,
+        );
+        expect(history.plans).toHaveLength(2);
+        expect(history.attempts).toHaveLength(3);
+        observer = new OperatorClient(dir);
+        await observer.open(session.id, { observe: true });
+        expect(observer.snapshot?.work_task).toEqual(t);
+        const rendered = new DocumentView({
+          client: observer,
+          theme: new SalaamTheme('night', false),
+          tab: 'context',
+          rows: () => 40,
+          bodyRows: () => 30,
+          diffOffset: 0,
+          busy: false,
+        })
+          .render(100)
+          .join('\n');
+        expect(rendered).toContain('DURABLE TASK');
+        expect(rendered).toContain('Run the full offline suite once');
+        expect(rendered).toContain('completed');
+        expect(service!.tasks.frame(session.id, 'binding')).toContain(corrected.objective);
+        const payloads = readFileSync(join(dir, 'work-payloads.jsonl'), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+        expect(
+          payloads.some(
+            (payload) =>
+              JSON.stringify(payload).includes(corrected.objective) &&
+              JSON.stringify(payload).includes(ids[0]!) &&
+              JSON.stringify(payload).includes('completed'),
+          ),
+        ).toBe(true);
+      } finally {
+        await observer?.close();
+        if (child) await kill(child);
+        await service?.close();
+        rmSync(dir, { recursive: true, force: true });
       }
-      t = await stepState(socket, taskId, 1, 'interrupted');
-      expect(t).toMatchObject({
-        id: taskId,
-        objective: corrected.objective,
-        constraints: corrected.constraints,
-        plan_revision: 2,
-        state: 'blocked',
-        steps: [
-          { state: 'completed', attempt_id: first.attempt_id },
-          {
-            state: 'interrupted',
-            attempt_id: second.attempt_id,
-            instruction: corrected.steps[1]!.instruction,
-          },
-          { state: 'pending', attempt_id: null },
-        ],
-      });
-      expect(t.steps.map((s) => s.id)).toEqual(ids);
-      writeFileSync(join(dir, 'release-probe'), 'go');
-      await call(socket, `/v1/sessions/${session.id}/resume`, c);
-      const resumed = await ready(socket, session.id);
-      expect(resumed.epoch).toBeGreaterThan(initial.epoch);
-      expect(resumed.pi_session_file).toBe(initial.pi_session_file);
-      expect(await service!.supervisor.dispatchNext(session.id)).toBe(false);
-      expect(service!.store.attempt(second.attempt_id).state).toBe('interrupted');
-      await expect(run(socket, t, 1, c)).rejects.toThrow('exact attempt');
-      const continued = await run(socket, t, 1, c, {
-        continues_attempt_id: second.attempt_id,
-        instruction: 'Inspect the interrupted result and continue only the check',
-      });
-      t = await stepState(socket, taskId, 1, 'awaiting_review');
-      expect(t.steps[0]!.state).toBe('completed');
-      expect(t.steps[2]!.attempt_id).toBeNull();
-      expect(service!.store.attempt(second.attempt_id)).toMatchObject({
-        state: 'interrupted',
-        resolved_by: continued.attempt_id,
-      });
-      const dispatches = service!.store
-        .events(session.id, 0)
-        .filter((e) => e.kind === 'attempt.dispatching')
-        .map((e) => (e.payload as { attempt_id: string }).attempt_id);
-      expect(dispatches).toEqual([first.attempt_id, second.attempt_id, continued.attempt_id]);
-      const history = await call<{ plans: unknown[]; attempts: unknown[] }>(
-        socket,
-        `/v1/tasks/${taskId}/history`,
-      );
-      expect(history.plans).toHaveLength(2);
-      expect(history.attempts).toHaveLength(3);
-      observer = new OperatorClient(dir);
-      await observer.open(session.id, { observe: true });
-      expect(observer.snapshot?.work_task).toEqual(t);
-      const rendered = new DocumentView({
-        client: observer,
-        theme: new SalaamTheme('night', false),
-        tab: 'context',
-        rows: () => 40,
-        bodyRows: () => 30,
-        diffOffset: 0,
-        busy: false,
-      })
-        .render(100)
-        .join('\n');
-      expect(rendered).toContain('DURABLE TASK');
-      expect(rendered).toContain('Run the full offline suite once');
-      expect(rendered).toContain('completed');
-      expect(service!.tasks.frame(session.id, 'binding')).toContain(corrected.objective);
-      const payloads = readFileSync(join(dir, 'work-payloads.jsonl'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line));
-      expect(
-        payloads.some(
-          (payload) =>
-            JSON.stringify(payload).includes(corrected.objective) &&
-            JSON.stringify(payload).includes(ids[0]!) &&
-            JSON.stringify(payload).includes('completed'),
-        ),
-      ).toBe(true);
-    } finally {
-      await observer?.close();
-      if (child) await kill(child);
-      await service?.close();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    });
 
 test('daemon death after acceptance preserves a single queued step and cached response, then dispatches once', async () => {
   const dir = mkdtempSync('/tmp/sal-task-queued-'),

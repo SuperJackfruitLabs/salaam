@@ -92,41 +92,44 @@ test('failing tests and foreign evidence cannot become verified success; an expl
   }
 });
 
-test('bounded progression verifies every step, compacts between idle steps and settles with fresh final evidence', async () => {
-  const f = await taskFixture();
-  try {
-    await f.plan(checkedPlan(2));
-    await f.action('auto', { max_steps: 2, compact: true });
-    const result = await until(
-      f.task,
-      (t) =>
-        ['succeeded', 'blocked', 'partially_completed'].includes(t.state) &&
-        !t.runtime.auto_enabled,
-      15000,
-    );
-    expect(result.state, JSON.stringify({ reason: result.reason, runtime: result.runtime })).toBe(
-      'succeeded',
-    );
-    expect(result.steps.every((s) => s.state === 'completed')).toBe(true);
-    expect(result.runtime.remaining_steps).toBe(0);
-    expect(f.backend.runs.size).toBe(3);
-    expect([...f.backend.runs.values()].every((r) => r.launches === 1)).toBe(true);
-    expect(
-      f.service.store.db
-        .prepare(
-          "SELECT count(*) n FROM task_compactions WHERE skip_reason IS NOT NULL OR compaction_id IN (SELECT id FROM compactions WHERE state='completed')",
-        )
-        .get(),
-    ).toMatchObject({ n: 1 });
-    const before = f.service.store.snapshot(f.session.id).attempts.map((a) => a.id);
-    await f.restart();
-    expect((await f.task()).state).toBe('succeeded');
-    expect(f.service.store.snapshot(f.session.id).attempts.map((a) => a.id)).toEqual(before);
-    expect(f.backend.runs.size).toBe(3);
-  } finally {
-    await f.close();
-  }
-});
+test.each([false, true])(
+  'bounded progression verifies every step and recovers settled evidence (token budget disabled: %s)',
+  async (uncapped) => {
+    const f = await taskFixture();
+    try {
+      await f.plan({ ...checkedPlan(2), ...(uncapped ? { limits: { token_units: null } } : {}) });
+      await f.action('auto', { max_steps: 2, compact: true });
+      const result = await until(
+        f.task,
+        (t) =>
+          ['succeeded', 'blocked', 'partially_completed'].includes(t.state) &&
+          !t.runtime.auto_enabled,
+        15000,
+      );
+      expect(result.state, JSON.stringify({ reason: result.reason, runtime: result.runtime })).toBe(
+        'succeeded',
+      );
+      expect(result.steps.every((s) => s.state === 'completed')).toBe(true);
+      expect(result.runtime.remaining_steps).toBe(0);
+      expect(f.backend.runs.size).toBe(3);
+      expect([...f.backend.runs.values()].every((r) => r.launches === 1)).toBe(true);
+      expect(
+        f.service.store.db
+          .prepare(
+            "SELECT count(*) n FROM task_compactions WHERE skip_reason IS NOT NULL OR compaction_id IN (SELECT id FROM compactions WHERE state='completed')",
+          )
+          .get(),
+      ).toMatchObject({ n: 1 });
+      const before = f.service.store.snapshot(f.session.id).attempts.map((a) => a.id);
+      await f.restart();
+      expect((await f.task()).state).toBe('succeeded');
+      expect(f.service.store.snapshot(f.session.id).attempts.map((a) => a.id)).toEqual(before);
+      expect(f.backend.runs.size).toBe(3);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('a failing automatic check stops progression without repeating a command or admitting another step', async () => {
   const f = await taskFixture();
@@ -150,25 +153,32 @@ test('a failing automatic check stops progression without repeating a command or
   }
 });
 
-test('task request exhaustion persists across restart and prevents later steps despite a model completion claim', async () => {
-  const f = await taskFixture();
-  try {
-    const plan = { ...checkedPlan(2), limits: { requests: 1 } };
-    await f.plan(plan);
-    await f.action('auto', { max_steps: 2 });
-    const result = await until(f.task, (t) => !!t.runtime.blocked_reason, 10000);
-    expect(result.runtime.requests_spent).toBe(1);
-    expect(result.runtime.token_units).toBeGreaterThan(0);
-    expect(result.steps[1]!.attempt_id).toBeNull();
-    await f.restart();
-    const restored = await f.task();
-    expect(restored.runtime.requests_spent).toBe(1);
-    expect(restored.runtime.blocked_reason).toContain('request limit');
-    expect(restored.state).not.toBe('succeeded');
-  } finally {
-    await f.close();
-  }
-});
+test.each([false, true])(
+  'task request exhaustion persists across restart and prevents later steps (token budget disabled: %s)',
+  async (uncapped) => {
+    const f = await taskFixture();
+    try {
+      const plan = {
+        ...checkedPlan(2),
+        limits: { requests: 1, ...(uncapped ? { token_units: null } : {}) },
+      };
+      await f.plan(plan);
+      await f.action('auto', { max_steps: 2 });
+      const result = await until(f.task, (t) => !!t.runtime.blocked_reason, 10000);
+      expect(result.runtime.requests_spent).toBe(1);
+      if (uncapped) expect(result.runtime.token_units).toBe(0);
+      else expect(result.runtime.token_units).toBeGreaterThan(0);
+      expect(result.steps[1]!.attempt_id).toBeNull();
+      await f.restart();
+      const restored = await f.task();
+      expect(restored.runtime.requests_spent).toBe(1);
+      expect(restored.runtime.blocked_reason).toContain('request limit');
+      expect(restored.state).not.toBe('succeeded');
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('checkpoint restore preserves pre-existing dirty bytes and newer human edits, with a partial outcome', async () => {
   const f = await taskFixture();

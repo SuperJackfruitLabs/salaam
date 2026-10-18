@@ -5,74 +5,80 @@ import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { DatabaseSync } from 'node:sqlite';
 import { digest } from '../../src/protocol.js';
 
-test('parent and child admissions share reserved request/token limits; unknown usage never refunds a charge', async () => {
-  const f = await taskFixture();
-  try {
-    f.service.dispatcher.pause();
-    await f.service.taskDriver.close();
-    await f.plan({ ...checkedPlan(), limits: { requests: 3 } });
-    const accepted = await f.run();
-    const store = f.service.store;
-    const admit = (session: string, attempt: string, key: string) =>
-      store.usage.admit(session, attempt, key, 'salaam-proof', 'scripted', {
-        input: 100,
-        output: 1024,
+test.each([false, true])(
+  'parent and child reservations survive restart without refunds (token budget disabled: %s)',
+  async (uncapped) => {
+    const f = await taskFixture();
+    try {
+      f.service.dispatcher.pause();
+      await f.service.taskDriver.close();
+      await f.plan({
+        ...checkedPlan(),
+        limits: { requests: 3, ...(uncapped ? { token_units: null } : {}) },
       });
-    admit(f.session.id, accepted.attempt_id, 'parent-one');
-    const task = await f.task(),
-      charge = task.limits.input_token_bound + task.limits.output_token_bound;
-    expect(task.runtime.token_units).toBe(charge);
-    expect(() => admit(f.session.id, accepted.attempt_id, 'parent-one')).toThrow(
-      'cannot be forwarded twice',
-    );
-    const child = store.create(f.source, 'child'),
-      childAttempt = store.accept(child.id, 'child-instruction', child.revision, 'Read only');
-    store.transaction(() => {
-      store.db
-        .prepare(
-          "INSERT INTO child_tasks(id,parent_session,parent_attempt,step_key,input_digest,child_session,child_attempt,authority,budget,state) VALUES (?,?,?,?,?,?,?,?,?,'accepted')",
-        )
-        .run(
-          randomUUID(),
-          f.session.id,
-          accepted.attempt_id,
-          'child',
-          'fixture',
-          child.id,
-          childAttempt.attempt_id,
-          '["salaam_probe"]',
-          2,
-        );
-      store.taskChildReserve!(f.session.id, childAttempt.attempt_id, 2);
-    });
-    expect((await f.task()).runtime.reserved_requests).toBe(2);
-    admit(child.id, childAttempt.attempt_id, 'child-one');
-    expect((await f.task()).runtime).toMatchObject({
-      requests_spent: 2,
-      reserved_requests: 1,
-      token_units: 2 * charge,
-      reserved_tokens: charge,
-    });
-    await expect(
-      Promise.resolve().then(() => admit(f.session.id, accepted.attempt_id, 'parent-overrun')),
-    ).rejects.toThrow('request limit');
-    const e = store.allocate(child.id, 'fixture');
-    store.state(child.id, e, 'ready');
-    store.claim(child.id, e);
-    store.finish(childAttempt.attempt_id, 'interrupted', null, 'Unknown child request outcome');
-    expect((await f.task()).runtime.reserved_requests).toBe(1);
-    await f.restart();
-    const restored = await f.task();
-    expect(restored.runtime).toMatchObject({
-      requests_spent: 2,
-      reserved_requests: 1,
-      token_units: 2 * charge,
-      reserved_tokens: charge,
-    });
-  } finally {
-    await f.close();
-  }
-});
+      const accepted = await f.run();
+      const store = f.service.store;
+      const admit = (session: string, attempt: string, key: string) =>
+        store.usage.admit(session, attempt, key, 'salaam-proof', 'scripted', {
+          input: 100,
+          output: 1024,
+        });
+      admit(f.session.id, accepted.attempt_id, 'parent-one');
+      const task = await f.task(),
+        charge = uncapped ? 0 : task.limits.input_token_bound + task.limits.output_token_bound!;
+      expect(task.runtime.token_units).toBe(charge);
+      expect(() => admit(f.session.id, accepted.attempt_id, 'parent-one')).toThrow(
+        'cannot be forwarded twice',
+      );
+      const child = store.create(f.source, 'child'),
+        childAttempt = store.accept(child.id, 'child-instruction', child.revision, 'Read only');
+      store.transaction(() => {
+        store.db
+          .prepare(
+            "INSERT INTO child_tasks(id,parent_session,parent_attempt,step_key,input_digest,child_session,child_attempt,authority,budget,state) VALUES (?,?,?,?,?,?,?,?,?,'accepted')",
+          )
+          .run(
+            randomUUID(),
+            f.session.id,
+            accepted.attempt_id,
+            'child',
+            'fixture',
+            child.id,
+            childAttempt.attempt_id,
+            '["salaam_probe"]',
+            2,
+          );
+        store.taskChildReserve!(f.session.id, childAttempt.attempt_id, 2);
+      });
+      expect((await f.task()).runtime.reserved_requests).toBe(2);
+      admit(child.id, childAttempt.attempt_id, 'child-one');
+      expect((await f.task()).runtime).toMatchObject({
+        requests_spent: 2,
+        reserved_requests: 1,
+        token_units: 2 * charge,
+        reserved_tokens: charge,
+      });
+      await expect(
+        Promise.resolve().then(() => admit(f.session.id, accepted.attempt_id, 'parent-overrun')),
+      ).rejects.toThrow('request limit');
+      const e = store.allocate(child.id, 'fixture');
+      store.state(child.id, e, 'ready');
+      store.claim(child.id, e);
+      store.finish(childAttempt.attempt_id, 'interrupted', null, 'Unknown child request outcome');
+      expect((await f.task()).runtime.reserved_requests).toBe(1);
+      await f.restart();
+      const restored = await f.task();
+      expect(restored.runtime).toMatchObject({
+        requests_spent: 2,
+        reserved_requests: 1,
+        token_units: 2 * charge,
+        reserved_tokens: charge,
+      });
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('schema 8 task migration preserves attempt IDs and conservatively charges known and unknown old admissions', async () => {
   const f = await taskFixture();
@@ -133,7 +139,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
     expect(recovered.steps[0]!.attempt_id).toBe(settled.steps[0]!.attempt_id);
     expect(recovered.runtime.requests_spent).toBe(3);
     expect(recovered.runtime.token_units).toBe(
-      3 * (recovered.limits.input_token_bound + recovered.limits.output_token_bound),
+      3 * (recovered.limits.input_token_bound + recovered.limits.output_token_bound!),
     );
     expect(
       f.service.store.db
@@ -236,3 +242,31 @@ test('manual verification and command admission start the task deadline before a
     }
   }
 });
+
+test.each([false, true])(
+  'explicit opt-out preserves charges; uncapped work cannot be recast as budgeted (disabled: %s)',
+  async (uncapped) => {
+    const f = await taskFixture();
+    try {
+      const plan = { ...checkedPlan(), limits: { token_units: uncapped ? null : 16777216 } };
+      await f.plan(plan);
+      await f.run();
+      await f.settled();
+      const before = await f.task();
+      if (!uncapped) {
+        await f.action('revise', { plan: { ...plan, limits: { token_units: null } } });
+        expect((await f.task()).runtime.requests_spent).toBe(before.runtime.requests_spent);
+        expect((await f.task()).runtime.token_units).toBe(before.runtime.token_units);
+        expect((await f.task()).runtime.started_at).toBe(before.runtime.started_at);
+      }
+      await expect(
+        f.action('revise', { plan: { ...plan, limits: { token_units: 16777216 } } }),
+      ).rejects.toThrow('Cannot enable token budgeting');
+      await f.restart();
+      expect((await f.task()).limits.token_units).toBeNull();
+      expect((await f.task()).runtime.requests_spent).toBe(before.runtime.requests_spent);
+    } finally {
+      await f.close();
+    }
+  },
+);

@@ -65,7 +65,7 @@ export interface WorkTask extends TaskPolicy {
 
 /** Operator-driven task ledger. An attempt outcome never constitutes task success. */
 export class TaskWork {
-  providerCheck?: () => void;
+  providerCheck?: (limits: TaskPolicy['limits']) => void;
   assertLimits?: (session: string) => void;
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
   private authorizeGrant(task: WorkTask, step: string, grant?: string): void {
@@ -318,7 +318,7 @@ export class TaskWork {
     if (!this.store.db.isTransaction) throw new Error('Task admission requires a transaction');
     const plan = this.parse(input);
     authorize();
-    this.providerCheck?.();
+    this.providerCheck?.(plan.limits);
     if (expected !== 0)
       throw new ServiceError('task_revision_conflict', 'New tasks require revision zero');
     this.idle(session);
@@ -383,7 +383,20 @@ export class TaskWork {
         const task = this.get(id);
         this.store.authorizeControl(task.session_id, controller);
         this.expect(task, expected);
+        this.providerCheck?.(plan.limits);
         this.idle(task.session_id);
+        const runtime = this.store.db
+          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+          .get(id)!;
+        if (
+          task.limits.token_units === null &&
+          plan.limits.token_units !== null &&
+          (Number(runtime.requests_spent) > 0 || Number(runtime.reserved_requests) > 0)
+        )
+          throw new ServiceError(
+            'invalid_budget',
+            'Cannot enable token budgeting after uncapped model work is admitted',
+          );
         for (const [index, step] of task.steps.entries()) {
           const next = plan.steps[index];
           if (!next || next.key !== step.key)
@@ -460,6 +473,7 @@ export class TaskWork {
         if (controller) this.store.authorizeControl(task.session_id, controller);
         else this.authorizeGrant(task, stepId, grantId);
         this.expect(task, expected);
+        this.providerCheck?.(task.limits);
         if (['cancelled', 'succeeded', 'succeeded_with_exception'].includes(task.state))
           throw new ServiceError('task_settled', 'Revise a settled task before another step');
         const step = task.steps.find((s) => s.id === stepId);

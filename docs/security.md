@@ -11,7 +11,7 @@ Live providers are opt-in. Only the selected provider authentication reaches a w
 operator replies, journal events and command arguments. Saved credentials are
 plaintext files protected by OS permissions; use the service user's private
 credential store, never a coding workspace. The provider endpoint and tool
-inventory are fixed by the admitted session route. OAuth refresh is serialized across processes. ChatGPT subscription routes without provider-enforced output caps are limited to interactive sessions; durable tasks and budgeted children are denied before dispatch.
+inventory are fixed by the admitted session route. OAuth refresh is serialized across processes. ChatGPT subscription routes without provider-enforced output caps require an explicit token-budget opt-out for durable tasks. Unsupported token caps are rejected before dispatch. Request counts, child reservations, runtime, concurrency, and approval controls remain active without a token budget.
 
 ## Workspace and command boundary
 

@@ -35,6 +35,7 @@ import { bindProviderConfiguration } from './provider-model.js';
 import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
 import type { CodingWork } from './coding.js';
+import type { TaskLimits } from './task-policy.js';
 
 export interface Launch {
   command: string;
@@ -123,16 +124,23 @@ export class Supervisor extends EventEmitter {
   providerCapabilities() {
     return {
       output_token_cap: this.outputCap,
-      durable_tasks: this.outputCap,
-      warning: this.outputCap ? null : 'No provider-enforced output cap; interactive sessions only',
+      durable_tasks: true,
+      warning: this.outputCap
+        ? null
+        : 'No provider-enforced output cap; tasks must explicitly disable token budgeting',
     };
   }
-  assertTaskProviderSupported() {
-    if (!this.outputCap)
+  assertTaskProviderSupported(limits: TaskLimits, outputCap = this.outputCap) {
+    if (!outputCap && (limits.token_units !== null || limits.output_token_bound !== null))
       throw new ServiceError(
         'provider_capability',
-        'This provider authentication has no output cap; durable tasks are disabled',
+        'This provider authentication has no output cap; set limits.token_units to null and omit output_token_bound',
       );
+  }
+  private assertSessionProviderSupported(id: string, outputCap = this.outputCap) {
+    const parent = this.children?.owned(id)?.parent_session ?? id;
+    const task = this.tasks.work?.forSession(parent);
+    if (task) this.assertTaskProviderSupported(task.limits, outputCap);
   }
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
@@ -541,12 +549,7 @@ export class Supervisor extends EventEmitter {
       if (method === 'provider.auth') {
         const auth = await this.providerAuth();
         w.providerOutputCap = this.outputCap;
-        if (
-          !this.outputCap &&
-          (this.children?.owned(id) ||
-            this.store.db.prepare('SELECT 1 FROM durable_tasks WHERE session_id=?').get(id))
-        )
-          this.assertTaskProviderSupported();
+        this.assertSessionProviderSupported(id);
         return auth;
       }
       if (method === 'coding.files' || method === 'coding.command') {
@@ -608,11 +611,7 @@ export class Supervisor extends EventEmitter {
       if (method.startsWith('child.')) {
         if (!this.children || !w.attempt) throw new Error('No active parent attempt');
         this.assertActive(id, w.epoch, w.attempt);
-        if (method === 'child.spawn' && !this.outputCap)
-          throw new ServiceError(
-            'authority_denied',
-            'Budgeted children require a provider output cap',
-          );
+        if (method === 'child.spawn') this.assertSessionProviderSupported(id);
         if (method === 'child.spawn')
           return this.children.spawn(
             id,
@@ -689,12 +688,7 @@ export class Supervisor extends EventEmitter {
         if (this.route.provider !== 'salaam-proof') {
           if (w.providerOutputCap === undefined)
             throw new Error('Provider authentication was not admitted');
-          if (
-            !w.providerOutputCap &&
-            (this.children?.owned(id) ||
-              this.store.db.prepare('SELECT 1 FROM durable_tasks WHERE session_id=?').get(id))
-          )
-            throw new Error('Budgeted tasks require a provider output cap');
+          this.assertSessionProviderSupported(id, w.providerOutputCap);
           validateProviderPayload(
             body.payload,
             this.route,

@@ -83,7 +83,7 @@ Workers receive selected-provider request authentication over the private bridge
 
 SDK and Pi turn retries are disabled. Automatic compaction stays disabled; use the managed manual checkpoint command. After a failed request, inspect the attempt and explicitly submit a new instruction; interrupted attempts require `session continue`. Incomplete requests retain unknown usage. Final serialized controls are checked before each request is durably admitted and dispatched. The private bridge bounds request bodies to 1 MiB. Existing approval, coding and child authority limits apply to every provider.
 
-ChatGPT subscription authentication and the legacy `openai-codex` route cannot enforce an output-token ceiling. Service health and the TUI display that limitation. Interactive sessions remain available; durable tasks, scheduled task runs and budgeted children are denied before dispatch on uncapped routes. Request counts still apply.
+ChatGPT subscription authentication and the legacy `openai-codex` route cannot enforce an output-token ceiling. Service health and the TUI display that limitation. Interactive sessions remain available. Durable task plans must explicitly set `limits.token_units` to `null` and omit `output_token_bound` (or set it to `null`). Scheduled runs preserve this choice, and children share their parent task's request limits. Explicit token caps are rejected on uncapped routes. Health reports `task_budgets: true` for the remaining task controls and `task_token_budgets: false` for the missing token-cap capability. Request counts, runtime, concurrency, verification limits and approvals still apply.
 
 ## Approvals and managed effects
 

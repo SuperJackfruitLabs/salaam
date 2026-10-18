@@ -110,6 +110,8 @@ salaam tasks cancel TASK_ID --revision N
 Mutations accept --request-id ID and --takeover. Reuse the same request ID and input
 when retrying a lost response. One task per session. Automatic progression is opt-in
 and bounded by step, request, runtime, concurrency and declared token limits.
+Plans may explicitly set limits.token_units to null to disable token budgeting;
+request/runtime limits and approvals still apply. Unsupported output caps are rejected.
 Success requires fresh command receipts and deliverables at the exact workspace revision.
 Operator exceptions are reported separately. Checkpoints preserve conflicting human edits.
 Legacy task facts remain under the singular task command.`,
