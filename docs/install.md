@@ -14,7 +14,7 @@ Download `install.sh` from the selected
 then run:
 
 ```sh
-sh install.sh --version 0.1.0 --prefix "$HOME/.local"
+sh install.sh --version 0.0.1 --prefix "$HOME/.local"
 export PATH="$HOME/.local/bin:$PATH"
 salaam --version
 sal --help
@@ -38,7 +38,7 @@ the tarball's listed SHA-256 digest (`sha256sum` on Linux or `shasum -a 256` on
 macOS), then install:
 
 ```sh
-npm install --global --ignore-scripts --offline --no-audit --no-fund ./salaam-cli-0.1.0.tgz
+npm install --global --ignore-scripts --offline --no-audit --no-fund ./salaam-cli-0.0.1.tgz
 ```
 
 Production dependencies are bundled from the reviewed lockfile. The package includes
@@ -48,10 +48,10 @@ development dependencies. No checkout or compiler is needed.
 
 ## npm registry
 
-After `@sjl/salaam` is published to npm:
+After `@superjackfruitlabs/salaam` is published to npm:
 
 ```sh
-npm install --global @sjl/salaam@0.1.0 --ignore-scripts
+npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
 ```
 
 Check registry availability first. A version or changelog entry in Git does not
@@ -85,6 +85,6 @@ npm run setup:cli
 
 This links aliases to the checkout. Rebuild after edits; repeat setup after moving
 it or changing Node. Remove a release package with
-`npm uninstall --global @sjl/salaam --ignore-scripts`; remove a checkout link with
-`npm unlink --global @sjl/salaam --ignore-scripts --offline`. Neither removes saved
+`npm uninstall --global @superjackfruitlabs/salaam --ignore-scripts`; remove a checkout link with
+`npm unlink --global @superjackfruitlabs/salaam --ignore-scripts --offline`. Neither removes saved
 credentials or service state. Stop owned services first.

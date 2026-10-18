@@ -6,7 +6,7 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-18
+## [0.0.1] - 2026-10-18
 
 Initial release preparation. A version entry is not a published release; see GitHub
 Releases for published artifacts.

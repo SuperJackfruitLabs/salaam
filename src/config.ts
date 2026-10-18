@@ -11,6 +11,7 @@ while (!existsSync(join(root, 'pi-pin.json'))) {
   root = parent;
 }
 export const ROOT = root;
+export const VERSION: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 export const PI_ROOT = resolve(
   dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))),
   '..',

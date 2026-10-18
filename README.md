@@ -42,7 +42,7 @@ Download `install.sh` from a [published release](https://github.com/SuperJackfru
 inspect it, then run:
 
 ```sh
-sh install.sh --version 0.1.0
+sh install.sh --version 0.0.1
 salaam --version
 sal --help
 ```
@@ -54,7 +54,7 @@ executable names. Use `--prefix "$HOME/.local"` for a private prefix and add its
 An npm registry installation is supported **after the package is published**:
 
 ```sh
-npm install --global @sjl/salaam@0.1.0 --ignore-scripts
+npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
 ```
 
 Release preparation does not itself publish a version. Check GitHub Releases and

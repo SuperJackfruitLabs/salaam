@@ -7,11 +7,11 @@ documented behavior. State upgrades are forward-only; see [safe upgrades](instal
 ## Prepare a version
 
 For the initial release, `package.json`, its lockfile and `CHANGELOG.md` already
-record 0.1.0. Do not bump it again just to publish it. For a subsequent version,
+record 0.0.1. Do not bump it again just to publish it. For a subsequent version,
 start from a clean checkout:
 
 ```sh
-npm run release:version -- 0.2.0
+npm run release:version -- 0.0.2
 ```
 
 This updates package/lock versions and moves Unreleased notes into a dated
@@ -30,8 +30,8 @@ From the reviewed main commit:
 git switch main
 git pull --ff-only
 npm run release:check
-git tag -a v0.1.0 -m 'Salaam 0.1.0'
-git push origin v0.1.0
+git tag -a v0.0.1 -m 'Salaam 0.0.1'
+git push origin v0.0.1
 ```
 
 `.github/workflows/release.yml` validates the tag and reruns the reusable CI
@@ -60,22 +60,27 @@ than testing and publishing different revisions.
 The GitHub Release and its installer do not require an npm token. The npm job is
 disabled until repository variable `NPM_PUBLISH_ENABLED` equals `true`.
 
-An owner of the npm `@sjl` scope must bootstrap `@sjl/salaam` if it does not exist.
+An owner of the npm `@superjackfruitlabs` scope must bootstrap `@superjackfruitlabs/salaam` if it does not exist.
+Use the existing `superjackfruitlabs` npm organization; no separate `sjl` organization
+is needed. The logged-in account must have publishing access to that organization.
 Use the verified tarball from the initial GitHub Release, a logged-in npm account
 and its interactive 2FA flow:
 
 ```sh
-npm publish ./salaam-cli-0.1.0.tgz --access public --ignore-scripts
+npm login
+npm whoami
+npm publish ./salaam-cli-0.0.1.tgz --access public --ignore-scripts
 ```
 
 In the package's npm settings, add a GitHub Actions trusted publisher:
 
-| Setting           | Value                |
-| ----------------- | -------------------- |
-| Organization      | `SuperJackfruitLabs` |
-| Repository        | `salaam`             |
-| Workflow filename | `release.yml`        |
-| Environment       | `npm`                |
+| Setting           | Value                                |
+| ----------------- | ------------------------------------ |
+| Organization      | `SuperJackfruitLabs`                 |
+| Repository        | `salaam`                             |
+| Workflow filename | `release.yml`                        |
+| Environment       | `npm`                                |
+| Allowed actions   | Direct publishing with `npm publish` |
 
 Create/configure the GitHub `npm` environment, preferably with required reviewers,
 then enable the repository variable. No long-lived npm secret is needed. The job

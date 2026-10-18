@@ -19,10 +19,14 @@ test('release validation rejects mismatched lock versions, missing notes and uns
   try {
     mkdirSync(join(dir, 'scripts'));
     cpSync(join(ROOT, 'scripts/release-check.mjs'), join(dir, 'scripts/release-check.mjs'));
-    const pkg = { name: '@sjl/salaam', version: '0.1.0', dependencies: { example: '1.0.0' } };
+    const pkg = {
+      name: '@superjackfruitlabs/salaam',
+      version: '0.0.1',
+      dependencies: { example: '1.0.0' },
+    };
     const lock = {
-      version: '0.1.0',
-      packages: { '': { version: '0.1.0', dependencies: pkg.dependencies } },
+      version: '0.0.1',
+      packages: { '': { version: '0.0.1', dependencies: pkg.dependencies } },
     };
     const save = () => {
       writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg));
@@ -34,19 +38,19 @@ test('release validation rejects mismatched lock versions, missing notes and uns
         stdio: 'pipe',
       });
     save();
-    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.1.0] - 2026-10-18\n');
-    expect(JSON.parse(run()).version).toBe('0.1.0');
+    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.0.1] - 2026-10-18\n');
+    expect(JSON.parse(run()).version).toBe('0.0.1');
     lock.packages[''].version = '0.0.9';
     save();
     expect(() => run()).toThrow('version mismatch');
-    lock.packages[''].version = '0.1.0';
+    lock.packages[''].version = '0.0.1';
     save();
     writeFileSync(join(dir, 'CHANGELOG.md'), '## [Unreleased]\n');
     expect(() => run()).toThrow('CHANGELOG.md');
-    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.1.0] - 2026-10-18\n');
-    for (const tag of ['v0.2.0', 'v0.1.0;touch x', '0.1.0', 'v0.1.0+build'])
+    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.0.1] - 2026-10-18\n');
+    for (const tag of ['v0.2.0', 'v0.0.1;touch x', '0.0.1', 'v0.0.1+build'])
       expect(() => run(tag)).toThrow('exact package SemVer');
-    pkg.version = '0.1.0-01';
+    pkg.version = '0.0.1-01';
     save();
     expect(() => run()).toThrow('exact package SemVer');
   } finally {
@@ -60,7 +64,7 @@ test('installer checks the exact checksum before npm and forwards a literal pref
     const bin = join(dir, 'bin');
     mkdirSync(bin);
     const bytes = 'test release bytes';
-    const asset = 'salaam-cli-0.1.0.tgz';
+    const asset = 'salaam-cli-0.0.1.tgz';
     writeFileSync(join(dir, asset), bytes);
     writeFileSync(
       join(dir, 'SHA256SUMS'),
@@ -88,21 +92,21 @@ test('installer checks the exact checksum before npm and forwards a literal pref
     const run = (...args: string[]) =>
       spawnSync('sh', [join(ROOT, 'install.sh'), ...args], { encoding: 'utf8', env });
     // No prefix: fake npm records its arguments; no executable check is requested.
-    expect(run('--version', '0.1.0').status).toBe(0);
+    expect(run('--version', '0.0.1').status).toBe(0);
     expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(
       expect.arrayContaining(['--ignore-scripts', '--offline', '--global']),
     );
     const prefix = join(dir, 'literal prefix $(ignored)');
     mkdirSync(join(prefix, 'bin'), { recursive: true });
-    writeFileSync(join(prefix, 'bin/salaam'), '#!/bin/sh\necho "salaam 0.1.0"\n');
+    writeFileSync(join(prefix, 'bin/salaam'), '#!/bin/sh\necho "salaam 0.0.1"\n');
     chmodSync(join(prefix, 'bin/salaam'), 0o755);
-    expect(run('--version', 'v0.1.0', '--prefix', prefix).status).toBe(0);
+    expect(run('--version', 'v0.0.1', '--prefix', prefix).status).toBe(0);
     expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(
       expect.arrayContaining(['--prefix', prefix]),
     );
     rmSync(log);
     writeFileSync(join(dir, asset), 'tampered');
-    const tampered = run('--version', '0.1.0');
+    const tampered = run('--version', '0.0.1');
     expect(tampered.status).not.toBe(0);
     expect(tampered.stderr).toContain('checksum mismatch');
     expect(existsSync(log)).toBe(false);
@@ -126,8 +130,8 @@ test('a partial release upload never publishes a draft or overwrites published a
     for (const name of ['release-check.mjs', 'github-release.mjs'])
       cpSync(join(ROOT, 'scripts', name), join(scripts, name));
     const release = {
-      version: '0.1.0',
-      tag: 'v0.1.0',
+      version: '0.0.1',
+      tag: 'v0.0.1',
       commit: 'a'.repeat(40),
       prerelease: false,
       dirty: false,
@@ -143,7 +147,7 @@ else if(args[1]==='view') {
 } else if(args[1]==='upload') process.exit(5);
 else if(args[1]==='download') {
   const dest = args[args.indexOf('--dir')+1];
-  for(const name of ['salaam-cli-0.1.0.tgz','SHA256SUMS','release.json','install.sh']) fs.writeFileSync(path.join(dest,name),'different published bytes');
+  for(const name of ['salaam-cli-0.0.1.tgz','SHA256SUMS','release.json','install.sh']) fs.writeFileSync(path.join(dest,name),'different published bytes');
 }
 `;
     writeFileSync(join(bin, 'gh'), stub);
@@ -160,7 +164,7 @@ else if(args[1]==='download') {
     expect(calls).toContain('upload');
     expect(calls).not.toContain('edit');
     writeFileSync(log, '');
-    for (const name of ['salaam-cli-0.1.0.tgz', 'SHA256SUMS', 'install.sh'])
+    for (const name of ['salaam-cli-0.0.1.tgz', 'SHA256SUMS', 'install.sh'])
       writeFileSync(join(assets, name), 'local verified bytes');
     expect(run({ SAL_TEST_PUBLISHED: 'true' }).stderr).toContain('refusing to replace');
     calls = readFileSync(log, 'utf8');
