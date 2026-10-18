@@ -33,7 +33,7 @@ The [observed acceptance run](https://github.com/SuperJackfruitLabs/salaam/actio
 
 ## Coding in the terminal and on a remote host: M9–M12
 
-Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10 implementation, terminal/SSH/ACP protocol proofs and the named Zed GUI rehearsal have passed. The GUI-found prompt-display duplication is fixed, and the subsequent macOS/Linux acceptance and execution CI run passed. M11–M12 remain planned; no delivery dates are assigned.
+Planning date: 2026-10-17. The operator selected **develop both together**: a terminal-first personal coding experience and unattended remote operation share equal product priority. M9 is implemented with local execution, recovery and live-model evidence. M10 implementation, terminal/SSH/ACP protocol proofs and the named Zed GUI rehearsal have passed. The GUI-found prompt-display duplication is fixed, and the subsequent macOS/Linux acceptance and execution CI run passed. M11.1 is implemented with local offline recovery proofs; later M11 slices and M12 remain planned. No delivery dates are assigned.
 
 The release goal is concrete: start a repository task through `sal`, let the same task continue on an execution host after disconnecting, inspect the diff and actual verification results, answer any approval remotely, and return to an accurate final outcome. A proper TUI is part of this set.
 
@@ -76,6 +76,8 @@ The TUI is an operator client of the service. First evaluate the pinned Pi termi
 Exit tests cover actual PTY input/resize/Unicode/paste, terminal restoration, slow output, network loss, takeover and concurrent approvals. Both terminals must show the same session/attempt/workspace identities and final diff. One successful coding task is rehearsed on each supported client/backend combination before advertising it.
 
 ### M11: make unattended completion trustworthy
+
+**M11.1 local implementation:** durable task/step records, revisioned plans, explicit step admission and worker/daemon recovery. Steps await operator review after an attempt settles; no automatic progression or verified task success is enabled. See [task controls and recovery semantics](durable-tasks.md). M11.2–M11.5 remain future slices of the work below.
 
 Add durable task and step identities above execution attempts. Record explicit transitions such as accepted, running, waiting for a person/child/infrastructure, verifying, succeeded, failed, blocked, partially completed and cancelled. An attempt settling is evidence for a task transition, not the task transition itself.
 

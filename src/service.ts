@@ -2,6 +2,7 @@ import { createServer, type Server, type ServerResponse, type IncomingMessage } 
 import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { TaskContext } from './task-context.js';
+import { TaskWork } from './task-work.js';
 import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
@@ -33,6 +34,7 @@ export class SalaamService {
   readonly store: Store;
   readonly artifacts: Artifacts;
   readonly tasks: TaskContext;
+  readonly taskWork: TaskWork;
   readonly supervisor: Supervisor;
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
@@ -63,6 +65,7 @@ export class SalaamService {
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
+        this.taskWork = new TaskWork(this.store, this.tasks);
         this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
         if (options.codingSocket && !options.codingRoot)
           throw new Error('Command execution requires an explicit --coding-root');
@@ -144,6 +147,7 @@ export class SalaamService {
       }
       await service.supervisor.recover();
       service.store.recoverWork();
+      service.taskWork.recover();
       service.tasks.recover();
       service.workspaces.recover();
       service.coding.recover();
@@ -192,10 +196,108 @@ export class SalaamService {
         this.send(res, 200, value);
         return;
       }
+      if (parts[0] === 'v1' && parts[1] === 'tasks') {
+        if (req.method === 'GET' && parts.length === 2) {
+          const session = string(url.searchParams.get('session_id'), 'session_id', 128);
+          this.store.session(session);
+          this.send(res, 200, this.taskWork.forSession(session));
+          return;
+        }
+        const taskId = parts[2];
+        if (req.method === 'GET' && taskId && parts.length === 3) {
+          this.send(res, 200, this.taskWork.get(taskId));
+          return;
+        }
+        if (req.method === 'GET' && taskId && parts.length === 4 && parts[3] === 'history') {
+          this.send(
+            res,
+            200,
+            this.taskWork.history(
+              taskId,
+              integer(Number(url.searchParams.get('offset') ?? '0'), 'offset'),
+            ),
+          );
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = object(await readJson(req));
+          const controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          };
+          const request = string(body.request_id, 'request_id', 128);
+          const expected = integer(body.expected_revision, 'expected_revision');
+          if (parts.length === 2) {
+            this.send(
+              res,
+              201,
+              this.taskWork.create(
+                string(body.session_id, 'session_id', 128),
+                request,
+                expected,
+                body.plan,
+                controller,
+              ),
+            );
+            return;
+          }
+          if (taskId && parts.length === 4 && parts[3] === 'revise') {
+            this.send(
+              res,
+              200,
+              this.taskWork.revise(taskId, request, expected, body.plan, controller),
+            );
+            return;
+          }
+          if (taskId && parts.length === 6 && parts[3] === 'steps' && parts[4]) {
+            if (parts[5] === 'run') {
+              this.send(
+                res,
+                202,
+                this.taskWork.run(
+                  taskId,
+                  parts[4],
+                  request,
+                  expected,
+                  body.instruction == null ? null : string(body.instruction, 'instruction', 4096),
+                  body.continues_attempt_id == null
+                    ? null
+                    : string(body.continues_attempt_id, 'continues_attempt_id', 128),
+                  controller,
+                ),
+              );
+              return;
+            }
+            if (parts[5] === 'complete') {
+              this.send(
+                res,
+                200,
+                this.taskWork.complete(
+                  taskId,
+                  parts[4],
+                  request,
+                  expected,
+                  string(body.review, 'review', 4096),
+                  controller,
+                ),
+              );
+              return;
+            }
+          }
+        }
+      }
       if (url.pathname === '/v1/health' && req.method === 'GET') {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          task_execution: {
+            durable_tasks: true,
+            explicit_steps: true,
+            automatic_progression: false,
+            verified_completion: false,
+            task_budgets: false,
+            checkpoints: false,
+          },
           provider_route: this.supervisor.route,
           effect_connector: this.managed.options.connector?.id ?? null,
           coding_root: this.workspaces.root ?? null,
@@ -605,7 +707,11 @@ export class SalaamService {
           return;
         }
         if (parts[3] === 'snapshot' && req.method === 'GET') {
-          this.send(res, 200, { ...this.store.snapshot(id), ...this.supervisor.inspect(id) });
+          this.send(res, 200, {
+            ...this.store.snapshot(id),
+            ...this.supervisor.inspect(id),
+            work_task: this.taskWork.forSession(id),
+          });
           return;
         }
         if (parts[3] === 'control' && req.method === 'POST') {

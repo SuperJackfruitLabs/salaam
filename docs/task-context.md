@@ -1,5 +1,7 @@
 # Task context and compaction
 
+The singular `task` commands below manage session facts. M11.1 adds a separate durable task/step ledger under `sal tasks`; see [durable tasks](durable-tasks.md). Both feed the managed context frame, while only explicit operator task actions change the step ledger.
+
 Task facts are explicit operator state stored outside Pi's conversation summary. Supported kinds are `objective`, `constraint`, `completed`, `outstanding` and `evidence`. They retain the original text, source request, task version and supersession links. Salaam does not automatically extract corrections from prose.
 
 ## Record and correct facts

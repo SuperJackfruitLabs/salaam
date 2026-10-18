@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { TaskWork } from './task-work.js';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
 import { canonical, ServiceError, string, integer, object } from './protocol.js';
@@ -37,6 +38,7 @@ export interface Compaction {
 }
 /** Explicit operator facts are append-only; summaries have no write authority. */
 export class TaskContext {
+  work?: TaskWork;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,
@@ -73,6 +75,7 @@ export class TaskContext {
         instructions:
           'Use active facts. Superseded facts are historical. Do not repeat completed steps. Retrieve evidence with salaam_history.',
         facts: state.facts,
+        ...(this.work?.forSession(id) ? { work_task: this.work.frame(id) } : {}),
       });
     if (Buffer.byteLength(frame) > TASK_FRAME_BYTES)
       throw new ServiceError('context_capacity', 'Mandatory task state exceeds the context budget');

@@ -240,6 +240,67 @@ async function main(): Promise<void> {
     console.log('Claude API key saved to ' + credentialPath() + ' (mode 600).');
     return;
   }
+  if (group === 'tasks' && verb && id) {
+    if (['inspect', 'history', 'current'].includes(verb)) {
+      const path =
+        verb === 'current'
+          ? `/v1/tasks?session_id=${encodeURIComponent(id)}`
+          : `/v1/tasks/${id}${verb === 'history' ? '/history?offset=' + encodeURIComponent(option('--offset') ?? '0') : ''}`;
+      console.log(JSON.stringify(await call(socket, path), null, 2));
+      return;
+    }
+    if (['create', 'revise', 'run', 'complete'].includes(verb)) {
+      const expected = Number(option('--revision'));
+      if (!Number.isSafeInteger(expected) || expected < 0)
+        throw new Error('Supply the reviewed --revision');
+      const task =
+        verb === 'create'
+          ? undefined
+          : await call<{ session_id: string }>(socket, `/v1/tasks/${id}`);
+      const session = task?.session_id ?? id;
+      const client_id = randomUUID();
+      const lease = await acquireControl(socket, session, client_id, args.includes('--takeover'));
+      try {
+        const body: Record<string, unknown> = {
+          request_id: option('--request-id') ?? randomUUID(),
+          expected_revision: expected,
+          client_id,
+          token: lease.token,
+        };
+        let path = '/v1/tasks';
+        if (verb === 'create' || verb === 'revise') {
+          const file = option('--plan');
+          if (!file)
+            throw new Error('Supply --plan FILE containing objective, constraints and steps');
+          body.plan = JSON.parse(readFileSync(resolve(file), 'utf8'));
+          if (verb === 'create') body.session_id = id;
+          else path += `/${id}/revise`;
+        } else {
+          const step = option('--step');
+          if (!step) throw new Error('Supply the reviewed --step ID');
+          path += `/${id}/steps/${step}/${verb}`;
+          if (verb === 'complete') {
+            body.review = option('--review');
+            if (!body.review)
+              throw new Error('Supply --review TEXT recording the operator decision');
+          } else {
+            body.instruction = option('--text') ?? null;
+            body.continues_attempt_id = option('--continue-attempt') ?? null;
+          }
+        }
+        console.log(JSON.stringify(await call(socket, path, body), null, 2));
+      } finally {
+        await call(socket, `/v1/sessions/${session}/control`, {
+          request_id: randomUUID(),
+          client_id,
+          token: lease.token,
+          action: 'release',
+          expected_epoch: lease.epoch,
+        }).catch(() => {});
+      }
+      return;
+    }
+  }
   if (group === 'task' && verb === 'inspect' && id) {
     console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/task`), null, 2));
     return;

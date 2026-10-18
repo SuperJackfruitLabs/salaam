@@ -28,6 +28,8 @@ export class Store {
   readonly usage = new UsageLedger(this);
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
+  projectTaskAttempt?: (attempt: Attempt) => void;
+  guardTaskSubmission?: (session: string, step?: string) => void;
   cancelChildren?: (attempt: string) => void;
   private committed: DurableEvent[] | null = null;
   constructor(path: string) {
@@ -38,7 +40,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 7) {
+    if (version > 8) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -127,11 +129,23 @@ export class Store {
           CREATE TABLE compactions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),epoch INTEGER NOT NULL,task_version INTEGER NOT NULL,state TEXT NOT NULL,cursor TEXT,error TEXT);
           CREATE TABLE compaction_cancellations(id TEXT PRIMARY KEY REFERENCES compactions(id));
           PRAGMA user_version=6;COMMIT;`);
-      this.db.exec(`BEGIN IMMEDIATE;
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 7
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),source TEXT NOT NULL,root TEXT NOT NULL,revision INTEGER NOT NULL,digest TEXT NOT NULL,baseline TEXT NOT NULL REFERENCES artifacts(id),state TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS workspace_mutations(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id),request_key TEXT NOT NULL,input_digest TEXT NOT NULL,expected_revision INTEGER NOT NULL,before_digest TEXT NOT NULL,after_digest TEXT NOT NULL,artifact_id TEXT NOT NULL REFERENCES artifacts(id),before_root TEXT NOT NULL,after_root TEXT NOT NULL,state TEXT NOT NULL,error TEXT,UNIQUE(workspace_id,request_key));
         CREATE TABLE IF NOT EXISTS command_runs(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),workspace_id TEXT NOT NULL REFERENCES workspaces(id),attempt_id TEXT REFERENCES attempts(id),step_key TEXT NOT NULL,input_digest TEXT NOT NULL,command TEXT NOT NULL,cwd TEXT NOT NULL,workspace_revision INTEGER NOT NULL,workspace_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,engine_id TEXT NOT NULL,snapshot_artifact TEXT NOT NULL REFERENCES artifacts(id),container_id TEXT,exec_id TEXT,state TEXT NOT NULL,resume_state TEXT,exit_code INTEGER,output TEXT NOT NULL DEFAULT '',result_artifact TEXT,error TEXT,created_at INTEGER NOT NULL,deadline INTEGER NOT NULL,cancelled INTEGER NOT NULL DEFAULT 0,UNIQUE(session_id,step_key));
         PRAGMA user_version=7; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 8
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE durable_tasks(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),revision INTEGER NOT NULL,plan_revision INTEGER NOT NULL,state TEXT NOT NULL,objective TEXT NOT NULL,constraints_json TEXT NOT NULL,reason TEXT NOT NULL);
+          CREATE TABLE task_plans(task_id TEXT NOT NULL REFERENCES durable_tasks(id),revision INTEGER NOT NULL,document TEXT NOT NULL,request_id TEXT NOT NULL,PRIMARY KEY(task_id,revision));
+          CREATE TABLE task_steps(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),step_key TEXT NOT NULL,ordinal INTEGER NOT NULL,title TEXT NOT NULL,instruction TEXT NOT NULL,dependencies TEXT NOT NULL,state TEXT NOT NULL,attempt_id TEXT REFERENCES attempts(id),review TEXT,UNIQUE(task_id,step_key),UNIQUE(task_id,ordinal));
+          CREATE TABLE task_step_attempts(attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),step_id TEXT NOT NULL REFERENCES task_steps(id),plan_revision INTEGER NOT NULL,instruction TEXT NOT NULL);
+          PRAGMA user_version=8; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -377,54 +391,65 @@ export class Store {
         if (controller) this.authorizeControl(id, controller);
         if (this.session(id).revision !== expectedRevision)
           throw new ServiceError('revision_conflict', 'Session revision changed');
-        if (text.trimStart().startsWith('/'))
-          throw new ServiceError(
-            'reserved_command',
-            'Pi slash commands cannot be submitted as prompts',
-            400,
-          );
-        if (continuesAttempt) {
-          const previous = this.db
-            .prepare('SELECT * FROM attempts WHERE id=?')
-            .get(continuesAttempt) as unknown as Attempt | undefined;
-          if (
-            !previous ||
-            previous.session_id !== id ||
-            previous.state !== 'interrupted' ||
-            previous.resolved_by
-          )
-            throw new ServiceError(
-              'invalid_continuation',
-              'Attempt is not an unresolved interruption',
-            );
-        }
-        const submission = randomUUID();
-        const attempt = randomUUID();
-        this.db
-          .prepare('INSERT INTO submissions(id,session_id,text,attempt_id) VALUES (?,?,?,?)')
-          .run(submission, id, text, attempt);
-        this.db
-          .prepare(
-            "INSERT INTO attempts(id,session_id,submission_id,state,continues_attempt_id) VALUES (?,?,?,'accepted',?)",
-          )
-          .run(attempt, id, submission, continuesAttempt);
-        if (continuesAttempt)
-          this.db
-            .prepare('UPDATE attempts SET resolved_by=? WHERE id=?')
-            .run(attempt, continuesAttempt);
-        this.event(
-          id,
-          'submission.accepted',
-          {
-            submission_id: submission,
-            attempt_id: attempt,
-            continues_attempt_id: continuesAttempt,
-          },
-          requestId,
-        );
-        return { id: submission, attempt_id: attempt, state: 'accepted' };
+        return this.enqueue(id, requestId, text, controller, continuesAttempt);
       },
     );
+  }
+  /** Only inside a request transaction: acceptance and its task binding commit together. */
+  enqueue(
+    id: string,
+    requestId: string,
+    text: string,
+    controller?: Controller,
+    continuesAttempt: string | null = null,
+    taskStep?: string,
+  ): { id: string; attempt_id: string; state: 'accepted' } {
+    if (!this.db.isTransaction) throw new Error('Submission requires a transaction');
+    this.guardTaskSubmission?.(id, taskStep);
+    if (controller) this.authorizeControl(id, controller);
+    if (text.trimStart().startsWith('/'))
+      throw new ServiceError(
+        'reserved_command',
+        'Pi slash commands cannot be submitted as prompts',
+        400,
+      );
+    if (continuesAttempt) {
+      const previous = this.db
+        .prepare('SELECT * FROM attempts WHERE id=?')
+        .get(continuesAttempt) as unknown as Attempt | undefined;
+      if (
+        !previous ||
+        previous.session_id !== id ||
+        previous.state !== 'interrupted' ||
+        previous.resolved_by
+      )
+        throw new ServiceError('invalid_continuation', 'Attempt is not an unresolved interruption');
+    }
+    const submission = randomUUID();
+    const attempt = randomUUID();
+    this.db
+      .prepare('INSERT INTO submissions(id,session_id,text,attempt_id) VALUES (?,?,?,?)')
+      .run(submission, id, text, attempt);
+    this.db
+      .prepare(
+        "INSERT INTO attempts(id,session_id,submission_id,state,continues_attempt_id) VALUES (?,?,?,'accepted',?)",
+      )
+      .run(attempt, id, submission, continuesAttempt);
+    if (continuesAttempt)
+      this.db
+        .prepare('UPDATE attempts SET resolved_by=? WHERE id=?')
+        .run(attempt, continuesAttempt);
+    this.event(
+      id,
+      'submission.accepted',
+      {
+        submission_id: submission,
+        attempt_id: attempt,
+        continues_attempt_id: continuesAttempt,
+      },
+      requestId,
+    );
+    return { id: submission, attempt_id: attempt, state: 'accepted' };
   }
   controlView(id: string): ControlView {
     this.session(id);
@@ -525,6 +550,7 @@ export class Store {
       this.db
         .prepare("UPDATE submissions SET state='dispatching' WHERE id=?")
         .run(next.submission_id);
+      this.projectTaskAttempt?.(this.attempt(next.id));
       this.event(id, 'attempt.dispatching', {
         attempt_id: next.id,
         submission_id: next.submission_id,
@@ -546,6 +572,7 @@ export class Store {
       this.db
         .prepare("UPDATE submissions SET state='running' WHERE id=?")
         .run(attempt.submission_id);
+      this.projectTaskAttempt?.(this.attempt(id));
       this.event(attempt.session_id, 'attempt.running', {
         attempt_id: id,
         submission_id: attempt.submission_id,
@@ -587,6 +614,7 @@ export class Store {
         truncated: (result?.length ?? 0) > 65536,
         error,
       });
+      this.projectTaskAttempt?.(this.attempt(id));
       this.finishChild?.(this.attempt(id));
     });
   }

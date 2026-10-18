@@ -118,3 +118,11 @@ Commands capture a verified workspace snapshot and persist their step-key bindin
 Reconnect returns the same run and output offsets. Service recovery monitors a known surviving exec under its original identity. Ambiguous launch or cleanup outcomes remain interrupted/unknown and block new grants; arbitrary commands are never replayed. Actual exit status plus confirmed cleanup establishes success. Cancellation persists before forced container removal, including descendants. The thirty-second deadline is broker-enforced: after broker death, an orphan can survive until restart reconciliation.
 
 See [Guarded coding](coding.md) for limits, setup, recovery and the observed acceptance scope.
+
+## Durable tasks and steps (M11.1)
+
+A parent session can own one task aggregate independently of its attempts and worker epochs. Schema 8 stores the task projection, stable ordered steps, immutable plan documents and attempt bindings. Task requests reuse the existing transactional request ledger; cached responses precede controller/revision checks. Step admission and prompt admission commit together. Attempt transitions project to task/step state inside the same transaction, including queued cancellation and startup interruption recovery.
+
+Creation and plan edits do not enqueue prompts. Only an explicit step run/continuation creates an attempt. Worker readiness may dispatch that already accepted attempt; neither readiness nor settlement chooses another step. Interrupted work keeps its identity and requires a new instruction on a new attempt. Model settlement produces `awaiting_review`; operator step completion preserves a review record and leaves the overall task blocked or verifying. Verified success, task-wide budgets, checkpoints and automatic progression are not implemented in this slice.
+
+The bounded task projection joins explicit facts in the mandatory context frame and existing provider admission validates the serialized frame. It carries context, not extra tool authority. TUI snapshots and the host-local task API share that ledger. See [task controls and recovery](durable-tasks.md).

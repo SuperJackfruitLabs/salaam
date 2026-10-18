@@ -48,6 +48,9 @@ const evidence = {
   completed_repeats: 0,
   operator_proofs: operatorProofs,
   operator_requested_repeats: 3,
+  task_proofs: ['test/proofs/task-recovery.test.ts'],
+  task_requested_repeats: 3,
+  task_completed_repeats: 0,
   operator_completed_repeats: 0,
   proofs,
   commands: [],
@@ -102,6 +105,21 @@ try {
     evidence.operator_completed_repeats = iteration;
     save();
   }
+  for (let iteration = 1; iteration <= 3; iteration++) {
+    const report = join(dir, 'tasks-' + iteration + '.json');
+    await execute('tasks-' + iteration, process.execPath, [
+      join(root, 'node_modules/vitest/vitest.mjs'),
+      'run',
+      ...evidence.task_proofs,
+      '--reporter=json',
+      '--outputFile=' + report,
+    ]);
+    const result = JSON.parse(readFileSync(report, 'utf8'));
+    if (!result.success || result.numFailedTests || !result.numTotalTests)
+      throw new Error('Incomplete task recovery proof report');
+    evidence.task_completed_repeats = iteration;
+    save();
+  }
   const files = Object.values(proofs).map((name) => 'test/proofs/' + name + '.test.ts');
   for (let iteration = 1; iteration <= repeats; iteration++) {
     const report = join(dir, 'proofs-' + iteration + '.json');
@@ -121,7 +139,10 @@ try {
   for (const name of ['session', 'managed', 'children', 'acceptance'])
     await execute('demo-' + name, 'npm', ['run', 'demo:' + name]);
   evidence.success = true;
-  evidence.full_acceptance = repeats >= 20 && evidence.operator_completed_repeats === 3;
+  evidence.full_acceptance =
+    repeats >= 20 &&
+    evidence.operator_completed_repeats === 3 &&
+    evidence.task_completed_repeats === 3;
   evidence.finished_at = new Date().toISOString();
   save();
   writeFileSync(

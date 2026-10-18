@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-18T05:33:11.099Z",
+  "milestone": "M11.1",
+  "status": "implemented-with-local-offline-recovery-evidence",
+  "source": {
+    "base_commit": "fe575f5c8772a647dbe8c0c280ab771b7e3c4bfa",
+    "branch": "m11-1-durable-tasks",
+    "working_tree_dirty": true,
+    "runtime_source_digest": "9ebcb132dc4697965e29b7b0d86ac878f88692f78f26cfb31de1f4bcc9734322",
+    "implementation_and_tests_digest": "e504be482992d28e7bffe3be1afd07632c120ef82dddb427ccf5414dcece7ae6",
+    "raw_source_manifest": ".state/evidence/m11.1/source-manifest.json"
+  },
+  "build": {
+    "node": "v26.7.0",
+    "npm": "11.19.0",
+    "pi": "1.3.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "worker_bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+    "compiled_source_digest": "8b9ebe1586b542e5e075f31120b605971da4e0eb4bb4d46a2808e0e4f13a91dd",
+    "task_work_js_sha256": "6e35376de05cb30a0f0a722cdd619086fee47d19899ce1beb84820d495e21125"
+  },
+  "verification": {
+    "full_source_tests": 197,
+    "task_recovery_cases": 5,
+    "additional_task_repetitions": 3,
+    "additional_task_case_executions": 15,
+    "format_check": "passed",
+    "type_check": "passed",
+    "diff_check": "passed",
+    "reports": [
+      {
+        "command": "npm test -- --reporter=json --outputFile=.state/evidence/m11.1/final/full-suite.json",
+        "exit_code": 0,
+        "tests": 197,
+        "test_files": 34,
+        "report": ".state/evidence/m11.1/final/full-suite.json",
+        "report_sha256": "1c2731f5588ae7e833085901cf2de8c12a0f7e88f1f9de9055910480a5f6665c",
+        "log": ".state/evidence/m11.1/final/full-suite.log",
+        "log_sha256": "f2d1d9fa9c44188d21d71b6c554a1d244129f43f21e64cb101adddf653c9a653"
+      },
+      {
+        "command": "node node_modules/vitest/vitest.mjs run test/proofs/task-recovery.test.ts --reporter=json --outputFile=.state/evidence/m11.1/final/tasks-1.json",
+        "exit_code": 0,
+        "tests": 5,
+        "test_files": 1,
+        "report": ".state/evidence/m11.1/final/tasks-1.json",
+        "report_sha256": "0a357435942c551f5804e2e3243a465d4d23bbcd44929d81ee4aa34505bcfad3",
+        "log": ".state/evidence/m11.1/final/tasks-1.log",
+        "log_sha256": "a3f7ded9ea26a680b948ffdbe6c38c0b017ccc5e28e4c5177c8ee63dd28397dd"
+      },
+      {
+        "command": "node node_modules/vitest/vitest.mjs run test/proofs/task-recovery.test.ts --reporter=json --outputFile=.state/evidence/m11.1/final/tasks-2.json",
+        "exit_code": 0,
+        "tests": 5,
+        "test_files": 1,
+        "report": ".state/evidence/m11.1/final/tasks-2.json",
+        "report_sha256": "f42b03248f818c501aea474f5f40fb8f8eb585f1fad4263b6efbbce190598cfb",
+        "log": ".state/evidence/m11.1/final/tasks-2.log",
+        "log_sha256": "34beb26bb8b394ff2343273d67368b69fc5a6a90a2df6ca4945f927b1e3ae472"
+      },
+      {
+        "command": "node node_modules/vitest/vitest.mjs run test/proofs/task-recovery.test.ts --reporter=json --outputFile=.state/evidence/m11.1/final/tasks-3.json",
+        "exit_code": 0,
+        "tests": 5,
+        "test_files": 1,
+        "report": ".state/evidence/m11.1/final/tasks-3.json",
+        "report_sha256": "4b80b73f852712bea62d82a2c28be299b7032bd48571260bac6a7ca7166220f5",
+        "log": ".state/evidence/m11.1/final/tasks-3.log",
+        "log_sha256": "41706f8f7ca4d27facb09cf78c7572f67bf8f44bdda8fe5b045b11e143465a2c"
+      }
+    ]
+  },
+  "proved": [
+    "Stable task/step identities and reviewed work survive real worker SIGKILL and daemon SIGKILL.",
+    "Corrected objective, constraints, future step instruction, plan revision and managed provider-context payload survive replacement.",
+    "Queued acceptance retains one attempt; cached response survives revoked controller and stale revision.",
+    "Dispatched work is interrupted, never replayed; explicit continuation creates a new attempt on the same step.",
+    "Pi settlement before SQLite completion does not become task/step success.",
+    "Later steps stay pending across settlement and restarts.",
+    "CLI commands and TUI inspection use the same ledger.",
+    "Task admissions/outcomes and events roll back together on recording failure; dependency, review, capacity, cancellation and schema migration guards pass."
+  ],
+  "limits": [
+    "This is an uncommitted working-tree implementation based on the recorded main commit, not a published build or CI result.",
+    "Local macOS arm64 offline fixtures only; no new Linux/VPS, live-provider or Zed GUI acceptance is established.",
+    "Only explicit operator progression and operator step review are implemented. Verified task success, task budgets, checkpoints, automatic compaction and jobs remain disabled.",
+    "Process crash recovery does not establish host power-loss recovery."
+  ]
+}

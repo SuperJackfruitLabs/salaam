@@ -118,6 +118,7 @@ export interface Controller {
   token: string;
 }
 export interface SessionSnapshot extends Session {
+  work_task?: import('./task-work.js').WorkTask | null;
   control: ControlView;
   attempts: (Attempt & { result_truncated: boolean })[];
   submissions: (Submission & { text_truncated: boolean })[];

@@ -72,7 +72,7 @@ test('v1 queued submissions migrate to one accepted attempt and retain legacy re
       .prepare('UPDATE requests SET response=? WHERE id=?')
       .run(JSON.stringify(legacy), 'old-submit');
     store.db.exec(
-      'PRAGMA foreign_keys=OFF; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations; DROP TABLE approval_dialogs; DROP TABLE approvals; DROP TABLE operations; DROP TABLE attempts; DROP TABLE controls; ALTER TABLE submissions DROP COLUMN attempt_id; PRAGMA user_version=1;',
+      'PRAGMA foreign_keys=OFF; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations; DROP TABLE approval_dialogs; DROP TABLE approvals; DROP TABLE operations; DROP TABLE attempts; DROP TABLE controls; ALTER TABLE submissions DROP COLUMN attempt_id; PRAGMA user_version=1;',
     );
     store.close();
     store = new Store(path);
@@ -84,7 +84,7 @@ test('v1 queued submissions migrate to one accepted attempt and retain legacy re
     expect(store.accept(session.id, 'old-submit', session.revision, 'Queued in M2')).toEqual(
       legacy,
     );
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 8 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

@@ -4,7 +4,9 @@ Salaam is a local session service supervising persistent Pi workers. Terminal an
 
 The current implementation covers **M0–M8**: a reproducible Pi bundle, transactional service core, supervised workers, reconnectable attachment, durable approvals, an operation/receipt ledger, independent read-only children, durable result inboxes, usage accounting, explicit task facts, managed checkpoint compaction and an ACP v1 stdio adapter. The default route is an **offline scripted provider**: ordinary prompts return `Offline reply: …` after a managed probe tool call. Approved effects use an explicitly configured local fixture connector. A guarded Claude route is available with `service start --provider anthropic`; the default tests use local fixtures without real credentials or paid requests.
 
-**M10** adds the Salaam terminal interface: bare `sal`, session switching, a multiline composer, live progress, guarded diffs, command output, bound approvals, and SSH attachment. Night and Paper themes use Salaam branding. See [TUI controls and remote setup](docs/tui.md). The named Zed GUI rehearsal is still pending; protocol tests are separate evidence.
+**M10** adds the Salaam terminal interface: bare `sal`, session switching, a multiline composer, live progress, guarded diffs, command output, bound approvals, and SSH attachment. Night and Paper themes use Salaam branding. See [TUI controls and remote setup](docs/tui.md). The named Zed GUI rehearsal and macOS/Linux acceptance passed; see the recorded scope in [verification](docs/verification.md).
+
+**M11.1** adds durable task and step identities, revisioned plans, explicit step admission, operator review and recovery across worker/daemon restarts. Automatic progression and verified task success remain disabled. See [durable tasks](docs/durable-tasks.md).
 
 ## Run locally
 

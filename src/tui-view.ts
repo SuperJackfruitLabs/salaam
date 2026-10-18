@@ -206,7 +206,17 @@ export class DocumentView implements Component {
     }
     let lines: string[] = [];
     if (tab === 'conversation') {
-      if (!c.snapshot.messages.length && !c.snapshot.submissions.length) {
+      if (c.snapshot.work_task)
+        lines.push(
+          ...this.title('TASK · ' + c.snapshot.work_task.state.toUpperCase(), width),
+          ...this.text(c.snapshot.work_task.objective, width),
+          ...this.text(
+            'Inspect the saved plan in Context. Start or continue steps with sal tasks.',
+            width,
+          ),
+          t.fill('', width),
+        );
+      if (!c.snapshot.work_task && !c.snapshot.messages.length && !c.snapshot.submissions.length) {
         lines = this.welcome(width);
         while (lines.length < this.view.bodyRows()) lines.push(t.fill('', width));
         return lines;
@@ -457,6 +467,39 @@ export class DocumentView implements Component {
           ...this.text('Current root: ' + c.workspace.root, width),
           t.fill('', width),
         );
+      const task = c.snapshot.work_task;
+      if (task) {
+        lines.push(
+          ...this.title('DURABLE TASK · ' + task.state.toUpperCase(), width),
+          ...this.text(
+            task.id + ' · revision ' + task.revision + ' · plan ' + task.plan_revision,
+            width,
+          ),
+          ...this.text(task.objective, width),
+          ...this.text(task.reason, width),
+        );
+        for (const constraint of task.constraints)
+          lines.push(...this.text('Constraint: ' + constraint, width));
+        for (const step of task.steps)
+          lines.push(
+            ...this.title(step.key + ' · ' + step.state, width, 'muted'),
+            ...this.text(step.title, width),
+            ...this.text(step.instruction, width),
+            ...this.text(
+              'Step ' + step.id + (step.attempt_id ? ' · attempt ' + step.attempt_id : ''),
+              width,
+            ),
+            ...this.text('Depends on: ' + (step.depends_on.join(', ') || 'none'), width),
+            ...(step.review ? this.text('Operator review: ' + step.review, width) : []),
+          );
+        lines.push(
+          ...this.text(
+            'Steps require explicit sal tasks commands. Task verification is pending M11.2.',
+            width,
+          ),
+          t.fill('', width),
+        );
+      }
       lines.push(...this.title('TASK FACTS', width));
       const facts = c.facts.filter((f) => !(f as { superseded_by?: string }).superseded_by);
       if (!facts.length)
