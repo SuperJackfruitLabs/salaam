@@ -62,7 +62,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 14) {
+    if (version > 15) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -227,6 +227,13 @@ export class Store {
           CREATE UNIQUE INDEX team_active_step ON team_assignments(step_id) WHERE superseded=0;
           CREATE TABLE team_messages(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES durable_tasks(id),sender TEXT NOT NULL,recipient TEXT NOT NULL REFERENCES team_assignments(id),text TEXT NOT NULL,input_digest TEXT NOT NULL,created_at INTEGER NOT NULL,delivered_at INTEGER,acknowledged_at INTEGER);
           PRAGMA user_version=14; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 15
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE worker_integrations(id TEXT PRIMARY KEY,parent_session TEXT NOT NULL REFERENCES sessions(id),child_id TEXT NOT NULL UNIQUE REFERENCES child_tasks(id),worker_id TEXT NOT NULL,patch_digest TEXT NOT NULL,before_revision INTEGER NOT NULL,before_digest TEXT NOT NULL,after_artifact TEXT NOT NULL REFERENCES artifacts(id),state TEXT NOT NULL,mutation_id TEXT REFERENCES workspace_mutations(id),mutation_key TEXT NOT NULL UNIQUE,generation INTEGER NOT NULL DEFAULT 1);
+          CREATE TABLE team_rejections(step_id TEXT NOT NULL REFERENCES task_steps(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),request_id TEXT NOT NULL,reason TEXT NOT NULL,PRIMARY KEY(step_id,attempt_id));
+          PRAGMA user_version=15; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

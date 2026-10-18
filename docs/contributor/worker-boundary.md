@@ -32,6 +32,11 @@ bounded path/line/hash evidence and reviewer diffs. Structured findings referenc
 actual snapshot locations and are published as analysis, never verified success.
 These profiles cannot edit files, execute commands, delegate or decide approvals.
 
+Builders and testers use a distinct, executor-bound private workspace scope; see
+[native coding workers and integration](worker-workspaces.md). Their coding grants
+do not widen explorer/reviewer authority. Schema 15 adds integration/rejection
+records and preserves earlier child, result and request identities.
+
 ## Dispatch and recovery
 
 1. Spawn commits the child, reservation, fsynced input-artifact reference, binding

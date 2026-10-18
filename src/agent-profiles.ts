@@ -60,7 +60,7 @@ export function profileTools(role: keyof typeof ROLE_TOOLS): string[] {
 }
 export const BUILTIN_PROFILES: AgentProfile[] = [
   DIAGNOSTIC_PROFILE,
-  ...(['explorer', 'reviewer'] as const).map((role) => ({
+  ...(['explorer', 'reviewer', 'builder', 'tester', 'integrator'] as const).map((role) => ({
     schema_version: 1 as const,
     id: 'salaam/' + role,
     revision: 1,
@@ -71,11 +71,21 @@ export const BUILTIN_PROFILES: AgentProfile[] = [
     description:
       role === 'explorer'
         ? 'Bounded evidence from an immutable repository snapshot'
-        : 'Independent findings over an immutable repository diff',
+        : role === 'reviewer'
+          ? 'Independent findings over an immutable repository diff'
+          : role === 'builder'
+            ? 'Implement a proposal in a private owned workspace'
+            : role === 'tester'
+              ? 'Run bounded checks in an isolated disposable copy'
+              : 'Review integration evidence without applying changes',
     prompt:
       role === 'explorer'
         ? 'Investigate only the supplied repository snapshot. Cite actual file paths, line numbers and hashes. Do not claim edits or execution.'
-        : 'Review only the supplied immutable diff and repository snapshot. Report concrete findings with file/line evidence through salaam_findings. A finding is analysis, not a verification receipt.',
+        : role === 'builder'
+          ? 'Implement only the assigned change in your private owned workspace using salaam_files. Run bounded checks through salaam_command. Command edits are disposable. Do not claim the root workspace was changed or verified; return a proposal for explicit integration.'
+          : role === 'tester'
+            ? 'Inspect the admitted snapshot and run bounded checks using salaam_command. You cannot edit persistent files. Report actual outcomes; a model answer is not a root verification receipt.'
+            : 'Review only the supplied immutable diff and repository snapshot. Report concrete findings with file/line evidence through salaam_findings. A finding is analysis, not a verification receipt.',
   })),
 ];
 
@@ -152,6 +162,7 @@ export function parseAgentProfile(name: string, source: string): AgentProfile {
 }
 
 export class AgentProfiles {
+  assertExecution?: () => void;
   validateFrame?: (session: string) => void;
   constructor(
     readonly store: Store,
@@ -212,11 +223,15 @@ export class AgentProfiles {
     const profile = this.inspect(session, profileId);
     if (digest(profile) !== expectedDigest)
       throw new ServiceError('profile_changed', 'Review the current profile digest');
-    if (profile.role && !['explorer', 'reviewer'].includes(profile.role))
-      throw new ServiceError(
-        'profile_unavailable',
-        'Writing roles require the parallel execution boundary',
-      );
+    const writing = profile.tools.some((tool) => ['salaam_files', 'salaam_command'].includes(tool));
+    if (writing) {
+      if (!this.assertExecution)
+        throw new ServiceError(
+          'profile_unavailable',
+          'Writing roles require the parallel execution boundary',
+        );
+      this.assertExecution();
+    }
     const prepared = await this.prepareRoute(
       profile.provider
         ? providerRoute(profile.provider, profile.model, Math.min(2048, this.route.max_tokens))
@@ -225,6 +240,7 @@ export class AgentProfiles {
     );
     return this.store.request('local-operator', request, input, () => {
       this.store.authorizeControl(session, controller);
+      if (writing) this.assertExecution!();
       if (digest(this.inspect(session, profileId)) !== expectedDigest)
         throw new ServiceError('profile_changed', 'Profile changed during admission');
       if (

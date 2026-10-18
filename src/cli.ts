@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { digest } from './protocol.js';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
 import { ROOT, VERSION } from './config.js';
@@ -78,26 +79,95 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'workers') {
+    if (!id) throw new Error('Supply a child or integration receipt ID');
+    if (verb === 'proposal' || verb === 'integration') {
+      const result = await call<any>(
+        socket,
+        verb === 'proposal'
+          ? `/v1/workers/${id}/proposal?offset=${Number(option('--offset') ?? 0)}`
+          : `/v1/integrations/${id}`,
+      );
+      if (verb === 'proposal' && !args.includes('--json')) {
+        const { changes, diff, ...metadata } = result;
+        console.log(
+          JSON.stringify(
+            {
+              ...metadata,
+              files: changes.map((c: any) => ({
+                path: c.path,
+                before_hash: digest(c.before),
+                after_hash: digest(c.after),
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+        for (const patch of diff) console.log(patch);
+      } else console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (!['integrate', 'resolve'].includes(verb ?? ''))
+      throw new Error('Use workers proposal, integrate, integration or resolve');
+    const owner =
+      verb === 'integrate'
+        ? (await call<{ parent_session: string }>(socket, `/v1/children/${id}`)).parent_session
+        : (await call<{ parent_session: string }>(socket, `/v1/integrations/${id}`)).parent_session;
+    const revision = option('--revision'),
+      workspace_digest = option('--root-digest'),
+      patch_digest = option('--patch-digest');
+    if (revision === undefined || !workspace_digest || (verb === 'integrate' && !patch_digest))
+      throw new Error(
+        'Supply reviewed --revision N, --root-digest SHA256 and --patch-digest SHA256 for integration',
+      );
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, owner, client_id, args.includes('--takeover'));
+    try {
+      const result = await call(
+        socket,
+        verb === 'integrate' ? `/v1/workers/${id}/integrate` : `/v1/integrations/${id}/resolve`,
+        {
+          client_id,
+          token: lease.token,
+          request_id: option('--request-id') ?? randomUUID(),
+          workspace_revision: Number(revision),
+          workspace_digest,
+          patch_digest,
+        },
+      );
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${owner}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'team') {
     if (!id) throw new Error('Supply TASK_ID');
     if (verb === 'show') {
       console.log(JSON.stringify(await call(socket, `/v1/tasks/${id}/team`), null, 2));
       return;
     }
-    if (!['assign', 'run', 'send', 'receive', 'ack'].includes(verb ?? ''))
+    if (!['assign', 'run', 'reject', 'send', 'receive', 'ack'].includes(verb ?? ''))
       throw new Error('Use team show, assign, run, send, receive or ack');
     const task = await call<{ session_id: string }>(socket, `/v1/tasks/${id}`);
     const client_id = randomUUID(),
       lease = await acquireControl(socket, task.session_id, client_id, args.includes('--takeover'));
     try {
       const assignment = option('--assignment');
-      if (['run', 'receive', 'ack'].includes(verb!) && !assignment)
+      if (['run', 'reject', 'receive', 'ack'].includes(verb!) && !assignment)
         throw new Error('Supply --assignment ID');
       const revision = option('--revision'),
         generation = option('--generation');
-      if (['assign', 'run'].includes(verb!) && revision === undefined)
+      if (['assign', 'run', 'reject'].includes(verb!) && revision === undefined)
         throw new Error('Supply the reviewed --revision N');
-      if (verb === 'run' && generation === undefined)
+      if (['run', 'reject'].includes(verb!) && generation === undefined)
         throw new Error('Supply the reviewed --generation N');
       const path = assignment ? `${assignment}/${verb}` : verb;
       const result = await call(socket, `/v1/tasks/${id}/team/${path}`, {
@@ -118,6 +188,7 @@ async function main(): Promise<void> {
           : {}),
         ...(verb === 'send' ? { recipient: option('--to'), text: option('--text') } : {}),
         ...(verb === 'ack' ? { message_id: option('--message') } : {}),
+        ...(verb === 'reject' ? { reason: option('--reason') } : {}),
       });
       console.log(JSON.stringify(result, null, 2));
     } finally {

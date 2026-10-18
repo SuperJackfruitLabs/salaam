@@ -1,10 +1,19 @@
 const commands: Record<string, string> = {
+  workers: `salaam workers proposal CHILD_ID [--offset N]
+salaam workers integrate CHILD_ID --revision N --root-digest SHA256 --patch-digest SHA256
+salaam workers integration RECEIPT_ID
+salaam workers resolve RECEIPT_ID --revision N --root-digest SHA256
+
+Writing specialists use private drafts. Review every proposal page and the root digest before integration.
+Integration does not verify a task. Resolution explicitly admits a new apply only against its unchanged original root.
+Mutations accept --request-id ID and --takeover.`,
   team: `salaam team show TASK_ID
 salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --requests N --revision N
 salaam team run TASK_ID --assignment ID --generation N --revision N [--instruction TEXT --continues ATTEMPT_ID]
 salaam team send TASK_ID --to ASSIGNMENT_ID --text TEXT
 salaam team receive TASK_ID --assignment ID
 salaam team ack TASK_ID --assignment ID --message MESSAGE_ID
+salaam team reject TASK_ID --assignment ID --generation N --revision N --reason TEXT
 
 Mutations accept --request-id ID and --takeover. Claims bind the plan, admitted profile and generation.
 Messages never wake workers. Use run for an explicit new claim or follow-up.`,
@@ -247,6 +256,7 @@ Commands:
   workspace     Inspect coding copies, review diffs or acknowledge human edits
   agents        Inspect and admit specialist profiles
   team          Assign task steps and inspect the durable team inbox
+  workers       Inspect and explicitly integrate isolated coding proposals
   commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}

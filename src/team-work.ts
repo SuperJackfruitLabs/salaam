@@ -173,7 +173,10 @@ export class TeamWork {
           )
         )
           throw new ServiceError('dependency_pending', 'Complete predecessor steps first');
-        const interrupted = step.state === 'interrupted' ? step.attempt_id : null;
+        const interrupted =
+          step.attempt_id && this.store.attempt(step.attempt_id).state === 'interrupted'
+            ? step.attempt_id
+            : null;
         if (continuation !== interrupted || (row.child_id && !instruction))
           throw new ServiceError(
             'invalid_continuation',
@@ -271,6 +274,57 @@ export class TeamWork {
     );
     if (launch) this.children.launchPrepared(launch);
     return result;
+  }
+  reject(
+    id: string,
+    request: string,
+    expected: number,
+    generation: number,
+    reason: string,
+    controller: Controller,
+  ): TeamAssignment {
+    return this.store.request(
+      'local-operator',
+      request,
+      { kind: 'team-reject', id, expected, generation, reason },
+      () => {
+        const assignment = this.get(id),
+          task = this.tasks.get(assignment.task_id),
+          step = task.steps.find((s) => s.id === assignment.step_id)!;
+        this.store.authorizeControl(task.session_id, controller);
+        this.expect(task.id, expected);
+        if (
+          task.state === 'cancelled' ||
+          assignment.generation !== generation ||
+          !step.attempt_id ||
+          !['awaiting_review', 'failed', 'interrupted'].includes(step.state)
+        )
+          throw new ServiceError('team_claim_stale', 'Reject the current settled claim only');
+        if (!reason.trim() || reason.length > 4096)
+          throw new ServiceError('invalid_field', 'Record a bounded rejection reason', 400);
+        this.store.db
+          .prepare('INSERT INTO team_rejections VALUES (?,?,?,?)')
+          .run(step.id, step.attempt_id, request, reason);
+        this.store.db
+          .prepare("UPDATE task_steps SET state='failed',review=? WHERE id=?")
+          .run(reason, step.id);
+        this.store.db
+          .prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?')
+          .run(task.id);
+        this.store.db
+          .prepare(
+            "UPDATE durable_tasks SET state='blocked',reason='Operator rejected worker proposal; explicit follow-up required' WHERE id=?",
+          )
+          .run(task.id);
+        this.changed(task.id, 'proposal_rejected', {
+          assignment_id: id,
+          generation,
+          attempt_id: step.attempt_id,
+          reason,
+        });
+        return this.get(id);
+      },
+    );
   }
   assert(binding: WorkerBinding): TeamAssignment {
     const row = this.get(binding.assignment!.id),

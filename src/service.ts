@@ -28,6 +28,7 @@ import { CodingWork } from './coding.js';
 import { AgentProfiles } from './agent-profiles.js';
 import { RepositorySnapshots } from './repository-snapshots.js';
 import { TeamWork } from './team-work.js';
+import { WorkerWorkspaces } from './worker-workspaces.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   stateDir: string;
@@ -60,6 +61,7 @@ export class SalaamService {
   readonly agents: AgentProfiles;
   readonly repositories: RepositorySnapshots;
   readonly team: TeamWork;
+  readonly workerWorkspaces: WorkerWorkspaces;
   readonly workspaces: Workspaces;
   readonly coding: CodingWork;
   readonly codingSocket: string | null;
@@ -160,6 +162,22 @@ export class SalaamService {
           this.repositories,
         );
         this.supervisor.children = this.children;
+        this.workerWorkspaces = new WorkerWorkspaces(
+          this.store,
+          this.workspaces,
+          this.repositories,
+          this.artifacts,
+          this.coding,
+          this.children,
+        );
+        this.children.workspaces = this.workerWorkspaces;
+        this.agents.assertExecution = () => {
+          this.workerWorkspaces.execution();
+        };
+        this.store.workerBoundary.assertIsolation = (binding) =>
+          this.workerWorkspaces.assert(binding);
+        this.taskWork.assertStepReview = (task, step) =>
+          this.workerWorkspaces.assertStepReview(task, step);
         this.team = new TeamWork(
           this.store,
           this.taskWork,
@@ -252,6 +270,7 @@ export class SalaamService {
       service.workspaces.recover();
       service.coding.recover();
       service.children.recover();
+      service.workerWorkspaces.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
       service.taskCheckpoints.recover();
@@ -500,6 +519,83 @@ export class SalaamService {
         }
         throw new ServiceError('not_found', 'Job route not found', 404);
       }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'integrations' &&
+        parts[2] &&
+        parts.length === 4 &&
+        parts[3] === 'resolve' &&
+        req.method === 'POST'
+      ) {
+        const body = object(await readJson(req)),
+          controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          },
+          parent = this.workerWorkspaces.owner(parts[2]);
+        this.send(
+          res,
+          200,
+          this.workerWorkspaces.resolve(
+            parts[2],
+            string(body.request_id, 'request_id', 128),
+            integer(body.workspace_revision, 'workspace_revision'),
+            string(body.workspace_digest, 'workspace_digest', 128),
+            () => this.store.authorizeControl(parent, controller),
+          ),
+        );
+        return;
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'integrations' &&
+        parts[2] &&
+        parts.length === 3 &&
+        req.method === 'GET'
+      ) {
+        this.send(res, 200, this.workerWorkspaces.inspect(parts[2]));
+        return;
+      }
+      if (parts[0] === 'v1' && parts[1] === 'workers' && parts[2] && parts.length === 4) {
+        const child = this.store.db
+          .prepare('SELECT parent_session FROM child_tasks WHERE id=?')
+          .get(parts[2]);
+        if (!child) throw new ServiceError('not_found', 'Worker not found', 404);
+        const parent = String(child.parent_session);
+        if (parts[3] === 'proposal' && req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            this.workerWorkspaces.proposal(
+              parent,
+              parts[2],
+              integer(Number(url.searchParams.get('offset') ?? '0'), 'offset'),
+            ),
+          );
+          return;
+        }
+        if (parts[3] === 'integrate' && req.method === 'POST') {
+          const body = object(await readJson(req)),
+            controller = {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            };
+          this.send(
+            res,
+            200,
+            this.workerWorkspaces.integrate(
+              parent,
+              parts[2],
+              string(body.request_id, 'request_id', 128),
+              integer(body.workspace_revision, 'workspace_revision'),
+              string(body.workspace_digest, 'workspace_digest', 128),
+              string(body.patch_digest, 'patch_digest', 128),
+              () => this.store.authorizeControl(parent, controller),
+            ),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'tasks') {
         if (parts[2] && parts[3] === 'team') {
           const task = this.taskWork.get(parts[2]);
@@ -549,6 +645,15 @@ export class SalaamService {
                   body.continues_attempt_id == null
                     ? null
                     : string(body.continues_attempt_id, 'continues_attempt_id', 128),
+                  controller,
+                );
+              else if (parts[5] === 'reject')
+                result = this.team.reject(
+                  assignment.id,
+                  request,
+                  integer(body.expected_revision, 'expected_revision'),
+                  integer(body.generation, 'generation'),
+                  string(body.reason, 'reason', 4096),
                   controller,
                 );
               else if (parts[5] === 'receive')

@@ -25,7 +25,7 @@ export const TOOLS = [
 ] as const;
 export interface CodingBinding {
   workspace_id: string;
-  files: true;
+  files: boolean;
   commands: boolean;
   profile_digest: string | null;
 }
@@ -35,7 +35,7 @@ export function workerCapabilities(
 ): string[] {
   return [
     ...CAPABILITIES,
-    ...(coding ? ['workspace-files'] : []),
+    ...(coding?.files ? ['workspace-files'] : []),
     ...(coding?.commands ? ['command-execution'] : []),
     ...(childTools?.includes('salaam_repository') ? ['repository-snapshot-read'] : []),
     ...(childTools?.includes('salaam_findings') ? ['structured-findings'] : []),
@@ -53,7 +53,7 @@ export function workerTools(
     : [
         ...TOOLS,
         ...(effects ? ['salaam_effect'] : []),
-        ...(coding ? ['salaam_files'] : []),
+        ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),
       ].sort();
 }

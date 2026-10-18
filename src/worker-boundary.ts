@@ -26,7 +26,11 @@ export const DIAGNOSTIC_PROFILE = {
   tools: ['salaam_probe'],
   max_depth: 1,
 } as const;
-export function nativeCapabilities(profile: AgentProfile, coordination = false) {
+export function nativeCapabilities(
+  profile: AgentProfile,
+  coordination = false,
+  isolation?: WorkerBinding['isolation'],
+) {
   const caps = profile.role
     ? {
         ...NATIVE_CAPABILITIES,
@@ -34,7 +38,22 @@ export function nativeCapabilities(profile: AgentProfile, coordination = false) 
         findings: profile.tools.includes('salaam_findings'),
       }
     : NATIVE_CAPABILITIES;
-  return coordination ? { ...caps, team_messages: true } : caps;
+  return {
+    ...caps,
+    ...(coordination ? { team_messages: true } : {}),
+    ...(isolation
+      ? {
+          files: profile.tools.includes('salaam_files'),
+          commands: profile.tools.includes('salaam_command'),
+          isolation:
+            isolation.execution.evidence === 'fixture'
+              ? 'simulated-owned-copy'
+              : 'owned-copy-and-proven-executor',
+          execution_profile: isolation.execution.profile_digest,
+          execution_engine: isolation.execution.engine_id,
+        }
+      : {}),
+  };
 }
 
 export interface WorkerBinding {
@@ -62,6 +81,12 @@ export interface WorkerBinding {
   agent?: AgentGrant;
   repository?: { artifact_id: string; base_artifact: string; digest: string };
   assignment?: { id: string; generation: number };
+  isolation?: {
+    workspace_id: string;
+    baseline_artifact: string;
+    digest: string;
+    execution: { profile_digest: string; engine_id: string; evidence: 'proven' | 'fixture' };
+  };
 }
 export interface WorkerBoundaryView {
   binding: WorkerBinding;
@@ -88,6 +113,7 @@ export function assertModelRequestBoundary(capabilities: {
 export class WorkerBoundary {
   profiles?: AgentProfiles;
   assertAssignment?: (binding: WorkerBinding) => void;
+  assertIsolation?: (binding: WorkerBinding) => void;
   constructor(private store: Store) {}
   /** Called within the schema migration transaction. Cached responses and child rows stay intact. */
   migrate(): void {
@@ -113,6 +139,7 @@ export class WorkerBoundary {
     agent?: AgentGrant,
     repository?: WorkerBinding['repository'],
     assignment?: WorkerBinding['assignment'],
+    isolation?: WorkerBinding['isolation'],
   ): void {
     const admittedProfile = agent?.profile ?? DIAGNOSTIC_PROFILE;
     const profileDigest = digest(admittedProfile);
@@ -149,8 +176,8 @@ export class WorkerBoundary {
       input_artifact: inputArtifact,
       profile: admittedProfile,
       profile_digest: profileDigest,
-      capabilities: nativeCapabilities(admittedProfile, !!assignment),
-      capability_digest: digest(nativeCapabilities(admittedProfile, !!assignment)),
+      capabilities: nativeCapabilities(admittedProfile, !!assignment, isolation),
+      capability_digest: digest(nativeCapabilities(admittedProfile, !!assignment, isolation)),
       tools: JSON.parse(child.authority),
       route:
         agent?.route ??
@@ -169,6 +196,7 @@ export class WorkerBoundary {
       ...(agent ? { agent } : {}),
       ...(repository ? { repository } : {}),
       ...(assignment ? { assignment } : {}),
+      ...(isolation ? { isolation } : {}),
     };
     assertModelRequestBoundary(binding.capabilities);
     this.store.db
@@ -214,6 +242,16 @@ export class WorkerBoundary {
     const profile = this.store.db
       .prepare('SELECT * FROM worker_profiles WHERE id=? AND revision=?')
       .get(b.profile.id, b.profile.revision);
+    if (b.tools.some((t) => ['salaam_files', 'salaam_command'].includes(t)) && !b.isolation)
+      throw new ServiceError(
+        'worker_binding_changed',
+        'Coding workers require isolated workspace ownership',
+      );
+    if (b.isolation) {
+      if (!this.assertIsolation)
+        throw new ServiceError('worker_binding_changed', 'Execution boundary is unavailable');
+      this.assertIsolation(b);
+    }
     if (b.assignment) {
       if (!this.assertAssignment)
         throw new ServiceError('worker_binding_changed', 'Assignment owner is unavailable');
@@ -249,7 +287,7 @@ export class WorkerBoundary {
       ) ||
       b.policy_digest !== POLICY_DIGEST ||
       canonical(b.route) !== canonical(route) ||
-      b.capability_digest !== digest(nativeCapabilities(b.profile, !!b.assignment)) ||
+      b.capability_digest !== digest(nativeCapabilities(b.profile, !!b.assignment, b.isolation)) ||
       digest(b.capabilities) !== b.capability_digest ||
       (!b.agent && b.profile_digest !== digest(DIAGNOSTIC_PROFILE)) ||
       digest(b.profile) !== b.profile_digest ||

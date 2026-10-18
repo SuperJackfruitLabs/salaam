@@ -340,7 +340,7 @@ export default function house(pi: ExtensionAPI): void {
       },
     });
   }
-  if (c.coding && !c.child) {
+  if (c.coding) {
     const normal = (error: unknown) =>
       error instanceof ServiceError &&
       [
@@ -358,46 +358,47 @@ export default function house(pi: ExtensionAPI): void {
         'command_limit',
         'invalid_cursor',
       ].includes(error.code);
-    pi.registerTool({
-      name: 'salaam_files',
-      label: 'Guarded workspace files',
-      description:
-        'Inspect/list/search/read an owned workspace or patch one UTF-8 file. Read returns one-based line references and a file hash. Before patching, inspect/read current revision and hash. expected_hash=null creates a new file, content=null deletes one. The source checkout and Git metadata stay outside this workspace.',
-      parameters: Type.Object({
-        action: Type.Union(
-          ['inspect', 'list', 'search', 'read', 'patch'].map((value) => Type.Literal(value)),
-        ),
-        path: Type.Optional(Type.String({ maxLength: 512 })),
-        query: Type.Optional(Type.String({ maxLength: 256 })),
-        offset: Type.Optional(Type.Integer({ minimum: 0 })),
-        expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
-        expected_hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        content: Type.Optional(Type.Union([Type.String({ maxLength: 262144 }), Type.Null()])),
-      }),
-      async execute(id, params) {
-        try {
-          const result = await bridge<Record<string, unknown>>('coding.files', {
-            tool_call_id: id,
-            args: params,
-          });
-          return {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
-            details: result,
-            isError: params.action === 'patch' && result.state !== 'applied',
-          };
-        } catch (error) {
-          if (!normal(error)) {
-            await fail();
-            throw error;
+    if (c.coding.files)
+      pi.registerTool({
+        name: 'salaam_files',
+        label: 'Guarded workspace files',
+        description:
+          'Inspect/list/search/read an owned workspace or patch one UTF-8 file. Read returns one-based line references and a file hash. Before patching, inspect/read current revision and hash. expected_hash=null creates a new file, content=null deletes one. The source checkout and Git metadata stay outside this workspace.',
+        parameters: Type.Object({
+          action: Type.Union(
+            ['inspect', 'list', 'search', 'read', 'patch'].map((value) => Type.Literal(value)),
+          ),
+          path: Type.Optional(Type.String({ maxLength: 512 })),
+          query: Type.Optional(Type.String({ maxLength: 256 })),
+          offset: Type.Optional(Type.Integer({ minimum: 0 })),
+          expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
+          expected_hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          content: Type.Optional(Type.Union([Type.String({ maxLength: 262144 }), Type.Null()])),
+        }),
+        async execute(id, params) {
+          try {
+            const result = await bridge<Record<string, unknown>>('coding.files', {
+              tool_call_id: id,
+              args: params,
+            });
+            return {
+              content: [{ type: 'text', text: JSON.stringify(result) }],
+              details: result,
+              isError: params.action === 'patch' && result.state !== 'applied',
+            };
+          } catch (error) {
+            if (!normal(error)) {
+              await fail();
+              throw error;
+            }
+            return {
+              content: [{ type: 'text', text: (error as Error).message }],
+              details: { error: (error as ServiceError).code },
+              isError: true,
+            };
           }
-          return {
-            content: [{ type: 'text', text: (error as Error).message }],
-            details: { error: (error as ServiceError).code },
-            isError: true,
-          };
-        }
-      },
-    });
+        },
+      });
     if (c.coding.commands)
       pi.registerTool({
         name: 'salaam_command',

@@ -25,9 +25,9 @@ task or replace its checks.
 
 A project profile uses JSON front matter and a plain prompt body:
 
-```markdown
+```text
 ---
-{ 'revision': 1, 'role': 'explorer', 'max_requests': 4 }
+{"revision":1,"role":"explorer","max_requests":4}
 ---
 
 Investigate the public API and return exact file and line evidence.
@@ -88,3 +88,65 @@ All team workers share the task's request, token, runtime and concurrency limits
 Cancelling the task revokes active worker authority before attempting process stop.
 A worker's final answer cannot declare a failed check successful or complete an
 unrelated task.
+
+## Build and integrate a coding proposal
+
+The builder works in a private copy of the admitted repository snapshot. The
+tester can run commands and record findings, with no persistent file-edit tool.
+Both roles require a configured, proven execution backend. Their commands run in
+bounded, network-disabled disposable copies; command edits do not become a patch.
+The original checkout, parent workspace and sibling drafts stay outside worker
+file authority.
+
+```sh
+sal agents inspect salaam/builder --session SESSION_ID
+sal agents admit salaam/builder --session SESSION_ID --digest REVIEWED_DIGEST
+sal team assign TASK_ID --step STEP_ID --profile salaam/builder --requests 4 --revision N
+sal team run TASK_ID --assignment ASSIGNMENT_ID --generation 0 --revision N
+sal workers proposal CHILD_ID
+```
+
+Each proposal page contains one changed file and its complete diff, plus the digest
+of the entire proposal. Follow `next_offset` with `--offset N` to review every
+changed file. `--json` includes exact file bytes and metadata. Inspect the root
+workspace again before applying the reviewed proposal:
+
+```sh
+sal workers integrate CHILD_ID --revision WORKSPACE_REVISION \
+  --root-digest ROOT_DIGEST --patch-digest PROPOSAL_DIGEST --request-id integrate-1
+sal workers integration RECEIPT_ID
+```
+
+Integration checks each changed file against the worker's original baseline.
+Disjoint edits can merge; overlapping root or human edits cause a conflict and
+preserve existing bytes. The receipt records application separately from task
+verification. A writing step cannot be reviewed or verified before its proposal
+is integrated, and task success still requires fresh configured acceptance checks.
+The integrator profile provides analysis; it cannot grant itself permission to
+apply a patch.
+
+An interrupted apply stays visible. Repeating its request inspects the saved
+intent without applying it again. After reconciliation confirms no apply occurred,
+explicit resolution can admit another attempt against the exact unchanged original
+root:
+
+```sh
+sal workers resolve RECEIPT_ID --revision WORKSPACE_REVISION \
+  --root-digest ROOT_DIGEST --request-id resolve-1
+```
+
+To request a different proposal after inspecting a settled worker, reject its
+current claim with a reason, then admit a new explicit generation and instruction:
+
+```sh
+sal team reject TASK_ID --assignment ASSIGNMENT_ID --generation N --revision N \
+  --reason 'Revise the implementation before integration.'
+sal team run TASK_ID --assignment ASSIGNMENT_ID --generation N --revision N \
+  --instruction 'Prepare the revised proposal while preserving human edits.'
+```
+
+Rejection survives restart and does not rewrite the earlier attempt's outcome.
+Interrupted attempts still require their exact `--continues ATTEMPT_ID`. Workers,
+commands and checks all consume root task concurrency; allow enough capacity when
+running multiple writing workers. Cancelling a task revokes child authority and
+cancels its owned commands before any further integration.

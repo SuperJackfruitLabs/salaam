@@ -387,6 +387,7 @@ export class TaskDriver {
     }
     const reviewing = task.steps.find((s) => s.state === 'awaiting_review');
     if (reviewing && !active) {
+      this.tasks.assertStepReview?.(task.id, reviewing.id);
       if (!reviewing.checks?.length) {
         this.stop(task, 'Step requires operator review');
         return;

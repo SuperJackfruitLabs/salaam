@@ -125,6 +125,7 @@ export class TaskVerification {
         )
           throw new ServiceError('invalid_check', 'Step does not await this configured check');
         const w = this.workspaces.verify(task.session_id);
+        if (step) this.tasks.assertStepReview?.(task.id, step);
         if (!this.coding.executor)
           throw new ServiceError('verification_unavailable', 'No proven verification executor');
         this.budget.verification(task);
@@ -355,6 +356,7 @@ export class TaskVerification {
       if (step?.state === 'completed') return;
       if (step?.state !== 'awaiting_review' || !step.checks?.length)
         throw new ServiceError('verification_required', 'Step requires configured checks');
+      this.tasks.assertStepReview?.(current.id, stepId);
       this.assertIdle(current);
       const receipts = step.checks.map((key) => this.latest(current, key, stepId));
       if (receipts.some((r) => !r || !this.fresh(r)))

@@ -94,7 +94,7 @@ jobs:
         run: |
           mkdir -p /tmp/salaam-coding
           npm run test:coding -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-coding
-      - name: Prove real task completion and daemon restart
+      - name: Prove real task completion, isolated native teams and daemon restart
         env:
           SALAAM_TASK_REAL_SOCKET: /var/run/docker.sock
           SALAAM_TASK_REAL_SCRATCH: /tmp/salaam-task
@@ -107,6 +107,7 @@ jobs:
             .state/evidence/execution
             .state/evidence/coding
             .state/evidence/m11
+            .state/evidence/m15
           retention-days: 14
   service:
     env:

@@ -293,7 +293,7 @@ export class Workspaces {
         'Occurrence workspace changed before publication',
       );
     const baseline = this.artifacts.prepare(session, JSON.stringify(tree));
-    this.store.transaction(() => {
+    const publish = () => {
       baseline.commit();
       this.store.db
         .prepare("INSERT INTO workspaces VALUES (?,?,?,?,0,?,?,'ready')")
@@ -304,7 +304,9 @@ export class Workspaces {
         digest: digest(tree),
         cloned: true,
       });
-    });
+    };
+    if (this.store.db.isTransaction) publish();
+    else this.store.transaction(publish);
     return this.get(session);
   }
   inspect(session: string): unknown {

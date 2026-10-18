@@ -36,7 +36,7 @@ import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
 import type { CodingWork } from './coding.js';
 import type { TaskLimits } from './task-policy.js';
-import type { RepositorySnapshots } from './repository-snapshots.js';
+import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
 import type { TeamWork } from './team-work.js';
 
 export interface Launch {
@@ -133,7 +133,17 @@ export class Supervisor extends EventEmitter {
     return { route: bound, output_cap: providerHasOutputCap(bound, auth), auth };
   }
   private codingBinding(id: string): CodingBinding | undefined {
-    return this.children?.owned(id) ? undefined : this.coding?.binding(id);
+    const child = this.children?.owned(id),
+      coding = this.coding?.binding(id);
+    if (!child) return coding;
+    const binding = this.store.workerBoundary.view(child.id).binding;
+    return binding.isolation && coding
+      ? {
+          ...coding,
+          files: binding.tools.includes('salaam_files'),
+          commands: coding.commands && binding.tools.includes('salaam_command'),
+        }
+      : undefined;
   }
   private tools(id: string): string[] {
     const child = this.children?.owned(id);
@@ -684,11 +694,14 @@ export class Supervisor extends EventEmitter {
         return auth;
       }
       if (method === 'coding.files' || method === 'coding.command') {
-        if (this.children?.owned(id) || !this.coding || !this.codingBinding(id) || !w.attempt)
+        if (!this.coding || !this.codingBinding(id) || !w.attempt)
           throw new Error('Coding authority is unavailable');
         this.assertActive(id, w.epoch, w.attempt);
+        this.store.taskGrantCheck?.(id);
         const args = object(body.args);
-        if (method === 'coding.files')
+        if (method === 'coding.files') {
+          if (!this.codingBinding(id)?.files) throw new Error('File authority is unavailable');
+          if (this.children?.owned(id) && args.path !== undefined) repositoryPath(args.path);
           return this.coding.file(
             id,
             w.epoch,
@@ -696,6 +709,7 @@ export class Supervisor extends EventEmitter {
             string(body.tool_call_id, 'tool_call_id', 512),
             args,
           );
+        }
         if (!this.codingBinding(id)?.commands) throw new Error('Command execution is unavailable');
         if (args.action === 'start')
           return this.coding.start(id, w.attempt, args, () =>
@@ -1185,6 +1199,8 @@ export class Supervisor extends EventEmitter {
       w.pi.off('record', record);
       w.busy = false;
       delete w.attempt;
+      const child = this.children?.owned(id);
+      if (child && child.state !== 'accepted') await this.stopWorker(w);
       this.emit('idle', id);
     }
     return true;

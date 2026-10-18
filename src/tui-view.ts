@@ -661,6 +661,12 @@ export class DocumentView implements Component {
                 width,
               )
             : []),
+          ...(child.worker?.binding.isolation
+            ? this.text(
+                `Private draft ${shortId(child.worker.binding.isolation.workspace_id)} · execution ${child.worker.binding.isolation.execution.evidence} · root integration requires a reviewed proposal digest`,
+                width,
+              )
+            : []),
         );
       lines.push(t.fill('', width), ...this.title('USAGE', width));
       if (c.usage)

@@ -4,8 +4,10 @@ import type { Artifacts } from './artifacts.js';
 import type { Supervisor } from './supervisor.js';
 import { digest, ServiceError, type Attempt, type ChildTask } from './protocol.js';
 import type { RepositorySnapshots } from './repository-snapshots.js';
+import type { WorkerWorkspaces } from './worker-workspaces.js';
 
 export class ChildWork {
+  workspaces?: WorkerWorkspaces;
   private paused = false;
   private starts = new Set<Promise<void>>();
   constructor(
@@ -161,6 +163,11 @@ export class ChildWork {
         : undefined;
       if (agent?.profile.role && !repository)
         throw new ServiceError('workspace_unavailable', 'No specialist snapshot boundary');
+      const writing = authority.some((tool) => ['salaam_files', 'salaam_command'].includes(tool));
+      const isolation =
+        writing && repository ? this.workspaces?.prepare(session, repository) : undefined;
+      if (writing && !isolation)
+        throw new ServiceError('authority_denied', 'No isolated coding boundary');
       this.store.workerBoundary.freeze(
         this.owned(session)!,
         artifact.id,
@@ -168,6 +175,7 @@ export class ChildWork {
         agent,
         repository,
         admission?.assignment,
+        isolation,
       );
       this.store.event(session, 'session.created', { parent_session: parent, child_id: id });
       this.store.event(session, 'submission.accepted', {
@@ -199,7 +207,7 @@ export class ChildWork {
     return Number(
       this.store.db
         .prepare(
-          `SELECT count(*) AS n FROM child_tasks c WHERE (? IS NULL OR c.parent_session=?) AND (c.state='accepted' OR (c.state IN ('interrupted','cancelled') AND EXISTS(SELECT 1 FROM workers w WHERE w.session_id=c.child_session AND w.state!='exited')))`,
+          `SELECT count(*) AS n FROM child_tasks c WHERE (? IS NULL OR c.parent_session=?) AND (c.state='accepted' OR EXISTS(SELECT 1 FROM workers w WHERE w.session_id=c.child_session AND w.state!='exited'))`,
         )
         .get(parent ?? null, parent ?? null)!.n,
     );
@@ -365,6 +373,24 @@ export class ChildWork {
     const children = this.store.db
       .prepare('SELECT * FROM child_tasks WHERE parent_session=?')
       .all(this.store.attempt(attempt).session_id) as unknown as ChildTask[];
+    for (const child of children.filter((child) => this.store.cancelled(child.child_attempt)))
+      for (const run of this.supervisor.coding?.list(child.child_session) ?? [])
+        if (
+          ![
+            'succeeded',
+            'failed',
+            'cancelled',
+            'timed_out',
+            'output_limited',
+            'interrupted',
+          ].includes(run.state)
+        )
+          this.supervisor.coding!.cancel(
+            child.child_session,
+            run.id,
+            'child-stop:' + run.id,
+            () => {},
+          );
     await Promise.all(
       children
         .filter((child) => this.store.cancelled(child.child_attempt))

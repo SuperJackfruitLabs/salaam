@@ -70,6 +70,7 @@ export class TaskWork {
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
   delegatedStep?: (task: string, step: string) => boolean;
   advanceDelegate?: (grant: string) => unknown;
+  assertStepReview?: (task: string, step: string) => void;
   authorizeGrant(task: WorkTask, step: string, grant?: string): void {
     const row = this.store.db
       .prepare(
@@ -576,6 +577,7 @@ export class TaskWork {
             'invalid_step_state',
             'Only a settled step awaiting operator review can be completed',
           );
+        this.assertStepReview?.(id, step.id);
         this.store.db
           .prepare("UPDATE task_steps SET state='completed',review=? WHERE id=?")
           .run(review, step.id);
@@ -612,6 +614,12 @@ export class TaskWork {
       .prepare('SELECT task_id,id,state FROM task_steps WHERE attempt_id=?')
       .get(attempt.id) as { task_id: string; id: string; state: WorkStep['state'] } | undefined;
     if (!row || row.state === 'completed') return;
+    if (
+      this.store.db
+        .prepare('SELECT 1 FROM team_rejections WHERE step_id=? AND attempt_id=?')
+        .get(row.id, attempt.id)
+    )
+      return;
     const state: WorkStep['state'] = (
       {
         accepted: 'queued',
