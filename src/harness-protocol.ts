@@ -106,7 +106,7 @@ export class HarnessProtocol {
     if (!['terminal', 'prepared', 'idle'].includes(this.checkpoint.state))
       this.save({ state: 'unknown' });
   }
-  async initialize(): Promise<RpcObject> {
+  async initialize(gatewayAuth = false): Promise<RpcObject> {
     this.assertUsable();
     const result = await this.rpc.request(
       'initialize',
@@ -116,6 +116,7 @@ export class HarnessProtocol {
             clientCapabilities: {
               fs: { readTextFile: false, writeTextFile: false },
               terminal: false,
+              ...(gatewayAuth ? { auth: { _meta: { gateway: true } } } : {}),
             },
             clientInfo: { name: 'salaam', version: '0.0.1' },
           }

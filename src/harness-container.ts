@@ -3,15 +3,17 @@ import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync, lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { engineJson, type EngineRequest } from './execution-boundary.js';
-import { CODING_IMAGE } from './coding-executor.js';
 import { digest, ServiceError } from './protocol.js';
 import type { HarnessLaunch } from './harness-rpc.js';
 
 const OWNER = 'salaam.harness.run',
   PROFILE = 'salaam.harness.profile';
+// Gemini's pinned Linux shell tool invokes Bash. Prepare this image outside model turns.
+export const HARNESS_IMAGE =
+  'docker.io/library/node@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32';
 export const HARNESS_CONTAINER_PROFILE = {
-  version: 1,
-  image: CODING_IMAGE,
+  version: 2,
+  image: HARNESS_IMAGE,
   user: 'daemon-owner-nonroot',
   network: 'gateway-loopback-only',
   read_only: true,
@@ -155,7 +157,7 @@ export class DockerHarnessBoundary {
     network: string,
   ): any {
     return {
-      Image: CODING_IMAGE,
+      Image: HARNESS_IMAGE,
       User: this.user,
       Env: [
         ...new Map(
@@ -251,14 +253,14 @@ export class DockerHarnessBoundary {
     )
       throw new ServiceError('harness_engine_changed', 'Proven engine changed');
     const image = engineJson(
-      await this.engine('GET', `/images/${encodeURIComponent(CODING_IMAGE)}/json`),
+      await this.engine('GET', `/images/${encodeURIComponent(HARNESS_IMAGE)}/json`),
     );
     if (
       !image.RepoDigests?.some((r: string) =>
         [
-          CODING_IMAGE,
-          CODING_IMAGE.replace('docker.io/', ''),
-          CODING_IMAGE.replace('docker.io/library/', ''),
+          HARNESS_IMAGE,
+          HARNESS_IMAGE.replace('docker.io/', ''),
+          HARNESS_IMAGE.replace('docker.io/library/', ''),
         ].includes(r),
       ) ||
       !/^sha256:[a-f0-9]{64}$/.test(image.Id)

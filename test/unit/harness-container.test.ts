@@ -2,8 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DockerHarnessBoundary } from '../../src/harness-container.js';
-import { CODING_IMAGE } from '../../src/coding-executor.js';
+import { DockerHarnessBoundary, HARNESS_IMAGE } from '../../src/harness-container.js';
 import type { EngineRequest } from '../../src/execution-boundary.js';
 
 function fixture() {
@@ -26,7 +25,7 @@ function fixture() {
     else if (path.startsWith('/images/'))
       value = {
         Id: 'sha256:' + 'a'.repeat(64),
-        RepoDigests: [CODING_IMAGE],
+        RepoDigests: [HARNESS_IMAGE],
         Config: { Env: ['PATH=/usr/local/bin:/usr/bin:/bin', 'NODE_VERSION=26.7.0'] },
       };
     else if (method === 'POST' && path.startsWith('/containers/create')) {

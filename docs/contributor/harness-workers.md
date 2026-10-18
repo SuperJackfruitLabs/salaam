@@ -35,8 +35,12 @@ These observations establish negotiation only, not working turns or reconnect.
 
 ## Whole-process execution proof
 
-The new Docker harness boundary uses the existing digest-pinned Node image and
-proven dedicated Linux engine, with a separate effective profile. The harness runs
+The Docker harness boundary uses the digest-pinned Node 26.7.0 Bookworm Slim image
+`sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32`
+and a proven dedicated Linux engine, with a separate effective profile. Gemini
+0.64.0 invokes Bash directly; the smaller native-command image does not include
+Bash and failed that execution rehearsal. The corrected image is provisioned
+outside model turns and passes the whole-process proof independently. The harness runs
 as the non-root daemon owner's UID/GID, preserving mode-700 host directories. It
 gets exactly a private writable draft, a private writable home and a read-only
 prepared runtime. The source checkout, sibling drafts, credentials and Docker
@@ -109,5 +113,53 @@ Independent SQLite-backed protocol fixtures exercise these barriers and wrong-ow
 cases. The core still needs connection to the service's assignment, invocation,
 approval and recovery records; standalone conformance and live scripts do not
 establish that integration. Gemini/Codex preflight captured their actual provider
-payloads inside the boundary without forwarding to a live provider. Their named
-live turns and transport reconnect remain separate gates.
+payloads inside the boundary without forwarding to a live provider. The subsequent
+named live turns and process-reconnect scope are recorded below.
+
+## Gemini and Codex named execution and reconnect
+
+The standalone [named-peer runner](../../scripts/harness-peer-live.mjs) now exercises
+Gemini CLI 0.64.0 ACP and Codex 0.163.0 app-server on the pinned Bookworm image.
+Both passed deterministic offline tool sequences, followed by live Claude-backed
+repair rehearsals: Gemini used six model requests and Codex used seven, each
+capped at 4,096 output tokens. These routes explicitly translate the Google or
+Responses text/custom-tool wire subset to the declared Sonnet 4.6 backend. They
+do not establish compatibility with a native Google/OpenAI account or ChatGPT
+subscription. Backend identity and frontend model alias are recorded separately.
+
+The bridge filters the model-visible tools, rejects unowned tool results and
+remote media, and records concrete model tool arguments before returning a tool
+call to the harness. Pinned Gemini ACP IDs include a tool-name prefix; correlation
+requires its exact observed version. Codex approval commands include the concrete
+Bash wrapper, so the correlation check parses literal argv and compares the exact
+model-call ID, command and working directory. Titles, summaries and proposed
+session-wide execution rules cannot substitute for this scope. Once-only decisions
+retain the protocol core's cancellation and storage-failure fences.
+
+Each named run separately denies a forbidden write, approves the actual repair
+and test, preserves protected files, and passes a fresh independent Salaam command
+receipt. It then stops the harness process and containers, starts a new isolated
+process with the same private home, and inspects the same saved upstream session.
+No prompt is resent. Durable checkpoints, API admission counts, workspace hashes
+and an actual command counter prove that reconnect neither requests a model nor
+repeats the test. This proves known-terminal process reconnect, not uncertain ACP
+prompt recovery or full daemon/task integration.
+
+The ignored reports bind source/build, runner hash, the complete prepared runtime
+digest and container receipts:
+
+- Gemini: `.state/evidence/m16/gemini-acp-b7c95431-0478-401c-bd6e-f53803080730.json`
+- Codex: `.state/evidence/m16/codex-app-server-ff25ed2d-548b-4650-a333-8c0a6e4c9b19.json`
+
+Failed rehearsals remain recorded and all forwarded live requests remain charged.
+`--offline-peer` uses deterministic responses without reading provider credentials
+or charging the live allowance; its report explicitly identifies the fixture
+backend and is never counted as live-model proof. Default tests exercise the wire
+translation using independent pinned Google/OpenAI SDK clients and verify that a
+scope-persistence failure prevents tool delivery after model admission.
+
+The service assignment, explicit invocation-budget policy, shared approval inbox,
+worker views and daemon recovery integration remain outstanding. External worker
+assignment is not enabled by these standalone proofs. Claude ACP still requires
+the separate approve/deny and process-reconnect portfolio beyond its earlier live
+repair and same-connection history reload.
