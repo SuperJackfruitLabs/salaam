@@ -260,6 +260,8 @@ test('job cancellation recording failure leaves both the task grant and occurren
   const f = await taskFixture();
   try {
     await f.service.taskDriver.close();
+    // Isolate rollback from background projection revisions as well as task progression.
+    f.service.jobs.close();
     const { job } = await define(f);
     f.service.jobs.trigger(job.id, 'run-job', job.revision, 'once', f.actor);
     const before = f.service.jobs.get(job.id);
