@@ -8,6 +8,8 @@ The current implementation covers **M0–M8**: a reproducible Pi bundle, transac
 
 **M11** adds durable task/step recovery, workspace-bound verification, shared task budgets, conflict-preserving checkpoints and opt-in bounded step progression. The TUI and CLI expose the same task controls; model text alone cannot declare verified success. See [durable tasks](docs/durable-tasks.md).
 
+**M12** adds durable one-shot jobs, immutable recurring templates, explicit timezone/DST and missed-run policies, pinned host supervision, and a shared CLI/TUI/ACP operator inbox. Each occurrence gets fresh task/session/workspace identities; duplicates and restarts preserve existing work. See [jobs](docs/jobs.md) and [host operation](docs/host-operation.md).
+
 ## Run locally
 
 **M9** adds explicit coding sessions with owned workspace revisions, guarded file tools and durable isolated commands. File tools require `--coding-root`; commands also require a proven `--coding-socket` backend. Commands use disposable copies; durable edits use hash-bound patches. See [coding setup, recovery and acceptance](docs/coding.md) and the [execution-boundary contract](docs/execution-boundary.md).
@@ -234,11 +236,13 @@ Durable task endpoints use the same private operator socket:
 
 Task mutations require `request_id`, `expected_revision`, `client_id` and `token`. Task revisions are separate from session revisions; saved requests are checked first. Refreshed task responses project current service truth. See [task controls](docs/durable-tasks.md) for plan shape, bounds, review and recovery.
 
+One-shot job routes are `GET/POST /v1/jobs`, `GET /v1/jobs/:id`, `POST /v1/jobs/:id/run`, `POST /v1/jobs/:id/cancel` and `GET /v1/job-occurrences/:id`. Mutations use the private operator socket, controller lease, revision and durable request ID; trigger bodies accept only a stable occurrence key. See [job controls](docs/jobs.md).
+
 Identical command requests return their original saved result. Reusing a request ID with different logical input conflicts. Controller credentials are excluded from the submission/cancellation logical input so a new controller can recover a lost reply. Request lookup precedes mutation preconditions. Approvals use their own revision, independent of session progress. The local operator identity is derived from the private socket's OS-account boundary; caller-supplied actor IDs confer no authority. Diagnostics are repeatable tests, not idempotent user-work submissions, and require a controller lease.
 
 A snapshot includes `seq=N`; subscribe with `after=N` to avoid a snapshot/stream gap. Attempts, submissions, approvals and operations are bounded to 100 each; transcript messages are bounded to 100 with text budgets. Operation values may be truncated and receipts are omitted from snapshots with `value_truncated`/`receipt_available` flags; inspect the full operation before deciding. Pi retains the full history. Final transcript import and attempt completion commit together. SSE respects backpressure and disconnects clients stalled for ten seconds; clients replay from their last durable cursor. Preview events have no durable ID; the CLI displays committed final results. The separate worker socket accepts session-scoped credentials and current epochs; it is not an operator endpoint.
 
-On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version nine upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
+On graceful shutdown, workers stop and active attempts become interrupted unless cancelled. After a service crash, the next service proves old workers have stopped before permitting a new writer. A known-dead unhealthy worker may be explicitly replaced, earning readiness in a fresh epoch. Uncertain process identity or missing recorded history still blocks reuse. Schema version ten upgrades earlier service state while preserving cached replies, attempts, routes, approvals, operations, child results and usage.
 
 ## Development
 

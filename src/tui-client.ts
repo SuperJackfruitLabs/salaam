@@ -239,6 +239,42 @@ export class OperatorClient extends EventEmitter {
     await this.flush();
     await this.refresh();
   }
+  async jobAction(
+    action: 'create' | 'run' | 'cancel',
+    body: Record<string, unknown>,
+    reviewed?: { id: string; revision: number },
+  ): Promise<void> {
+    this.actor();
+    if (!this.snapshot || !this.outbox) throw new Error('Open a session first');
+    const target = reviewed ?? (action === 'create' ? this.snapshot.work_task : this.snapshot.job);
+    if (!target)
+      throw new Error(action === 'create' ? 'Create a checked task first' : 'Create a job first');
+    this.outbox.enqueueJob(action === 'create' ? '/v1/jobs' : `/v1/jobs/${target.id}/${action}`, {
+      ...body,
+      expected_revision: target.revision,
+      ...(action === 'create' ? { task_id: target.id } : {}),
+    });
+    await this.flush();
+    await this.refresh();
+  }
+  async scheduleAction(
+    action: 'create' | 'run' | 'update',
+    body: Record<string, unknown>,
+    reviewed: { id: string; revision: number },
+  ): Promise<void> {
+    this.actor();
+    if (!this.snapshot || !this.outbox) throw new Error('Open a session first');
+    this.outbox.enqueueJob(
+      action === 'create' ? '/v1/schedules' : `/v1/schedules/${reviewed.id}/${action}`,
+      {
+        ...body,
+        expected_revision: reviewed.revision,
+        ...(action === 'create' ? { task_id: reviewed.id } : {}),
+      },
+    );
+    await this.flush();
+    await this.refresh();
+  }
   async resume(): Promise<void> {
     if (!this.snapshot) return;
     await call(this.socket, `/v1/sessions/${this.snapshot.id}/resume`, this.actor());
@@ -303,6 +339,17 @@ export class OperatorClient extends EventEmitter {
       this.socket,
       `/v1/sessions/${this.snapshot.id}/commands/${run}/logs?offset=${offset}`,
     );
+  }
+  async ackInbox(id: string, revision: number): Promise<void> {
+    if (!this.snapshot || !this.lease)
+      throw new Error('Take control before acknowledging attention');
+    await call(this.socket, `/v1/inbox/${id}/ack`, {
+      request_id: randomUUID(),
+      expected_revision: revision,
+      client_id: this.clientId,
+      token: this.lease.token,
+    });
+    await this.refresh();
   }
   async shutdown(): Promise<void> {
     await call(this.socket, '/v1/shutdown', {});

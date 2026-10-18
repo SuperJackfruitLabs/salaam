@@ -43,6 +43,52 @@ Loading an existing session preserves its original tool authority.`,
 
 Persist text evidence; reference its returned artifact ID in a task evidence fact.
 Read it with salaam history read SESSION_ID --artifact-id ID.`,
+  host: `salaam host plan --config FILE > host-manifest.json
+chmod 600 host-manifest.json
+salaam host inspect --manifest host-manifest.json
+salaam host unit --manifest host-manifest.json --platform systemd|launchd
+salaam host run --manifest host-manifest.json
+
+Config requires absolute state, coding_root and coding_socket paths; optional
+provider, model, max_output_tokens and workspace_id. Planning probes the existing
+executor and pins Node, source/build, Pi, provider, profile and engine identity.
+Review generated units before installing with your host's service manager. No key
+is stored in the manifest: configure it in the service user's credential home.
+Run uses an exclusive supervisor lock, durable health, bounded restart/backoff,
+and refuses source/build or executor drift before the daemon admits work.`,
+  schedules: `salaam schedules create TASK_ID --name NAME --revision N --max-steps N [--schedule FILE] [--compact]
+salaam schedules list [--offset N]
+salaam schedules inspect JOB_ID
+salaam schedules occurrences JOB_ID [--offset N]
+salaam schedules run JOB_ID --key STABLE_KEY --revision N
+salaam schedules update JOB_ID --revision N --status active|paused|cancelled [--schedule FILE]
+
+Capture a reviewed immutable plan and workspace template. Every occurrence receives
+fresh session/task/workspace IDs. Omit --schedule for explicit triggers only.
+FILE: {"kind":"interval","anchor":1792281600000,"every_ms":3600000,"missed":"skip","max_catch_up":1}
+Daily schedules require time HH:mm, timezone IANA, gap skip, fold first|second,
+missed skip|catch_up, and max_catch_up 1–8. Updates append a revision and restart
+the cursor from now. Pausing stops future admission; cancellation also revokes active work.
+Mutations accept --request-id and --takeover. Unknown work prevents overlap.`,
+  inbox: `salaam inbox list [--offset N]
+salaam inbox inspect ITEM_ID
+salaam inbox ack ITEM_ID --revision N [--request-id ID] [--takeover]
+
+Shared durable attention for approvals, unknown effects, infrastructure, checks
+and task results. Acknowledgement clears only the inspected revision; it never
+approves an operation, retries work or marks a task successful.`,
+  jobs: `salaam jobs create TASK_ID --name NAME --revision TASK_REVISION --max-steps N [--compact]
+salaam jobs list [--offset N]
+salaam jobs inspect JOB_ID
+salaam jobs run JOB_ID --key STABLE_OCCURRENCE_KEY --revision JOB_REVISION
+salaam jobs occurrence OCCURRENCE_ID
+salaam jobs cancel JOB_ID --revision JOB_REVISION
+
+Mutations accept --request-id ID and --takeover. A job binds one reviewed, unstarted
+checked task, workspace, provider/executor profile and bounded progression grant.
+Its one logical occurrence survives retries and daemon replacement; changing the key
+cannot create a second run. Interrupted work requires explicit task continuation.
+Use schedules for fresh recurring occurrences. Public trigger gateways remain disabled.`,
   tasks: `salaam tasks create SESSION_ID --plan FILE --revision 0
 salaam tasks current SESSION_ID
 salaam tasks inspect TASK_ID
@@ -154,6 +200,11 @@ Commands:
   approvals     Inspect, approve or deny managed operations
   operations    Inspect, reconcile or resolve effect outcomes
   children      Inspect, read or acknowledge durable child results
+  tasks         Durable plans, verification, budgets and checkpoints
+  jobs          Durable one-shot jobs and recovery
+  schedules     Fresh recurring occurrences and explicit missed-run rules
+  inbox         Durable shared operator attention
+  host          Pinned host bootstrap, supervision and health
   task          Inspect and update durable task facts
   history       Retrieve older history and evidence
   artifacts     Save durable text evidence
@@ -217,6 +268,13 @@ const valueOptions = new Set([
   '--workspace-revision',
   '--workspace-digest',
   '--max-steps',
+  '--name',
+  '--key',
+  '--schedule',
+  '--status',
+  '--manifest',
+  '--config',
+  '--platform',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */
 export function hasHelpFlag(args: string[]): boolean {

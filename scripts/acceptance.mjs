@@ -54,6 +54,16 @@ const evidence = {
     'test/proofs/task-lifecycle.test.ts',
     'test/proofs/task-gates.test.ts',
   ],
+  job_proofs: [
+    'test/proofs/job-recovery.test.ts',
+    'test/proofs/job-terminal.test.ts',
+    'test/unit/schedules.test.ts',
+    'test/unit/recurring.test.ts',
+    'test/unit/operator-inbox.test.ts',
+    'test/unit/host.test.ts',
+  ],
+  job_requested_repeats: 3,
+  job_completed_repeats: 0,
   task_requested_repeats: 3,
   task_completed_repeats: 0,
   operator_completed_repeats: 0,
@@ -125,6 +135,21 @@ try {
     evidence.task_completed_repeats = iteration;
     save();
   }
+  for (let iteration = 1; iteration <= 3; iteration++) {
+    const report = join(dir, 'jobs-' + iteration + '.json');
+    await execute('jobs-' + iteration, process.execPath, [
+      join(root, 'node_modules/vitest/vitest.mjs'),
+      'run',
+      ...evidence.job_proofs,
+      '--reporter=json',
+      '--outputFile=' + report,
+    ]);
+    const result = JSON.parse(readFileSync(report, 'utf8'));
+    if (!result.success || result.numFailedTests || !result.numTotalTests)
+      throw new Error('Incomplete job recovery proof report');
+    evidence.job_completed_repeats = iteration;
+    save();
+  }
   const files = Object.values(proofs).map((name) => 'test/proofs/' + name + '.test.ts');
   for (let iteration = 1; iteration <= repeats; iteration++) {
     const report = join(dir, 'proofs-' + iteration + '.json');
@@ -147,7 +172,8 @@ try {
   evidence.full_acceptance =
     repeats >= 20 &&
     evidence.operator_completed_repeats === 3 &&
-    evidence.task_completed_repeats === 3;
+    evidence.task_completed_repeats === 3 &&
+    evidence.job_completed_repeats === 3;
   evidence.finished_at = new Date().toISOString();
   save();
   writeFileSync(

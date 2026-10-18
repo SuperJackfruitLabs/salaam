@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-18T07:57:26.860Z",
+  "milestone": "M11",
+  "implementation_commit": "962477d42090797378aa386aa43810708c98601a",
+  "merged_main_commit": "01a7300cf447113f05f6b4974b074d36968dba21",
+  "pull_request": "https://github.com/SuperJackfruitLabs/salaam/pull/2",
+  "CI": {
+    "push": {
+      "run_id": 39108031165,
+      "status": "success",
+      "head": "962477d42090797378aa386aa43810708c98601a"
+    },
+    "pull_request": {
+      "run_id": 39108051408,
+      "status": "success",
+      "url": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39108051408",
+      "head": "962477d42090797378aa386aa43810708c98601a"
+    }
+  },
+  "platform_acceptance": [
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "git_commit": "5ddd3e32773233269ce3d29701743572a808b8cb",
+      "source_digest": "73d975d7f5620848fb92d785a317ffd3e1d336167d11a37fc9a1f9779a0932f6",
+      "runtime_source_digest": "229ff285f593efb4269d66a252f4a941e1544c4ce98003352208c7b5c4ba976b",
+      "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+      "tests": 222,
+      "proof_repeats": 20,
+      "operator_repeats": 3,
+      "task_repeats": 3,
+      "manifest": ".state/evidence/ci/39108051408/linux/acceptance/2026-10-18T07-33-00.819Z-f73f22d9/manifest.json",
+      "sha256": "23e6915794a326a761c90e9d417a3df47af353a99b9d204a0f5398d62405c047",
+      "all_command_log_hashes_verified": true
+    },
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "git_commit": "5ddd3e32773233269ce3d29701743572a808b8cb",
+      "source_digest": "73d975d7f5620848fb92d785a317ffd3e1d336167d11a37fc9a1f9779a0932f6",
+      "runtime_source_digest": "229ff285f593efb4269d66a252f4a941e1544c4ce98003352208c7b5c4ba976b",
+      "bundle_digest": "1fd6e3f2055c28aa87e34bb77c7418187c1b6eab6e317c24c5c2145219fbfc6d",
+      "tests": 222,
+      "proof_repeats": 20,
+      "operator_repeats": 3,
+      "task_repeats": 3,
+      "manifest": ".state/evidence/ci/39108051408/macos/acceptance/2026-10-18T07-32-52.520Z-bc31e533/manifest.json",
+      "sha256": "67dde3b38abb9f59f7a84b56b344551f8b5229af182424abd92b83970f54fcbc",
+      "all_command_log_hashes_verified": true
+    }
+  ],
+  "executions_per_platform": {
+    "full_source_tests": 222,
+    "additional_S1_S6_cases": 1200,
+    "additional_operator_cases": 48,
+    "additional_task_cases": 75,
+    "demos": 4,
+    "installed_aliases": ["salaam", "sal"]
+  },
+  "real_linux_execution": {
+    "boundary_probes": 15,
+    "coding_tasks": 10,
+    "real_task_rehearsal_passed": true,
+    "task_provider_requests": 6,
+    "paid_requests": 0,
+    "cleanup_confirmed": true,
+    "profile_digest": "ac4898c9da7cdde343cb6f3eec206882f54c28bf1c9d0110c729badbc934c75a",
+    "engine_id": "6134b6ae-8eb1-4f62-889e-a360c80bcfbf",
+    "reports": [
+      {
+        "path": ".state/evidence/ci/39108051408/execution/execution/linux.json",
+        "sha256": "bdeea87de9e857a9afa26f79590b31bc88826d8c9f7c88f3b2d178f3ef0e8be9"
+      },
+      {
+        "path": ".state/evidence/ci/39108051408/execution/coding/2026-10-18T07-33-05.735Z-872cd956/report.json",
+        "sha256": "8063fd3d303071cfa340e83afa3e7c51fef97ff61ff9d69ab10fc5136791f4c6"
+      },
+      {
+        "path": ".state/evidence/ci/39108051408/execution/m11/real-local.json",
+        "sha256": "9ac2c54c829018e9011cb6f6d21e33e151031d5920d4c95cf0413648c379f6b6"
+      }
+    ]
+  },
+  "scope": "Observed private-repository CI and offline execution evidence for merged M11; not live-Claude behavior or a production daemon deployment"
+}

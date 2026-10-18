@@ -459,6 +459,20 @@ export class DocumentView implements Component {
         ...this.text('Provider ' + modelLabel(c), width),
         t.fill('', width),
       );
+      if (c.snapshot.inbox?.length) {
+        lines.push(...this.title('OPERATOR INBOX · ' + c.snapshot.inbox.length, width));
+        for (const item of c.snapshot.inbox)
+          lines.push(
+            ...this.text(item.kind + ' · ' + item.id + ' · revision ' + item.revision, width),
+            ...this.text(item.detail, width),
+          );
+        lines.push(
+          ...this.text(
+            'Ctrl+K → Operator inbox to inspect or acknowledge. Acknowledgement never approves work.',
+            width,
+          ),
+        );
+      }
       if (c.workspace)
         lines.push(
           ...this.title('OWNED WORKSPACE', width),
@@ -467,6 +481,32 @@ export class DocumentView implements Component {
           ...this.text('Current root: ' + c.workspace.root, width),
           t.fill('', width),
         );
+      if (c.snapshot.recurring_occurrence) {
+        const r = c.snapshot.recurring_occurrence;
+        lines.push(
+          ...this.title('RECURRING OCCURRENCE', width),
+          ...this.text('Definition ' + r.job_id + ' · occurrence ' + r.id, width),
+          ...this.text(
+            'Key ' + r.occurrence_key + ' · schedule revision ' + r.schedule_revision,
+            width,
+          ),
+        );
+      }
+      if (c.snapshot.job) {
+        const job = c.snapshot.job;
+        lines.push(
+          ...this.title('ONE-SHOT JOB · ' + job.state.toUpperCase(), width),
+          ...this.text(job.name + ' · ' + job.id, width),
+          ...this.text('Binding ' + job.binding_digest, width),
+          ...this.text(
+            job.occurrence
+              ? 'Occurrence ' + job.occurrence.id + ' · ' + job.occurrence.occurrence_key
+              : 'No occurrence admitted',
+            width,
+          ),
+          ...this.text(job.reason, width),
+        );
+      }
       const task = c.snapshot.work_task;
       if (task) {
         lines.push(

@@ -118,7 +118,16 @@ export interface Controller {
   token: string;
 }
 export interface SessionSnapshot extends Session {
+  inbox?: import('./operator-inbox.js').InboxEntry[];
+  recurring_occurrence?: import('./recurring-work.js').RecurringOccurrence | null;
   work_task?: import('./task-work.js').WorkTask | null;
+  job?:
+    | (import('./job-work.js').Job & {
+        occurrence: import('./job-work.js').JobOccurrence | null;
+        task_state: string;
+        task_reason: string;
+      })
+    | null;
   control: ControlView;
   attempts: (Attempt & { result_truncated: boolean })[];
   submissions: (Submission & { text_truncated: boolean })[];

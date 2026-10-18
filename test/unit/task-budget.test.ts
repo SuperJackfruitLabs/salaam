@@ -88,7 +88,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
     await f.service.close();
     const db = new DatabaseSync(join(f.state, 'journal.sqlite'));
     db.exec(
-      'DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
+      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
     );
     let legacyPlan: unknown;
     for (const row of db.prepare('SELECT task_id,revision,document FROM task_plans').all()) {
@@ -141,7 +141,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
         .get(),
     ).toMatchObject({ status: 'unknown' });
     expect(f.service.store.db.prepare('PRAGMA user_version').get()).toMatchObject({
-      user_version: 9,
+      user_version: 11,
     });
   } finally {
     await f.close();

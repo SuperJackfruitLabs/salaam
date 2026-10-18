@@ -70,55 +70,64 @@ export class TaskDriver {
       'local-operator',
       request,
       { kind: 'task-auto', id, expected, steps, compact },
-      () => {
-        const task = this.tasks.get(id);
-        this.store.authorizeControl(task.session_id, controller);
-        if (task.revision !== expected)
-          throw new ServiceError('task_revision_conflict', 'Task revision changed');
-        if (!Number.isSafeInteger(steps) || steps < 0 || steps > 32)
-          throw new ServiceError('invalid_limit', 'Bound progression to 0–32 new steps', 400);
-        if (steps) {
-          this.verification.assertIdle(task);
-          this.budget.check(task.session_id);
-          if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
-            throw new ServiceError(
-              'task_settled',
-              'Revise a settled task before enabling progression',
-            );
-          if (
-            task.steps.some(
-              (s) =>
-                s.state !== 'completed' &&
-                (!s.checks?.length || ['interrupted', 'failed', 'cancelled'].includes(s.state)),
-            )
-          )
-            throw new ServiceError(
-              'verification_required',
-              'Every unfinished automatic step needs checks and an unambiguous state',
-            );
-        }
-        this.store.db
-          .prepare(
-            'UPDATE task_runtime SET auto_enabled=?,remaining_steps=?,auto_plan_revision=?,auto_compact=?,auto_error=NULL,auto_epoch=auto_epoch+1,started_at=CASE WHEN ? THEN coalesce(started_at,?) ELSE started_at END WHERE task_id=?',
-          )
-          .run(steps ? 1 : 0, steps, task.plan_revision, compact ? 1 : 0, steps, Date.now(), id);
-        if (steps)
-          this.store.db
-            .prepare('UPDATE task_runtime SET auto_binding=? WHERE task_id=?')
-            .run(canonical(this.verification.binding(task)), id);
-        this.store.db.prepare('UPDATE durable_tasks SET revision=revision+1 WHERE id=?').run(id);
-        this.store.event(task.session_id, 'work_task.progression_configured', {
-          task_id: id,
-          plan_revision: task.plan_revision,
-          max_new_steps: steps,
-          compact,
-          enabled: steps > 0,
-        });
-        return { task_id: id };
-      },
+      () =>
+        this.configureInTransaction(id, expected, steps, compact, () => {
+          this.store.authorizeControl(this.tasks.get(id).session_id, controller);
+        }),
     );
     this.kick();
     return result;
+  }
+  /** Caller must commit its domain acceptance and this grant in the same request transaction. */
+  configureInTransaction(
+    id: string,
+    expected: number,
+    steps: number,
+    compact: boolean,
+    authorize: () => void,
+  ): { task_id: string } {
+    if (!this.store.db.isTransaction) throw new Error('Task grant requires a transaction');
+    authorize();
+    const task = this.tasks.get(id);
+    if (task.revision !== expected)
+      throw new ServiceError('task_revision_conflict', 'Task revision changed');
+    if (!Number.isSafeInteger(steps) || steps < 0 || steps > 32)
+      throw new ServiceError('invalid_limit', 'Bound progression to 0–32 new steps', 400);
+    if (steps) {
+      this.verification.assertIdle(task);
+      this.budget.check(task.session_id);
+      if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
+        throw new ServiceError('task_settled', 'Revise a settled task before enabling progression');
+      if (
+        task.steps.some(
+          (s) =>
+            s.state !== 'completed' &&
+            (!s.checks?.length || ['interrupted', 'failed', 'cancelled'].includes(s.state)),
+        )
+      )
+        throw new ServiceError(
+          'verification_required',
+          'Every unfinished automatic step needs checks and an unambiguous state',
+        );
+    }
+    this.store.db
+      .prepare(
+        'UPDATE task_runtime SET auto_enabled=?,remaining_steps=?,auto_plan_revision=?,auto_compact=?,auto_error=NULL,auto_epoch=auto_epoch+1,started_at=CASE WHEN ? THEN coalesce(started_at,?) ELSE started_at END WHERE task_id=?',
+      )
+      .run(steps ? 1 : 0, steps, task.plan_revision, compact ? 1 : 0, steps, Date.now(), id);
+    if (steps)
+      this.store.db
+        .prepare('UPDATE task_runtime SET auto_binding=? WHERE task_id=?')
+        .run(canonical(this.verification.binding(task)), id);
+    this.store.db.prepare('UPDATE durable_tasks SET revision=revision+1 WHERE id=?').run(id);
+    this.store.event(task.session_id, 'work_task.progression_configured', {
+      task_id: id,
+      plan_revision: task.plan_revision,
+      max_new_steps: steps,
+      compact,
+      enabled: steps > 0,
+    });
+    return { task_id: id };
   }
   private stop(task: WorkTask, reason: string): void {
     if (
@@ -191,23 +200,36 @@ export class TaskDriver {
     controller: Controller,
   ): Promise<WorkTask> {
     this.store.request('local-operator', request, { kind: 'task-cancel', id, expected }, () => {
-      const task = this.tasks.get(id);
-      this.store.authorizeControl(task.session_id, controller);
-      if (task.revision !== expected)
-        throw new ServiceError('task_revision_conflict', 'Task revision changed');
-      if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
-        throw new ServiceError('task_settled', 'Task already settled');
-      this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
-      this.store.db
-        .prepare(
-          "UPDATE durable_tasks SET state='cancelled',reason='Operator cancelled the task; inspect any uncertain effects',revision=revision+1 WHERE id=?",
-        )
-        .run(id);
-      this.store.event(task.session_id, 'work_task.cancelled', { task_id: id });
-      return { id };
+      return this.cancelInTransaction(id, expected, () => {
+        this.store.authorizeControl(this.tasks.get(id).session_id, controller);
+      });
     });
-    await this.stopActive(this.tasks.get(id));
+    if (this.tasks.get(id).state === 'cancelled') await this.stopCancelled(id);
     return this.tasks.get(id);
+  }
+  /** Revocation is durable before any process abort, including a job cancellation. */
+  cancelInTransaction(id: string, expected: number, authorize: () => void): { id: string } {
+    if (!this.store.db.isTransaction) throw new Error('Task cancellation requires a transaction');
+    authorize();
+    const task = this.tasks.get(id);
+    if (task.revision !== expected)
+      throw new ServiceError('task_revision_conflict', 'Task revision changed');
+    if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
+      throw new ServiceError('task_settled', 'Task already settled');
+    this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
+    this.store.db
+      .prepare(
+        "UPDATE durable_tasks SET state='cancelled',reason='Operator cancelled the task; inspect any uncertain effects',revision=revision+1 WHERE id=?",
+      )
+      .run(id);
+    this.store.event(task.session_id, 'work_task.cancelled', { task_id: id });
+    return { id };
+  }
+  async stopCancelled(id: string): Promise<void> {
+    const task = this.tasks.get(id);
+    if (task.state !== 'cancelled')
+      throw new ServiceError('task_not_cancelled', 'Persist cancellation before aborting work');
+    await this.stopActive(task);
   }
   private async worker(task: WorkTask): Promise<boolean> {
     const s = this.supervisor.inspect(task.session_id);

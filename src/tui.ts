@@ -13,6 +13,7 @@ import {
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { join, resolve, basename } from 'node:path';
 import {
   existsSync,
@@ -894,9 +895,292 @@ export class SalaamApp {
         );
     });
   }
+  private jobActions(): void {
+    const snapshot = this.client.snapshot,
+      job = snapshot?.job,
+      task = snapshot?.work_task;
+    if (!snapshot || !task) {
+      this.client.report('Create a checked task first.');
+      return;
+    }
+    if (!job) {
+      this.taskInput(
+        'Create one-shot job · JSON',
+        JSON.stringify({
+          name: task.objective.slice(0, 100),
+          max_steps: task.steps.length,
+          compact: false,
+        }),
+        'Bind this task and its reviewed execution scope',
+        'Creates an immutable definition. It stays idle until explicitly triggered.',
+        (value) =>
+          void this.execute(() =>
+            this.client.jobAction('create', JSON.parse(value), {
+              id: task.id,
+              revision: task.revision,
+            }),
+          ),
+      );
+      return;
+    }
+    const reviewed = { id: job.id, revision: job.revision };
+    this.choice(
+      'Salaam · one-shot job',
+      [
+        {
+          value: 'inspect',
+          label: 'Inspect job binding',
+          description: job.state + ' · ' + job.name,
+        },
+        {
+          value: 'run',
+          label: 'Trigger one-shot job',
+          description: 'Stable logical key · same occurrence on retry',
+        },
+        {
+          value: 'cancel',
+          label: 'Cancel job',
+          description: 'Revoke future grants and cancel active owned work',
+        },
+      ],
+      (action) => {
+        if (action === 'inspect')
+          this.showModal(
+            new TextModal(
+              'Job · ' + job.id,
+              JSON.stringify(job, null, 2),
+              this.view.theme,
+              () => this.view.rows() - 8,
+              () => this.tui.requestRender(),
+              () => this.closeModal(),
+            ),
+          );
+        else if (action === 'run')
+          this.taskInput(
+            'One-shot occurrence key',
+            job.occurrence?.occurrence_key ?? randomUUID(),
+            'Use one stable key for this intentional run',
+            'Binding ' +
+              job.binding_digest.slice(0, 16) +
+              ' · at most ' +
+              job.max_steps +
+              ' new steps. Existing task budgets and approvals apply.',
+            (key) =>
+              void this.execute(() =>
+                this.client.jobAction('run', { occurrence_key: key }, reviewed),
+              ),
+          );
+        else
+          this.confirm(
+            'Cancel one-shot job',
+            'Cancels active owned work. Unknown external outcomes still require inspection.',
+            'Cancel job',
+            () => this.client.jobAction('cancel', {}, reviewed),
+          );
+      },
+    );
+  }
+  private async schedules(offset = 0): Promise<void> {
+    const page = await call<{
+      jobs: (import('./recurring-work.js').RecurringJob & { schedule: unknown })[];
+      next_offset: number | null;
+    }>(this.client.socket, '/v1/schedules?offset=' + offset);
+    this.choice(
+      'Salaam · recurring jobs',
+      [
+        {
+          value: 'create',
+          label: 'Capture a recurring template',
+          description: 'Reviewed task and exact workspace snapshot',
+        },
+        ...page.jobs.map((j) => ({
+          value: j.id,
+          label: j.name,
+          description: j.state + ' · ' + j.id,
+        })),
+        ...(page.next_offset !== null
+          ? [{ value: 'next', label: 'Next page', description: 'More recurring definitions' }]
+          : []),
+      ],
+      (id) => {
+        if (id === 'next') {
+          void this.execute(() => this.schedules(page.next_offset!));
+          return;
+        }
+        const task = this.client.snapshot?.work_task;
+        if (id === 'create') {
+          if (!task) {
+            this.client.report('Create a checked task first.');
+            return;
+          }
+          this.taskInput(
+            'Recurring template · JSON',
+            JSON.stringify({
+              name: task.objective.slice(0, 100),
+              max_steps: task.steps.length,
+              compact: false,
+              schedule: null,
+            }),
+            'Capture an immutable template',
+            'Every occurrence receives fresh IDs and a workspace copy. Use null schedule for explicit triggers.',
+            (value) =>
+              void this.execute(() =>
+                this.client.scheduleAction('create', JSON.parse(value), {
+                  id: task.id,
+                  revision: task.revision,
+                }),
+              ),
+          );
+          return;
+        }
+        const job = page.jobs.find((j) => j.id === id)!;
+        this.choice(
+          'Recurring · ' + job.name,
+          [
+            {
+              value: 'inspect',
+              label: 'Inspect definition and occurrences',
+              description: job.template_digest,
+            },
+            {
+              value: 'run',
+              label: 'Trigger an occurrence',
+              description: 'Stable logical key · overlap prevented',
+            },
+            {
+              value: 'update',
+              label: 'Revise schedule or pause/cancel',
+              description: 'Template remains immutable',
+            },
+          ],
+          (action) => {
+            if (action === 'inspect') {
+              void this.execute(async () => {
+                const detail = await call(this.client.socket, `/v1/schedules/${job.id}`);
+                this.showModal(
+                  new TextModal(
+                    'Recurring · ' + job.id,
+                    JSON.stringify(detail, null, 2),
+                    this.view.theme,
+                    () => this.view.rows() - 8,
+                    () => this.tui.requestRender(),
+                    () => this.closeModal(),
+                  ),
+                );
+              });
+              return;
+            }
+            if (job.session_id !== this.client.snapshot?.id) {
+              this.client.report(
+                'Switch to template session ' + job.session_id + ' to change its schedule.',
+              );
+              return;
+            }
+            this.taskInput(
+              action === 'run' ? 'Occurrence key' : 'Schedule revision · JSON',
+              action === 'run'
+                ? randomUUID()
+                : JSON.stringify({ state: job.state, schedule: job.schedule }),
+              'Review this admission',
+              'Revisions affect future slots. Cancel revokes active owned work; pausing preserves it.',
+              (value) =>
+                void this.execute(() =>
+                  this.client.scheduleAction(
+                    action as 'run' | 'update',
+                    action === 'run' ? { occurrence_key: value } : JSON.parse(value),
+                    { id: job.id, revision: job.revision },
+                  ),
+                ),
+            );
+          },
+        );
+      },
+    );
+  }
+  private async inbox(offset = 0): Promise<void> {
+    const page = await call<{
+      items: import('./operator-inbox.js').InboxEntry[];
+      next_offset: number | null;
+    }>(this.client.socket, '/v1/inbox?offset=' + offset);
+    if (!page.items.length) {
+      this.client.report('Operator inbox is clear.');
+      return;
+    }
+    this.choice(
+      'Salaam · operator inbox',
+      [
+        ...page.items.map((item) => ({
+          value: item.id,
+          label: item.kind + ' · ' + item.source_key,
+          description: item.session_id + ' · r' + item.revision,
+        })),
+        ...(page.next_offset !== null
+          ? [{ value: 'next', label: 'Next page', description: 'More saved attention' }]
+          : []),
+      ],
+      (id) => {
+        if (id === 'next') {
+          void this.execute(() => this.inbox(page.next_offset!));
+          return;
+        }
+        const item = page.items.find((i) => i.id === id)!;
+        this.choice(
+          'Attention · ' + item.kind,
+          [
+            {
+              value: 'inspect',
+              label: 'Inspect saved attention',
+              description: 'Source ' + item.source_key,
+            },
+            {
+              value: 'ack',
+              label: 'Acknowledge this revision',
+              description: 'No approval or retry is issued',
+            },
+          ],
+          (action) => {
+            if (action === 'inspect')
+              this.showModal(
+                new TextModal(
+                  'Inbox · ' + item.id,
+                  JSON.stringify(item, null, 2),
+                  this.view.theme,
+                  () => this.view.rows() - 8,
+                  () => this.tui.requestRender(),
+                  () => this.closeModal(),
+                ),
+              );
+            else if (this.client.snapshot?.id !== item.session_id)
+              this.client.report(
+                'Switch to session ' + item.session_id + ' to acknowledge its attention.',
+              );
+            else
+              this.confirm(
+                'Acknowledge attention',
+                'This clears only the saved attention revision. It does not decide an approval or retry work.',
+                'Acknowledge',
+                async () => {
+                  await this.client.ackInbox(item.id, item.revision);
+                },
+              );
+          },
+        );
+      },
+    );
+  }
   private palette(): void {
     const snapshot = this.client.snapshot;
     const items = [
+      {
+        value: 'schedules',
+        label: 'Recurring jobs and schedules',
+        description: 'Immutable templates · fresh bounded occurrences',
+      },
+      {
+        value: 'inbox',
+        label: 'Operator inbox',
+        description: 'Shared durable attention and results',
+      },
       { value: 'new', label: 'New session', description: 'ctrl+n' },
       { value: 'sessions', label: 'Switch session', description: 'ctrl+p' },
       { value: 'conversation', label: 'Conversation', description: 'Messages and live progress' },
@@ -904,6 +1188,11 @@ export class SalaamApp {
         value: 'task',
         label: 'Task actions',
         description: 'Saved plan, verification, bounded progression and checkpoints',
+      },
+      {
+        value: 'jobs',
+        label: 'Job actions',
+        description: 'Bound one-shot admission and durable occurrence recovery',
       },
       { value: 'changes', label: 'Review changes', description: 'ctrl+g · guarded workspace diff' },
       { value: 'commands', label: 'Commands and output', description: 'ctrl+t' },
@@ -985,6 +1274,9 @@ export class SalaamApp {
       }
       if (value === 'new') void this.execute(() => this.newSession());
       else if (value === 'task') this.taskActions();
+      else if (value === 'jobs') this.jobActions();
+      else if (value === 'schedules') void this.execute(() => this.schedules());
+      else if (value === 'inbox') void this.execute(() => this.inbox());
       else if (value === 'sessions') void this.execute(() => this.sessions());
       else if (value === 'approvals') this.approvals();
       else if (value === 'history') void this.execute(() => this.history());
@@ -1228,7 +1520,7 @@ export class SalaamApp {
         {
           value: 'close',
           label: 'PageUp / PageDown · scroll',
-          description: 'Mouse wheel also scrolls; Home/End jump through the conversation',
+          description: 'Mouse wheel also scrolls; Ctrl+Home/End jump to the top/bottom',
         },
         {
           value: 'close',

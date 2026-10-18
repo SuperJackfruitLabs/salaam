@@ -81,7 +81,7 @@ The task's current projection preserves reviewed steps, corrections and attempt 
 
 An explicit continuation creates a new attempt on the same step, preserves the old attempt and resolves that exact interruption. Review is a recorded operator disposition, not a verification receipt. Failed or cancelled attempts cannot be marked complete; an operator may explicitly request another run. Normal attempt cancellation also updates the task projection.
 
-History returns up to 32 plans and 32 attempt bindings per page with `next_offset`; use `sal tasks history TASK_ID --offset N` for later pages. Database schema 9 migrates earlier schemas without changing session IDs or transcripts. Existing task admissions are charged conservatively on upgrade, and legacy cached requests retain their original hashes. Older service binaries reject this newer schema: use a state backup for a downgrade rather than opening it with an old daemon.
+History returns up to 32 plans and 32 attempt bindings per page with `next_offset`; use `sal tasks history TASK_ID --offset N` for later pages. Database schema 11 includes the task tables introduced in schemas 8–9 and adds M12 job, schedule and inbox records without changing session IDs or transcripts. Existing task admissions are charged conservatively on upgrade, and legacy cached requests retain their original hashes. Older service binaries reject this newer schema: use a state backup for a downgrade rather than opening it with an old daemon.
 
 ## Fresh verification and completion
 
