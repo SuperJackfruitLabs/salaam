@@ -1,5 +1,11 @@
 # Operator API contributor reference
 
+Child inspection, list responses and session snapshots include an optional
+`worker` record with the frozen admission binding, digest, generation, worker epoch
+and dispatch state. See the [native worker boundary](worker-boundary.md) for schema,
+migration and recovery semantics. `requests` still means model requests;
+invocation-only workers are not enabled.
+
 ## Local API
 
 All endpoints use the operator Unix socket at `STATE_DIR/operator.sock`.

@@ -227,16 +227,16 @@ test('v7 migration and repeated v8 opens preserve the ledger; newer schemas fail
   try {
     store.create(dir, 'old-session');
     store.db.exec(
-      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; PRAGMA user_version=7;',
+      'DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; PRAGMA user_version=7;',
     );
     store.close();
     store = new Store(path);
     expect(store.sessions()).toHaveLength(1);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 11 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 12 });
     store.close();
     store = new Store(path);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 11 });
-    store.db.exec('PRAGMA user_version=12');
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 12 });
+    store.db.exec('PRAGMA user_version=13');
     store.close();
     expect(() => new Store(path)).toThrow('newer');
   } finally {

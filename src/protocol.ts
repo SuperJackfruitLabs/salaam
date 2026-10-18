@@ -10,6 +10,7 @@ export const CAPABILITIES = [
   'durable-approvals',
   'operation-ledger',
   'child-work',
+  'worker-boundary-v1',
   'usage-ledger',
   'durable-task-context',
   'managed-compaction',
@@ -46,6 +47,7 @@ export function workerTools(effects: boolean, child = false, coding?: CodingBind
       ].sort();
 }
 export interface ChildTask {
+  worker?: import('./worker-boundary.js').WorkerBoundaryView;
   id: string;
   parent_session: string;
   parent_attempt: string;
@@ -188,6 +190,7 @@ export interface Approval {
   decided_by: string | null;
 }
 export interface Manifest {
+  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
   protocol_version: number;
   bundle_digest: string;
   policy_digest: string;

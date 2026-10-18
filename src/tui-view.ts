@@ -607,6 +607,12 @@ export class DocumentView implements Component {
               (child.acknowledged ? ' · acknowledged' : ''),
             width,
           ),
+          ...(child.worker
+            ? this.text(
+                `${child.worker.binding.profile.id} · ${child.worker.binding.runtime} · generation ${child.worker.generation} · ${child.worker.dispatch_state} · ${child.worker.binding.bounds.requests} model requests`,
+                width,
+              )
+            : []),
         );
       lines.push(t.fill('', width), ...this.title('USAGE', width));
       if (c.usage)

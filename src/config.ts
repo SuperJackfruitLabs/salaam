@@ -20,7 +20,7 @@ export const PI_ROOT = resolve(
 export const PI_CLI = join(PI_ROOT, 'dist/bundle/cli.js');
 export const HOUSE_EXTENSION = join(ROOT, 'dist/src/house-extension.js');
 export const POLICY = {
-  version: 8,
+  version: 9,
   tools: [
     'salaam_probe',
     'salaam_review',
@@ -38,6 +38,7 @@ export const POLICY = {
     parentRequestBudget: 16,
     maxChildRequestBudget: 8,
     authority: ['salaam_probe'],
+    worker_boundary: 'frozen-native-model-request-v1',
   },
   providers: [
     'salaam-proof/scripted',
@@ -94,6 +95,7 @@ export function bundleDigest(): string {
     claude: textDigest(readFileSync(join(ROOT, 'dist/src/claude-provider.js'), 'utf8')),
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/protocol.js'), 'utf8')),
+    worker_boundary: textDigest(readFileSync(join(ROOT, 'dist/src/worker-boundary.js'), 'utf8')),
     transport: textDigest(readFileSync(join(ROOT, 'dist/src/transport.js'), 'utf8')),
   });
 }

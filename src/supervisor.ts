@@ -117,6 +117,10 @@ export class Supervisor extends EventEmitter {
       this.codingBinding(id),
     );
   }
+  private childBoundary(id: string, epoch: number) {
+    const child = this.children?.owned(id);
+    return child ? this.store.workerBoundary.assert(child, epoch, this.route) : undefined;
+  }
   readonly route: ProviderRoute;
   private apiKey?: string;
   private outputCap = true;
@@ -137,7 +141,7 @@ export class Supervisor extends EventEmitter {
         'This provider authentication has no output cap; set limits.token_units to null and omit output_token_bound',
       );
   }
-  private assertSessionProviderSupported(id: string, outputCap = this.outputCap) {
+  assertSessionProviderSupported(id: string, outputCap = this.outputCap) {
     const parent = this.children?.owned(id)?.parent_session ?? id;
     const task = this.tasks.work?.forSession(parent);
     if (task) this.assertTaskProviderSupported(task.limits, outputCap);
@@ -165,8 +169,18 @@ export class Supervisor extends EventEmitter {
     this.bundle = bundleDigest();
     this.monitor = setInterval(() => {
       for (const worker of this.workers.values())
-        if (worker.ready && Date.now() - worker.lastBeat > (options.heartbeatTimeout ?? 2500))
-          this.invalidate(worker, 'Worker heartbeat expired');
+        if (worker.ready) {
+          if (Date.now() - worker.lastBeat > (options.heartbeatTimeout ?? 2500))
+            this.invalidate(worker, 'Worker heartbeat expired');
+          const child = this.children?.owned(worker.id);
+          if (child?.state === 'accepted') {
+            try {
+              this.childBoundary(worker.id, worker.epoch);
+            } catch (error) {
+              this.invalidate(worker, 'Worker boundary revoked: ' + (error as Error).message);
+            }
+          }
+        }
     }, 250);
     this.monitor.unref();
   }
@@ -271,6 +285,8 @@ export class Supervisor extends EventEmitter {
     void handshake.catch(() => {});
     let timer: NodeJS.Timeout | undefined;
     try {
+      const child = this.children?.owned(id);
+      if (child) this.store.workerBoundary.claim(child, epoch, this.route);
       const workerDir = join(this.options.stateDir, 'workers', id);
       mkdirSync(join(workerDir, 'agent'), { recursive: true, mode: 0o700 });
       writeFileSync(
@@ -292,6 +308,7 @@ export class Supervisor extends EventEmitter {
         frame,
         effects: !!this.options.effectsEnabled && !this.children?.owned(id),
         child: !!this.children?.owned(id),
+        worker_binding: this.childBoundary(id, epoch),
         route: this.route,
         coding: this.codingBinding(id),
       };
@@ -443,6 +460,7 @@ export class Supervisor extends EventEmitter {
       // Pi buffers setup-only entries until there is a conversation. Do not
       // persist a cursor into that ephemeral tree before its file exists.
       if (existsSync(file)) await this.syncEntries(worker);
+      if (child) this.store.workerBoundary.accepted(child, epoch, this.route);
       this.store.state(id, epoch, 'ready', null, workerCapabilities(this.codingBinding(id)), file);
       worker.ready = true;
       worker.lastBeat = Date.now();
@@ -511,6 +529,7 @@ export class Supervisor extends EventEmitter {
     if (method === 'handshake') {
       try {
         if (w.manifest) throw new Error('Duplicate handshake');
+        const boundary = this.childBoundary(id, w.epoch);
         const expected = {
           protocol_version: PROTOCOL_VERSION,
           bundle_digest: w.bundle,
@@ -525,6 +544,7 @@ export class Supervisor extends EventEmitter {
           provider: this.route.provider,
           route: this.route,
           context_digest: textDigest(w.frame),
+          ...(boundary ? { worker_binding: boundary } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))
@@ -546,6 +566,7 @@ export class Supervisor extends EventEmitter {
     if (w.attempt && this.store.cancelled(w.attempt))
       throw new ServiceError('attempt_cancelled', 'Attempt cancellation revoked further grants');
     try {
+      this.childBoundary(id, w.epoch);
       if (method === 'provider.auth') {
         const auth = await this.providerAuth();
         w.providerOutputCap = this.outputCap;
@@ -610,9 +631,15 @@ export class Supervisor extends EventEmitter {
       }
       if (method.startsWith('child.')) {
         if (!this.children || !w.attempt) throw new Error('No active parent attempt');
-        this.assertActive(id, w.epoch, w.attempt);
-        if (method === 'child.spawn') this.assertSessionProviderSupported(id);
-        if (method === 'child.spawn')
+        // spawn() resolves a saved step before testing a fresh invocation/grant.
+        if (method !== 'child.spawn') this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'child.spawn') {
+          if (
+            Object.keys(body).some(
+              (key) => !['epoch', 'step_key', 'prompt', 'budget', 'authority'].includes(key),
+            )
+          )
+            throw new ServiceError('invalid_child', 'Unsupported child admission field');
           return this.children.spawn(
             id,
             w.epoch,
@@ -624,6 +651,7 @@ export class Supervisor extends EventEmitter {
               ? body.authority.map((x) => string(x, 'authority', 128))
               : ['salaam_probe'],
           );
+        }
         if (method === 'child.list') return this.children.list(id);
         const child = string(body.child_id, 'child_id', 128);
         if (method === 'child.inspect') return this.children.inspect(id, child);
@@ -1001,6 +1029,7 @@ export class Supervisor extends EventEmitter {
       if (w.invalid || end.aborted) throw new Error(w.invalid ?? 'Attempt aborted');
       const entries = await this.readEntries(w);
       const result = object((await w.pi.command('get_last_assistant_text')).data);
+      this.childBoundary(id, w.epoch);
       this.store.finish(
         work.attempt.id,
         outcomeError ? 'failed' : 'completed',

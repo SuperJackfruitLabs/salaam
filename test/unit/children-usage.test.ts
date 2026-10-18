@@ -23,6 +23,7 @@ function setup() {
   let starts = 0;
   const supervisor = {
     assertActive: () => {},
+    assertSessionProviderSupported: () => {},
     start: async (id: string) => {
       starts++;
       store.allocate(id, 'boot');
@@ -230,20 +231,24 @@ test('result publication rolls back final child state and inbox together when jo
     f.store.db.exec(
       "CREATE TRIGGER reject_result BEFORE INSERT ON events WHEN NEW.kind='child.result_available' BEGIN SELECT RAISE(ABORT,'no result commit'); END",
     );
+    const bindingBefore = f.store.workerBoundary.view(child.id);
     expect(() => f.store.finish(child.child_attempt, 'completed', 'answer', null)).toThrow(
       'no result commit',
     );
     expect(f.store.attempt(child.child_attempt).state).toBe('running');
+    expect(f.store.workerBoundary.view(child.id)).toEqual(bindingBefore);
     expect(f.children.inspect(f.parent.id, child.id)).toMatchObject({
       state: 'accepted',
       artifact_id: null,
       result_id: null,
     });
-    expect(f.store.db.prepare('SELECT count(*) AS n FROM artifacts').get()).toEqual({ n: 0 });
+    // The input artifact predates result publication and survives its rollback.
+    expect(f.store.db.prepare('SELECT count(*) AS n FROM artifacts').get()).toEqual({ n: 1 });
     f.store.db.exec('DROP TRIGGER reject_result');
     f.store.finish(child.child_attempt, 'completed', 'answer', null);
     const final = f.children.inspect(f.parent.id, child.id);
     expect(final.state).toBe('completed');
+    expect(final.worker!.dispatch_state).toBe('terminal');
     expect(f.children.consume(f.parent.id, child.id, final.result_id!)).toMatchObject({
       result: { text: 'answer' },
     });
@@ -265,7 +270,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     store.finish(receipt.attempt_id, 'completed', 'preserved', null);
     const revision = store.session(session.id).revision;
     store.db.exec(
-      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
+      'DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations;DROP TABLE attempt_budgets;DROP TABLE child_tasks;PRAGMA user_version=3;',
     );
     store.close();
     store = new Store(path);
@@ -275,7 +280,7 @@ test('schema v3 migrates cached replies and completed attempts without changing 
     });
     expect(store.create(dir, 'create')).toEqual(session);
     expect(store.session(session.id).revision).toBe(revision);
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

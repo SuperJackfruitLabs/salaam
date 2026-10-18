@@ -34,6 +34,7 @@ interface WorkerConfig {
   child?: boolean;
   route?: ProviderRoute;
   coding?: CodingBinding;
+  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -679,6 +680,7 @@ export default function house(pi: ExtensionAPI): void {
       provider: route.provider,
       route,
       context_digest: textDigest(c.frame),
+      ...(c.worker_binding ? { worker_binding: c.worker_binding } : {}),
     });
     timer = setInterval(() => {
       void bridge('heartbeat').catch(() => {

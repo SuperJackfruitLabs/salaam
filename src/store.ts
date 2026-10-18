@@ -3,6 +3,7 @@ import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
+import { WorkerBoundary } from './worker-boundary.js';
 import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
 import { canonical } from './protocol.js';
 import {
@@ -26,6 +27,7 @@ export class Store {
   readonly db: DatabaseSync;
   readonly changes = new EventEmitter();
   readonly usage = new UsageLedger(this);
+  readonly workerBoundary = new WorkerBoundary(this);
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
   projectTaskAttempt?: (attempt: Attempt) => void;
@@ -59,7 +61,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 11) {
+    if (version > 12) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -202,6 +204,13 @@ export class Store {
           CREATE TABLE recurring_occurrences(id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES recurring_jobs(id),occurrence_key TEXT NOT NULL,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),job_run_id TEXT UNIQUE REFERENCES jobs(id),schedule_revision INTEGER NOT NULL,due_at INTEGER,state TEXT NOT NULL,error TEXT,created_at INTEGER NOT NULL,UNIQUE(job_id,occurrence_key));
           CREATE TABLE operator_inbox(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),source_key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL,detail TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,ack_revision INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL);
           PRAGMA user_version=11; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 12
+      ) {
+        this.db.exec('BEGIN IMMEDIATE');
+        this.workerBoundary.migrate();
+        this.db.exec('PRAGMA user_version=12; COMMIT;');
+      }
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -785,9 +794,14 @@ export class Store {
       history_truncated: cursor !== null,
       approvals: this.approvals(id),
       operations: this.operations(id),
-      children: this.db
-        .prepare('SELECT * FROM child_tasks WHERE parent_session=? ORDER BY rowid DESC LIMIT 100')
-        .all(id) as unknown as SessionSnapshot['children'],
+      children: (
+        this.db
+          .prepare('SELECT * FROM child_tasks WHERE parent_session=? ORDER BY rowid DESC LIMIT 100')
+          .all(id) as unknown as SessionSnapshot['children']
+      ).map((child) => ({
+        ...child,
+        worker: this.workerBoundary.view(child.id),
+      })),
     };
   }
   cancelled(id: string): boolean {

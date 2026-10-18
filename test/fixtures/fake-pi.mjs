@@ -58,6 +58,7 @@ const manifest = {
   provider: c.route.provider,
   route: c.route,
   context_digest: textDigest(c.frame),
+  ...(c.worker_binding ? { worker_binding: c.worker_binding } : {}),
 };
 const mutations = {
   'missing-coding-binding': { coding: null },
@@ -79,6 +80,9 @@ const mutations = {
   'missing-context': { capabilities: ['persistent-session'] },
   'missing-approvals': { capabilities: CAPABILITIES.filter((x) => x !== 'durable-approvals') },
   'missing-children': { capabilities: CAPABILITIES.filter((x) => x !== 'child-work') },
+  'missing-worker-boundary': {
+    capabilities: CAPABILITIES.filter((x) => x !== 'worker-boundary-v1'),
+  },
   'missing-usage': { capabilities: CAPABILITIES.filter((x) => x !== 'usage-ledger') },
   'missing-ledger': { capabilities: CAPABILITIES.filter((x) => x !== 'operation-ledger') },
 };

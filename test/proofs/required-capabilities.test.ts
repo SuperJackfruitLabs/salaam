@@ -26,6 +26,7 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
       'missing-approvals',
       'missing-ledger',
       'missing-children',
+      'missing-worker-boundary',
       'missing-usage',
       'missing-task-context',
       'missing-compaction',

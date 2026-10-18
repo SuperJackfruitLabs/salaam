@@ -21,16 +21,18 @@ export class ChildWork {
       .get(session) as unknown as ChildTask | undefined;
   }
   list(parent: string): ChildTask[] {
-    return this.store.db
-      .prepare('SELECT * FROM child_tasks WHERE parent_session=? ORDER BY rowid')
-      .all(parent) as unknown as ChildTask[];
+    return (
+      this.store.db
+        .prepare('SELECT * FROM child_tasks WHERE parent_session=? ORDER BY rowid')
+        .all(parent) as unknown as ChildTask[]
+    ).map((child) => ({ ...child, worker: this.store.workerBoundary.view(child.id) }));
   }
   inspect(parent: string, id: string): ChildTask {
     const row = this.store.db
       .prepare('SELECT * FROM child_tasks WHERE id=? AND parent_session=?')
       .get(id, parent) as unknown as ChildTask | undefined;
     if (!row) throw new ServiceError('not_found', 'Child task not found', 404);
-    return row;
+    return { ...row, worker: this.store.workerBoundary.view(row.id) };
   }
   spawn(
     parent: string,
@@ -57,6 +59,7 @@ export class ChildWork {
       .filter((x, i, a) => a.indexOf(x) === i)
       .sort();
     const input = digest({ prompt, budget, requested: [...new Set(requested)].sort() });
+    let fresh = false;
     const child = this.store.transaction(() => {
       const old = this.store.db
         .prepare('SELECT * FROM child_tasks WHERE parent_session=? AND step_key=?')
@@ -68,6 +71,7 @@ export class ChildWork {
       }
       if (this.paused) throw new ServiceError('stopping', 'Child dispatch is stopping');
       this.supervisor.assertActive(parent, epoch, attempt);
+      this.supervisor.assertSessionProviderSupported(parent);
       if (this.owned(parent))
         throw new ServiceError('depth_exceeded', 'Child depth is limited to one');
       if (!authority.length)
@@ -114,6 +118,9 @@ export class ChildWork {
         );
       this.store.taskChildReserve?.(parent, childAttempt, budget);
       this.store.usage.budget(childAttempt, budget);
+      const artifact = this.artifacts.prepare(session, prompt);
+      artifact.commit();
+      this.store.workerBoundary.freeze(this.owned(session)!, artifact.id);
       this.store.event(session, 'session.created', { parent_session: parent, child_id: id });
       this.store.event(session, 'submission.accepted', {
         attempt_id: childAttempt,
@@ -126,10 +133,12 @@ export class ChildWork {
         budget,
         authority,
       });
+      fresh = true;
       return this.inspect(parent, id);
     });
     // Repeated calls only return the durable binding. They never restart a child.
     if (
+      fresh &&
       this.store.session(child.child_session).epoch === 0 &&
       this.store.attempt(child.child_attempt).state === 'accepted'
     )
@@ -199,6 +208,7 @@ export class ChildWork {
     this.store.db
       .prepare('UPDATE child_tasks SET state=?,result_id=?,artifact_id=? WHERE id=?')
       .run(attempt.state, result, artifact.id, child.id);
+    this.store.workerBoundary.finish(child, attempt.state === 'interrupted');
     this.store.event(child.parent_session, 'child.result_available', {
       child_id: child.id,
       result_id: result,
