@@ -2,10 +2,28 @@ import { test, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { setCapabilityOverrides, visibleWidth } from '@earendil-works/pi-tui';
 import { remoteArguments, shellQuote } from '../../src/remote.js';
-import { editorArguments } from '../../src/tui.js';
+import { editorArguments, SalaamApp } from '../../src/tui.js';
 import { ChoiceModal, ApprovalModal } from '../../src/tui-modals.js';
 import { SalaamTheme, safeText } from '../../src/tui-theme.js';
-import type { Approval, Operation } from '../../src/protocol.js';
+import type { Approval, Operation, SessionSnapshot } from '../../src/protocol.js';
+
+test('context stays at the top when a short conversation grows or its first snapshot arrives', () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-scroll-proof' });
+  app.scroll.updateLayout(10, 30, () => {});
+  app.setTab('context');
+  app.scroll.updateLayout(300, 30, () => {});
+  expect(app.scroll.scrollTop).toBe(0);
+  expect(app.scroll.isFollowingEnd).toBe(false);
+
+  app.client.snapshot = { id: 'first-session', submissions: [] } as unknown as SessionSnapshot;
+  app.client.emit('change');
+  app.scroll.updateLayout(300, 30, () => {});
+  expect(app.scroll.scrollTop).toBe(0);
+
+  app.setTab('conversation');
+  expect(app.scroll.scrollTop).toBe(270);
+  expect(app.scroll.isFollowingEnd).toBe(true);
+});
 
 test('remote argv quotes literal shell characters and rejects flag/control hosts', () => {
   const path = "/tmp/owned '$HOME;$(false)`false` 🌿";

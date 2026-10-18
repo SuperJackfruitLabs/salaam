@@ -1,0 +1,60 @@
+---
+import DefaultContent from '@astrojs/starlight/components/MarkdownContent.astro';
+---
+
+<DefaultContent>
+  <slot />
+</DefaultContent>
+<script>
+  async function renderDiagrams() {
+    const nodes = Array.from(
+      document.querySelectorAll<HTMLElement>('.salaam-diagram .mermaid:not([data-processed])'),
+    );
+    if (!nodes.length) return;
+    try {
+      const { default: mermaid } = await import('mermaid');
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'base',
+        themeVariables: {
+          primaryColor: '#dce9de',
+          primaryTextColor: '#253b35',
+          primaryBorderColor: '#216b52',
+          lineColor: '#52695e',
+          secondaryColor: '#edeee5',
+          tertiaryColor: '#f7f5ed',
+          fontFamily: 'system-ui, sans-serif',
+        },
+      });
+      await mermaid.run({ nodes });
+    } catch {
+      // A failed renderer leaves readable source instead of an empty diagram.
+      for (const node of nodes) node.closest('figure')?.setAttribute('data-render-error', 'true');
+    }
+  }
+  void renderDiagrams();
+</script>
+<style is:global>
+  .salaam-diagram {
+    margin-block: 1.5rem;
+    padding: 1.5rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 0.5rem;
+    background: #f7f5ed;
+    color: #253b35;
+    overflow-x: auto;
+  }
+  .salaam-diagram pre {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+  }
+  .salaam-diagram svg {
+    display: block;
+    margin: auto;
+    max-width: 100%;
+    height: auto;
+  }
+</style>

@@ -1,6 +1,6 @@
 # Task context and compaction
 
-The singular `task` commands below manage session facts. M11.1 adds a separate durable task/step ledger under `sal tasks`; see [durable tasks](durable-tasks.md). Both feed the managed context frame, while only explicit operator task actions change the step ledger.
+The singular `task` commands below manage session facts. The plural `tasks` commands manage a separate durable task/step ledger under `sal tasks`; see [durable tasks](durable-tasks.md). Both feed the managed context frame, while only explicit operator task actions change the step ledger.
 
 Task facts are explicit operator state stored outside Pi's conversation summary. Supported kinds are `objective`, `constraint`, `completed`, `outstanding` and `evidence`. They retain the original text, source request, task version and supersession links. Salaam does not automatically extract corrections from prose.
 
@@ -50,4 +50,4 @@ This initial strategy creates a deterministic checkpoint of the explicit task le
 
 The service rejects compaction while a turn or approval is active. Task facts, child results, approval bindings and unknown operations remain independent of summaries. Failure/cancellation leaves the task version and committed compaction cursor unchanged. A pipe failure makes the compaction interrupted and requires worker reconciliation; a matching persisted Pi receipt can establish completion on replacement. An uncertain compaction is never automatically replayed. Inspect an interrupted operation before starting a new checkpoint with a fresh request ID.
 
-The [S5 proof](../test/proofs/context-compaction.test.ts) covers three compactions and an idle restart, actual payload inspection, old-evidence retrieval, failed/cancelled checkpoints, active approvals, outstanding child/unknown-effect preservation and worker death on both sides of Pi persistence. Its deterministic provider's next-action trace excludes completed work. Whether a particular live model follows the context requires a separate behavioral evaluation.
+A checkpoint preserves recorded task facts and access to earlier evidence. It cannot guarantee that a particular live model follows that context correctly.

@@ -11,6 +11,7 @@ while (!existsSync(join(root, 'pi-pin.json'))) {
   root = parent;
 }
 export const ROOT = root;
+export const VERSION: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 export const PI_ROOT = resolve(
   dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))),
   '..',
@@ -56,7 +57,13 @@ export const POLICY_DIGEST = digest(POLICY);
 export function bundleDigest(): string {
   const pin = JSON.parse(readFileSync(join(ROOT, 'pi-pin.json'), 'utf8'));
   const pkg = JSON.parse(readFileSync(join(PI_ROOT, 'package.json'), 'utf8'));
-  const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'));
+  // npm omits package-lock.json from tarballs. Release packages carry the same
+  // reviewed bytes as npm-shrinkwrap.json, alongside bundled production dependencies.
+  const lockPath = join(
+    ROOT,
+    existsSync(join(ROOT, 'npm-shrinkwrap.json')) ? 'npm-shrinkwrap.json' : 'package-lock.json',
+  );
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
   const artifact = lock.packages['node_modules/@earendil-works/pi-coding-agent'];
   if (
     pkg.version !== pin.version ||
@@ -71,7 +78,7 @@ export function bundleDigest(): string {
   return digest({
     pin,
     policy: POLICY_DIGEST,
-    lock: textDigest(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')),
+    lock: textDigest(readFileSync(lockPath, 'utf8')),
     house: textDigest(readFileSync(HOUSE_EXTENSION, 'utf8')),
     claude: textDigest(readFileSync(join(ROOT, 'dist/src/claude-provider.js'), 'utf8')),
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),

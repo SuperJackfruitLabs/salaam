@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { call } from './transport.js';
 import { acquireControl, Outbox, subscribe, type Feed } from './attach.js';
 import { AcpJournal } from './acp-journal.js';
+import { VERSION } from './config.js';
 import {
   object,
   string,
@@ -383,7 +384,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
           mcpCapabilities: { http: false, sse: false },
         },
-        agentInfo: { name: 'salaam', title: 'Salaam', version: '0.1.0' },
+        agentInfo: { name: 'salaam', title: 'Salaam', version: VERSION },
         authMethods: [],
       };
     }

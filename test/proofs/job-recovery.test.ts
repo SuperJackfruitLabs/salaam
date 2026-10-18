@@ -200,7 +200,12 @@ test('a job cancellation committed before process abort survives daemon death wi
   try {
     const accepted = await f.trigger();
     await until(() => existsSync(join(f.source, 'probe-entered')), Boolean);
-    const before = await f.get();
+    // The tool is held, but the job's periodic projection may still be catching up.
+    // Cancel the settled running revision so this proof reaches the crash boundary.
+    const before = await until(
+      f.get,
+      (job) => job.state === 'running' && job.reason === job.task_reason,
+    );
     const request = { ...f.actor, request_id: 'cancel-once', expected_revision: before.revision };
     const lost = call(f.socket, `/v1/jobs/${f.job.id}/cancel`, request).catch(() => null);
     await until(() => existsSync(join(f.dir, 'after-cancel-commit')), Boolean);

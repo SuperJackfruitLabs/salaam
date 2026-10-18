@@ -1,0 +1,40 @@
+/* Shared with landing/src/styles/site.css and the existing Salaam Night/Paper TUI. */
+:root {
+  --sl-font: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --sl-color-accent-low: #173c31;
+  --sl-color-accent: #86dbb5;
+  --sl-color-accent-high: #b5edd0;
+  --sl-color-bg: #0c1618;
+  --sl-color-bg-nav: #112125;
+  --sl-color-bg-sidebar: #0c1618;
+  --sl-color-bg-inline-code: #112125;
+  --sl-color-white: #e5eee9;
+  --sl-color-gray-2: #c2d6cd;
+  --sl-color-gray-3: #8ca9a3;
+  --sl-color-hairline: #2b494b;
+  --sl-color-hairline-light: #2b494b;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dce9de;
+  --sl-color-accent: #216b52;
+  --sl-color-accent-high: #174d3b;
+  --sl-color-bg: #f7f5ed;
+  --sl-color-bg-nav: #edeee5;
+  --sl-color-bg-sidebar: #f7f5ed;
+  --sl-color-bg-inline-code: #edeee5;
+  --sl-color-white: #253b35;
+  --sl-color-gray-2: #435c50;
+  --sl-color-gray-3: #61776d;
+  --sl-color-hairline: #c4d1c6;
+  --sl-color-hairline-light: #c4d1c6;
+}
+h1,
+h2,
+h3,
+.site-title {
+  letter-spacing: -0.035em;
+}
+.site-title {
+  font-weight: 650;
+}

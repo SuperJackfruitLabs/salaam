@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
-import { ROOT } from './config.js';
+import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
@@ -29,7 +29,7 @@ interface WorkspaceDiffPage {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === '--version' || args[0] === '-V' || args[0] === 'version') {
-    console.log('salaam ' + JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version);
+    console.log('salaam ' + VERSION);
     return;
   }
   if (

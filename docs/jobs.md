@@ -1,4 +1,4 @@
-# Durable jobs and schedules (M12)
+# Durable jobs and schedules
 
 A job binds an existing reviewed task to one deliberate logical occurrence. Creating a definition stays idle. Triggering it atomically records the occurrence and the task's bounded progression grant. Session, job, occurrence, task, step, attempt and worker IDs remain distinct across reconnect and daemon replacement.
 
@@ -6,7 +6,7 @@ One-shot jobs are the admission primitive. Recurring definitions capture immutab
 
 ## Define and run
 
-Use the current built service on a disposable offline state directory initially. Rebuilding the checkout does not upgrade a running daemon. Keep provider keys and existing user state outside that fixture; the default tests never use paid providers.
+Start with the installed CLI and a separate offline service state directory. Installing an upgrade does not replace an already running daemon. Keep provider keys and existing session state outside coding workspaces.
 
 Create a fresh coding session and a [checked task plan](durable-tasks.md) with configured acceptance checks, deliverable paths, per-step checks and explicit task limits. All steps must still be pending, with no prior runtime admission or unresolved work. One job per task/session is supported. A new intentional one-shot run needs a fresh task/job; use a recurring template to provision these automatically.
 
@@ -50,7 +50,7 @@ Cancelling a definition before triggering revokes only that job. Cancelling an a
 
 Required job recording failure denies new job admissions and invalidates affected worker readiness. After repairing storage, restart the service and inspect interruptions before explicitly continuing. Provider-request charges and uncertain child reservations are not reset.
 
-Schema 10 adds definitions and occurrences while preserving schema-9 task IDs, attempt IDs, usage and cached replies. Schema 11 adds recurring templates, revisions, reservations and the inbox. Older daemons reject schema 11; use a backup for downgrade. The default regression suite uses simulated executors, real pinned offline Pi workers, real PTYs and disposable daemons. These are job transaction/process-recovery observations; the separate real-backend SSH pilot establishes its recorded remote scope. Neither establishes live-Claude job behavior or power-loss durability. [Verification](verification.md) records the observed source/build and proof scope.
+Schema 10 adds definitions and occurrences while preserving schema-9 task IDs, attempt IDs, usage and cached replies. Schema 11 adds recurring templates, revisions, reservations and the inbox. Older daemons reject schema 11; use a backup for downgrade. See [reliability and support](reliability.md) for recovery guarantees and supported environments.
 
 ## Recurring templates and schedule revisions
 

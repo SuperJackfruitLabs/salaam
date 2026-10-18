@@ -126,6 +126,8 @@ test('TUI reviews two operation-bound approvals in reverse order and observer de
       { state: f.dir, columns: 116, rows: 40 },
     );
     await observer.contains('Observer');
+    // Observer mode renders before the first snapshot has loaded its approvals.
+    await observer.contains('2 approvals waiting');
     await observer.write('\x0f');
     await observer.contains('Approvals waiting');
     await observer.write('beta\r');

@@ -260,7 +260,7 @@ export class SalaamApp {
         this.lastRevision = undefined;
         this.view.continuation = undefined;
         this.editor.setText(this.drafts.get(snapshot.id) ?? '');
-        this.scroll.scrollToEnd();
+        this.resetScroll();
       }
       for (const submission of [...snapshot.submissions].reverse())
         if (!this.historyKeys.has(submission.id)) {
@@ -497,10 +497,13 @@ export class SalaamApp {
   }
   setTab(tab: ViewTab): void {
     this.view.tab = tab;
-    if (tab === 'conversation' || tab === 'commands') this.scroll.scrollToEnd();
-    else this.scroll.scrollToStart();
+    this.resetScroll();
     if (tab === 'changes') void this.execute(() => this.loadDiff(this.view.diffOffset));
     this.tui.requestRender();
+  }
+  private resetScroll(): void {
+    if (this.view.tab === 'conversation' || this.view.tab === 'commands') this.scroll.scrollToEnd();
+    else this.scroll.scrollTo(0, { disableFollow: true });
   }
   private async refresh(): Promise<void> {
     await this.client.refresh();
