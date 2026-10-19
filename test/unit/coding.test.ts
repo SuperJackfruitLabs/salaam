@@ -141,6 +141,53 @@ test('a human edit between admission and snapshot capture prevents dispatch', as
     await f.close();
   }
 });
+
+for (const boundary of ['create', 'start', 'ready', 'exec'] as const)
+  test(`revocation while command ${boundary} is pending prevents launch`, async () => {
+    const f = fixture();
+    let entered!: () => void, release!: () => void;
+    const barrier = new Promise<void>((r) => {
+      entered = r;
+    });
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const original = f.backend[boundary].bind(f.backend);
+    const hook = vi.spyOn(f.backend, boundary).mockImplementation(async () => {
+      const result = await original();
+      entered();
+      await held;
+      return result as any;
+    });
+    try {
+      const run = f.work.start(f.session.id, null, f.args, () => {});
+      await barrier;
+      const lease = f.store.control(f.session.id, 'control', 'operator', 'acquire', 0);
+      f.store.execution.revoke(
+        f.session.id,
+        'revoke',
+        f.store.session(f.session.id).revision,
+        'Run revoked',
+        { client_id: 'operator', token: lease.token },
+        () => {},
+      );
+      release();
+      await until(
+        () => f.work.get(f.session.id, run.id),
+        (r) => r.state === 'cancelled',
+      );
+      expect(f.backend.launches).toBe(0);
+      expect(f.backend.cleanups).toBe(1);
+      expect(() =>
+        f.work.start(f.session.id, null, { ...f.args, step_key: 'replacement' }, () => {}),
+      ).toThrow(/revoked/i);
+      expect(f.work.start(f.session.id, null, f.args, () => {}).id).toBe(run.id);
+    } finally {
+      release();
+      hook.mockRestore();
+      await f.close();
+    }
+  });
 test('replacement resumes the same known execution and command cancellation removes it without replay', async () => {
   const f = fixture();
   let replacement: CodingWork | undefined;

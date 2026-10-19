@@ -89,6 +89,7 @@ export class ChildWork {
         return old;
       }
       if (this.paused) throw new ServiceError('stopping', 'Child dispatch is stopping');
+      this.store.execution.assert(parent);
       if (admission) admission.authorize();
       else this.supervisor.assertActive(parent, epoch, attempt);
       const agent = profileId

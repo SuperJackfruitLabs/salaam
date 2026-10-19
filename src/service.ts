@@ -33,9 +33,11 @@ import { ExternalWork } from './external-work.js';
 import type { ExternalBackend } from './external-runtime.js';
 import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
+import { AgentPodAuthority } from './agentpod-authority.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  agentpodConfig?: string;
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
   a2aConfig?: string;
@@ -56,6 +58,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   expectedExecution?: { profile_digest: string; engine_id: string };
 }
 export class SalaamService {
+  readonly agentpod?: AgentPodAuthority;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
   readonly stateDir: string;
@@ -90,9 +93,25 @@ export class SalaamService {
   private release: () => void;
   private stopping = false;
   private handlers = new Set<Promise<void>>();
+  private revocationStops = new Set<Promise<void>>();
+  private authorityTimer?: NodeJS.Timeout;
   private constructor(options: ServiceOptions) {
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
+    if (
+      options.agentpodConfig &&
+      (options.codingRoot ||
+        options.codingBackend ||
+        options.codingSocket ||
+        options.effectConnector ||
+        options.externalBackend ||
+        options.harnessConfig ||
+        options.a2aConfig ||
+        options.a2aListenConfig)
+    )
+      throw new Error(
+        'AgentPod authority profile does not enable station writes, effects, external runtimes or MCP yet',
+      );
     this.codingSocket = options.codingSocket ? resolve(options.codingSocket) : null;
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.stateDir = realpathSync(this.stateDir);
@@ -294,6 +313,15 @@ export class SalaamService {
           const error = this.recurring.controlError ?? this.inbox.controlError;
           if (error) throw new ServiceError('host_control_unavailable', error, 503);
         };
+        if (options.agentpodConfig)
+          this.agentpod = new AgentPodAuthority(
+            this.store,
+            this.stateDir,
+            resolve(options.agentpodConfig),
+            (attempt) => {
+              this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
+            },
+          );
       } catch (error) {
         this.store.close();
         throw error;
@@ -371,11 +399,66 @@ export class SalaamService {
       service.jobs.start();
       service.recurring.start();
       service.inbox.start();
+      service.authorityTimer = setInterval(() => {
+        try {
+          for (const binding of service.agentpod?.expired() ?? []) {
+            const status = service.agentpod!.revoke(
+              binding,
+              'expired:' + binding.hub_session_id,
+              'AgentPod authority lease expired',
+            );
+            service.scheduleRevocationStop(service.store.execution.revocation(status.session_id)!);
+          }
+        } catch (error) {
+          for (const session of service.store.sessions())
+            if (
+              service.store.db
+                .prepare('SELECT 1 FROM agentpod_admissions WHERE session_id=?')
+                .get(session.id)
+            )
+              service.supervisor.failControl(session.id, error as Error);
+        }
+      }, 250);
+      service.authorityTimer.unref();
       return service;
     } catch (error) {
       await service.close();
       throw error;
     }
+  }
+  private scheduleRevocationStop(
+    receipt: import('./execution-authority.js').SessionRevocation,
+  ): void {
+    const cleanup = this.stopRevoked(receipt).finally(() => this.revocationStops.delete(cleanup));
+    this.revocationStops.add(cleanup);
+  }
+  private async stopRevoked(
+    receipt: import('./execution-authority.js').SessionRevocation,
+  ): Promise<void> {
+    const jobs: Promise<unknown>[] = receipt.attempt_ids.map(async (attempt) => {
+      this.managed.abortCancelled(attempt);
+    });
+    for (const session of receipt.session_ids) {
+      jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
+      jobs.push(
+        Promise.resolve().then(async () => {
+          const child = this.children.owned(session);
+          if (child && this.store.workerBoundary.view(child.id).binding.external)
+            await this.external.cancel(child);
+        }),
+      );
+      jobs.push(
+        Promise.resolve().then(() => {
+          for (const run of this.store.db
+            .prepare(
+              "SELECT id FROM command_runs WHERE session_id=? AND state NOT IN ('succeeded','failed','cancelled','timed_out','output_limited','interrupted')",
+            )
+            .all(session))
+            this.coding.cancel(session, String(run.id), 'session-revocation:' + run.id, () => {});
+        }),
+      );
+    }
+    await Promise.allSettled(jobs);
   }
   private async listen(server: Server, path: string): Promise<void> {
     // The exclusive state lock is held before removing a stale socket.
@@ -458,6 +541,62 @@ export class SalaamService {
         );
         this.send(res, 200, value);
         return;
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'agentpod' &&
+        parts.length === 3 &&
+        req.method === 'POST'
+      ) {
+        if (!this.agentpod)
+          throw new ServiceError(
+            'authority_disabled',
+            'AgentPod authority requires reviewed --agentpod-config pins',
+          );
+        const body = object(await readJson(req));
+        if (parts[2] === 'attach') {
+          this.send(
+            res,
+            200,
+            this.agentpod.authenticate(
+              string(body.admission_id, 'admission_id', 128),
+              string(body.token, 'token', 128),
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'status') {
+          this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        const request = string(body.request_id, 'request_id', 128);
+        if (parts[2] === 'admit') {
+          this.send(res, 200, this.agentpod.admit(body.binding, request));
+          return;
+        }
+        if (parts[2] === 'renew') {
+          this.send(
+            res,
+            200,
+            this.agentpod.renew(
+              body.binding,
+              request,
+              integer(body.lease_sequence, 'lease_sequence'),
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'revoke') {
+          const status = this.agentpod.revoke(
+            body.binding,
+            request,
+            string(body.reason, 'reason', 1024),
+          );
+          this.scheduleRevocationStop(this.store.execution.revocation(status.session_id)!);
+          this.send(res, 202, status);
+          return;
+        }
+        throw new ServiceError('not_found', 'Unknown AgentPod authority method', 404);
       }
       if (
         parts[0] === 'v1' &&
@@ -994,6 +1133,8 @@ export class SalaamService {
       if (url.pathname === '/v1/health' && req.method === 'GET') {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
+          agentpod_config: this.agentpod?.configPath ?? null,
+          agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
           service: 'healthy',
           a2a: {
             inbound_enabled: !!this.a2aInbound,
@@ -1082,6 +1223,11 @@ export class SalaamService {
         return;
       }
       if (url.pathname === '/v1/sessions' && req.method === 'POST') {
+        if (this.agentpod)
+          throw new ServiceError(
+            'admission_required',
+            'This daemon requires a trusted AgentPod admission; unbound session creation is disabled',
+          );
         const body = object(await readJson(req));
         const cwd = realpathSync(string(body.cwd, 'cwd'));
         if (!statSync(cwd).isDirectory())
@@ -1127,6 +1273,32 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts.length === 4 && parts[3] === 'revocation' && req.method === 'GET') {
+          this.send(res, 200, this.store.execution.revocation(id));
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'revoke' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          const request = string(body.request_id, 'request_id', 128);
+          const receipt = this.store.execution.revoke(
+            id,
+            request,
+            integer(body.expected_revision, 'expected_revision'),
+            string(body.reason, 'reason', 1024),
+            {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            },
+            (attempt) => {
+              this.managed.cancelInTransaction(attempt, request, 'session-revocation');
+            },
+          );
+          // The receipt commits before any asynchronous process/executor cleanup.
+          // Cleanup failure never restores authority or implies a confirmed stop.
+          this.scheduleRevocationStop(receipt);
+          this.send(res, 202, receipt);
+          return;
+        }
         if (parts[3] === 'agents') {
           if (req.method === 'GET') {
             const profile = url.searchParams.get('profile');
@@ -1542,6 +1714,7 @@ export class SalaamService {
             client_id: string(body.client_id, 'client_id', 128),
             token: string(body.token, 'token', 128),
           });
+          this.store.execution.assert(id);
           const session = this.supervisor.inspect(id);
           if (
             session.provider_route &&
@@ -1679,6 +1852,7 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    clearInterval(this.authorityTimer);
     this.inbox.close();
     this.recurring.close();
     this.jobs.close();
@@ -1689,6 +1863,7 @@ export class SalaamService {
     const errors: unknown[] = [];
     try {
       await this.a2aInbound?.close();
+      await Promise.allSettled(this.revocationStops);
       await this.external.close();
       await this.coding.close();
       try {

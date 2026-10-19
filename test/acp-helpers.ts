@@ -3,8 +3,10 @@ import { once } from 'node:events';
 import { join } from 'node:path';
 import { ROOT } from '../src/config.js';
 import { until } from './helpers.js';
-export function client(state: string) {
-  const child = spawn(process.execPath, [join(ROOT, 'bin/salaam.mjs'), 'acp', '--state', state]);
+export function client(state: string, env: Record<string, string> = {}) {
+  const child = spawn(process.execPath, [join(ROOT, 'bin/salaam.mjs'), 'acp', '--state', state], {
+    env: { ...process.env, ...env },
+  });
   let next = 0,
     buffer = '',
     stderr = '';

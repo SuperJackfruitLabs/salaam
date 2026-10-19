@@ -212,6 +212,7 @@ export class ExternalWork {
     });
   }
   assertActive(session: string, epoch: number, attempt: string): void {
+    this.store.execution.assert(session);
     const child = this.children.owned(session);
     if (!child || child.child_attempt !== attempt || this.paused || this.failed.has(child.id))
       throw new ServiceError('invocation_inactive', 'External invocation is inactive');
@@ -233,6 +234,7 @@ export class ExternalWork {
     this.binding(child);
   }
   async start(child: ChildTask): Promise<void> {
+    this.store.execution.assert(child.child_session);
     const row = this.row(child.id);
     if (row.state !== 'prepared' || this.paused) return;
     const b = this.binding(child),

@@ -615,6 +615,47 @@ export class ManagedWork {
       },
     );
   }
+  cancelInTransaction(attempt: string, request: string, actor = 'local-operator') {
+    if (!this.store.db.isTransaction) throw new Error('Cancellation requires a transaction');
+    const work = this.store.attempt(attempt);
+    this.store.db.prepare('INSERT OR IGNORE INTO cancellations VALUES (?,?)').run(attempt, actor);
+    if (work.state === 'accepted') {
+      this.store.db.prepare("UPDATE attempts SET state='cancelled' WHERE id=?").run(attempt);
+      this.store.db
+        .prepare("UPDATE submissions SET state='cancelled' WHERE id=?")
+        .run(work.submission_id);
+      this.store.finishChild?.(this.store.attempt(attempt));
+      this.store.projectTaskAttempt?.(this.store.attempt(attempt));
+    }
+    const ops = this.store.db
+      .prepare(
+        "SELECT * FROM operations WHERE attempt_id=? AND state IN ('prepared','dispatching')",
+      )
+      .all(attempt) as unknown as Operation[];
+    for (const op of ops) {
+      this.invalidateApproval(this.forOperation(op.id), 'invalidated');
+      this.transition(
+        op,
+        op.state === 'prepared' ? 'cancelled_before_dispatch' : 'outcome_unknown',
+        'Cancellation requested',
+      );
+    }
+    this.store.cancelChildren?.(attempt);
+    this.store.event(work.session_id, 'attempt.cancel_requested', { attempt_id: attempt }, request);
+    return {
+      attempt_id: attempt,
+      cancel_requested: true as const,
+      unresolved_operations: (
+        this.store.db
+          .prepare("SELECT id FROM operations WHERE attempt_id=? AND state='outcome_unknown'")
+          .all(attempt) as { id: string }[]
+      ).map((row) => row.id),
+    };
+  }
+  abortCancelled(attempt: string): void {
+    for (const [id, active] of this.active)
+      if (this.operation(id).attempt_id === attempt) active.controller.abort();
+  }
   cancel(
     attempt: string,
     request: string,
@@ -632,50 +673,10 @@ export class ManagedWork {
           throw new ServiceError('revision_conflict', 'Session revision changed');
         if (!['accepted', 'dispatching', 'running'].includes(work.state))
           throw new ServiceError('attempt_settled', 'Attempt already settled');
-        this.store.db
-          .prepare("INSERT OR IGNORE INTO cancellations VALUES (?,'local-operator')")
-          .run(attempt);
-        if (work.state === 'accepted') {
-          this.store.db.prepare("UPDATE attempts SET state='cancelled' WHERE id=?").run(attempt);
-          this.store.db
-            .prepare("UPDATE submissions SET state='cancelled' WHERE id=?")
-            .run(work.submission_id);
-          this.store.finishChild?.(this.store.attempt(attempt));
-          this.store.projectTaskAttempt?.(this.store.attempt(attempt));
-        }
-        const ops = this.store.db
-          .prepare(
-            "SELECT * FROM operations WHERE attempt_id=? AND state IN ('prepared','dispatching')",
-          )
-          .all(attempt) as unknown as Operation[];
-        for (const op of ops) {
-          this.invalidateApproval(this.forOperation(op.id), 'invalidated');
-          this.transition(
-            op,
-            op.state === 'prepared' ? 'cancelled_before_dispatch' : 'outcome_unknown',
-            'Cancellation requested',
-          );
-        }
-        this.store.cancelChildren?.(attempt);
-        this.store.event(
-          work.session_id,
-          'attempt.cancel_requested',
-          { attempt_id: attempt },
-          request,
-        );
-        return {
-          attempt_id: attempt,
-          cancel_requested: true as const,
-          unresolved_operations: (
-            this.store.db
-              .prepare("SELECT id FROM operations WHERE attempt_id=? AND state='outcome_unknown'")
-              .all(attempt) as { id: string }[]
-          ).map((row) => row.id),
-        };
+        return this.cancelInTransaction(attempt, request);
       },
     );
-    for (const [id, active] of this.active)
-      if (this.operation(id).attempt_id === attempt) active.controller.abort();
+    this.abortCancelled(attempt);
     return receipt;
   }
   pause(): void {

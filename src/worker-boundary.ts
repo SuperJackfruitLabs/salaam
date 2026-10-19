@@ -358,6 +358,7 @@ export class WorkerBoundary {
     });
   }
   assert(child: ChildTask, epoch: number, route: ProviderRoute): WorkerBoundaryView {
+    this.store.execution.assert(child.child_session);
     const view = this.validate(child, route);
     this.store.assertEpoch(child.child_session, epoch);
     if (

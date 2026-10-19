@@ -275,6 +275,7 @@ export class Supervisor extends EventEmitter {
     }
   }
   async start(id: string): Promise<void> {
+    this.store.execution.assert(id);
     const child = this.children?.owned(id);
     if (child && this.store.workerBoundary.view(child.id).binding.runtime !== 'native-pi')
       throw new ServiceError(
@@ -502,6 +503,7 @@ export class Supervisor extends EventEmitter {
       // Pi buffers setup-only entries until there is a conversation. Do not
       // persist a cursor into that ephemeral tree before its file exists.
       if (existsSync(file)) await this.syncEntries(worker);
+      this.store.execution.assert(id);
       if (child) this.store.workerBoundary.accepted(child, epoch, route);
       this.store.state(
         id,
@@ -576,6 +578,12 @@ export class Supervisor extends EventEmitter {
     }
     if (w.invalid || w.stopping)
       throw new ServiceError('worker_unavailable', 'Worker is not available', 403);
+    try {
+      this.store.execution.assert(id);
+    } catch (error) {
+      this.invalidate(w, 'Session execution authority revoked');
+      throw error;
+    }
     if (method === 'handshake') {
       try {
         if (w.manifest) throw new Error('Duplicate handshake');
@@ -973,6 +981,15 @@ export class Supervisor extends EventEmitter {
     }
   }
   inspect(id: string): Session {
+    if (this.store.execution.revocation(id)) {
+      const session = this.store.session(id);
+      return {
+        ...session,
+        state: ['starting', 'ready'].includes(session.state) ? 'unhealthy' : session.state,
+        capabilities: [],
+        error: 'Session execution authority revoked',
+      };
+    }
     const externalChild = this.children?.owned(id);
     if (externalChild && this.store.workerBoundary.view(externalChild.id).binding.external)
       return this.store.session(id);
@@ -1013,6 +1030,7 @@ export class Supervisor extends EventEmitter {
     return state;
   }
   assertActive(id: string, epoch: number, attempt: string): void {
+    this.store.execution.assert(id);
     const w = this.workers.get(id);
     if (
       !w ||
@@ -1046,6 +1064,7 @@ export class Supervisor extends EventEmitter {
     }
   }
   assertIdle(id: string): Worker {
+    this.store.execution.assert(id);
     const w = this.workers.get(id);
     if (!w?.ready || w.invalid || w.stopping || !w.pi || this.store.session(id).state !== 'ready')
       throw new ServiceError('not_ready', 'A ready worker is required');
@@ -1234,6 +1253,10 @@ export class Supervisor extends EventEmitter {
       entries: entries.entries as { id: string }[],
       leaf: typeof entries.leafId === 'string' ? entries.leafId : null,
     };
+  }
+  async stopSession(id: string): Promise<void> {
+    const w = this.workers.get(id);
+    if (w) await this.stopWorker(w);
   }
   private async stopWorker(w: Worker): Promise<void> {
     if (w.stopping) {

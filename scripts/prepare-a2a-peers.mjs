@@ -61,7 +61,7 @@ for (const entry of pins.openclaw.sources) {
     `https://raw.githubusercontent.com/openclaw/openclaw/${pins.openclaw.commit}/${entry.path}`,
     { redirect: 'error', signal: AbortSignal.timeout(30000) },
   );
-  if (!response.ok) throw Error('Pinned source unavailable');
+  if (!response.ok) throw Error(`Pinned OpenClaw source unavailable (HTTP ${response.status})`);
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length > 131072) throw Error('Pinned plugin source exceeds bound');
   const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
@@ -92,7 +92,7 @@ const archive = join(target, 'hermes.tgz'),
     redirect: 'follow',
     signal: AbortSignal.timeout(60000),
   });
-if (!response.ok) throw Error('Pinned Hermes source unavailable');
+if (!response.ok) throw Error(`Pinned Hermes source unavailable (HTTP ${response.status})`);
 const bytes = Buffer.from(await response.arrayBuffer());
 if (
   bytes.length > 128 * 1024 * 1024 ||

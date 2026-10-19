@@ -1369,6 +1369,58 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (group === 'session' && verb === 'revocation' && id) {
+    console.log(JSON.stringify(await call(socket, `/v1/sessions/${id}/revocation`), null, 2));
+    return;
+  }
+  if (group === 'session' && verb === 'revoke' && id) {
+    const reason = option('--reason');
+    if (!reason) throw new Error('Supply --reason');
+    const request_id = option('--request-id') ?? randomUUID();
+    const saved = await call<import('./execution-authority.js').SessionRevocation | null>(
+      socket,
+      `/v1/sessions/${id}/revocation`,
+    );
+    if (saved?.request_id === request_id && saved.session_id === id) {
+      if (saved.reason !== reason) throw new Error('Request ID already binds a different reason');
+      console.log(JSON.stringify(saved, null, 2));
+      return;
+    }
+    const client = randomUUID();
+    const lease = await acquireControl(socket, id, client, args.includes('--takeover'));
+    const controller = { client_id: client, token: lease.token };
+    try {
+      console.log(JSON.stringify({ request_id }));
+      for (let retry = 0; ; retry++) {
+        const snapshot = await call<SessionSnapshot>(socket, `/v1/sessions/${id}/snapshot`);
+        try {
+          console.log(
+            JSON.stringify(
+              await call(socket, `/v1/sessions/${id}/revoke`, {
+                ...controller,
+                request_id,
+                expected_revision: snapshot.revision,
+                reason,
+              }),
+              null,
+              2,
+            ),
+          );
+          break;
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'revision_conflict' || retry >= 7) throw error;
+        }
+      }
+    } finally {
+      await call(socket, `/v1/sessions/${id}/control`, {
+        ...controller,
+        request_id: randomUUID(),
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'session' && verb === 'cancel' && id) {
     const attempt = option('--attempt');
     if (!attempt) throw new Error('Supply --attempt');
@@ -1461,11 +1513,13 @@ async function main(): Promise<void> {
       codingSocket = option('--coding-socket'),
       harnessConfig = option('--harness-config'),
       a2aConfig = option('--a2a-config'),
+      agentpodConfig = option('--agentpod-config'),
       a2aListenConfig = option('--a2a-listen-config');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
         providerRoute: route,
+        agentpodConfig: agentpodConfig ? resolve(agentpodConfig) : undefined,
         codingRoot: codingRoot ? resolve(codingRoot) : undefined,
         codingSocket: codingSocket ? resolve(codingSocket) : undefined,
         harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
@@ -1489,12 +1543,27 @@ async function main(): Promise<void> {
       return;
     }
     let health:
-      | { provider_route?: unknown; coding_root?: string | null; coding_socket?: string | null }
+      | {
+          provider_route?: unknown;
+          coding_root?: string | null;
+          coding_socket?: string | null;
+          agentpod_config?: string | null;
+          agentpod_pins_digest?: string | null;
+        }
       | undefined;
     try {
       health = await call(socket, '/v1/health');
     } catch {}
     if (health) {
+      if (
+        (health.agentpod_config ?? null) !== (agentpodConfig ? resolve(agentpodConfig) : null) ||
+        (agentpodConfig &&
+          health.agentpod_pins_digest !==
+            digest(JSON.parse(readFileSync(resolve(agentpodConfig), 'utf8'))))
+      )
+        throw new Error(
+          'Service is already running with different AgentPod authority pins; stop it first',
+        );
       if (canonical(health.provider_route ?? providerRoute()) !== canonical(route))
         throw new Error('Service is already running with another provider route; stop it first');
       if (
@@ -1529,6 +1598,7 @@ async function main(): Promise<void> {
         ...(codingSocket ? ['--coding-socket', resolve(codingSocket)] : []),
         ...(harnessConfig ? ['--harness-config', resolve(harnessConfig)] : []),
         ...(a2aConfig ? ['--a2a-config', resolve(a2aConfig)] : []),
+        ...(agentpodConfig ? ['--agentpod-config', resolve(agentpodConfig)] : []),
         ...(a2aListenConfig ? ['--a2a-listen-config', resolve(a2aListenConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },

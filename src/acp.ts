@@ -38,6 +38,19 @@ interface Connection {
 export async function acp(state: string, options: { coding?: boolean } = {}): Promise<void> {
   const socket = join(state, 'operator.sock');
   const journal = new AcpJournal(state);
+  const admission = process.env.SALAAM_AGENTPOD_ADMISSION,
+    admissionToken = process.env.SALAAM_AGENTPOD_TOKEN;
+  delete process.env.SALAAM_AGENTPOD_ADMISSION;
+  delete process.env.SALAAM_AGENTPOD_TOKEN;
+  if (!!admission !== !!admissionToken)
+    throw Error('AgentPod admission requires both credential fields');
+  const bound = admission
+    ? await call<{ session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding }>(
+        socket,
+        '/v1/agentpod/attach',
+        { admission_id: admission, token: admissionToken },
+      )
+    : undefined;
   let closed = false,
     initialized = false;
   const sessions = new Map<string, Connection>();
@@ -314,6 +327,11 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
   const connect = async (id: string, replayHistory: boolean, params: Json) => {
     if (sessions.has(id)) throw new Error('Session already connected on this transport');
     const view = await snapshot(id);
+    if (
+      (bound && bound.session_id !== id) ||
+      (view.agentpod_admission_id && view.agentpod_admission_id !== admission)
+    )
+      throw Error('ACP transport differs from its bound AgentPod admission');
     if (view.cwd !== realpathSync(string(params.cwd, 'cwd')))
       throw new Error('Session working directory differs');
     const c: Connection = {
@@ -412,6 +430,16 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       )
         throw new Error('Use an absolute cwd and no extra MCP servers/directories');
       if (method === 'session/new') {
+        if (bound) {
+          if (options.coding || object(params._meta ?? {})['salaam.dev/coding'])
+            throw Error('AgentPod admission has no coding authority');
+          await call(socket, '/v1/agentpod/attach', {
+            admission_id: admission,
+            token: admissionToken,
+          });
+          await connect(bound.session_id, false, params);
+          return { sessionId: bound.session_id };
+        }
         const coding = object(params._meta ?? {})['salaam.dev/coding'] ?? options.coding ?? false;
         if (typeof coding !== 'boolean') throw new Error('Coding selection must be a boolean.');
         if (coding) {

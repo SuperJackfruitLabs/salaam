@@ -61,6 +61,7 @@ export class TaskBudget {
     throw new TaskBudgetError(session, message);
   }
   check(session: string): void {
+    this.store.execution.assert(session);
     const task = this.task(session);
     if (!task) return;
     this.store.jobGrantCheck?.(task.session_id);

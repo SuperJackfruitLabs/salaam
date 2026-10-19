@@ -143,6 +143,7 @@ export interface Controller {
   token: string;
 }
 export interface SessionSnapshot extends Session {
+  agentpod_admission_id?: string;
   team?: unknown;
   agents?: ReturnType<import('./agent-profiles.js').AgentProfiles['snapshot']>;
   inbox?: import('./operator-inbox.js').InboxEntry[];
