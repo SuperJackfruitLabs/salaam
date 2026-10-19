@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { once } from 'node:events';
@@ -23,6 +23,7 @@ interface Connection {
   lease?: ControlLease;
   client: string;
   seen: Set<string>;
+  promptStates: Map<string, string>;
   liveTools: Set<string>;
   operations: Map<string, string>;
   permissions: Set<string>;
@@ -52,7 +53,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       )
     : undefined;
   let closed = false,
-    initialized = false;
+    initialized = false,
+    wantsReceipts = false;
   const sessions = new Map<string, Connection>();
   const permissionReplies = new Map<string, (result: Json) => Promise<void>>();
   const activeRequests = new Set<string>();
@@ -64,12 +66,50 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     });
     return output;
   };
-  const update = (id: string, value: unknown) =>
-    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: id, update: value } });
-  const text = (id: string, role: string, content: string, message: string) =>
+  const update = (id: string, value: Json) => {
+    const stable = typeof value.messageId === 'string' || value.toolCallId !== undefined;
+    const out = stable
+      ? {
+          ...value,
+          _meta: {
+            ...object(value._meta ?? {}),
+            'salaam.dev/updateId': createHash('sha256')
+              .update(JSON.stringify({ id, value }))
+              .digest('hex'),
+          },
+        }
+      : value;
+    return send({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: { sessionId: id, update: out },
+    });
+  };
+  const promptReceipt = async (session: string, request: string, attemptId: string) => {
+    if (!bound || !wantsReceipts) return;
+    const attempt = await call<Attempt>(socket, `/v1/attempts/${attemptId}`);
+    const state =
+      attempt.state === 'completed'
+        ? 'completed'
+        : ['interrupted', 'failed', 'cancelled'].includes(attempt.state)
+          ? 'interrupted'
+          : 'accepted';
+    const connection = sessions.get(session);
+    if (connection?.promptStates.get(request) === state) return;
+    connection?.promptStates.set(request, state);
+    await update(session, {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '' },
+      _meta: {
+        'salaam.dev/promptReceipt': { sessionId: session, requestId: request, attemptId, state },
+      },
+    });
+  };
+  const text = (id: string, role: string, content: string, message: string, part = 0) =>
     update(id, {
       sessionUpdate: role === 'user' ? 'user_message_chunk' : 'agent_message_chunk',
       messageId: message,
+      _meta: { 'salaam.dev/sourcePart': part },
       content: { type: 'text', text: content },
     });
   const snapshot = (id: string) => call<SessionSnapshot>(socket, `/v1/sessions/${id}/snapshot`);
@@ -107,7 +147,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
                 ? message.content.map(object)
                 : [];
           if (message.role === 'user' || message.role === 'assistant') {
-            for (const part of parts) {
+            for (const [partIndex, part] of parts.entries()) {
               // The editor already displays its submitted prompt. User chunks belong
               // to explicit history loading, otherwise Zed renders a second copy.
               if (
@@ -115,7 +155,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
                 typeof part.text === 'string' &&
                 (message.role !== 'user' || includeUsers)
               )
-                await text(c.id, String(message.role), part.text, item.entry_id);
+                await text(c.id, String(message.role), part.text, item.entry_id, partIndex);
               if (part.type === 'toolCall' && !c.liveTools.has(String(part.id))) {
                 c.liveTools.add(String(part.id));
                 await update(c.id, {
@@ -225,6 +265,14 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         c.dirty = false;
         const view = await snapshot(c.id);
         await replay(c, true);
+        if (bound && wantsReceipts)
+          for (const record of journal.records(c.id)) {
+            if (
+              record.receipt &&
+              !['completed', 'interrupted'].includes(c.promptStates.get(record.request_id) ?? '')
+            )
+              await promptReceipt(c.id, record.request_id, record.receipt.attempt_id);
+          }
         await approvals(c, view);
         const inbox = JSON.stringify(view.inbox ?? []);
         if (c.inboxDigest !== inbox && (inbox !== '[]' || c.inboxDigest !== undefined)) {
@@ -338,6 +386,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       id,
       client: randomUUID(),
       seen: new Set(),
+      promptStates: new Map(),
       liveTools: new Set(),
       operations: new Map(),
       permissions: new Set(),
@@ -371,6 +420,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         await call(socket, `/v1/sessions/${id}/resume`, actor);
         for (const pending of journal.pending(id)) await journal.dispatch(socket, pending, actor);
       }
+      for (const record of journal.records(id))
+        if (record.receipt) await promptReceipt(id, record.request_id, record.receipt.attempt_id);
       await approvals(c, view);
       watch(c);
     } catch (error) {
@@ -394,7 +445,15 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       if (!Number.isSafeInteger(params.protocolVersion))
         throw new Error('Invalid protocol version');
       initialized = params.protocolVersion === 1;
+      const advertised = object(object(params.clientCapabilities ?? {})._meta ?? {})[
+        'salaam.dev/features'
+      ];
+      wantsReceipts =
+        advertised !== null &&
+        typeof advertised === 'object' &&
+        object(advertised).promptReceipts === 1;
       return {
+        _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } },
         protocolVersion: 1,
         agentCapabilities: {
           loadSession: true,
@@ -499,6 +558,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         : string(meta['salaam.dev/continuesAttemptId'], 'continuesAttemptId', 128),
     );
     const accepted = await journal.dispatch(socket, record, actor);
+    await promptReceipt(c.id, logical, accepted.attempt_id);
     while (!closed) {
       if (c.failed) throw c.failed;
       const attempt = await call<Attempt>(socket, `/v1/attempts/${accepted.attempt_id}`);
@@ -506,6 +566,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       if (!['accepted', 'dispatching', 'running'].includes(attempt.state)) {
         if (attempt.state === 'interrupted' || attempt.state === 'failed')
           throw new Error(attempt.error ?? 'Attempt did not complete');
+        await promptReceipt(c.id, logical, accepted.attempt_id);
         return {
           stopReason: attempt.state === 'cancelled' ? 'cancelled' : 'end_turn',
           _meta: { 'salaam.dev/requestId': logical, 'salaam.dev/attemptId': attempt.id },

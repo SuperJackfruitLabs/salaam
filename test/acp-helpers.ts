@@ -42,7 +42,8 @@ export function client(state: string, env: Record<string, string> = {}) {
     send,
     request,
     stderr: () => stderr,
-    initialize: () => request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
+    initialize: (capabilities: Record<string, unknown> = {}) =>
+      request('initialize', { protocolVersion: 1, clientCapabilities: capabilities }),
     permission: (id: string, approve: boolean) =>
       send({
         jsonrpc: '2.0',

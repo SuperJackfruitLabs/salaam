@@ -83,11 +83,14 @@ export class AcpJournal {
     this.save(value);
     return value;
   }
-  pending(session: string): Record[] {
+  records(session: string): Record[] {
     return readdirSync(this.dir)
       .filter((n) => /^[a-f0-9-]{36}\.json$/i.test(n))
       .map((n) => JSON.parse(readFileSync(join(this.dir, n), 'utf8')) as Record)
-      .filter((r) => r.session === session && !r.receipt);
+      .filter((r) => r.session === session);
+  }
+  pending(session: string): Record[] {
+    return this.records(session).filter((r) => !r.receipt);
   }
   async dispatch(socket: string, value: Record, controller: Controller) {
     if (value.receipt) return value.receipt;

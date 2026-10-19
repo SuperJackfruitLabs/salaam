@@ -138,3 +138,27 @@ principals and board ownership; a passing run proves this local integration,
 not a live Accounts deployment, Superpipeline server or production substrate.
 The next packets cover fuller session UX/reconciliation and station filesystem,
 credential and managed-MCP isolation before broad first-class harness claims.
+
+## Consumer prompt recovery follow-on
+
+M19.2 adds acceptance receipts in bound ACP update metadata:
+`_meta["salaam.dev/promptReceipt"]` names the original logical request, local
+session, attempt and observed state. It grants no authority. Reconnecting the
+adapter republishes saved journal receipts; it does not invent another request.
+`_meta["salaam.dev/updateId"]` identifies stable message parts and tool updates
+so a consumer can deduplicate load history. User message parts include their
+position, preserving repeated identical text in one history entry.
+
+AgentPod's shared contract accepts a client prompt UUID and an additive prompt
+receipt. Its private consumer ledger binds immutable input to the original Hub
+session and request. Prepared work can recover after a crash before dispatch commit;
+a committed dispatch with an uncertain outcome is never automatically sent again.
+Bound retries use the same logical ID through Salaam's journal. They cannot restart
+an interrupted attempt or replay unknown effects. The browser retains an unacknowledged
+ID across reloads; older clients without an ID retain their earlier retry semantics.
+
+The adapter advertises v1 `promptReceipts` and `updateIds` under
+`_meta["salaam.dev/features"]`. A client must request receipt notifications in
+its initialize capabilities; older Hubs receive their existing update stream.
+The new Hub refuses an adapter without these versions before forwarding prompts.
+Upgrade the adapter before the Hub; the flags are affordances, never authority.
