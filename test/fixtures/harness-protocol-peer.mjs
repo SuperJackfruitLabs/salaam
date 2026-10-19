@@ -16,6 +16,11 @@ const terminal = (status) =>
     params: { threadId: thread, turn: { id: mode === 'foreign' ? 'wrong-turn' : turn, status } },
   });
 let prompt;
+const finishAcpPrompt = (stopReason) => {
+  if (prompt === undefined) return;
+  send({ id: prompt, result: { stopReason } });
+  prompt = undefined;
+};
 const permission = () =>
   send({
     id: 'permission',
@@ -41,8 +46,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   const m = JSON.parse(line);
   if (!m.method) {
     appendFileSync(audit, JSON.stringify({ permission_reply: m }) + '\n');
-    if (dialect === 'acp')
-      send({ id: prompt, result: { stopReason: m.error ? 'refusal' : 'end_turn' } });
+    if (dialect === 'acp') finishAcpPrompt(m.error ? 'refusal' : 'end_turn');
     else terminal(m.error ? 'failed' : 'completed');
     continue;
   }
@@ -86,7 +90,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     continue;
   }
   if (m.method === 'session/cancel') {
-    send({ id: prompt, result: { stopReason: 'cancelled' } });
+    finishAcpPrompt('cancelled');
     continue;
   }
   if (m.method === 'turn/interrupt') {
@@ -113,7 +117,7 @@ for await (const line of createInterface({ input: process.stdin })) {
           },
         },
       });
-      send({ id: m.id, result: { stopReason: 'end_turn' } });
+      finishAcpPrompt('end_turn');
     } else {
       if (mode === 'early') terminal('completed');
       send({ id: m.id, result: { turn: { id: turn, status: 'inProgress' } } });

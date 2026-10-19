@@ -353,13 +353,19 @@ test('a delayed approval cannot grant permission after cancellation revoked the 
     const done = p.prompt('one operation');
     while (!asked) await new Promise((r) => setTimeout(r, 5));
     await p.cancel();
-    release();
     await done;
+    expect(p.view()).toMatchObject({
+      state: 'terminal',
+      cancel_requested: true,
+      result: { stopReason: 'cancelled' },
+    });
+    release();
     for (let i = 0; i < 30 && !f.rows().some((r) => r.permission_reply); i++)
       await new Promise((r) => setTimeout(r, 5));
     const reply = f.rows().find((r) => r.permission_reply)?.permission_reply;
     expect(reply?.error).toBeTruthy();
     expect(reply?.result).toBeUndefined();
+    expect(f.rows().filter((r) => r.method === 'session/prompt')).toHaveLength(1);
   } finally {
     release?.();
     await p.close();
