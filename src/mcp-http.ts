@@ -27,6 +27,12 @@ export class McpHttpFailure extends ServiceError {
     super('mcp_call_failed', 'Managed MCP call did not return a valid bounded result');
   }
 }
+export class McpInputFailure extends ServiceError {
+  readonly sent = false;
+  constructor() {
+    super('invalid_mcp_arguments', 'MCP arguments do not match the admitted tool schema', 400);
+  }
+}
 class PinnedTransport extends StreamableHTTPClientTransport {
   constructor(
     url: URL,
@@ -64,6 +70,7 @@ export class ManagedHttpMcp {
   private invalid = false;
   private busy = false;
   private sent = false;
+  private definitions: Record<string, unknown>[] = [];
   private callSignal?: AbortSignal;
   private beforeSend?: () => void;
   private validators = new Map<
@@ -132,11 +139,16 @@ export class ManagedHttpMcp {
         });
       }
       if (this.invalid || this.stopped.signal.aborted) throw new McpHttpFailure(false);
+      this.definitions = definitions.filter((t) => this.pin.tools.some((p) => p.name === t.name));
       this.ready = true;
     } catch {
       await this.close();
       throw new McpHttpFailure(false);
     }
+  }
+  describe(): Record<string, unknown>[] {
+    if (!this.ready || this.invalid || this.stopped.signal.aborted) throw new McpHttpFailure(false);
+    return this.redact(this.definitions) as Record<string, unknown>[];
   }
   private async catalog(signal?: AbortSignal) {
     // Avoid Client.listTools() compiling output validators from unreviewed remote schemas.
@@ -193,7 +205,7 @@ export class ManagedHttpMcp {
         this.redact(encoded) !== encoded
       )
         throw new McpHttpFailure(false);
-      if (!validators.input(parameters).valid) throw new McpHttpFailure(false);
+      if (!validators.input(parameters).valid) throw new McpInputFailure();
       this.callSignal = AbortSignal.any([signal, AbortSignal.timeout(this.limits.timeout_ms)]);
       this.callSignal.throwIfAborted();
       await this.catalog(this.callSignal);
@@ -214,7 +226,8 @@ export class ManagedHttpMcp {
       )
         throw new McpHttpFailure(this.sent);
       return this.result(result);
-    } catch {
+    } catch (error) {
+      if (error instanceof McpInputFailure) throw error;
       throw new McpHttpFailure(this.sent);
     } finally {
       this.busy = false;

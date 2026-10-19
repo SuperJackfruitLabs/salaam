@@ -3,7 +3,12 @@ import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import type { Artifacts } from './artifacts.js';
 import { McpAdmission } from './mcp-admission.js';
-import { ManagedHttpMcp, McpHttpFailure, type McpReturnedResult } from './mcp-http.js';
+import {
+  ManagedHttpMcp,
+  McpHttpFailure,
+  McpInputFailure,
+  type McpReturnedResult,
+} from './mcp-http.js';
 import {
   mcpAssignment,
   redactMcpData,
@@ -16,6 +21,7 @@ import type { AgentPodBinding } from './agentpod-protocol.js';
 
 export interface McpConnection {
   connect(): Promise<void>;
+  describe?(): Record<string, unknown>[];
   call(
     name: string,
     args: Record<string, unknown>,
@@ -58,7 +64,8 @@ export interface McpCall {
   revision: number;
   created_at: number;
 }
-type View = ReturnType<McpAdmission['accept']>;
+export type McpWorkerBinding = ReturnType<McpAdmission['accept']>;
+type View = McpWorkerBinding;
 interface Assigned {
   assignment: McpAssignment;
   view: View;
@@ -80,6 +87,12 @@ export class McpWork {
   private assignments = new Map<string, Assigned>();
   private active = new Map<string, Active>();
   private fatal = new Set<string>();
+  private stopFailures = new Set<string>();
+  private readiness = new Map<string, { done: Promise<View>; clients: Set<McpConnection> }>();
+  private catalogs = new Map<
+    string,
+    { assignment: string; servers: Record<string, Record<string, unknown>[]> }
+  >();
   private closing = false;
   private assertOwned = (operation: Operation) => this.assertOperation(operation);
   constructor(
@@ -153,13 +166,81 @@ export class McpWork {
       this.store.event(session, 'mcp.assigned', view);
     });
     this.assignments.set(session, { assignment, view });
-    if (changed)
+    if (changed) {
+      this.catalogs.delete(session);
+      for (const client of this.readiness.get(session)?.clients ?? [])
+        void this.closeClient(session, client).catch(() => {});
       for (const active of this.active.values()) if (active.session === session) this.abort(active);
+    }
     if (!this.store.hasUnknown(session)) this.fatal.delete(session);
     return view;
   }
+  /** Readiness inspects the actual pinned protocol/catalog; it grants no tools/call. */
+  ready(session: string): Promise<View> {
+    const existing = this.readiness.get(session);
+    if (existing) return existing.done;
+    const job = {
+      clients: new Set<McpConnection>(),
+      done: Promise.resolve(null as unknown as View),
+    };
+    this.readiness.set(session, job);
+    job.done = (async () => {
+      try {
+        const assigned = this.live(session),
+          profile = this.options.admission.profile();
+        const servers: Record<string, Record<string, unknown>[]> = {};
+        for (const pin of profile.servers) {
+          const server = assigned.assignment.servers.find((s) => s.name === pin.name)!;
+          const client =
+            this.options.connection?.(server, pin, profile.limits) ??
+            new ManagedHttpMcp(server, pin, profile.limits);
+          job.clients.add(client);
+          try {
+            await client.connect();
+            if (!client.describe) throw new Error('MCP readiness catalog unavailable');
+            servers[pin.name] = client.describe();
+          } finally {
+            await this.closeClient(session, client);
+            job.clients.delete(client);
+          }
+          this.assertBinding(session, assigned.view);
+        }
+        this.catalogs.set(session, { assignment: assigned.view.assignment_digest, servers });
+        return assigned.view;
+      } catch (error) {
+        this.fail(session, error as Error);
+        throw new ServiceError(
+          'mcp_readiness_failed',
+          'Required MCP protocol and catalog readiness failed',
+        );
+      } finally {
+        this.readiness.delete(session);
+      }
+    })();
+    return job.done;
+  }
+  assertBinding(session: string, binding: View): void {
+    if (canonical(this.live(session).view) !== canonical(binding))
+      throw new ServiceError(
+        'mcp_assignment_changed',
+        'Worker MCP assignment changed; restart required',
+      );
+  }
+  describe(session: string, binding: View, server?: string, tool?: string): unknown {
+    this.assertBinding(session, binding);
+    const catalog = this.catalogs.get(session);
+    if (!catalog || catalog.assignment !== binding.assignment_digest)
+      throw new ServiceError('mcp_not_ready', 'MCP catalog has not passed readiness');
+    if (server === undefined) return structuredClone(binding.servers);
+    const tools = catalog.servers[server];
+    if (!tools) throw new ServiceError('invalid_mcp_server', 'MCP server is not admitted', 400);
+    if (tool === undefined) return tools.map((t) => ({ name: t.name, description: t.description }));
+    const definition = tools.find((t) => t.name === tool);
+    if (!definition) throw new ServiceError('invalid_mcp_tool', 'MCP tool is not admitted', 400);
+    return structuredClone(definition);
+  }
   private live(session: string): Assigned {
-    if (this.closing || this.fatal.has(session))
+    if (this.closing || this.fatal.has(session) || this.stopFailures.has(session))
       throw new ServiceError('mcp_unavailable', 'MCP execution controller is unavailable');
     const assigned = this.assignments.get(session);
     if (!assigned)
@@ -476,24 +557,31 @@ export class McpWork {
           if (current.operation_id) {
             const possible =
               current.state === 'dispatching' ||
-              (active.invoking && (!(error instanceof McpHttpFailure) || error.sent));
+              (active.invoking &&
+                (!(error instanceof McpHttpFailure || error instanceof McpInputFailure) ||
+                  error.sent));
             if (possible) this.managed.mcpUnknownInTransaction(current.operation_id);
             else this.managed.mcpNotSentInTransaction(current.operation_id);
           }
           const unknown =
             current.operation_id &&
             this.managed.operation(current.operation_id).state === 'outcome_unknown';
-          this.change(current, unknown ? 'outcome_unknown' : 'failed_definite', 'mcp_call_failed');
+          this.change(
+            current,
+            unknown ? 'outcome_unknown' : 'failed_definite',
+            error instanceof McpInputFailure ? error.code : 'mcp_call_failed',
+          );
         });
       }
-      this.fail(
-        call.session_id,
-        error instanceof McpHttpFailure
-          ? error
-          : new ServiceError('mcp_control_failed', 'Required MCP execution control failed'),
-      );
+      if (!(error instanceof McpInputFailure))
+        this.fail(
+          call.session_id,
+          error instanceof McpHttpFailure
+            ? error
+            : new ServiceError('mcp_control_failed', 'Required MCP execution control failed'),
+        );
     } finally {
-      active.closing ??= active.client?.close();
+      active.closing ??= active.client && this.closeClient(active.session, active.client);
       await active.closing;
     }
   }
@@ -531,7 +619,7 @@ export class McpWork {
   }
   private abort(active: Active): void {
     active.controller.abort();
-    active.closing ??= active.client?.close();
+    active.closing ??= active.client && this.closeClient(active.session, active.client);
     active.closing?.catch((error) => this.fail(active.session, error as Error));
   }
   abortAttempt(attempt: string): void {
@@ -570,13 +658,56 @@ export class McpWork {
       active_calls: [...this.active.entries()]
         .filter(([, a]) => a.session === session)
         .map(([id]) => id),
+      local_resources_stopped: this.stopped(session),
+      control_error: this.fatal.has(session) ? 'mcp_control_failed' : null,
     };
+  }
+  private async closeClient(session: string, client: McpConnection): Promise<void> {
+    try {
+      await client.close();
+    } catch {
+      this.stopFailures.add(session);
+      const error = new ServiceError(
+        'mcp_stop_unconfirmed',
+        'MCP local transport cleanup could not be confirmed',
+      );
+      this.fail(session, error);
+      throw error;
+    }
+  }
+  stopped(session: string): boolean {
+    return (
+      !this.stopFailures.has(session) &&
+      !this.readiness.has(session) &&
+      ![...this.active.values()].some((a) => a.session === session)
+    );
+  }
+  async stopSession(session: string): Promise<void> {
+    const readiness = this.readiness.get(session);
+    await Promise.allSettled(
+      [...(readiness?.clients ?? [])].map((client) => this.closeClient(session, client)),
+    );
+    const active = [...this.active.values()].filter((a) => a.session === session);
+    for (const call of active) this.abort(call);
+    await Promise.allSettled([
+      ...active.map((a) => a.done),
+      ...(readiness ? [readiness.done] : []),
+    ]);
+    if (!this.stopped(session))
+      throw new ServiceError('mcp_stop_unconfirmed', 'MCP local resources have not stopped');
   }
   async close(): Promise<void> {
     this.closing = true;
+    for (const [session, readiness] of this.readiness)
+      await Promise.allSettled(
+        [...readiness.clients].map((client) => this.closeClient(session, client)),
+      );
+    await Promise.allSettled([...this.readiness.values()].map((job) => job.done));
     for (const active of this.active.values()) this.abort(active);
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
     if (this.managed.options.assertMcpOperation === this.assertOwned)
       this.managed.options.assertMcpOperation = undefined;
+    if (this.stopFailures.size)
+      throw new ServiceError('mcp_stop_unconfirmed', 'MCP cleanup requires reconciliation');
   }
 }

@@ -7,7 +7,7 @@ import { Artifacts } from '../../src/artifacts.js';
 import { ManagedWork } from '../../src/managed.js';
 import { McpWork } from '../../src/mcp-work.js';
 import { McpAdmission } from '../../src/mcp-admission.js';
-import { McpHttpFailure } from '../../src/mcp-http.js';
+import { McpHttpFailure, McpInputFailure } from '../../src/mcp-http.js';
 import { mcpProfile } from '../../src/mcp-protocol.js';
 import { agentpodBinding } from '../../src/agentpod-protocol.js';
 import { digest, ServiceError } from '../../src/protocol.js';
@@ -53,6 +53,8 @@ function fixture(calls = 16) {
     echo: false,
     ungated: false,
     expireDuringConnect: false,
+    invalidArguments: false,
+    closeFailure: false,
   };
   const counters = { connects: 0 };
   const sent: { name: string; args: unknown }[] = [],
@@ -86,12 +88,16 @@ function fixture(calls = 16) {
           counters.connects++;
           if (mode.expireDuringConnect) mode.active = false;
         },
+        describe() {
+          return [{ name: 'library_search', inputSchema: { type: 'object' } }];
+        },
         async call(
           name: string,
           args: Record<string, unknown>,
           signal: AbortSignal,
           beforeSend: () => void,
         ) {
+          if (mode.invalidArguments) throw new McpInputFailure();
           if (!mode.ungated)
             try {
               beforeSend();
@@ -117,7 +123,9 @@ function fixture(calls = 16) {
             ],
           };
         },
-        async close() {},
+        async close() {
+          if (mode.closeFailure) throw new Error('fixture cleanup failed');
+        },
       }),
     });
   let work = makeWork();
@@ -185,7 +193,9 @@ function fixture(calls = 16) {
       work.assign(session.id, assignment);
     },
     async close() {
-      await work.close();
+      await work.close().catch((error) => {
+        if (!mode.closeFailure) throw error;
+      });
       await managed.close();
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -217,6 +227,63 @@ test('one logical MCP read retains its call and result receipt through retry and
     expect(() => f.prepare('read-once', 'library_search', { query: 'changed' })).toThrow(
       'different',
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test('readiness binds progressive discovery to the current assignment without sending tools/call', async () => {
+  const f = fixture();
+  try {
+    const binding = await f.work.ready(f.session.id);
+    expect(f.work.describe(f.session.id, binding, 'superlibrary', 'library_search')).toMatchObject({
+      name: 'library_search',
+    });
+    expect(f.sent).toHaveLength(0);
+    f.work.assign(f.session.id, { ...f.assignment, credential_generation: 2 });
+    expect(() => f.work.describe(f.session.id, binding)).toThrow(/changed/i);
+  } finally {
+    await f.close();
+  }
+});
+
+test('ordinary invalid tool arguments send nothing and preserve controller readiness', async () => {
+  const f = fixture();
+  try {
+    f.mode.invalidArguments = true;
+    const c = f.prepare('bad-arguments', 'fixture_mutate');
+    f.approve(c.id);
+    f.start(c.id);
+    await until(
+      () => f.work.get(c.id),
+      (v) => v.state === 'failed_definite',
+    );
+    expect(f.sent).toHaveLength(0);
+    expect(f.failures).toEqual([]);
+    expect(f.managed.operation(c.operation_id!).state).toBe('failed_definite');
+    f.mode.invalidArguments = false;
+    const next = f.prepare('valid-read');
+    f.start(next.id);
+    await until(
+      () => f.work.get(next.id),
+      (v) => v.state === 'returned',
+    );
+    expect(f.sent).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a failed transport close cannot be reported as stopped or cleared by reinstalling assignment', async () => {
+  const f = fixture();
+  try {
+    f.mode.closeFailure = true;
+    await expect(f.work.ready(f.session.id)).rejects.toThrow(/readiness/i);
+    expect(f.work.status(f.session.id).active_calls).toEqual([]);
+    expect(f.work.stopped(f.session.id)).toBe(false);
+    f.work.assign(f.session.id, f.assignment);
+    expect(() => f.prepare('after-cleanup-failure')).toThrow(/unavailable/i);
+    await expect(f.work.stopSession(f.session.id)).rejects.toThrow(/stopped/i);
   } finally {
     await f.close();
   }

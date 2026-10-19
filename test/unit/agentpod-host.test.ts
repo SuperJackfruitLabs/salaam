@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { planHost, readHost, hostUnit } from '../../src/host.js';
 import { digest } from '../../src/protocol.js';
+import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((p) => rmSync(p, { recursive: true, force: true })));
@@ -66,4 +67,31 @@ test('AgentPod startup planning rejects workspace-private overlap, unknown field
   await expect(planHost({ ...f.input, command: 'arbitrary' })).rejects.toThrow();
   chmodSync(f.config, 0o644);
   await expect(planHost(f.input)).rejects.toThrow(/private|owner-only/i);
+});
+
+test('managed MCP requires schema3 and a private authority-bound profile; old hosts cannot opt in by adding fields', async () => {
+  const f = fixture(),
+    config = join(f.root, 'mcp.json');
+  const profile = corpus.profiles[0]!.value;
+  writeFileSync(config, JSON.stringify(profile), { mode: 0o600 });
+  const m = await planHost({ ...f.input, mcp_config: config });
+  expect(m).toMatchObject({
+    schema: 3,
+    managed_mcp: { config, profile_digest: digest({ profile, pins_digest: digest(f.pins) }) },
+  });
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(m), { mode: 0o600 });
+  expect(readHost(file)).toEqual(m);
+  writeFileSync(file, JSON.stringify({ ...m, schema: 2 }));
+  expect(() => readHost(file)).toThrow(/fields/i);
+  writeFileSync(file, JSON.stringify(m));
+  writeFileSync(
+    config,
+    JSON.stringify({ ...profile, limits: { ...profile.limits, timeout_ms: 2000 } }),
+  );
+  expect(() => readHost(file)).toThrow(/profile|changed/i);
+  writeFileSync(config, JSON.stringify(profile));
+  chmodSync(config, 0o644);
+  expect(() => readHost(file)).toThrow(/profile|private/i);
+  await expect(planHost({ ...f.input, mcp_config: config })).rejects.toThrow();
 });

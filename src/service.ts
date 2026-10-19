@@ -33,14 +33,17 @@ import { ExternalWork } from './external-work.js';
 import type { ExternalBackend } from './external-runtime.js';
 import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
-import { AgentPodAuthority } from './agentpod-authority.js';
+import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
+import { McpAdmission } from './mcp-admission.js';
+import { McpWork } from './mcp-work.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
   agentpodConfig?: string;
+  managedMcp?: { config: string; profile_digest: string };
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
   a2aConfig?: string;
@@ -62,6 +65,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly mcp?: McpWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
@@ -104,6 +108,8 @@ export class SalaamService {
     this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
+    if (options.managedMcp && !options.agentpodConfig)
+      throw Error('Managed MCP requires reviewed AgentPod authority pins');
     if (
       options.agentpodConfig &&
       (options.codingRoot ||
@@ -116,11 +122,18 @@ export class SalaamService {
         options.a2aListenConfig)
     )
       throw new Error(
-        'AgentPod authority profile does not enable station writes, effects, external runtimes or MCP yet',
+        'AgentPod authority profile does not enable station writes, fixture effects or external runtimes',
       );
     this.codingSocket = options.codingSocket ? resolve(options.codingSocket) : null;
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.stateDir = realpathSync(this.stateDir);
+    const mcpAdmission = options.managedMcp
+      ? new McpAdmission(
+          options.managedMcp.config,
+          readAgentPodPins(resolve(options.agentpodConfig!), this.stateDir),
+          options.managedMcp.profile_digest,
+        )
+      : undefined;
     this.socket = join(this.stateDir, 'operator.sock');
     this.bridgeSocket = join(this.stateDir, 'bridge.sock');
     if (Buffer.byteLength(this.bridgeSocket) > 100)
@@ -326,14 +339,27 @@ export class SalaamService {
             resolve(options.agentpodConfig),
             (attempt) => {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
+              this.mcp?.cancelInTransaction(attempt, 'agentpod-revocation');
             },
+            (session) => this.mcp?.stopped(session) ?? true,
           );
+        if (options.managedMcp) {
+          this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
+            admission: mcpAdmission!,
+            current: (session) => this.agentpod!.binding(session),
+            assertActive: (session, epoch, attempt) =>
+              this.supervisor.assertActive(session, epoch, attempt),
+            failed: (session, error) => this.supervisor.failControl(session, error),
+          });
+          this.supervisor.mcp = this.mcp;
+        }
         this.cancellations = new TurnCancellations(
           this.store,
           this.managed,
           (id) => this.supervisor.attemptActive(id),
           async (attempt) => {
             this.managed.abortCancelled(attempt);
+            this.mcp?.abortAttempt(attempt);
             this.coding.cancelAttempt(attempt);
             const owned = this.children.owned(this.store.attempt(attempt).session_id);
             if (owned && this.store.workerBoundary.view(owned.id).binding.external)
@@ -344,6 +370,9 @@ export class SalaamService {
             }
           },
         );
+        this.cancellations.cancelAdditional = (attempt) => this.mcp?.cancelInTransaction(attempt);
+        this.cancellations.additionalResources = (session) =>
+          this.mcp && !this.mcp.stopped(session) ? ['managed-mcp:' + session] : [];
       } catch (error) {
         this.store.close();
         throw error;
@@ -407,6 +436,7 @@ export class SalaamService {
       service.children.recover();
       service.workerWorkspaces.recover();
       service.managed.recover();
+      service.mcp?.recover();
       await service.managed.reconcileAll();
       service.taskCheckpoints.recover();
       await service.jobs.recover();
@@ -460,8 +490,10 @@ export class SalaamService {
   ): Promise<void> {
     const jobs: Promise<unknown>[] = receipt.attempt_ids.map(async (attempt) => {
       this.managed.abortCancelled(attempt);
+      this.mcp?.abortAttempt(attempt);
     });
     for (const session of receipt.session_ids) {
+      if (this.mcp) jobs.push(this.mcp.stopSession(session));
       jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
       jobs.push(
         Promise.resolve().then(async () => {
@@ -590,6 +622,20 @@ export class SalaamService {
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'mcp-assign') {
+          if (!this.mcp)
+            throw new ServiceError('mcp_disabled', 'No reviewed managed MCP host profile', 403);
+          const current = this.agentpod.inspect(body.binding);
+          const old = this.mcp.status(current.session_id).assignment;
+          const assigned = this.mcp.assign(current.session_id, body.assignment);
+          if (old && old.assignment_digest !== assigned.assignment_digest)
+            this.supervisor.failControl(
+              current.session_id,
+              new Error('MCP assignment changed; restart required'),
+            );
+          this.send(res, 200, assigned);
           return;
         }
         const request = string(body.request_id, 'request_id', 128);
@@ -1162,6 +1208,9 @@ export class SalaamService {
           service_version: VERSION,
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
+          managed_mcp: this.mcp
+            ? { profile_digest: this.mcp.options.admission.profileDigest }
+            : null,
           service: 'healthy',
           a2a: {
             inbound_enabled: !!this.a2aInbound,
@@ -1318,6 +1367,7 @@ export class SalaamService {
             },
             (attempt) => {
               this.managed.cancelInTransaction(attempt, request, 'session-revocation');
+              this.mcp?.cancelInTransaction(attempt, 'session-revocation');
             },
           );
           // The receipt commits before any asynchronous process/executor cleanup.
@@ -1933,6 +1983,11 @@ export class SalaamService {
       await Promise.allSettled(this.revocationStops);
       await this.external.close();
       await this.coding.close();
+      try {
+        await this.mcp?.close();
+      } catch (error) {
+        errors.push(error);
+      }
       try {
         await this.children.close();
         await this.supervisor.close();

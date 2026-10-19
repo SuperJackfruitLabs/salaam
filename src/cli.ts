@@ -551,7 +551,10 @@ async function main(): Promise<void> {
           stateDir: m.state,
           ...(m.schema === 1
             ? { codingRoot: m.coding_root, codingSocket: m.coding_socket, expectedExecution: m }
-            : { agentpodConfig: m.agentpod_config }),
+            : {
+                agentpodConfig: m.agentpod_config,
+                ...(m.schema === 3 ? { managedMcp: m.managed_mcp } : {}),
+              }),
           hostManifestDigest: digest(m),
           providerRoute: m.provider,
         });

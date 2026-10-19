@@ -1,9 +1,10 @@
 # Managed MCP execution contract
 
-The admission, HTTP transport and call controller are internal foundations.
-Session MCP capability remains disabled until host startup, worker grants and
-node delivery use this controller. A passing component proof does not establish
-a usable AgentPod station integration.
+Managed MCP is an explicit, reviewed AgentPod host profile. Schema-2 hosts retain
+their existing behavior. Schema-3 hosts bind `mcp_config` and its authority-bound
+profile digest; they require a private node assignment and actual protocol/catalog
+readiness before starting a worker. Complete node delivery and station acceptance
+remain required before claiming a usable fleet integration.
 
 AgentPod owns the canonical profile and private assignment schemas in
 `packages/contract/src/salaam-mcp.ts`. Its `salaam-mcp-v1.json` corpus is mirrored
@@ -78,3 +79,22 @@ unknown mutation; after result storage it preserves the original receipt. Durabl
 cancellation closes the observed local response while retaining an accepted
 mutation as unknown. An empty active-call list is not a remote effect or process
 stop receipt; host stop confirmation must account for its actual owned resources.
+
+The daemon owns credentials and HTTP transport. Worker configuration and readiness
+contain only safe assignment fingerprints and reviewed policies. The progressive
+`salaam_mcp` tool discovers servers, lists admitted tools and retrieves one schema
+before making a call. Children receive no MCP authority. Each bridge and pre-send
+grant checks the current root lease, worker/attempt and assignment. Reinstalling
+the same assignment preserves a running call; rotation invalidates the worker's
+readiness and old decisions. Ordinary invalid tool arguments send nothing and do
+not invalidate the control plane. Profile, protocol or catalog failures do.
+
+Root revocation and turn cancellation commit MCP tombstones with their existing
+permission cancellation transaction before aborting transport. AgentPod stop and
+turn-cancellation receipts account for active MCP resources and failed cleanup;
+an empty active list cannot clear a transport-close failure. HTTP cleanup confirms
+only local resources, while unknown external mutations remain separate. The real
+pinned Pi/ACP proofs exercise readiness refusal, reconnect, daemon reopen with a
+fresh authority renewal, catalog drift, ordinary argument rejection, turn
+cancellation and root revocation against disposable HTTP servers. Their station
+and product data are synthetic, and their provider is offline.

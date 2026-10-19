@@ -35,6 +35,7 @@ interface WorkerConfig {
   route?: ProviderRoute;
   coding?: CodingBinding;
   worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
+  mcp?: import('./mcp-work.js').McpWorkerBinding;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -170,6 +171,74 @@ export default function house(pi: ExtensionAPI): void {
             receipt: operation.receipt ? JSON.parse(operation.receipt) : null,
           },
           isError: ['failed_definite', 'outcome_unknown'].includes(operation.state),
+        };
+      },
+    });
+  if (c.mcp && !c.child)
+    pi.registerTool({
+      name: 'salaam_mcp',
+      label: 'Managed station tools',
+      description:
+        'Discover reviewed station MCP tools progressively. Use catalog to list servers, then a server to list tools, then server+tool for its schema. Use call with that exact schema. Mutation replies are protocol results; they do not verify the external effect.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('catalog'), Type.Literal('call')]),
+        server: Type.Optional(Type.String({ maxLength: 128 })),
+        tool: Type.Optional(Type.String({ maxLength: 128 })),
+        arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+      }),
+      async execute(toolCallId, params, signal, _update, ctx) {
+        if (params.action === 'catalog') {
+          const result = await bridge('mcp.catalog', { server: params.server, tool: params.tool });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            details: { catalog: result },
+          };
+        }
+        type Result = {
+          call: import('./mcp-work.js').McpCall;
+          operation?: Operation;
+          approval?: Approval;
+          result: import('./mcp-http.js').McpReturnedResult | null;
+        };
+        const created = await bridge<Result>('mcp.prepare', {
+          tool_call_id: toolCallId,
+          args: { server: params.server, tool: params.tool, arguments: params.arguments ?? {} },
+        });
+        if (
+          created.approval &&
+          created.operation &&
+          created.call.state === 'prepared' &&
+          created.approval.state === 'pending'
+        )
+          await ctx.ui.confirm(
+            `salaam-approval:${created.approval.id}:${created.operation.operation_digest}`,
+            `${created.operation.target}\n${created.operation.value}\nBinding: ${created.operation.target_version}`,
+            { signal },
+          );
+        let result = await bridge<Result>('mcp.run', { call_id: created.call.id });
+        while (['prepared', 'dispatching'].includes(result.call.state)) {
+          if (signal?.aborted) throw new Error('Managed MCP invocation cancelled');
+          await new Promise((resolve) => setTimeout(resolve, 75));
+          result = await bridge<Result>(
+            result.call.state === 'prepared' ? 'mcp.run' : 'mcp.status',
+            { call_id: created.call.id },
+          );
+        }
+        return {
+          content: result.result?.content ?? [
+            {
+              type: 'text',
+              text: `MCP call ${result.call.state}${result.call.error ? ': ' + result.call.error : ''}`,
+            },
+          ],
+          details: {
+            call_id: result.call.id,
+            state: result.call.state,
+            operation_id: result.call.operation_id,
+            result_artifact: result.call.result_artifact,
+            structured_content: result.result?.structured_content,
+          },
+          isError: result.call.state !== 'returned' || !!result.result?.is_error,
         };
       },
     });
@@ -639,6 +708,7 @@ export default function house(pi: ExtensionAPI): void {
                     'salaam_history',
                     'salaam_files',
                     'salaam_command',
+                    'salaam_mcp',
                   ].includes(x.toolName),
               );
             const source = context.messages[realUser];
@@ -658,6 +728,7 @@ export default function house(pi: ExtensionAPI): void {
             const consume = /^\[consume\]\s+(\S+)\s+(\S+)(?:\s+(ack))?$/.exec(input);
             const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
             const coding = /^\[(files|command)\]\s+(.+)$/.exec(input);
+            const mcp = c.mcp && !c.child ? /^\[mcp\]\s+(.+)$/.exec(input) : null;
             const effectDisabled = managed?.[1] === 'effect' && !c.effects;
             if (!hasResult && !effectDisabled) {
               const nested =
@@ -665,8 +736,9 @@ export default function house(pi: ExtensionAPI): void {
               const toolCall: ToolCall = {
                 type: 'toolCall' as const,
                 id: `tool-${randomUUID()}`,
-                name:
-                  coding && c.coding && !c.child
+                name: mcp
+                  ? 'salaam_mcp'
+                  : coding && c.coding && !c.child
                     ? coding[1] === 'files'
                       ? 'salaam_files'
                       : 'salaam_command'
@@ -683,8 +755,9 @@ export default function house(pi: ExtensionAPI): void {
                               : managed
                                 ? 'salaam_review'
                                 : 'salaam_probe',
-                arguments:
-                  coding && c.coding && !c.child
+                arguments: mcp
+                  ? JSON.parse(mcp[1]!)
+                  : coding && c.coding && !c.child
                     ? JSON.parse(coding[2]!)
                     : history && !c.child
                       ? { artifact_id: history[1]! }
@@ -766,7 +839,11 @@ export default function house(pi: ExtensionAPI): void {
       session_id: c.session,
       epoch: c.epoch,
       pi_session_id: ctx.sessionManager.getSessionId(),
-      capabilities: workerCapabilities(c.coding, c.worker_binding?.binding.tools),
+      capabilities: workerCapabilities(
+        c.coding,
+        c.mcp ? ['salaam_mcp'] : c.worker_binding?.binding.tools,
+      ),
+      ...(c.mcp ? { mcp: c.mcp } : {}),
       ...(c.coding ? { coding: c.coding } : {}),
       tools: pi
         .getAllTools()

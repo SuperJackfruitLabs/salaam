@@ -4,6 +4,44 @@ import { canonical, digest, ServiceError } from './protocol.js';
 import { mcpProfile, mcpAssignment, type McpProfile } from './mcp-protocol.js';
 import type { AgentPodBinding, AgentPodPins } from './agentpod-protocol.js';
 
+export function readMcpProfile(path: string, pins: AgentPodPins): McpProfile {
+  try {
+    if (
+      !isAbsolute(path) ||
+      resolve(path) !== path ||
+      realpathSync(path) !== path ||
+      path === pins.workspace ||
+      path.startsWith(pins.workspace.replace(/\/$/, '') + sep)
+    )
+      throw Error('Unsafe profile path');
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let profile: McpProfile;
+    try {
+      const st = fstatSync(fd);
+      if (
+        !st.isFile() ||
+        st.uid !== process.getuid?.() ||
+        st.mode & 0o077 ||
+        st.nlink !== 1 ||
+        st.size > 262144
+      )
+        throw Error('Unsafe profile file');
+      profile = mcpProfile(JSON.parse(readFileSync(fd, 'utf8')));
+      const after = fstatSync(fd);
+      if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || after.nlink !== 1)
+        throw Error('Profile changed during read');
+    } finally {
+      closeSync(fd);
+    }
+    return profile;
+  } catch {
+    throw new ServiceError(
+      'mcp_profile_changed',
+      'Reviewed private MCP profile is unavailable or changed',
+    );
+  }
+}
+
 /** Profile integrity and data binding only. The caller must enforce the live authority lease. */
 export class McpAdmission {
   readonly pins: AgentPodPins;
@@ -17,36 +55,7 @@ export class McpAdmission {
   }
   profile(): McpProfile {
     try {
-      if (
-        !isAbsolute(this.path) ||
-        resolve(this.path) !== this.path ||
-        realpathSync(this.path) !== this.path ||
-        this.path === this.pins.workspace ||
-        this.path.startsWith(this.pins.workspace.replace(/\/$/, '') + sep)
-      )
-        throw Error('Unsafe profile path');
-      const fd = openSync(
-        this.path,
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-      );
-      let profile: McpProfile;
-      try {
-        const st = fstatSync(fd);
-        if (
-          !st.isFile() ||
-          st.uid !== process.getuid?.() ||
-          st.mode & 0o077 ||
-          st.nlink !== 1 ||
-          st.size > 262144
-        )
-          throw Error('Unsafe profile file');
-        profile = mcpProfile(JSON.parse(readFileSync(fd, 'utf8')));
-        const after = fstatSync(fd);
-        if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || after.nlink !== 1)
-          throw Error('Profile changed during read');
-      } finally {
-        closeSync(fd);
-      }
+      const profile = readMcpProfile(this.path, this.pins);
       if (digest({ profile, pins_digest: digest(this.pins) }) !== this.profileDigest)
         throw Error('Profile digest changed');
       return profile;

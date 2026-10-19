@@ -24,6 +24,8 @@ interface Row {
 
 /** A cancellation fences one immutable instruction; it never revokes the session's work authority. */
 export class TurnCancellations {
+  cancelAdditional?: (attempt: string) => void;
+  additionalResources?: (session: string, attempt: string) => string[];
   constructor(
     private store: Store,
     private managed: ManagedWork,
@@ -44,6 +46,7 @@ export class TurnCancellations {
       unconfirmedResources: string[] = [];
     for (const id of attemptIds) {
       const work = this.store.attempt(id);
+      unconfirmedResources.push(...(this.additionalResources?.(work.session_id, id) ?? []));
       if (
         ['accepted', 'dispatching', 'running', 'delegated'].includes(work.state) ||
         this.active(id)
@@ -139,11 +142,13 @@ export class TurnCancellations {
           'cancellation_limit',
           'Use explicit session revocation for this execution tree',
         );
-      for (const id of ids)
+      for (const id of ids) {
+        this.cancelAdditional?.(id);
         if (
           ['accepted', 'dispatching', 'running', 'delegated'].includes(this.store.attempt(id).state)
         )
           this.managed.cancelInTransaction(id, request);
+      }
       const row: Row = {
         request_id: request,
         session_id: session,

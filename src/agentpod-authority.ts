@@ -89,6 +89,7 @@ export class AgentPodAuthority {
     state: string,
     readonly configPath: string,
     readonly cancel: (attempt: string) => void,
+    readonly ownedResourcesStopped: (session: string) => boolean = () => true,
   ) {
     this.pins = readAgentPodPins(configPath, state);
     const keyPath = join(state, 'agentpod-control-key');
@@ -127,6 +128,11 @@ export class AgentPodAuthority {
       .get(session) as unknown as Admission | undefined;
     if (!row) throw new ServiceError('admission_not_found', 'Session has no AgentPod admission');
     return row;
+  }
+  binding(session: string): AgentPodBinding {
+    const row = this.bySession(session);
+    this.assert(row);
+    return JSON.parse(row.binding) as AgentPodBinding;
   }
   private checked(input: unknown): AgentPodBinding {
     const b = agentpodBinding(input);
@@ -415,6 +421,7 @@ export class AgentPodAuthority {
     );
     const stopped = ids.every(
       (id) =>
+        this.ownedResourcesStopped(id) &&
         !this.store.db
           .prepare("SELECT 1 FROM workers WHERE session_id=? AND state!='exited'")
           .get(id) &&
