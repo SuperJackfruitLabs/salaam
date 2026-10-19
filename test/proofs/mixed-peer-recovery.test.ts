@@ -11,7 +11,7 @@ import { A2AInvocation, type A2ACheckpoint } from '../../src/a2a-protocol.js';
 import { digest } from '../../src/protocol.js';
 import { until } from '../helpers.js';
 
-async function fixture(stage: 'before_model' | 'after_model') {
+async function fixture(stage: 'before_model' | 'after_model', failModel = false) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sal-m18-peer-'))),
     file = join(dir, 'peer.json'),
     token = 'fixture-mixed-peer-' + 'm'.repeat(48),
@@ -48,7 +48,11 @@ async function fixture(stage: 'before_model' | 'after_model') {
           JSON.stringify({
             op: 'model_response',
             id: frame.id,
-            text: 'Actual fixture reply saved before the peer restart; no live model claim.',
+            ...(failModel
+              ? { error: 'Fixture provider transport failed' }
+              : {
+                  text: 'Actual fixture reply saved before the peer restart; no live model claim.',
+                }),
           }) + '\n',
         );
     });
@@ -163,3 +167,39 @@ for (const stage of ['before_model', 'after_model'] as const)
       await f.close();
     }
   });
+
+test('provider failure stays a failed peer task across restart without an analysis artifact or repeated model request', async () => {
+  const f = await fixture('after_model', true);
+  try {
+    const scope = {
+        id: f.peer.id,
+        tenant: f.peer.tenant,
+        digest: digest(f.peer),
+        cancel: false,
+        skill: 'review',
+      },
+      text = 'Review only the supplied fixture',
+      data = {};
+    let cp = A2AInvocation.prepare('worker', 'attempt', scope, text, data, []);
+    const invocation = new A2AInvocation(scope, cp, new A2AHttp(f.peer), (value) => {
+      cp = value;
+    });
+    await invocation.dispatch(text, data);
+    const failed = await until(
+      () => invocation.inspect(),
+      (task) => task.status.state === 'TASK_STATE_FAILED',
+    );
+    expect(failed.artifacts ?? []).toHaveLength(0);
+    await f.kill();
+    await f.start();
+    const recovered = new A2AInvocation(scope, cp, new A2AHttp(f.peer), (value) => {
+      cp = value;
+    });
+    expect((await recovered.inspect()).id).toBe(failed.id);
+    expect((await recovered.inspect()).status.state).toBe('TASK_STATE_FAILED');
+    expect(f.frames.filter((frame) => frame.kind === 'model_request')).toHaveLength(1);
+    await expect(recovered.dispatch(text, data)).rejects.toThrow('cannot dispatch');
+  } finally {
+    await f.close();
+  }
+});

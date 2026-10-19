@@ -272,6 +272,14 @@ input.on('line', (line) => {
     if (value.op === 'model_response') {
       const row = db.prepare('SELECT * FROM tasks WHERE model_id=?').get(value.id);
       if (!row || ['TASK_STATE_COMPLETED', 'TASK_STATE_FAILED'].includes(row.state)) return;
+      if (value.error) {
+        db.prepare("UPDATE tasks SET state='TASK_STATE_FAILED',result=? WHERE id=?").run(
+          'Acceptance provider request failed; no verification claim',
+          row.id,
+        );
+        emit({ kind: 'terminal', task_id: row.id, outcome_unknown: true });
+        return;
+      }
       if (typeof value.text !== 'string' || value.text.length > 131072)
         throw Error('Peer result bound');
       db.prepare('UPDATE tasks SET pending_result=? WHERE id=?').run(value.text, row.id);
