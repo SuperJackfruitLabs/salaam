@@ -103,6 +103,62 @@ function exact<T>(value: T, original: unknown): T {
   if (canonical(value) !== canonical(original)) invalid();
   return value;
 }
+function toolPins(value: unknown): McpToolPin[] {
+  return named(
+    array(value, 128).map((value): McpToolPin => {
+      const t = object(value),
+        name = string(t.name, 'MCP tool name', 128);
+      if (!/^[A-Za-z0-9_.-]+$/.test(name) || (t.policy !== 'read' && t.policy !== 'approval'))
+        invalid();
+      return exact({ name, schema_digest: sha(t.schema_digest), policy: t.policy }, t);
+    }),
+  );
+}
+export interface McpAdmissionView {
+  version: 1;
+  profile_digest: string;
+  assignment_digest: string;
+  binding_digest: string;
+  credential_generation: number;
+  servers: {
+    name: McpServerPin['name'];
+    endpoint_digest: string;
+    catalog_digest: string;
+    tools: McpToolPin[];
+  }[];
+}
+export function mcpAdmissionView(input: unknown): McpAdmissionView {
+  try {
+    const p = object(input);
+    if (p.version !== 1) invalid();
+    return exact(
+      {
+        version: 1 as const,
+        profile_digest: sha(p.profile_digest),
+        assignment_digest: sha(p.assignment_digest),
+        binding_digest: sha(p.binding_digest),
+        credential_generation: bound(p.credential_generation, 1, Number.MAX_SAFE_INTEGER),
+        servers: named(
+          array(p.servers, 2).map((value) => {
+            const s = object(value);
+            return exact(
+              {
+                name: server(s.name),
+                endpoint_digest: sha(s.endpoint_digest),
+                catalog_digest: sha(s.catalog_digest),
+                tools: toolPins(s.tools),
+              },
+              s,
+            );
+          }),
+        ),
+      },
+      p,
+    );
+  } catch {
+    return invalid();
+  }
+}
 export function mcpProfile(input: unknown): McpProfile {
   try {
     const p = object(input),
@@ -125,21 +181,7 @@ export function mcpProfile(input: unknown): McpProfile {
                 name: server(s.name),
                 protocol_version: s.protocol_version,
                 catalog_digest: sha(s.catalog_digest),
-                tools: named(
-                  array(s.tools, 128).map((value): McpToolPin => {
-                    const t = object(value),
-                      name = string(t.name, 'MCP tool name', 128);
-                    if (
-                      !/^[A-Za-z0-9_.-]+$/.test(name) ||
-                      (t.policy !== 'read' && t.policy !== 'approval')
-                    )
-                      invalid();
-                    return exact(
-                      { name, schema_digest: sha(t.schema_digest), policy: t.policy },
-                      t,
-                    );
-                  }),
-                ),
+                tools: toolPins(s.tools),
               },
               s,
             );
@@ -188,6 +230,7 @@ export function mcpAssignment(input: unknown): McpAssignment {
             u.search ||
             u.hash ||
             u.href !== url ||
+            url !== u.origin + u.pathname ||
             parts.length !== 5 ||
             parts[1] !== 'stations' ||
             decodeURIComponent(parts[2]!) !== binding.station_id ||

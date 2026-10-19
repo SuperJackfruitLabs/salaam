@@ -1,7 +1,7 @@
 import { constants, openSync, closeSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { canonical, digest, ServiceError } from './protocol.js';
-import { mcpProfile, mcpAssignment, type McpProfile } from './mcp-protocol.js';
+import { mcpProfile, mcpAssignment, mcpAdmissionView, type McpProfile } from './mcp-protocol.js';
 import type { AgentPodBinding, AgentPodPins } from './agentpod-protocol.js';
 
 export function readMcpProfile(path: string, pins: AgentPodPins): McpProfile {
@@ -83,7 +83,7 @@ export class McpAdmission {
         'mcp_assignment_mismatch',
         'MCP assignment differs from the reviewed profile or current authority',
       );
-    return {
+    return mcpAdmissionView({
       version: 1 as const,
       profile_digest: this.profileDigest,
       assignment_digest: digest(assignment),
@@ -95,6 +95,6 @@ export class McpAdmission {
         catalog_digest: server.catalog_digest,
         tools: server.tools,
       })),
-    };
+    });
   }
 }

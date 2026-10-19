@@ -184,10 +184,12 @@ export class McpWork {
       done: Promise.resolve(null as unknown as View),
     };
     this.readiness.set(session, job);
+    let checkedAssignment: string | undefined;
     job.done = (async () => {
       try {
         const assigned = this.live(session),
           profile = this.options.admission.profile();
+        checkedAssignment = assigned.view.assignment_digest;
         const servers: Record<string, Record<string, unknown>[]> = {};
         for (const pin of profile.servers) {
           const server = assigned.assignment.servers.find((s) => s.name === pin.name)!;
@@ -208,7 +210,11 @@ export class McpWork {
         this.catalogs.set(session, { assignment: assigned.view.assignment_digest, servers });
         return assigned.view;
       } catch (error) {
-        this.fail(session, error as Error);
+        if (
+          !checkedAssignment ||
+          this.assignments.get(session)?.view.assignment_digest === checkedAssignment
+        )
+          this.fail(session, error as Error);
         throw new ServiceError(
           'mcp_readiness_failed',
           'Required MCP protocol and catalog readiness failed',
@@ -573,7 +579,10 @@ export class McpWork {
           );
         });
       }
-      if (!(error instanceof McpInputFailure))
+      const deliberatelyStopped =
+        active.controller.signal.aborted &&
+        ['interrupted', 'cancelled_before_dispatch'].includes(this.get(id).state);
+      if (!(error instanceof McpInputFailure) && !deliberatelyStopped)
         this.fail(
           call.session_id,
           error instanceof McpHttpFailure

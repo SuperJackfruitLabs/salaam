@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { SalaamService } from '../src/service.js';
@@ -10,9 +11,11 @@ import { call } from '../src/transport.js';
 import { digest } from '../src/protocol.js';
 import { mcpCatalogDigest, mcpToolDigest } from '../src/mcp-http.js';
 import { mcpProfile } from '../src/mcp-protocol.js';
+import { providerRoute } from '../src/provider-config.js';
+import { ROOT } from '../src/config.js';
 import corpus from './fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
-export async function mcpServiceFixture() {
+export async function mcpServiceFixture(options: { liveFixture?: boolean } = {}) {
   const dir = realpathSync(mkdtempSync('/tmp/smsp-')),
     workspace = join(dir, 'w');
   mkdirSync(workspace, { mode: 0o700 });
@@ -33,10 +36,11 @@ export async function mcpServiceFixture() {
     },
   }));
   const key = corpus.assignments[0]!.value.servers[0]!.headers[0]!.value;
-  const mode = { drift: false, hold: false, disconnected: false };
+  const mode = { drift: false, hold: false, disconnected: false, key };
   const sent: unknown[] = [],
     errors: string[] = [],
-    configs: unknown[] = [];
+    configs: unknown[] = [],
+    extensionErrors: unknown[] = [];
   const server = createServer((req, res) => {
     const handle = async () => {
       if (req.method === 'DELETE') {
@@ -45,7 +49,7 @@ export async function mcpServiceFixture() {
         return;
       }
       if (
-        req.headers['x-agentpod-proxy-key'] !== key ||
+        req.headers['x-agentpod-proxy-key'] !== mode.key ||
         req.url !== `/stations/${binding.station_id}/mcp/superlibrary`
       )
         throw Error('Fixture received wrong private station assignment');
@@ -115,20 +119,50 @@ export async function mcpServiceFixture() {
       },
     ],
   };
+  const provider = options.liveFixture
+    ? spawn(process.execPath, [join(ROOT, 'test/fixtures/mock-claude.mjs'), workspace], {
+        env: { PATH: dirname(process.execPath), HOME: dir, LANG: 'C' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    : undefined;
+  if (provider) {
+    writeFileSync(join(workspace, 'claude-mode'), 'mcp');
+    provider.stderr.resume();
+    await once(provider.stdout, 'data');
+  }
+  const stopProvider = async () => {
+    if (provider && provider.exitCode === null && provider.signalCode === null) {
+      const exited = once(provider, 'exit');
+      provider.kill('SIGKILL');
+      await exited;
+    }
+  };
   const open = () =>
     SalaamService.open({
       stateDir: state,
       agentpodConfig: pinsPath,
       managedMcp: { config: profilePath, profile_digest: profileDigest },
+      ...(provider
+        ? {
+            providerRoute: providerRoute('anthropic', undefined, 512),
+            anthropicApiKey: 'fixture-anthropic-key',
+            extensionPath: join(ROOT, 'test/fixtures/claude-extension.mjs'),
+          }
+        : {}),
       launch: (l) => {
         configs.push(JSON.parse(l.env.SALAAM_WORKER_CONFIG!));
-        return new PiProcess(l.command, l.args, l.cwd, l.env);
+        const pi = new PiProcess(l.command, l.args, l.cwd, l.env);
+        pi.on('record', (record) => {
+          if (record.type === 'extension_error') extensionErrors.push(record);
+        });
+        return pi;
       },
     });
   let service: SalaamService;
   try {
     service = await open();
   } catch (error) {
+    await stopProvider();
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));
     rmSync(dir, { recursive: true, force: true });
@@ -144,7 +178,8 @@ export async function mcpServiceFixture() {
       lease_sequence: sequence,
       binding,
     });
-  const assign = () => call(service.socket, '/v1/agentpod/mcp-assign', { binding, assignment });
+  const assign = (next = assignment) =>
+    call(service.socket, '/v1/agentpod/mcp-assign', { binding, assignment: next });
   return {
     dir,
     workspace,
@@ -163,6 +198,16 @@ export async function mcpServiceFixture() {
     sent,
     errors,
     configs,
+    extensionErrors,
+    async providerStats() {
+      const port = await import('node:fs').then((fs) =>
+        fs.readFileSync(join(workspace, 'claude-port'), 'utf8'),
+      );
+      return (await (await fetch(`http://127.0.0.1:${port}/stats`)).json()) as {
+        count: number;
+        bodies: { body: { tools: { name: string }[] }; authenticated: boolean }[];
+      };
+    },
     get service() {
       return service;
     },
@@ -174,6 +219,7 @@ export async function mcpServiceFixture() {
       try {
         await service.close();
       } finally {
+        await stopProvider();
         server.closeAllConnections();
         await new Promise<void>((r) => server.close(() => r()));
         rmSync(dir, { recursive: true, force: true });

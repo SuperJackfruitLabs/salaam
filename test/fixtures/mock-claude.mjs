@@ -71,13 +71,21 @@ const server = createServer(async (req, res) => {
   if (
     !hasResult &&
     (mode === 'tool' ||
+      mode === 'mcp' ||
       (mode === 'children' && body.tools.some((tool) => tool.name === 'spawn_child')))
   ) {
     const spawnChild = mode === 'children';
-    const name = spawnChild ? 'spawn_child' : 'salaam_probe';
+    const name = spawnChild ? 'spawn_child' : mode === 'mcp' ? 'salaam_mcp' : 'salaam_probe';
     const args = spawnChild
       ? { step_key: 'child-step', prompt: 'Child greeting', budget: 2, wait: true }
-      : {};
+      : mode === 'mcp'
+        ? {
+            action: 'call',
+            server: 'superlibrary',
+            tool: 'library_search',
+            arguments: { query: 'offline provider tool inventory proof' },
+          }
+        : {};
     event('content_block_start', {
       index: 0,
       content_block: { type: 'tool_use', id: 'tool_' + count, name, input: {} },
@@ -99,6 +107,7 @@ const server = createServer(async (req, res) => {
       stop_reason:
         !hasResult &&
         (mode === 'tool' ||
+          mode === 'mcp' ||
           (mode === 'children' && body.tools.some((tool) => tool.name === 'spawn_child')))
           ? 'tool_use'
           : 'end_turn',

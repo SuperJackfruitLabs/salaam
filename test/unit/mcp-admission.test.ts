@@ -13,7 +13,7 @@ import {
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
-import { mcpProfile, mcpAssignment } from '../../src/mcp-protocol.js';
+import { mcpProfile, mcpAssignment, mcpAdmissionView } from '../../src/mcp-protocol.js';
 import { McpAdmission } from '../../src/mcp-admission.js';
 import { digest } from '../../src/protocol.js';
 import { agentpodBinding } from '../../src/agentpod-protocol.js';
@@ -21,6 +21,7 @@ import { agentpodBinding } from '../../src/agentpod-protocol.js';
 for (const [cases, parse] of [
   [corpus.profiles, mcpProfile],
   [corpus.assignments, mcpAssignment],
+  [corpus.admissions, mcpAdmissionView],
 ] as const)
   for (const sample of cases)
     test(`shared MCP corpus: ${sample.name}`, () => {

@@ -17,8 +17,18 @@ async function attach(f: Awaited<ReturnType<typeof mcpServiceFixture>>) {
     SALAAM_AGENTPOD_TOKEN: f.admitted.token,
   });
   try {
-    await a.initialize({ _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } } });
-    await a.request('session/new', { cwd: f.workspace, mcpServers: [] });
+    const initialized = await a.initialize({
+      _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } },
+    });
+    expect(initialized.agentCapabilities.mcpCapabilities).toEqual({ http: true, sse: false });
+    expect(initialized._meta['salaam.dev/managedMcp']).toEqual({
+      version: 1,
+      servers: ['superlibrary'],
+    });
+    await a.request('session/new', {
+      cwd: f.workspace,
+      mcpServers: f.assignment.servers.map((s) => ({ ...s, headers: [] })),
+    });
     return a;
   } catch (error) {
     await a.close();
@@ -103,6 +113,96 @@ test('catalog drift fails worker readiness before launching Pi or granting a too
   }
 });
 
+test('the real Anthropic adapter admits the progressive MCP inventory and returns actual tool evidence without proxy credentials', async () => {
+  const f = await mcpServiceFixture({ liveFixture: true });
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    await f.renew();
+    await f.assign();
+    a = await attach(f);
+    await ready(f.service, f.admitted.session_id);
+    const result = await a.request('session/prompt', {
+      sessionId: f.admitted.session_id,
+      prompt: [{ type: 'text', text: 'Read the offline scoped memory fixture.' }],
+      _meta: { 'salaam.dev/requestId': randomUUID() },
+    });
+    expect(result.stopReason).toBe('end_turn');
+    expect(f.sent).toHaveLength(1);
+    const stats = await f.providerStats();
+    expect(stats.count).toBe(2);
+    expect(
+      stats.bodies.every(
+        (b) => b.authenticated && b.body.tools.some((t) => t.name === 'salaam_mcp'),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(stats)).toContain('Offline station memory 1');
+    expect(JSON.stringify(stats)).not.toContain(f.assignment.servers[0]!.headers[0]!.value);
+    expect(JSON.stringify(stats)).not.toContain('X-Agentpod-Proxy-Key');
+    expect(f.service.store.usage.summary(f.admitted.session_id)).toMatchObject({ observations: 2 });
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+}, 30000);
+
+test('credential rotation stops the previous worker before returning its receipt and preserves prior prompt identity', async () => {
+  const f = await mcpServiceFixture();
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    await f.renew();
+    await f.assign();
+    a = await attach(f);
+    const first = await ready(f.service, f.admitted.session_id);
+    const instruction = prompt(first.id, {
+      action: 'call',
+      server: 'superlibrary',
+      tool: 'library_search',
+      arguments: { query: 'before rotation' },
+    });
+    const saved = await a.request('session/prompt', instruction);
+    await a.close();
+    a = undefined;
+    const key = 'rotated-offline-station-proxy-key-never-live';
+    f.mode.key = key;
+    await f.assign({
+      ...f.assignment,
+      credential_generation: 2,
+      servers: f.assignment.servers.map((s) => ({
+        ...s,
+        headers: [{ name: 'X-Agentpod-Proxy-Key', value: key }],
+      })),
+    });
+    expect(
+      f.service.store.db
+        .prepare('SELECT state FROM workers WHERE session_id=? AND epoch=?')
+        .get(first.id, first.epoch)!.state,
+    ).toBe('exited');
+    a = await attach(f);
+    const second = await ready(f.service, first.id);
+    expect(second.epoch).toBeGreaterThan(first.epoch);
+    expect((f.configs.at(-1) as any).mcp.credential_generation).toBe(2);
+    expect((await a.request('session/prompt', instruction))._meta['salaam.dev/attemptId']).toBe(
+      saved._meta['salaam.dev/attemptId'],
+    );
+    expect(f.sent).toHaveLength(1);
+    await a.request(
+      'session/prompt',
+      prompt(first.id, {
+        action: 'call',
+        server: 'superlibrary',
+        tool: 'library_search',
+        arguments: { query: 'after rotation' },
+      }),
+    );
+    expect(f.sent).toHaveLength(2);
+    expect(JSON.stringify(f.configs)).not.toContain(key);
+    expect(f.errors).toEqual([]);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+}, 30000);
+
 test('invalid MCP arguments fail the tool without sending a call or invalidating worker readiness', async () => {
   const f = await mcpServiceFixture();
   let a: ReturnType<typeof client> | undefined;
@@ -123,7 +223,10 @@ test('invalid MCP arguments fail the tool without sending a call or invalidating
       ),
     ).rejects.toThrow('Tool execution failed');
     expect(f.sent).toHaveLength(0);
-    expect(f.service.supervisor.inspect(f.admitted.session_id).state).toBe('ready');
+    expect(f.service.supervisor.inspect(f.admitted.session_id)).toMatchObject({
+      state: 'ready',
+      error: null,
+    });
     expect(f.service.mcp!.status(f.admitted.session_id).control_error).toBeNull();
     await a.request(
       'session/prompt',
@@ -173,6 +276,10 @@ test('turn cancellation accounts for MCP cleanup without revoking session author
     expect(receipts[0]!.unconfirmedResources).toEqual([]);
     expect(f.service.mcp!.stopped(f.admitted.session_id)).toBe(true);
     expect(f.service.agentpod!.inspect(f.binding).revoked).toBe(false);
+    expect({
+      session: f.service.supervisor.inspect(f.admitted.session_id),
+      extension_errors: f.extensionErrors,
+    }).toMatchObject({ session: { state: 'ready', error: null }, extension_errors: [] });
     expect(f.sent).toHaveLength(1);
     await pending.catch(() => {});
   } finally {

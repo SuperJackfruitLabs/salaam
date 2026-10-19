@@ -540,8 +540,8 @@ export default function house(pi: ExtensionAPI): void {
   pi.on('tool_call', async (event) => {
     try {
       await bridge('policy', { tool: event.toolName });
-    } catch {
-      void fail();
+    } catch (error) {
+      if (!(error instanceof ServiceError && error.code === 'attempt_cancelled')) void fail();
       return { block: true, reason: 'Salaam policy gate unavailable' };
     }
   });
@@ -598,7 +598,13 @@ export default function house(pi: ExtensionAPI): void {
     }
   });
   pi.on('context', async (event) => {
-    c.frame = (await bridge<{ frame: string }>('context')).frame;
+    try {
+      c.frame = (await bridge<{ frame: string }>('context')).frame;
+    } catch (error) {
+      // Pi may ask for context while its abort command is in flight. Keep the last admitted
+      // frame; the independent model grant remains revoked for this cancelled attempt.
+      if (!(error instanceof ServiceError && error.code === 'attempt_cancelled')) throw error;
+    }
     return {
       messages: [
         ...event.messages,
@@ -617,7 +623,13 @@ export default function house(pi: ExtensionAPI): void {
       pi,
       route,
       () => c.frame,
-      workerTools(!!c.effects, !!c.child, c.coding, c.worker_binding?.binding.tools),
+      workerTools(
+        !!c.effects,
+        !!c.child,
+        c.coding,
+        c.worker_binding?.binding.tools,
+        !!c.mcp && !c.child,
+      ),
       bridge,
       fail,
     );
@@ -820,11 +832,18 @@ export default function house(pi: ExtensionAPI): void {
             }
             stream.end();
           } catch (error) {
-            response.stopReason = 'error';
+            const cancelled =
+              options?.signal?.aborted ||
+              (error instanceof ServiceError && error.code === 'attempt_cancelled');
+            response.stopReason = cancelled ? 'aborted' : 'error';
             response.errorMessage = (error as Error).message;
-            stream.push({ type: 'error', reason: 'error', error: response });
+            stream.push({
+              type: 'error',
+              reason: cancelled ? 'aborted' : 'error',
+              error: response,
+            });
             stream.end();
-            await fail();
+            if (!cancelled) await fail();
           }
         })();
         return stream;

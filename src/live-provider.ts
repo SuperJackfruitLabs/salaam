@@ -7,7 +7,7 @@ import {
 } from '@earendil-works/pi-ai';
 import { zstdDecompressSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
-import { digest, object, textDigest, canonical } from './protocol.js';
+import { digest, object, textDigest, canonical, ServiceError } from './protocol.js';
 import {
   getProvider,
   getProviderModel,
@@ -70,6 +70,7 @@ export function registerLiveProvider(
         source = 'salaam-request:' + randomUUID(),
         receipt = new ProviderUsageReceipt();
       let failed = false,
+        cancelled = false,
         refusal = false,
         dispatched = false,
         status: number | undefined,
@@ -110,14 +111,19 @@ export function registerLiveProvider(
             validate(payload);
             if (!approvedDigest) throw new Error('Provider payload not approved');
             dispatched = true;
-            await bridge('model', {
-              source_key: source,
-              provider: route.provider,
-              model: route.model,
-              context_digest: textDigest(frame()),
-              payload_digest: digest(payload),
-              payload,
-            });
+            try {
+              await bridge('model', {
+                source_key: source,
+                provider: route.provider,
+                model: route.model,
+                context_digest: textDigest(frame()),
+                payload_digest: digest(payload),
+                payload,
+              });
+            } catch (error) {
+              cancelled ||= error instanceof ServiceError && error.code === 'attempt_cancelled';
+              throw error;
+            }
           };
           const endpoint = (url: URL) => {
             const base = new URL(native.baseUrl);
@@ -326,8 +332,11 @@ export function registerLiveProvider(
               );
           }
           output.end();
-          if (failed) await fail();
-        } catch {
+          if (failed && !cancelled && !options?.signal?.aborted) await fail();
+        } catch (failure) {
+          cancelled ||=
+            !!options?.signal?.aborted ||
+            (failure instanceof ServiceError && failure.code === 'attempt_cancelled');
           const error: AssistantMessage = {
             role: 'assistant',
             content: [],
@@ -336,7 +345,7 @@ export function registerLiveProvider(
             model: route.model,
             timestamp: Date.now(),
             responseId: source,
-            stopReason: options?.signal?.aborted ? 'aborted' : 'error',
+            stopReason: cancelled ? 'aborted' : 'error',
             usage: last?.usage ?? {
               input: 0,
               output: 0,
@@ -345,7 +354,7 @@ export function registerLiveProvider(
               totalTokens: 0,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
             },
-            errorMessage: options?.signal?.aborted
+            errorMessage: cancelled
               ? 'Provider request cancelled'
               : 'Provider required control failed',
           };
@@ -355,7 +364,7 @@ export function registerLiveProvider(
             error,
           });
           output.end();
-          if (!options?.signal?.aborted) await fail();
+          if (!cancelled) await fail();
         }
       })();
       return output;

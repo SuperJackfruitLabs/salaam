@@ -610,14 +610,14 @@ export class SalaamService {
           );
         const body = object(await readJson(req));
         if (parts[2] === 'attach') {
-          this.send(
-            res,
-            200,
-            this.agentpod.authenticate(
-              string(body.admission_id, 'admission_id', 128),
-              string(body.token, 'token', 128),
-            ),
+          const attached = this.agentpod.authenticate(
+            string(body.admission_id, 'admission_id', 128),
+            string(body.token, 'token', 128),
           );
+          this.send(res, 200, {
+            ...attached,
+            ...(this.mcp ? { managed_mcp: this.mcp.status(attached.session_id).assignment } : {}),
+          });
           return;
         }
         if (parts[2] === 'status') {
@@ -630,12 +630,17 @@ export class SalaamService {
           const current = this.agentpod.inspect(body.binding);
           const old = this.mcp.status(current.session_id).assignment;
           const assigned = this.mcp.assign(current.session_id, body.assignment);
-          if (old && old.assignment_digest !== assigned.assignment_digest)
+          if (old && old.assignment_digest !== assigned.assignment_digest) {
             this.supervisor.failControl(
               current.session_id,
               new Error('MCP assignment changed; restart required'),
             );
-          this.send(res, 200, assigned);
+            await Promise.all([
+              this.supervisor.stopSession(current.session_id),
+              this.mcp.stopSession(current.session_id),
+            ]);
+          }
+          this.send(res, 200, await this.mcp.ready(current.session_id));
           return;
         }
         const request = string(body.request_id, 'request_id', 128);

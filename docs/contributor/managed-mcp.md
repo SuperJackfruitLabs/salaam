@@ -98,3 +98,19 @@ pinned Pi/ACP proofs exercise readiness refusal, reconnect, daemon reopen with a
 fresh authority renewal, catalog drift, ordinary argument rejection, turn
 cancellation and root revocation against disposable HTTP servers. Their station
 and product data are synthetic, and their provider is offline.
+
+ACP accepts only declarations matching the private assignment's endpoint fingerprints, with
+empty headers. It advertises HTTP and `salaam.dev/managedMcp` only for that bound assignment.
+The separate node control response includes a protocol/catalog readiness receipt; merely
+parsing or storing an assignment is insufficient. The same receipt rejection corpus is
+consumed by the canonical contract, daemon and Go node.
+
+The authenticated cross-product rehearsal runs the actual Hub, Go node, persisted proxy,
+daemon and pinned Pi with synthetic signed Accounts and MCP product data. It covers Hub
+restart, proxy rotation, node restart, occupant A→B→A, and daemon death after approved
+HTTP acceptance. The proxy persists a binding fingerprint and principal/occupancy identity,
+rotates its credential on handoff, invalidates the old station-token cache, and checks token
+identity and its own generation again after minting. Upstreams retain their existing signature,
+issuer, audience and entitlement checks. These proofs do not establish live Library or fleet
+acceptance. A separate Anthropic-adapter proof uses a local mock API to verify that the actual
+model tool inventory includes `salaam_mcp` and receives its result without the proxy key.
