@@ -51,14 +51,14 @@ executable names. You can [read the installer](https://salaam.sh/install.sh) bef
 running it. To choose a version or private prefix, pass arguments to `sh`:
 
 ```sh
-curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.1 --prefix "$HOME/.local"
+curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.2 --prefix "$HOME/.local"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Or install from npm:
 
 ```sh
-npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
+npm install --global @superjackfruitlabs/salaam@0.0.2 --ignore-scripts
 ```
 
 See [installation and upgrades](docs/install.md) for direct
