@@ -162,3 +162,56 @@ test('task context labels a disabled token budget instead of showing a numeric a
   expect(text).toContain('no task output-token bound');
   expect(text).not.toContain('Declared token units');
 });
+
+test('mixed team stays visible before long verification history, with compact current and historical checks', () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-mixed-context' });
+  app.client.snapshot = {
+    id: 'session',
+    epoch: 1,
+    state: 'exited',
+    children: [],
+    team: {
+      assignments: [
+        {
+          id: 'assignment',
+          profile_id: 'salaam/builder',
+          generation: 1,
+          step_state: 'completed',
+          stale: false,
+          runtime: { id: 'codex' },
+          execution: { state: 'completed', stopped: true },
+        },
+      ],
+      messages: [],
+    },
+    work_task: {
+      id: 'task',
+      revision: 20,
+      plan_revision: 1,
+      state: 'succeeded',
+      objective: 'Review integrated change',
+      reason: 'Verified',
+      constraints: [],
+      steps: [],
+      limits: { requests: 40, token_units: null },
+      verification: {
+        checks: Array.from({ length: 20 }, (_, i) => ({
+          id: 'check-' + i,
+          check_key: 'suite',
+          state: i ? 'failed' : 'passed',
+          fresh: i === 0,
+          workspace_revision: i ? 0 : 1,
+          artifact_id: 'verbose-private-receipt-field',
+        })),
+        completion: { state: 'succeeded', fresh: true },
+      },
+    },
+  } as unknown as SessionSnapshot;
+  app.setTab('context');
+  const text = app.document.render(140).join('\n');
+  expect(text.indexOf('TEAM BOARD')).toBeLessThan(text.indexOf('VERIFICATION'));
+  expect(text).toContain('suite · passed · current · r1');
+  expect(text).toContain('suite · failed · historical · r0');
+  expect(text).toContain('Task succeeded · current verification');
+  expect(text).not.toContain('verbose-private-receipt-field');
+});

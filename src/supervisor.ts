@@ -36,6 +36,8 @@ import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
 import type { CodingWork } from './coding.js';
 import type { TaskLimits } from './task-policy.js';
+import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
+import type { TeamWork } from './team-work.js';
 
 export interface Launch {
   command: string;
@@ -57,6 +59,7 @@ export interface SupervisorOptions {
   providerEnvironment?: NodeJS.ProcessEnv;
 }
 interface Worker {
+  route: ProviderRoute;
   providerOutputCap?: boolean;
   id: string;
   epoch: number;
@@ -107,15 +110,53 @@ export class Supervisor extends EventEmitter {
   managed?: ManagedWork;
   children?: ChildWork;
   coding?: CodingWork;
+  repositories?: RepositorySnapshots;
+  team?: TeamWork;
+  routeFor(id: string): ProviderRoute {
+    const child = this.children?.owned(id);
+    return child
+      ? (this.store.workerBoundary.view(child.id).binding.agent?.route ?? this.route)
+      : this.route;
+  }
+  async prepareProviderRoute(input: ProviderRoute) {
+    const route = structuredClone(input);
+    if (route.provider === 'salaam-proof') return { route, output_cap: true, auth: undefined };
+    const auth =
+      route.provider === 'anthropic' && this.apiKey
+        ? { auth: { apiKey: this.apiKey }, env: {} }
+        : await resolveProviderAuth(
+            route,
+            this.options.providerCredentials,
+            this.options.providerEnvironment,
+          );
+    const bound = bindProviderConfiguration(route, auth);
+    return { route: bound, output_cap: providerHasOutputCap(bound, auth), auth };
+  }
   private codingBinding(id: string): CodingBinding | undefined {
-    return this.children?.owned(id) ? undefined : this.coding?.binding(id);
+    const child = this.children?.owned(id),
+      coding = this.coding?.binding(id);
+    if (!child) return coding;
+    const binding = this.store.workerBoundary.view(child.id).binding;
+    return binding.isolation && coding
+      ? {
+          ...coding,
+          files: binding.tools.includes('salaam_files'),
+          commands: coding.commands && binding.tools.includes('salaam_command'),
+        }
+      : undefined;
   }
   private tools(id: string): string[] {
+    const child = this.children?.owned(id);
+    if (child) return JSON.parse(child.authority) as string[];
     return workerTools(
       !!this.options.effectsEnabled,
       !!this.children?.owned(id),
       this.codingBinding(id),
     );
+  }
+  private childBoundary(id: string, epoch: number) {
+    const child = this.children?.owned(id);
+    return child ? this.store.workerBoundary.assert(child, epoch, this.routeFor(id)) : undefined;
   }
   readonly route: ProviderRoute;
   private apiKey?: string;
@@ -137,7 +178,7 @@ export class Supervisor extends EventEmitter {
         'This provider authentication has no output cap; set limits.token_units to null and omit output_token_bound',
       );
   }
-  private assertSessionProviderSupported(id: string, outputCap = this.outputCap) {
+  assertSessionProviderSupported(id: string, outputCap = this.outputCap) {
     const parent = this.children?.owned(id)?.parent_session ?? id;
     const task = this.tasks.work?.forSession(parent);
     if (task) this.assertTaskProviderSupported(task.limits, outputCap);
@@ -165,8 +206,18 @@ export class Supervisor extends EventEmitter {
     this.bundle = bundleDigest();
     this.monitor = setInterval(() => {
       for (const worker of this.workers.values())
-        if (worker.ready && Date.now() - worker.lastBeat > (options.heartbeatTimeout ?? 2500))
-          this.invalidate(worker, 'Worker heartbeat expired');
+        if (worker.ready) {
+          if (Date.now() - worker.lastBeat > (options.heartbeatTimeout ?? 2500))
+            this.invalidate(worker, 'Worker heartbeat expired');
+          const child = this.children?.owned(worker.id);
+          if (child?.state === 'accepted') {
+            try {
+              this.childBoundary(worker.id, worker.epoch);
+            } catch (error) {
+              this.invalidate(worker, 'Worker boundary revoked: ' + (error as Error).message);
+            }
+          }
+        }
     }, 250);
     this.monitor.unref();
   }
@@ -224,6 +275,13 @@ export class Supervisor extends EventEmitter {
     }
   }
   async start(id: string): Promise<void> {
+    const child = this.children?.owned(id);
+    if (child && this.store.workerBoundary.view(child.id).binding.runtime !== 'native-pi')
+      throw new ServiceError(
+        'external_worker_owned',
+        'Use the external worker lifecycle; Pi cannot claim this session',
+      );
+    const route = this.routeFor(id);
     const prior = this.workers.get(id);
     if (prior && !prior.stopping)
       throw new ServiceError('worker_exists', 'Worker already supervised');
@@ -240,7 +298,7 @@ export class Supervisor extends EventEmitter {
         'reconciliation_required',
         previous.error ?? 'Session requires reconciliation',
       );
-    this.store.bindRoute(id, this.route);
+    this.store.bindRoute(id, route);
     const epoch = this.store.allocate(id, this.bootId);
     let accept!: () => void;
     let reject!: (e: Error) => void;
@@ -251,6 +309,7 @@ export class Supervisor extends EventEmitter {
     const binding = randomBytes(16).toString('hex');
     const frame = this.tasks.frame(id, binding);
     const worker: Worker = {
+      route: structuredClone(route),
       id,
       epoch,
       token: randomBytes(32).toString('hex'),
@@ -271,6 +330,8 @@ export class Supervisor extends EventEmitter {
     void handshake.catch(() => {});
     let timer: NodeJS.Timeout | undefined;
     try {
+      const child = this.children?.owned(id);
+      if (child) this.store.workerBoundary.claim(child, epoch, route);
       const workerDir = join(this.options.stateDir, 'workers', id);
       mkdirSync(join(workerDir, 'agent'), { recursive: true, mode: 0o700 });
       writeFileSync(
@@ -292,7 +353,8 @@ export class Supervisor extends EventEmitter {
         frame,
         effects: !!this.options.effectsEnabled && !this.children?.owned(id),
         child: !!this.children?.owned(id),
-        route: this.route,
+        worker_binding: this.childBoundary(id, epoch),
+        route: route,
         coding: this.codingBinding(id),
       };
       const args = [
@@ -318,9 +380,9 @@ export class Supervisor extends EventEmitter {
         '--tools',
         this.tools(id).join(','),
         '--provider',
-        this.route.provider,
+        route.provider,
         '--model',
-        this.route.model,
+        route.model,
       ];
       if (previous.pi_session_file && existsSync(previous.pi_session_file)) {
         const index = args.indexOf('--session-id');
@@ -340,7 +402,7 @@ export class Supervisor extends EventEmitter {
         LANG: process.env.LANG ?? 'en_US.UTF-8',
         PI_CODING_AGENT_DIR: join(workerDir, 'agent'),
         SALAAM_WORKER_CONFIG: JSON.stringify(config),
-        ...(this.route.connection?.configuration ?? {}),
+        ...(route.connection?.configuration ?? {}),
       };
       worker.pi = (this.options.launch ?? ((x) => new PiProcess(x.command, x.args, x.cwd, x.env)))({
         command: process.execPath,
@@ -434,16 +496,21 @@ export class Supervisor extends EventEmitter {
       const file = typeof state.sessionFile === 'string' ? resolve(state.sessionFile) : null;
       if (!file || !file.startsWith(resolve(sessionDir) + '/'))
         throw new Error('Pi session is outside its managed directory');
-      if (
-        object(state.model).provider !== this.route.provider ||
-        object(state.model).id !== this.route.model
-      )
+      if (object(state.model).provider !== route.provider || object(state.model).id !== route.model)
         throw new Error('Pi selected an unapproved provider route');
       if (worker.invalid) throw new Error(worker.invalid);
       // Pi buffers setup-only entries until there is a conversation. Do not
       // persist a cursor into that ephemeral tree before its file exists.
       if (existsSync(file)) await this.syncEntries(worker);
-      this.store.state(id, epoch, 'ready', null, workerCapabilities(this.codingBinding(id)), file);
+      if (child) this.store.workerBoundary.accepted(child, epoch, route);
+      this.store.state(
+        id,
+        epoch,
+        'ready',
+        null,
+        workerCapabilities(this.codingBinding(id), this.tools(id)),
+        file,
+      );
       worker.ready = true;
       worker.lastBeat = Date.now();
     } catch (error) {
@@ -502,6 +569,7 @@ export class Supervisor extends EventEmitter {
     body: Record<string, unknown>,
   ): Promise<unknown> {
     const w = this.authenticate(id, token, body);
+    const route = w.route;
     if (method === 'failure') {
       if (!w.stopping) this.invalidate(w, 'Required extension failed');
       return { ok: true };
@@ -511,6 +579,7 @@ export class Supervisor extends EventEmitter {
     if (method === 'handshake') {
       try {
         if (w.manifest) throw new Error('Duplicate handshake');
+        const boundary = this.childBoundary(id, w.epoch);
         const expected = {
           protocol_version: PROTOCOL_VERSION,
           bundle_digest: w.bundle,
@@ -518,13 +587,14 @@ export class Supervisor extends EventEmitter {
           session_id: id,
           pi_session_id: id,
           epoch: w.epoch,
-          capabilities: workerCapabilities(this.codingBinding(id)),
+          capabilities: workerCapabilities(this.codingBinding(id), this.tools(id)),
           tools: this.tools(id),
           active_tools: this.tools(id),
           ...(this.codingBinding(id) ? { coding: this.codingBinding(id) } : {}),
-          provider: this.route.provider,
-          route: this.route,
+          provider: route.provider,
+          route: route,
           context_digest: textDigest(w.frame),
+          ...(boundary ? { worker_binding: boundary } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))
@@ -546,18 +616,98 @@ export class Supervisor extends EventEmitter {
     if (w.attempt && this.store.cancelled(w.attempt))
       throw new ServiceError('attempt_cancelled', 'Attempt cancellation revoked further grants');
     try {
+      this.childBoundary(id, w.epoch);
+      if (method.startsWith('team.')) {
+        const child = this.children?.owned(id);
+        if (!child || !this.team || !w.attempt) throw new Error('No owned team assignment');
+        const binding = this.store.workerBoundary.view(child.id).binding;
+        if (!binding.assignment || !binding.tools.includes('salaam_team'))
+          throw new Error('No team message authority');
+        const authorize = () => {
+          this.assertActive(id, w.epoch, w.attempt!);
+          this.team!.assert(binding);
+          this.store.taskGrantCheck?.(id);
+        };
+        authorize();
+        const request = string(body.request_id, 'request_id', 128),
+          assignment = binding.assignment.id;
+        if (method === 'team.send')
+          return this.team.send(
+            binding.owner_task!,
+            assignment,
+            string(body.recipient, 'recipient', 128),
+            string(body.text, 'text', 4096),
+            request,
+            authorize,
+          );
+        if (method === 'team.receive') return this.team.receive(assignment, request, authorize);
+        if (method === 'team.ack')
+          return this.team.acknowledge(
+            assignment,
+            string(body.message_id, 'message_id', 128),
+            request,
+            authorize,
+          );
+        throw new ServiceError('invalid_field', 'Unknown team method', 400);
+      }
+      if (method === 'specialist.read' || method === 'specialist.report') {
+        const child = this.children?.owned(id);
+        if (!child || !this.repositories || !w.attempt)
+          throw new Error('No active specialist assignment');
+        this.assertActive(id, w.epoch, w.attempt);
+        const binding = this.store.workerBoundary.view(child.id).binding;
+        const tool = method === 'specialist.read' ? 'salaam_repository' : 'salaam_findings';
+        if (!binding.tools.includes(tool)) throw new Error('Specialist authority is unavailable');
+        this.store.taskGrantCheck?.(id);
+        if (method === 'specialist.report') return this.repositories.report(binding, body.findings);
+        const args = object(body.args);
+        return this.store.request(
+          `specialist-read:${id}:${w.epoch}`,
+          string(body.tool_call_id, 'tool_call_id', 512),
+          args,
+          () => {
+            const result = this.repositories!.read(binding, args);
+            this.store.event(id, 'specialist.read', {
+              attempt_id: w.attempt,
+              snapshot_digest: binding.repository?.digest,
+              argument_digest: digest(args),
+              result_digest: digest(result),
+            });
+            return result;
+          },
+        );
+      }
       if (method === 'provider.auth') {
-        const auth = await this.providerAuth();
-        w.providerOutputCap = this.outputCap;
-        this.assertSessionProviderSupported(id);
+        if (!this.children?.owned(id)) {
+          const auth = await this.providerAuth();
+          if (canonical(this.route) !== canonical(route)) throw new Error('Provider route changed');
+          w.providerOutputCap = this.outputCap;
+          this.assertSessionProviderSupported(id, this.outputCap);
+          return auth;
+        }
+        const prepared = await this.prepareProviderRoute(route);
+        const expectedCap = this.children?.owned(id)
+          ? this.store.workerBoundary.view(this.children.owned(id)!.id).binding.agent?.output_cap
+          : this.outputCap;
+        if (
+          canonical(prepared.route) !== canonical(route) ||
+          (expectedCap ?? this.outputCap) !== prepared.output_cap
+        )
+          throw new Error('Provider capability or route changed; restart or renew admission');
+        w.providerOutputCap = prepared.output_cap;
+        this.assertSessionProviderSupported(id, prepared.output_cap);
+        const auth = prepared.auth;
         return auth;
       }
       if (method === 'coding.files' || method === 'coding.command') {
-        if (this.children?.owned(id) || !this.coding || !this.codingBinding(id) || !w.attempt)
+        if (!this.coding || !this.codingBinding(id) || !w.attempt)
           throw new Error('Coding authority is unavailable');
         this.assertActive(id, w.epoch, w.attempt);
+        this.store.taskGrantCheck?.(id);
         const args = object(body.args);
-        if (method === 'coding.files')
+        if (method === 'coding.files') {
+          if (!this.codingBinding(id)?.files) throw new Error('File authority is unavailable');
+          if (this.children?.owned(id) && args.path !== undefined) repositoryPath(args.path);
           return this.coding.file(
             id,
             w.epoch,
@@ -565,6 +715,7 @@ export class Supervisor extends EventEmitter {
             string(body.tool_call_id, 'tool_call_id', 512),
             args,
           );
+        }
         if (!this.codingBinding(id)?.commands) throw new Error('Command execution is unavailable');
         if (args.action === 'start')
           return this.coding.start(id, w.attempt, args, () =>
@@ -610,9 +761,16 @@ export class Supervisor extends EventEmitter {
       }
       if (method.startsWith('child.')) {
         if (!this.children || !w.attempt) throw new Error('No active parent attempt');
-        this.assertActive(id, w.epoch, w.attempt);
-        if (method === 'child.spawn') this.assertSessionProviderSupported(id);
-        if (method === 'child.spawn')
+        // spawn() resolves a saved step before testing a fresh invocation/grant.
+        if (method !== 'child.spawn') this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'child.spawn') {
+          if (
+            Object.keys(body).some(
+              (key) =>
+                !['epoch', 'step_key', 'prompt', 'budget', 'authority', 'profile'].includes(key),
+            )
+          )
+            throw new ServiceError('invalid_child', 'Unsupported child admission field');
           return this.children.spawn(
             id,
             w.epoch,
@@ -622,8 +780,12 @@ export class Supervisor extends EventEmitter {
             Number(body.budget),
             Array.isArray(body.authority)
               ? body.authority.map((x) => string(x, 'authority', 128))
-              : ['salaam_probe'],
+              : body.profile
+                ? []
+                : ['salaam_probe'],
+            body.profile === undefined ? undefined : string(body.profile, 'profile', 128),
           );
+        }
         if (method === 'child.list') return this.children.list(id);
         const child = string(body.child_id, 'child_id', 128);
         if (method === 'child.inspect') return this.children.inspect(id, child);
@@ -668,10 +830,10 @@ export class Supervisor extends EventEmitter {
           this.store.usage.observe(
             id,
             string(body.source_key, 'source_key', 256),
-            this.route.provider,
-            this.route.model,
+            route.provider,
+            route.model,
             body.usage,
-            this.route.provider !== 'salaam-proof' ? 'estimated' : 'known',
+            route.provider !== 'salaam-proof' ? 'estimated' : 'known',
           ),
         );
         return { ok: true };
@@ -680,18 +842,18 @@ export class Supervisor extends EventEmitter {
         this.coding?.assertSafe(id);
         this.store.taskGrantCheck?.(id);
         if (
-          body.provider !== this.route.provider ||
-          body.model !== this.route.model ||
+          body.provider !== route.provider ||
+          body.model !== route.model ||
           body.context_digest !== textDigest(this.tasks.frame(id, w.binding))
         )
           throw new Error('Provider or task context is invalid');
-        if (this.route.provider !== 'salaam-proof') {
+        if (route.provider !== 'salaam-proof') {
           if (w.providerOutputCap === undefined)
             throw new Error('Provider authentication was not admitted');
           this.assertSessionProviderSupported(id, w.providerOutputCap);
           validateProviderPayload(
             body.payload,
-            this.route,
+            route,
             this.tasks.frame(id, w.binding),
             this.tools(id),
             !w.providerOutputCap,
@@ -699,7 +861,7 @@ export class Supervisor extends EventEmitter {
           if (body.payload_digest !== digest(body.payload))
             throw new Error('Provider payload digest changed');
         }
-        if (this.route.provider === 'salaam-proof') {
+        if (route.provider === 'salaam-proof') {
           const payload = object(body.payload);
           if (!Array.isArray(payload.messages)) throw new Error('Proof payload missing');
           const last = object(payload.messages.at(-1));
@@ -724,7 +886,7 @@ export class Supervisor extends EventEmitter {
           string(body.source_key, 'source_key', 256),
           String(body.provider),
           String(body.model),
-          { input: Buffer.byteLength(JSON.stringify(body.payload)), output: this.route.max_tokens },
+          { input: Buffer.byteLength(JSON.stringify(body.payload)), output: route.max_tokens },
         );
         this.store.transaction(() => {
           this.store.event(id, 'model.admitted', {
@@ -750,6 +912,19 @@ export class Supervisor extends EventEmitter {
       return { ok: true };
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
+      if (
+        method.startsWith('specialist.') &&
+        error instanceof ServiceError &&
+        [
+          'not_found',
+          'binary_file',
+          'line_limit',
+          'invalid_field',
+          'unsafe_path',
+          'request_conflict',
+        ].includes(error.code)
+      )
+        throw error;
       if (
         method.startsWith('coding.') &&
         error instanceof ServiceError &&
@@ -798,10 +973,26 @@ export class Supervisor extends EventEmitter {
     }
   }
   inspect(id: string): Session {
+    const externalChild = this.children?.owned(id);
+    if (externalChild && this.store.workerBoundary.view(externalChild.id).binding.external)
+      return this.store.session(id);
+    const child = this.children?.owned(id);
+    const cap = child
+      ? this.store.workerBoundary.view(child.id).binding.agent?.output_cap
+      : undefined;
     const state = {
       ...this.store.session(id),
       provider_route: this.store.providerRoute(id) ?? undefined,
-      provider_capabilities: this.providerCapabilities(),
+      provider_capabilities:
+        cap === undefined
+          ? this.providerCapabilities()
+          : {
+              output_token_cap: cap,
+              durable_tasks: true,
+              warning: cap
+                ? null
+                : 'No provider-enforced output cap; tasks must explicitly disable token budgeting',
+            },
     };
     const w = this.workers.get(id);
     if (w?.invalid) return { ...state, state: 'unhealthy', capabilities: [], error: w.invalid };
@@ -1001,6 +1192,7 @@ export class Supervisor extends EventEmitter {
       if (w.invalid || end.aborted) throw new Error(w.invalid ?? 'Attempt aborted');
       const entries = await this.readEntries(w);
       const result = object((await w.pi.command('get_last_assistant_text')).data);
+      this.childBoundary(id, w.epoch);
       this.store.finish(
         work.attempt.id,
         outcomeError ? 'failed' : 'completed',
@@ -1016,6 +1208,8 @@ export class Supervisor extends EventEmitter {
       w.pi.off('record', record);
       w.busy = false;
       delete w.attempt;
+      const child = this.children?.owned(id);
+      if (child && child.state !== 'accepted') await this.stopWorker(w);
       this.emit('idle', id);
     }
     return true;

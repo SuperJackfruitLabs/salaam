@@ -7,6 +7,8 @@ export interface TaskCheck {
   cwd: string;
 }
 export interface TaskLimits {
+  /** Explicit opt-in for opaque runtimes. Omission never grants an invocation. */
+  invocations?: number;
   requests: number;
   runtime_ms: number;
   concurrency: number;
@@ -75,10 +77,16 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
     }
     if (input[key] !== undefined) limits[key] = integer(input[key], key);
     const bound = limits[key];
-    if (bound !== null && (bound < 1 || bound > max[key]!))
+    if (bound !== null && bound !== undefined && (bound < 1 || bound > max[key]!))
       throw new ServiceError('invalid_budget', 'Task limit out of range: ' + key, 400);
   }
   if (limits.output_token_bound === null && limits.token_units !== null)
     throw new ServiceError('invalid_budget', 'A token budget requires an output token bound', 400);
+  if (input.invocations !== undefined) {
+    const n = integer(input.invocations, 'invocations');
+    if (n < 1 || n > 64)
+      throw new ServiceError('invalid_budget', 'Invocation limit must be 1–64', 400);
+    limits.invocations = n;
+  }
   return { acceptance, deliverables, limits };
 }

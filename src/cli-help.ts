@@ -1,4 +1,58 @@
 const commands: Record<string, string> = {
+  a2a: `salaam a2a credential PEER_ID --file NEW_OWNER_ONLY_FILE
+salaam a2a discover --peer ID --endpoint URL --card-url URL --credential-file FILE --addresses IP[,IP] [--local]
+salaam a2a pin --peer ID --endpoint URL --card-url URL --card-file REVIEWED_JSON --credential-file FILE --addresses IP[,IP] --skill SKILL [--tenant TENANT --files PATH[,PATH] --local]
+salaam a2a peers
+salaam a2a grant --assignment ID --peer ID --credential-file OWNER_ONLY_JSON [--tenant TENANT --skill SKILL] [--peer-client openclaw-2026.10.5]
+salaam a2a inspect CHILD_ID
+salaam a2a reconcile CHILD_ID --run-id EXACT_RUN_ID
+
+Use --a2a-config FILE for outbound peers and --a2a-listen-config FILE for private
+inbound one-use analysis grants. Peer credentials grant no human/operator powers.
+Remote internal model usage and execution remain unobserved.`,
+  harness: `salaam harness probe --pin FILE
+salaam harness prepare --runtime-root NEW_DIR --arch linux-arm64|linux-x64
+salaam harness config --target TARGET --runtime-root PREPARED_DIR [--id ID]
+salaam harness list
+salaam harness inspect CHILD_ID
+salaam harness reconcile CHILD_ID --run-id RUN_ID
+
+Negotiate an operator-pinned external harness in a disposable empty home, with no
+repository, credentials or model request. FILE contains target, executable,
+executable_digest and version. Targets: gemini-acp, claude-acp, codex-app-server.
+Advertised capabilities are separate from enforced authority. A probe grants no
+file, command or worker-dispatch permission. A service started with an owner-only
+--harness-config FILE runs fresh Docker readiness proofs before admitting configured
+targets. Reconcile confirms stopped resources; it never resends a prompt.`,
+  workers: `salaam workers proposal CHILD_ID [--offset N]
+salaam workers integrate CHILD_ID --revision N --root-digest SHA256 --patch-digest SHA256
+salaam workers integration RECEIPT_ID
+salaam workers resolve RECEIPT_ID --revision N --root-digest SHA256
+
+Writing specialists use private drafts. Review every proposal page and the root digest before integration.
+Integration does not verify a task. Resolution explicitly admits a new apply only against its unchanged original root.
+Mutations accept --request-id ID and --takeover.`,
+  team: `salaam team show TASK_ID
+salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --requests N --revision N
+salaam team assign TASK_ID --step STEP_ID --profile PROFILE_ID --runtime RUNTIME_ID --invocations 1 --revision N
+salaam team run TASK_ID --assignment ID --generation N --revision N [--instruction TEXT --continues ATTEMPT_ID]
+salaam team send TASK_ID --to ASSIGNMENT_ID --text TEXT
+salaam team receive TASK_ID --assignment ID
+salaam team ack TASK_ID --assignment ID --message MESSAGE_ID
+salaam team reject TASK_ID --assignment ID --generation N --revision N --reason TEXT
+
+Mutations accept --request-id ID and --takeover. Claims bind the plan, admitted profile and generation.
+Messages never wake workers. Use run for an explicit new claim or follow-up.
+External assignments require a task with explicit limits.invocations and
+token_units:null. Their internal model usage is reported as unknown.`,
+  agents: `salaam agents list --session SESSION_ID
+salaam agents inspect PROFILE_ID --session SESSION_ID
+salaam agents admit PROFILE_ID --session SESSION_ID --digest REVIEWED_DIGEST [--facts ID,ID]
+salaam agents revoke GRANT_ID --session SESSION_ID
+
+Profiles are data in .salaam/agents/*.md with JSON front matter and a prompt body.
+Inspect the effective tools and digest before admission. Project definitions cannot
+grant themselves authority. Mutations accept --request-id and --takeover.`,
   tui: `salaam tui [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
            [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 
@@ -145,6 +199,8 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--model MODEL] [--max-output-tokens N] [--workspace-id ID]
                      [--effect-socket PATH] [--effect-opaque]
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
+                     [--harness-config OWNER_ONLY_FILE] [--a2a-config OWNER_ONLY_FILE]
+                     [--a2a-listen-config OWNER_ONLY_FILE]
 salaam service status
 salaam service stop
 
@@ -228,6 +284,11 @@ Commands:
   compactions   Inspect or cancel a managed checkpoint
   execution     Prove the container boundary with disposable fixtures
   workspace     Inspect coding copies, review diffs or acknowledge human edits
+  agents        Inspect and admit specialist profiles
+  team          Assign task steps and inspect the durable team inbox
+  workers       Inspect and explicitly integrate isolated coding proposals
+  harness       Prepare, inspect and reconcile pinned external workers
+  a2a           Configure bounded peer analysis and inspect remote work
   commands      Start, inspect, cancel or reconcile isolated commands
 
 ${globalOptions}
@@ -272,6 +333,28 @@ const valueOptions = new Set([
   '--run-id',
   '--coding-root',
   '--coding-socket',
+  '--harness-config',
+  '--a2a-config',
+  '--a2a-listen-config',
+  '--assignment',
+  '--peer',
+  '--peer-client',
+  '--file',
+  '--endpoint',
+  '--card-url',
+  '--card-file',
+  '--addresses',
+  '--files',
+  '--retention',
+  '--credential-file',
+  '--tenant',
+  '--skill',
+  '--runtime-root',
+  '--arch',
+  '--target',
+  '--id',
+  '--runtime',
+  '--invocations',
   '--step-key',
   '--command',
   '--plan',
@@ -291,6 +374,7 @@ const valueOptions = new Set([
   '--status',
   '--manifest',
   '--config',
+  '--pin',
   '--platform',
 ]);
 /** Skip option values so a prompt containing "--help" stays a prompt. */

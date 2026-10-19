@@ -63,6 +63,12 @@ operation ownership blocks new work.
 
 ## Coding and checked completion
 
+Child work has a durable worker identity and a frozen owner, diagnostic profile,
+provider route and request limit. Inspection shows that binding and its dispatch
+state. Reconnecting returns the same child and result; a crash interrupts its
+execution instead of silently launching it again. Child tools currently remain
+limited to the readiness probe.
+
 A coding session imports an owned workspace copy. Durable edits bind the expected
 revision and content hashes; commands use disposable snapshots with the fixed
 executor profile. A detached client does not discard those identities or logs.

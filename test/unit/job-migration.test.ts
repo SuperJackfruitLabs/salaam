@@ -16,7 +16,7 @@ test('schema 9 upgrade preserves task/attempt identities, usage charges and lega
     await f.service.close();
     const db = new DatabaseSync(join(f.state, 'journal.sqlite'));
     db.exec(
-      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences;DROP TABLE jobs;PRAGMA user_version=9;',
+      'DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences;DROP TABLE jobs;PRAGMA user_version=9;',
     );
     db.close();
     await f.restart();
@@ -26,7 +26,7 @@ test('schema 9 upgrade preserves task/attempt identities, usage charges and lega
     expect(after.runtime.requests_spent).toBe(before.runtime.requests_spent);
     expect(after.runtime.token_units).toBe(before.runtime.token_units);
     expect(f.service.store.db.prepare('PRAGMA user_version').get()).toMatchObject({
-      user_version: 11,
+      user_version: 17,
     });
     expect(f.service.jobs.list().jobs).toHaveLength(0);
     expect(
@@ -64,7 +64,7 @@ test('schema 10 migration preserves an accepted one-shot occurrence, grant and c
     await f.service.close();
     const db = new DatabaseSync(join(f.state, 'journal.sqlite'));
     db.exec(
-      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; PRAGMA user_version=10;',
+      'DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; PRAGMA user_version=10;',
     );
     db.close();
     await f.restart();

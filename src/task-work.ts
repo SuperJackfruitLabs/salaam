@@ -68,7 +68,10 @@ export class TaskWork {
   providerCheck?: (limits: TaskPolicy['limits']) => void;
   assertLimits?: (session: string) => void;
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
-  private authorizeGrant(task: WorkTask, step: string, grant?: string): void {
+  delegatedStep?: (task: string, step: string) => boolean;
+  advanceDelegate?: (grant: string) => unknown;
+  assertStepReview?: (task: string, step: string) => void;
+  authorizeGrant(task: WorkTask, step: string, grant?: string): void {
     const row = this.store.db
       .prepare(
         'SELECT * FROM task_grants WHERE id=? AND task_id=? AND step_id=? AND plan_revision=?',
@@ -99,6 +102,7 @@ export class TaskWork {
     const grant = this.store.db.prepare('SELECT * FROM task_grants WHERE id=?').get(grantId) as
       { task_id: string; step_id: string; expected_revision: number } | undefined;
     if (!grant) throw new ServiceError('not_found', 'Task grant not found', 404);
+    if (this.delegatedStep?.(grant.task_id, grant.step_id)) return this.advanceDelegate!(grantId);
     return this.run(
       grant.task_id,
       grant.step_id,
@@ -388,10 +392,22 @@ export class TaskWork {
         const runtime = this.store.db
           .prepare('SELECT * FROM task_runtime WHERE task_id=?')
           .get(id)!;
+        const invocations = Number(
+          this.store.db
+            .prepare('SELECT count(*) AS n FROM task_invocations WHERE task_id=?')
+            .get(id)!.n,
+        );
+        if (plan.limits.invocations !== undefined && plan.limits.invocations < invocations)
+          throw new ServiceError(
+            'invalid_budget',
+            'Invocation limits cannot discard admitted work',
+          );
         if (
           task.limits.token_units === null &&
           plan.limits.token_units !== null &&
-          (Number(runtime.requests_spent) > 0 || Number(runtime.reserved_requests) > 0)
+          (Number(runtime.requests_spent) > 0 ||
+            Number(runtime.reserved_requests) > 0 ||
+            invocations > 0)
         )
           throw new ServiceError(
             'invalid_budget',
@@ -477,6 +493,11 @@ export class TaskWork {
         if (['cancelled', 'succeeded', 'succeeded_with_exception'].includes(task.state))
           throw new ServiceError('task_settled', 'Revise a settled task before another step');
         const step = task.steps.find((s) => s.id === stepId);
+        if (this.delegatedStep?.(id, stepId))
+          throw new ServiceError(
+            'team_step_required',
+            'Run assigned steps through their durable team assignment',
+          );
         if (!step) throw new ServiceError('invalid_step', 'Step does not belong to this task');
         if (!['pending', 'failed', 'interrupted', 'cancelled'].includes(step.state))
           throw new ServiceError('invalid_step_state', 'Step cannot be run in its current state');
@@ -568,6 +589,7 @@ export class TaskWork {
             'invalid_step_state',
             'Only a settled step awaiting operator review can be completed',
           );
+        this.assertStepReview?.(id, step.id);
         this.store.db
           .prepare("UPDATE task_steps SET state='completed',review=? WHERE id=?")
           .run(review, step.id);
@@ -604,9 +626,16 @@ export class TaskWork {
       .prepare('SELECT task_id,id,state FROM task_steps WHERE attempt_id=?')
       .get(attempt.id) as { task_id: string; id: string; state: WorkStep['state'] } | undefined;
     if (!row || row.state === 'completed') return;
+    if (
+      this.store.db
+        .prepare('SELECT 1 FROM team_rejections WHERE step_id=? AND attempt_id=?')
+        .get(row.id, attempt.id)
+    )
+      return;
     const state: WorkStep['state'] = (
       {
         accepted: 'queued',
+        delegated: 'queued',
         dispatching: 'running',
         running: 'running',
         completed: 'awaiting_review',

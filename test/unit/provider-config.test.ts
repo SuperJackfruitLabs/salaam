@@ -75,7 +75,7 @@ test('schema v4 sessions remain pinned to offline, and a live route persists acr
     const epoch = store.allocate(old.id, 'boot');
     store.state(old.id, epoch, 'exited');
     store.db.exec(
-      'DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes;PRAGMA user_version=4',
+      'DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes;PRAGMA user_version=4',
     );
     store.close();
     store = new Store(path);
@@ -91,7 +91,7 @@ test('schema v4 sessions remain pinned to offline, and a live route persists acr
     expect(store.providerRoute(live.id)).toEqual(route);
     expect(() => store.bindRoute(live.id, { ...route, max_tokens: 1024 })).toThrow('differs');
     expect(() => store.bindRoute(live.id, OFFLINE_ROUTE)).toThrow('differs');
-    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 17 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

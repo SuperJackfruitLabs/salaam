@@ -65,6 +65,22 @@ export class TaskContext {
   }
   frame(id: string, binding: string): string {
     const state = this.state(id);
+    const admitted = [
+      ...new Map(
+        (this.store.workerBoundary.profiles?.snapshot(id) ?? [])
+          .filter((p) => p.state === 'active')
+          .map((p) => [
+            p.profile_id,
+            {
+              profile_id: p.profile_id,
+              profile_digest: p.profile_digest,
+              tools: p.tools,
+              route: p.route,
+              max_depth: 1,
+            },
+          ]),
+      ).values(),
+    ].sort((a, b) => a.profile_id.localeCompare(b.profile_id));
     // The compaction cursor is a projection, not a task fact/version.
     const frame =
       'SALAAM_TASK_STATE ' +
@@ -75,6 +91,7 @@ export class TaskContext {
         instructions:
           'Use active facts. Superseded facts are historical. Do not repeat completed steps. Retrieve evidence with salaam_history.',
         facts: state.facts,
+        ...(admitted.length ? { admitted_agents: admitted } : {}),
         ...(this.work?.forSession(id) ? { work_task: this.work.frame(id) } : {}),
       });
     if (Buffer.byteLength(frame) > TASK_FRAME_BYTES)

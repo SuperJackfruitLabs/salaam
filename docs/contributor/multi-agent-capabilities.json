@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "observed_on": "2026-10-19",
+  "status": "unreleased candidate evidence",
+  "publication_authorized": false,
+  "runtime": {
+    "node": "26.7.0",
+    "npm": "11.19.0",
+    "pi": "1.3.0",
+    "a2a_specification": "1.0.0",
+    "a2a_wire": "1.0",
+    "independent_sdk": "@a2a-js/sdk@1.0.1"
+  },
+  "native_analysis": {
+    "source_digest": "6858586ad94b1263c237cb21ac72be7b63ec4e6659cb009fa9726de1fdcb0d4d",
+    "build_digest": "b65d7a9081aa0a98fac3f59f1469fdb4cc5f744665c61a442f2340f9463def16",
+    "parent_model": "claude-sonnet-5-5",
+    "reviewer_model": "claude-haiku-4-5",
+    "scope": "Actual immutable repository evidence and checked findings; no editing authority"
+  },
+  "harnesses": {
+    "backend": "anthropic/claude-sonnet-4-6",
+    "output_cap": 4096,
+    "claude_acp": "0.23.1 / SDK 0.2.83",
+    "gemini_acp": "0.64.0",
+    "codex_app_server": "0.163.0",
+    "native_google_or_openai_auth_proven": false,
+    "receipts": [
+      {
+        "receipt": "harness-service-claude-acp-74fe9cdf-8880-4498-b189-3fe6d2ec4604",
+        "source_digest": "aeef772ce119277a7d03ee23fa36601a99ecddb4fc8c76a64f30dd9f007e2adb",
+        "build_digest": "5a329bd489d63f63c24d49e1498c5995264c191b27cbc03a79c37687f3866e17",
+        "artifact_digest": "adf06db237a441783e8bfc969401cdb04e1c9a5a420512ef7aaddef445cdf6ef",
+        "model_requests": 4,
+        "scope": "macOS-arm64 service with private Linux-arm64 Docker harness; actual approvals, integration, checks and terminal daemon recovery"
+      },
+      {
+        "receipt": "harness-service-codex-app-server-e9dee001-46b6-470f-b8a7-a4f007cac7d3",
+        "source_digest": "30352f8b18df8b7e330c49cf9388a7f498d486a33c7e2df20b27039f01ab8b5e",
+        "build_digest": "f23e25538bd42d26aff83ff297d03f82f385efc6c79fceee41fa6a3f21fba356",
+        "artifact_digest": "adf06db237a441783e8bfc969401cdb04e1c9a5a420512ef7aaddef445cdf6ef",
+        "model_requests": 5,
+        "scope": "macOS-arm64 service with private Linux-arm64 Docker harness; actual approvals, integration, checks and terminal daemon recovery"
+      },
+      {
+        "receipt": "harness-service-gemini-acp-ecddee5d-292b-4a1e-9bbb-75c32f3dd57b",
+        "source_digest": "028fcf4a97042ffe2dd4a28c295c903bbe4a80d6d11ef54fffd7119f702f6485",
+        "build_digest": "379c77dfb777053cc114832996c0656a732d4884b08292434be84c12df6e258f",
+        "artifact_digest": "643e0719481f9130ff60ac647cde02a3ca114c7dd588347433577c80f99bbdcb",
+        "model_requests": 4,
+        "scope": "macOS-arm64 service with private Linux-arm64 Docker harness; actual approvals, integration, checks and terminal daemon recovery"
+      }
+    ]
+  },
+  "peers": {
+    "hermes": {
+      "version": "0.22.2",
+      "commit": "d923a5eb487a17c0a68801bba9ef0f56c81040a8"
+    },
+    "openclaw": {
+      "version": "2026.10.5",
+      "commit": "1b58cb9a1b4f4353e1add63c8506db4d890962e8",
+      "default_sender": "unsupported missing version header",
+      "named_ingress": "openclaw-2026.10.5-header-and-tenant-v1"
+    },
+    "scope": "Actual pinned plugin transport in supported directions with deterministic agent callbacks; not full live gateway/tool execution",
+    "linux_ci": "https://github.com/SuperJackfruitLabs/salaam/actions/runs/39181567236/job/117835223971"
+  },
+  "mixed": {
+    "receipt": "mixed-runtime-38777eae-545d-4b30-977b-3663ce4c7b76.continued-9575f892.json",
+    "receipt_sha256": "04b6ba529103e2547e5b870cde23af5064e26592fc362f90e3151ed91e7fe80a",
+    "workflow_candidate": {
+      "commit": "e32e10165e9128b720ea1e024d8430920845b992",
+      "dirty": false,
+      "version": "0.0.1",
+      "package_sha256": "b0a91612cd222fd4d7446c3c481badfb18794595c9f9da2c2ff690c52f3dc325"
+    },
+    "terminal_and_recovery_candidate": {
+      "commit": "4e66461c8bf850870984ab3b5ad33faf893b5414",
+      "dirty": false,
+      "version": "0.0.1",
+      "package_sha256": "d7779b79a6e01f3968e92f219ec8ca3c4b191b30ef8b4e2d36d4513ab909ffaa"
+    },
+    "workflow_source_digest": "182005519073f562042212e04a53e5e7d0240fb399e84f452fe6f536fe9748a6",
+    "workflow_build_digest": "6e5b5b704004628e307725e4cc75ea6aff1005b1fdaca8db46d7ac996f2274a0",
+    "final_source_digest": "ee3a636dd665a25b12aae17208d064b3f2f8ce4c7d651e6e07243da40cdc15ff",
+    "final_build_digest": "04fe901f94c4bbbf3d8ce3c839c821ae5467d953ac8d6d4dd4c0a02e4312ffb9",
+    "pi_bundle_digest": "bf5bc849cda381829a724f7d2bc3d426f0c73ce6e22f8f8958b7fca2d7f31a70",
+    "acceptance_adapters": {
+      "m18-remote-service.mjs": "5edb4be607759b2a78453a7a5c2ea6a109f9d2b8821f7a429320bc9bfeb98811",
+      "m18-provider-preload.mjs": "a4a82056a5860317222cbfe37195f3f2b6e42f04d731858b66fabc470780f251",
+      "m18-provider-fetch.mjs": "b6f43d3aae73a8bed4795c92bfcc29e803104d0d071d759ff13396e21a931ef8"
+    },
+    "client": "macOS arm64 installed CLI, real SSH PTYs",
+    "execution": "Linux x64 installed daemon, Docker 29.1.3, kernel 7.0.0-22-generic",
+    "provider_transport": "Additional bounded SSH acceptance relay; real key stays on Mac",
+    "backend": "anthropic/claude-sonnet-4-6",
+    "output_cap": 4096,
+    "live_requests": 12,
+    "task_state": "succeeded",
+    "parent_check": "passed",
+    "protected_source_and_human_bytes": true,
+    "selected_worker_cancelled_before_provider_forward": true,
+    "explicit_replacement_generation": true,
+    "terminal_attachments": 2,
+    "terminal_restored": true,
+    "sigkill_recovery": {
+      "same_task": true,
+      "same_children": 5,
+      "same_workspace_digest": "f19daceafa88ec25bdc499890ffb997aff27b79e9b1cc88a12fbc1b30897232f",
+      "same_parent_command_receipts": true,
+      "same_verification": true,
+      "new_model_requests": 0
+    },
+    "peer_execution": "unobserved",
+    "peer_model_usage": "unknown",
+    "native_recursive_delegation": false,
+    "cleanup": {
+      "workers_active": 0,
+      "harness_runs_inspected": 6,
+      "parent_command_runs_inspected": 7,
+      "owned_containers_remaining": 0,
+      "disposable_vps_root_removed": true,
+      "production_services_touched": false
+    }
+  },
+  "validation": {
+    "local_full_suite": 2143,
+    "named_peer_cases": 5,
+    "public_pages": 22,
+    "broken_links": 0,
+    "portfolio_requests_spent": 158,
+    "portfolio_request_limit": 200,
+    "failed_requests_retained": true
+  }
+}

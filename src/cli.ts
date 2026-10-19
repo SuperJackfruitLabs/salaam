@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 import { acp } from './acp.js';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { digest, object } from './protocol.js';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, openSync, closeSync, readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  openSync,
+  closeSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+  fsyncSync,
+} from 'node:fs';
 import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
 import { SalaamService } from './service.js';
@@ -34,6 +43,12 @@ import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
 import { BoundaryBroker, engineRequest } from './execution-boundary.js';
 import { workspaceDiff, type WorkspaceChange } from './workspace-diff.js';
+import {
+  probeHarness,
+  HARNESS_TARGETS,
+  type HarnessPin,
+  type HarnessTarget,
+} from './harness-probe.js';
 interface WorkspaceDiffPage {
   revision: number;
   digest: string;
@@ -78,6 +93,406 @@ async function main(): Promise<void> {
   if (foreground) args.splice(args.indexOf('--foreground'), 1);
   const socket = join(state, 'operator.sock');
   const [group, verb, id] = args;
+  if (group === 'a2a' && verb === 'credential') {
+    const file = option('--file');
+    if (!id || !file) throw Error('Supply PEER_ID and --file NEW_OWNER_ONLY_FILE');
+    const { a2aIdentity } = await import('./a2a-peer.js');
+    a2aIdentity(id);
+    const path = resolve(file),
+      value = { peer: id, token: randomBytes(32).toString('base64url') };
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const fd = openSync(path, 'wx', 0o600);
+    try {
+      writeFileSync(fd, JSON.stringify(value) + '\n');
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    console.log(
+      JSON.stringify(
+        { peer: id, file: realpathSync(path), credential_digest: digest(value) },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'a2a' && verb === 'discover') {
+    const peer = option('--peer'),
+      endpoint = option('--endpoint'),
+      card_url = option('--card-url'),
+      credential = option('--credential-file'),
+      addresses = option('--addresses');
+    if (!peer || !endpoint || !card_url || !credential || !addresses)
+      throw Error('Supply --peer, --endpoint, --card-url, --credential-file and --addresses');
+    const { privateJSON, validatePeer, A2AHttp } = await import('./a2a-peer.js');
+    const credential_file = realpathSync(resolve(credential)),
+      value = privateJSON(credential_file);
+    const pin = validatePeer({
+      id: peer,
+      endpoint,
+      card_url,
+      card_digest: digest(null),
+      tenant: option('--tenant') ?? '',
+      skill: 'pending-review',
+      addresses: addresses.split(','),
+      local: args.includes('--local'),
+      credential_file,
+      credential_digest: digest(value),
+      files: [],
+      retention: 'unknown',
+      cancel: false,
+      streaming: false,
+    });
+    console.log(JSON.stringify(await new A2AHttp(pin).request(card_url), null, 2));
+    return;
+  }
+  if (group === 'a2a' && verb === 'pin') {
+    const peer = option('--peer'),
+      endpoint = option('--endpoint'),
+      cardFile = option('--card-file'),
+      credential = option('--credential-file'),
+      addresses = option('--addresses'),
+      skill = option('--skill');
+    if (!peer || !endpoint || !cardFile || !credential || !addresses || !skill)
+      throw Error(
+        'Supply --peer, --endpoint, --card-file, --credential-file, --addresses and --skill',
+      );
+    const { privateJSON, validatePeer, A2AHttp } = await import('./a2a-peer.js');
+    const card = JSON.parse(readFileSync(resolve(cardFile), 'utf8')),
+      credential_file = realpathSync(resolve(credential)),
+      value = privateJSON(credential_file),
+      card_url = option('--card-url');
+    if (!card_url) throw Error('Supply the exact --card-url that was reviewed');
+    const pin = validatePeer({
+      id: peer,
+      endpoint,
+      card_url,
+      card_digest: digest(card),
+      tenant: option('--tenant') ?? '',
+      skill,
+      addresses: addresses.split(','),
+      local: args.includes('--local'),
+      credential_file,
+      credential_digest: digest(value),
+      files: option('--files')?.split(',').filter(Boolean) ?? [],
+      retention: option('--retention') ?? 'unknown',
+      cancel: args.includes('--supports-cancel'),
+      streaming: args.includes('--supports-streaming'),
+    });
+    new A2AHttp(pin).assertCard(card);
+    console.log(JSON.stringify(pin, null, 2));
+    return;
+  }
+  if (group === 'a2a' && verb === 'grant') {
+    const assignment = option('--assignment'),
+      peer = option('--peer'),
+      credential = option('--credential-file');
+    if (!assignment || !peer || !credential)
+      throw Error('Supply --assignment, --peer and --credential-file');
+    const { privateJSON } = await import('./a2a-peer.js');
+    const credential_file = realpathSync(resolve(credential)),
+      value = object(privateJSON(credential_file));
+    if (
+      value.peer !== peer ||
+      Object.keys(value).sort().join(',') !== 'peer,token' ||
+      typeof value.token !== 'string' ||
+      !/^[A-Za-z0-9._~-]{32,512}$/.test(value.token)
+    )
+      throw Error('Use a dedicated peer credential JSON {peer,token}');
+    const peerClient = option('--peer-client');
+    if (peerClient && peerClient !== 'openclaw-2026.10.5')
+      throw Error('Only the explicitly pinned OpenClaw client adapter is available');
+    const binding = await call(socket, `/v1/a2a/grants/${encodeURIComponent(assignment)}`);
+    console.log(
+      JSON.stringify(
+        {
+          peer,
+          tenant: option('--tenant') ?? '',
+          skill: option('--skill') ?? 'review',
+          assignment_id: assignment,
+          binding_digest: digest(binding),
+          credential_file,
+          credential_digest: digest(value),
+          ...(peerClient ? { client: peerClient } : {}),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'a2a' && verb === 'peers') {
+    console.log(
+      JSON.stringify(
+        (await call<any[]>(socket, '/v1/harnesses')).filter((r) => r.kind === 'a2a'),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (group === 'harness' && verb === 'probe') {
+    const path = option('--pin');
+    if (!path) throw new Error('Supply an operator-reviewed --pin FILE');
+    const pin = JSON.parse(readFileSync(resolve(path), 'utf8')) as HarnessPin;
+    console.log(JSON.stringify(await probeHarness(pin), null, 2));
+    return;
+  }
+  if (group === 'harness' && verb === 'prepare') {
+    const path = option('--runtime-root'),
+      arch = option('--arch');
+    if (!path || !arch) throw Error('Supply a new --runtime-root and execution-host --arch');
+    const { prepareHarnessRuntime } = await import('./harness-prepare.js');
+    console.log(JSON.stringify(await prepareHarnessRuntime(path, arch), null, 2));
+    return;
+  }
+  if (group === 'harness' && verb === 'config') {
+    const target = option('--target'),
+      path = option('--runtime-root');
+    if (!target || !Object.hasOwn(HARNESS_TARGETS, target) || !path)
+      throw Error('Supply a named --target and dedicated --runtime-root');
+    const runtime_root = realpathSync(resolve(path));
+    const { assertHarnessArtifactRoot, harnessRuntimeDigest } =
+      await import('./harness-backend.js');
+    assertHarnessArtifactRoot(runtime_root);
+    console.log(
+      JSON.stringify(
+        {
+          schema: 1,
+          runtimes: [
+            {
+              id: option('--id') ?? target,
+              target,
+              version: HARNESS_TARGETS[target as HarnessTarget].version,
+              runtime_root,
+              runtime_digest: await harnessRuntimeDigest(runtime_root),
+              model: 'claude-sonnet-4-6',
+              output: 4096,
+              requests: 12,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (
+    ['harness', 'a2a'].includes(group ?? '') &&
+    ['list', 'inspect', 'reconcile'].includes(verb ?? '')
+  ) {
+    if (verb === 'list') {
+      console.log(JSON.stringify(await call(socket, '/v1/harnesses'), null, 2));
+      return;
+    }
+    if (!id) throw Error('Supply an external CHILD_ID');
+    const current = await call<any>(socket, `/v1/harnesses/${id}`);
+    if (verb === 'inspect') {
+      console.log(JSON.stringify(current, null, 2));
+      return;
+    }
+    const run_id = option('--run-id');
+    if (!run_id) throw Error('Supply the exact --run-id from harness inspect');
+    const client_id = randomUUID(),
+      owner = current.child.parent_session,
+      lease = await acquireControl(socket, owner, client_id, args.includes('--takeover'));
+    try {
+      console.log(
+        JSON.stringify(
+          await call(socket, `/v1/harnesses/${id}/reconcile`, {
+            client_id,
+            token: lease.token,
+            run_id,
+            request_id: option('--request-id') ?? randomUUID(),
+          }),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await call(socket, `/v1/sessions/${owner}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (group === 'workers') {
+    if (!id) throw new Error('Supply a child or integration receipt ID');
+    if (verb === 'proposal' || verb === 'integration') {
+      const result = await call<any>(
+        socket,
+        verb === 'proposal'
+          ? `/v1/workers/${id}/proposal?offset=${Number(option('--offset') ?? 0)}`
+          : `/v1/integrations/${id}`,
+      );
+      if (verb === 'proposal' && !args.includes('--json')) {
+        const { changes, diff, ...metadata } = result;
+        console.log(
+          JSON.stringify(
+            {
+              ...metadata,
+              files: changes.map((c: any) => ({
+                path: c.path,
+                before_hash: digest(c.before),
+                after_hash: digest(c.after),
+              })),
+            },
+            null,
+            2,
+          ),
+        );
+        for (const patch of diff) console.log(patch);
+      } else console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (!['integrate', 'resolve'].includes(verb ?? ''))
+      throw new Error('Use workers proposal, integrate, integration or resolve');
+    const owner =
+      verb === 'integrate'
+        ? (await call<{ parent_session: string }>(socket, `/v1/children/${id}`)).parent_session
+        : (await call<{ parent_session: string }>(socket, `/v1/integrations/${id}`)).parent_session;
+    const revision = option('--revision'),
+      workspace_digest = option('--root-digest'),
+      patch_digest = option('--patch-digest');
+    if (revision === undefined || !workspace_digest || (verb === 'integrate' && !patch_digest))
+      throw new Error(
+        'Supply reviewed --revision N, --root-digest SHA256 and --patch-digest SHA256 for integration',
+      );
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, owner, client_id, args.includes('--takeover'));
+    try {
+      const result = await call(
+        socket,
+        verb === 'integrate' ? `/v1/workers/${id}/integrate` : `/v1/integrations/${id}/resolve`,
+        {
+          client_id,
+          token: lease.token,
+          request_id: option('--request-id') ?? randomUUID(),
+          workspace_revision: Number(revision),
+          workspace_digest,
+          patch_digest,
+        },
+      );
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${owner}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (group === 'team') {
+    if (!id) throw new Error('Supply TASK_ID');
+    if (verb === 'show') {
+      console.log(JSON.stringify(await call(socket, `/v1/tasks/${id}/team`), null, 2));
+      return;
+    }
+    if (!['assign', 'run', 'reject', 'send', 'receive', 'ack'].includes(verb ?? ''))
+      throw new Error('Use team show, assign, run, send, receive or ack');
+    const task = await call<{ session_id: string }>(socket, `/v1/tasks/${id}`);
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, task.session_id, client_id, args.includes('--takeover'));
+    try {
+      const assignment = option('--assignment');
+      if (['run', 'reject', 'receive', 'ack'].includes(verb!) && !assignment)
+        throw new Error('Supply --assignment ID');
+      const revision = option('--revision'),
+        generation = option('--generation');
+      if (['assign', 'run', 'reject'].includes(verb!) && revision === undefined)
+        throw new Error('Supply the reviewed --revision N');
+      if (['run', 'reject'].includes(verb!) && generation === undefined)
+        throw new Error('Supply the reviewed --generation N');
+      const path = assignment ? `${assignment}/${verb}` : verb;
+      const result = await call(socket, `/v1/tasks/${id}/team/${path}`, {
+        client_id,
+        token: lease.token,
+        request_id: option('--request-id') ?? randomUUID(),
+        expected_revision: revision === undefined ? undefined : Number(revision),
+        generation: generation === undefined ? undefined : Number(generation),
+        ...(verb === 'assign'
+          ? {
+              step_id: option('--step'),
+              profile_id: option('--profile'),
+              ...(() => {
+                const runtime = option('--runtime');
+                return runtime
+                  ? { runtime, invocations: Number(option('--invocations')) }
+                  : { requests: Number(option('--requests')) };
+              })(),
+            }
+          : {}),
+        ...(verb === 'run'
+          ? { instruction: option('--instruction'), continues_attempt_id: option('--continues') }
+          : {}),
+        ...(verb === 'send' ? { recipient: option('--to'), text: option('--text') } : {}),
+        ...(verb === 'ack' ? { message_id: option('--message') } : {}),
+        ...(verb === 'reject' ? { reason: option('--reason') } : {}),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${task.session_id}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (group === 'agents') {
+    const session = option('--session');
+    if (!session) throw new Error('Supply --session SESSION_ID');
+    if (verb === 'list' || verb === 'inspect') {
+      console.log(
+        JSON.stringify(
+          await call(
+            socket,
+            `/v1/sessions/${session}/agents${verb === 'inspect' ? '?profile=' + encodeURIComponent(id ?? '') : ''}`,
+          ),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (!id || !['admit', 'revoke'].includes(verb ?? ''))
+      throw new Error('Use agents list, inspect, admit or revoke');
+    const client_id = randomUUID(),
+      lease = await acquireControl(socket, session, client_id, args.includes('--takeover'));
+    try {
+      const expected_digest = option('--digest');
+      if (verb === 'admit' && !expected_digest)
+        throw new Error('Review agents inspect and supply --digest SHA256');
+      const fact_ids = option('--facts')?.split(',').filter(Boolean) ?? [];
+      const result = await call(socket, `/v1/sessions/${session}/agents/${verb}`, {
+        request_id: option('--request-id') ?? randomUUID(),
+        client_id,
+        token: lease.token,
+        ...(verb === 'admit' ? { profile_id: id, expected_digest, fact_ids } : { grant_id: id }),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    } finally {
+      await call(socket, `/v1/sessions/${session}/control`, {
+        request_id: randomUUID(),
+        client_id,
+        token: lease.token,
+        action: 'release',
+        expected_epoch: lease.epoch,
+      }).catch(() => {});
+    }
+    return;
+  }
   if (group === 'host') {
     const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
     if (verb === 'plan') {
@@ -1043,13 +1458,19 @@ async function main(): Promise<void> {
     const effectSocket = option('--effect-socket');
     const opaque = args.includes('--effect-opaque');
     const codingRoot = option('--coding-root'),
-      codingSocket = option('--coding-socket');
+      codingSocket = option('--coding-socket'),
+      harnessConfig = option('--harness-config'),
+      a2aConfig = option('--a2a-config'),
+      a2aListenConfig = option('--a2a-listen-config');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
         providerRoute: route,
         codingRoot: codingRoot ? resolve(codingRoot) : undefined,
         codingSocket: codingSocket ? resolve(codingSocket) : undefined,
+        harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
+        a2aConfig: a2aConfig ? resolve(a2aConfig) : undefined,
+        a2aListenConfig: a2aListenConfig ? resolve(a2aListenConfig) : undefined,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1106,6 +1527,9 @@ async function main(): Promise<void> {
         ...(opaque ? ['--effect-opaque'] : []),
         ...(codingRoot ? ['--coding-root', resolve(codingRoot)] : []),
         ...(codingSocket ? ['--coding-socket', resolve(codingSocket)] : []),
+        ...(harnessConfig ? ['--harness-config', resolve(harnessConfig)] : []),
+        ...(a2aConfig ? ['--a2a-config', resolve(a2aConfig)] : []),
+        ...(a2aListenConfig ? ['--a2a-listen-config', resolve(a2aListenConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

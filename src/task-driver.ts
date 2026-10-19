@@ -42,6 +42,7 @@ export class TaskDriver {
     this.active = this.tick()
       .catch((error) => {
         // A persistence failure cannot authorize more work. Fence all affected task workers.
+        this.children.external?.failAll(error as Error);
         for (const row of this.store.db.prepare('SELECT session_id FROM durable_tasks').all())
           this.supervisor.failControl(String(row.session_id), error as Error);
       })
@@ -153,7 +154,7 @@ export class TaskDriver {
   private async stopActive(task: WorkTask): Promise<void> {
     const attempts = this.store.db
       .prepare(
-        "SELECT id,state,submission_id FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+        "SELECT id,state,submission_id FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running','delegated')",
       )
       .all(task.session_id) as { id: string; state: string; submission_id: string }[];
     this.store.transaction(() => {
@@ -179,6 +180,7 @@ export class TaskDriver {
       await this.children.cancelOwned(attempt.id);
       await this.supervisor.cancelAttempt(attempt.id);
     }
+    await this.children.external?.cancelRoot(task.session_id);
     const compactions = this.store.db
       .prepare("SELECT id FROM compactions WHERE session_id=? AND state='running'")
       .all(task.session_id) as { id: string }[];
@@ -208,7 +210,12 @@ export class TaskDriver {
     return this.tasks.get(id);
   }
   /** Revocation is durable before any process abort, including a job cancellation. */
-  cancelInTransaction(id: string, expected: number, authorize: () => void): { id: string } {
+  cancelInTransaction(
+    id: string,
+    expected: number,
+    authorize: () => void,
+    peer?: { peer: string; tenant: string },
+  ): { id: string } {
     if (!this.store.db.isTransaction) throw new Error('Task cancellation requires a transaction');
     authorize();
     const task = this.tasks.get(id);
@@ -217,12 +224,19 @@ export class TaskDriver {
     if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state))
       throw new ServiceError('task_settled', 'Task already settled');
     this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
+    this.children.cancelSessionInTransaction(task.session_id);
     this.store.db
-      .prepare(
-        "UPDATE durable_tasks SET state='cancelled',reason='Operator cancelled the task; inspect any uncertain effects',revision=revision+1 WHERE id=?",
-      )
-      .run(id);
-    this.store.event(task.session_id, 'work_task.cancelled', { task_id: id });
+      .prepare("UPDATE durable_tasks SET state='cancelled',reason=?,revision=revision+1 WHERE id=?")
+      .run(
+        peer
+          ? 'Authenticated peer cancelled its dedicated task; inspect any uncertain effects'
+          : 'Operator cancelled the task; inspect any uncertain effects',
+        id,
+      );
+    this.store.event(task.session_id, 'work_task.cancelled', {
+      task_id: id,
+      ...(peer ? { peer } : {}),
+    });
     return { id };
   }
   async stopCancelled(id: string): Promise<void> {
@@ -361,17 +375,32 @@ export class TaskDriver {
       this.stop(task, 'An interrupted or failed step requires explicit operator review');
       return;
     }
-    if (this.budget.active(task) > 0) {
-      const accepted = task.steps.some((s) => s.state === 'queued');
+    const active = this.budget.active(task);
+    if (active > 0) {
+      const accepted = task.steps.some(
+        (s) => s.state === 'queued' && !this.tasks.delegatedStep?.(task.id, s.id),
+      );
       if (
         accepted &&
         !['ready', 'starting'].includes(this.supervisor.inspect(task.session_id).state)
       )
         await this.worker(task);
-      return;
+      const rootActive = this.store.db
+        .prepare(
+          "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+        )
+        .get(task.session_id);
+      if (
+        rootActive ||
+        active >= task.limits.concurrency ||
+        this.children.activeCount(task.session_id) >= 2 ||
+        this.children.activeCount() >= 8
+      )
+        return;
     }
     const reviewing = task.steps.find((s) => s.state === 'awaiting_review');
-    if (reviewing) {
+    if (reviewing && !active) {
+      this.tasks.assertStepReview?.(task.id, reviewing.id);
       if (!reviewing.checks?.length) {
         this.stop(task, 'Step requires operator review');
         return;
@@ -399,6 +428,7 @@ export class TaskDriver {
       return;
     }
     if (Number(r.remaining_steps) < 1) {
+      if (active) return;
       this.stop(task, 'Bounded progression step limit reached');
       return;
     }
@@ -406,14 +436,18 @@ export class TaskDriver {
     const next = task.steps.find(
       (s) =>
         s.state === 'pending' &&
+        (!active || this.tasks.delegatedStep?.(task.id, s.id)) &&
         s.depends_on.every((k) => task.steps.find((p) => p.key === k)?.state === 'completed'),
     );
     if (!next) {
+      if (active) return;
       this.stop(task, 'No eligible step; inspect the plan');
       return;
     }
-    if (!(await this.worker(task)) || this.stopped) return;
+    const assigned = this.tasks.delegatedStep?.(task.id, next.id);
+    if ((!assigned && !(await this.worker(task))) || this.stopped) return;
     if (
+      !assigned &&
       r.auto_compact &&
       task.steps.some((s) => s.state === 'completed') &&
       !this.compact(task, next.id)
@@ -469,8 +503,10 @@ export class TaskDriver {
           reason = 'Explicit step attempt in progress';
         if (
           this.store.db
-            .prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'")
-            .get(task.session_id)
+            .prepare(
+              "SELECT 1 FROM approvals WHERE state='pending' AND (session_id=? OR session_id IN (SELECT child_session FROM child_tasks WHERE parent_session=?))",
+            )
+            .get(task.session_id, task.session_id)
         ) {
           state = 'waiting_for_person';
           reason = 'An operation-bound human approval is pending';
@@ -480,7 +516,7 @@ export class TaskDriver {
             .get(task.session_id)
         ) {
           state = 'waiting_for_child';
-          reason = 'Read-only child work is pending';
+          reason = 'A child worker is pending';
         } else if (this.supervisor.inspect(task.session_id).state !== 'ready') {
           state = 'waiting_for_infrastructure';
           reason = 'Waiting for worker readiness';

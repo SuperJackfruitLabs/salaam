@@ -34,6 +34,7 @@ interface WorkerConfig {
   child?: boolean;
   route?: ProviderRoute;
   coding?: CodingBinding;
+  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -58,28 +59,33 @@ export default function house(pi: ExtensionAPI): void {
     }
     shutdown?.();
   };
-  pi.registerTool({
-    name: 'salaam_probe',
-    label: 'Salaam readiness probe',
-    description: 'Verify the managed tool gate without external effects.',
-    parameters: Type.Object({ nested: Type.Optional(Type.Boolean()) }),
-    annotations: { readOnlyHint: true, openWorldHint: false },
-    async execute(toolCallId, params, signal, _update, ctx) {
-      if (params.nested) {
-        const outcome = await ctx.executeTool('salaam_probe', {}, { signal });
-        if (outcome.isError) {
-          await fail();
-          throw new Error('Nested managed probe failed');
+  if (
+    workerTools(!!c.effects, !!c.child, c.coding, c.worker_binding?.binding.tools).includes(
+      'salaam_probe',
+    )
+  )
+    pi.registerTool({
+      name: 'salaam_probe',
+      label: 'Salaam readiness probe',
+      description: 'Verify the managed tool gate without external effects.',
+      parameters: Type.Object({ nested: Type.Optional(Type.Boolean()) }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      async execute(toolCallId, params, signal, _update, ctx) {
+        if (params.nested) {
+          const outcome = await ctx.executeTool('salaam_probe', {}, { signal });
+          if (outcome.isError) {
+            await fail();
+            throw new Error('Nested managed probe failed');
+          }
+          return { ...outcome.result, isError: outcome.isError };
         }
-        return { ...outcome.result, isError: outcome.isError };
-      }
-      await bridge('tool', { tool: 'salaam_probe', tool_call_id: toolCallId });
-      return {
-        content: [{ type: 'text', text: 'managed probe granted' }],
-        details: { granted: true },
-      };
-    },
-  });
+        await bridge('tool', { tool: 'salaam_probe', tool_call_id: toolCallId });
+        return {
+          content: [{ type: 'text', text: 'managed probe granted' }],
+          details: { granted: true },
+        };
+      },
+    });
   const managedTool = (name: 'salaam_review' | 'salaam_effect', kind: 'review' | 'effect') =>
     pi.registerTool({
       name,
@@ -178,6 +184,7 @@ export default function house(pi: ExtensionAPI): void {
         prompt: Type.Optional(Type.String({ maxLength: 32768 })),
         budget: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
         authority: Type.Optional(Type.Array(Type.String())),
+        profile: Type.Optional(Type.String({ maxLength: 128 })),
         tasks: Type.Optional(
           Type.Array(Type.Object({ step_key: Type.String(), prompt: Type.String() }), {
             maxItems: 2,
@@ -194,7 +201,8 @@ export default function house(pi: ExtensionAPI): void {
             bridge<import('./protocol.js').ChildTask>('child.spawn', {
               ...task,
               budget: params.budget ?? 2,
-              authority: params.authority ?? ['salaam_probe'],
+              authority: params.authority ?? (params.profile ? [] : ['salaam_probe']),
+              ...(params.profile ? { profile: params.profile } : {}),
             }),
           ),
         );
@@ -243,7 +251,96 @@ export default function house(pi: ExtensionAPI): void {
     managedTool('salaam_review', 'review');
   }
   if (c.effects) managedTool('salaam_effect', 'effect');
-  if (c.coding && !c.child) {
+  if (c.worker_binding?.binding.tools.includes('salaam_repository')) {
+    pi.registerTool({
+      name: 'salaam_repository',
+      label: 'Repository snapshot',
+      description:
+        'Inspect, list, search or read the exact admitted immutable repository snapshot. Reviewers may also inspect its diff. Paths and line references refer to this snapshot; no host file access, edits or commands are available.',
+      parameters: Type.Object({
+        action: Type.Union(
+          ['inspect', 'list', 'search', 'read', 'diff'].map((x) => Type.Literal(x)),
+        ),
+        path: Type.Optional(Type.String({ maxLength: 512 })),
+        query: Type.Optional(Type.String({ maxLength: 256 })),
+        offset: Type.Optional(Type.Integer({ minimum: 0 })),
+      }),
+      async execute(id, args) {
+        try {
+          const result = await bridge('specialist.read', { tool_call_id: id, args });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            details: result,
+          };
+        } catch (error) {
+          if (
+            error instanceof ServiceError &&
+            ['not_found', 'binary_file', 'line_limit', 'unsafe_path', 'invalid_field'].includes(
+              error.code,
+            )
+          )
+            return {
+              content: [{ type: 'text' as const, text: error.message }],
+              details: { error: error.code },
+              isError: true,
+            };
+          await fail();
+          throw error;
+        }
+      },
+    });
+  }
+  if (c.worker_binding?.binding.tools.includes('salaam_team')) {
+    pi.registerTool({
+      name: 'salaam_team',
+      label: 'Team inbox',
+      description:
+        'Send, receive or acknowledge durable messages within this task. Messages never start or continue workers; delivery and acknowledgement are distinct.',
+      parameters: Type.Object({
+        action: Type.Union(['send', 'receive', 'ack'].map((a) => Type.Literal(a))),
+        request_id: Type.String({ maxLength: 128 }),
+        recipient: Type.Optional(Type.String()),
+        text: Type.Optional(Type.String({ maxLength: 4096 })),
+        message_id: Type.Optional(Type.String()),
+      }),
+      async execute(_id, args) {
+        const { action, ...body } = args;
+        const result = await bridge('team.' + action, body);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          details: result,
+        };
+      },
+    });
+  }
+  if (c.worker_binding?.binding.tools.includes('salaam_findings')) {
+    pi.registerTool({
+      name: 'salaam_findings',
+      label: 'Record review findings',
+      description:
+        'Publish final structured analysis over the admitted snapshot. Locations and source evidence are checked. Analysis cannot complete or verify a task.',
+      parameters: Type.Object({
+        findings: Type.Array(
+          Type.Object({
+            path: Type.String({ maxLength: 512 }),
+            line: Type.Integer({ minimum: 1 }),
+            end_line: Type.Optional(Type.Integer({ minimum: 1 })),
+            severity: Type.Union(['critical', 'high', 'medium', 'low'].map((x) => Type.Literal(x))),
+            message: Type.String({ maxLength: 2048 }),
+          }),
+          { maxItems: 32 },
+        ),
+      }),
+      async execute(_id, args) {
+        const result = await bridge('specialist.report', args);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          details: result,
+        };
+      },
+    });
+  }
+  if (c.coding) {
     const normal = (error: unknown) =>
       error instanceof ServiceError &&
       [
@@ -261,46 +358,47 @@ export default function house(pi: ExtensionAPI): void {
         'command_limit',
         'invalid_cursor',
       ].includes(error.code);
-    pi.registerTool({
-      name: 'salaam_files',
-      label: 'Guarded workspace files',
-      description:
-        'Inspect/list/search/read an owned workspace or patch one UTF-8 file. Read returns one-based line references and a file hash. Before patching, inspect/read current revision and hash. expected_hash=null creates a new file, content=null deletes one. The source checkout and Git metadata stay outside this workspace.',
-      parameters: Type.Object({
-        action: Type.Union(
-          ['inspect', 'list', 'search', 'read', 'patch'].map((value) => Type.Literal(value)),
-        ),
-        path: Type.Optional(Type.String({ maxLength: 512 })),
-        query: Type.Optional(Type.String({ maxLength: 256 })),
-        offset: Type.Optional(Type.Integer({ minimum: 0 })),
-        expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
-        expected_hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        content: Type.Optional(Type.Union([Type.String({ maxLength: 262144 }), Type.Null()])),
-      }),
-      async execute(id, params) {
-        try {
-          const result = await bridge<Record<string, unknown>>('coding.files', {
-            tool_call_id: id,
-            args: params,
-          });
-          return {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
-            details: result,
-            isError: params.action === 'patch' && result.state !== 'applied',
-          };
-        } catch (error) {
-          if (!normal(error)) {
-            await fail();
-            throw error;
+    if (c.coding.files)
+      pi.registerTool({
+        name: 'salaam_files',
+        label: 'Guarded workspace files',
+        description:
+          'Inspect/list/search/read an owned workspace or patch one UTF-8 file. Read returns one-based line references and a file hash. Before patching, inspect/read current revision and hash. expected_hash=null creates a new file, content=null deletes one. The source checkout and Git metadata stay outside this workspace.',
+        parameters: Type.Object({
+          action: Type.Union(
+            ['inspect', 'list', 'search', 'read', 'patch'].map((value) => Type.Literal(value)),
+          ),
+          path: Type.Optional(Type.String({ maxLength: 512 })),
+          query: Type.Optional(Type.String({ maxLength: 256 })),
+          offset: Type.Optional(Type.Integer({ minimum: 0 })),
+          expected_revision: Type.Optional(Type.Integer({ minimum: 0 })),
+          expected_hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          content: Type.Optional(Type.Union([Type.String({ maxLength: 262144 }), Type.Null()])),
+        }),
+        async execute(id, params) {
+          try {
+            const result = await bridge<Record<string, unknown>>('coding.files', {
+              tool_call_id: id,
+              args: params,
+            });
+            return {
+              content: [{ type: 'text', text: JSON.stringify(result) }],
+              details: result,
+              isError: params.action === 'patch' && result.state !== 'applied',
+            };
+          } catch (error) {
+            if (!normal(error)) {
+              await fail();
+              throw error;
+            }
+            return {
+              content: [{ type: 'text', text: (error as Error).message }],
+              details: { error: (error as ServiceError).code },
+              isError: true,
+            };
           }
-          return {
-            content: [{ type: 'text', text: (error as Error).message }],
-            details: { error: (error as ServiceError).code },
-            isError: true,
-          };
-        }
-      },
-    });
+        },
+      });
     if (c.coding.commands)
       pi.registerTool({
         name: 'salaam_command',
@@ -450,7 +548,7 @@ export default function house(pi: ExtensionAPI): void {
       pi,
       route,
       () => c.frame,
-      workerTools(!!c.effects, !!c.child, c.coding),
+      workerTools(!!c.effects, !!c.child, c.coding, c.worker_binding?.binding.tools),
       bridge,
       fail,
     );
@@ -668,7 +766,7 @@ export default function house(pi: ExtensionAPI): void {
       session_id: c.session,
       epoch: c.epoch,
       pi_session_id: ctx.sessionManager.getSessionId(),
-      capabilities: workerCapabilities(c.coding),
+      capabilities: workerCapabilities(c.coding, c.worker_binding?.binding.tools),
       ...(c.coding ? { coding: c.coding } : {}),
       tools: pi
         .getAllTools()
@@ -679,6 +777,7 @@ export default function house(pi: ExtensionAPI): void {
       provider: route.provider,
       route,
       context_digest: textDigest(c.frame),
+      ...(c.worker_binding ? { worker_binding: c.worker_binding } : {}),
     });
     timer = setInterval(() => {
       void bridge('heartbeat').catch(() => {

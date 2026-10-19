@@ -10,6 +10,7 @@ export const CAPABILITIES = [
   'durable-approvals',
   'operation-ledger',
   'child-work',
+  'worker-boundary-v1',
   'usage-ledger',
   'durable-task-context',
   'managed-compaction',
@@ -24,28 +25,40 @@ export const TOOLS = [
 ] as const;
 export interface CodingBinding {
   workspace_id: string;
-  files: true;
+  files: boolean;
   commands: boolean;
   profile_digest: string | null;
 }
-export function workerCapabilities(coding?: CodingBinding): string[] {
+export function workerCapabilities(
+  coding?: CodingBinding,
+  childTools?: readonly string[],
+): string[] {
   return [
     ...CAPABILITIES,
-    ...(coding ? ['workspace-files'] : []),
+    ...(coding?.files ? ['workspace-files'] : []),
     ...(coding?.commands ? ['command-execution'] : []),
+    ...(childTools?.includes('salaam_repository') ? ['repository-snapshot-read'] : []),
+    ...(childTools?.includes('salaam_findings') ? ['structured-findings'] : []),
+    ...(childTools?.includes('salaam_team') ? ['durable-team-messages'] : []),
   ];
 }
-export function workerTools(effects: boolean, child = false, coding?: CodingBinding): string[] {
+export function workerTools(
+  effects: boolean,
+  child = false,
+  coding?: CodingBinding,
+  childTools?: readonly string[],
+): string[] {
   return child
-    ? ['salaam_probe']
+    ? [...(childTools ?? ['salaam_probe'])].sort()
     : [
         ...TOOLS,
         ...(effects ? ['salaam_effect'] : []),
-        ...(coding ? ['salaam_files'] : []),
+        ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),
       ].sort();
 }
 export interface ChildTask {
+  worker?: import('./worker-boundary.js').WorkerBoundaryView;
   id: string;
   parent_session: string;
   parent_attempt: string;
@@ -91,7 +104,14 @@ export interface DurableEvent {
   payload: unknown;
 }
 export type AttemptState =
-  'accepted' | 'dispatching' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
+  | 'accepted'
+  | 'dispatching'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled'
+  | 'delegated';
 export interface Attempt {
   id: string;
   session_id: string;
@@ -123,6 +143,8 @@ export interface Controller {
   token: string;
 }
 export interface SessionSnapshot extends Session {
+  team?: unknown;
+  agents?: ReturnType<import('./agent-profiles.js').AgentProfiles['snapshot']>;
   inbox?: import('./operator-inbox.js').InboxEntry[];
   recurring_occurrence?: import('./recurring-work.js').RecurringOccurrence | null;
   work_task?: import('./task-work.js').WorkTask | null;
@@ -155,7 +177,7 @@ export interface Operation {
   attempt_id: string;
   worker_epoch: number;
   tool_call_id: string;
-  kind: 'review' | 'effect';
+  kind: 'review' | 'effect' | 'harness';
   action_key: string;
   argument_digest: string;
   operation_digest: string;
@@ -188,6 +210,7 @@ export interface Approval {
   decided_by: string | null;
 }
 export interface Manifest {
+  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
   protocol_version: number;
   bundle_digest: string;
   policy_digest: string;

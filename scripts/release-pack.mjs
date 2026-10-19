@@ -25,6 +25,7 @@ try {
     'src',
     'dist/src',
     'pi-pin.json',
+    'harness-runtime',
     'LICENSE',
     'README.md',
     'CHANGELOG.md',

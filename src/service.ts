@@ -14,7 +14,7 @@ import { Store } from './store.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
-import { canonical, integer, object, ServiceError, string } from './protocol.js';
+import { canonical, digest, integer, object, ServiceError, string } from './protocol.js';
 import { readJson } from './transport.js';
 import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
@@ -25,8 +25,28 @@ import { engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor, type ExecutionBackend } from './coding-executor.js';
 import { Workspaces } from './workspaces.js';
 import { CodingWork } from './coding.js';
+import { AgentProfiles } from './agent-profiles.js';
+import { RepositorySnapshots } from './repository-snapshots.js';
+import { TeamWork } from './team-work.js';
+import { WorkerWorkspaces } from './worker-workspaces.js';
+import { ExternalWork } from './external-work.js';
+import type { ExternalBackend } from './external-runtime.js';
+import { DockerHarnessBackend } from './harness-backend.js';
+import { A2AInbound } from './a2a-inbound.js';
+import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  externalBackend?: ExternalBackend;
+  harnessConfig?: string;
+  a2aConfig?: string;
+  a2aListenConfig?: string;
+  /** Trusted host admission, installed before any startup/recovery dispatch; throws deny a request. */
+  admitModelRequest?: (
+    session: string,
+    attempt: string | undefined,
+    input: number,
+    output: number,
+  ) => void;
   stateDir: string;
   effectConnector?: EffectConnector;
   approvalTtlMs?: number;
@@ -36,6 +56,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   expectedExecution?: { profile_digest: string; engine_id: string };
 }
 export class SalaamService {
+  readonly external: ExternalWork;
+  a2aInbound?: A2AInbound;
   readonly stateDir: string;
   readonly socket: string;
   readonly bridgeSocket: string;
@@ -54,6 +76,10 @@ export class SalaamService {
   readonly dispatcher: Dispatcher;
   readonly managed: ManagedWork;
   readonly children: ChildWork;
+  readonly agents: AgentProfiles;
+  readonly repositories: RepositorySnapshots;
+  readonly team: TeamWork;
+  readonly workerWorkspaces: WorkerWorkspaces;
   readonly workspaces: Workspaces;
   readonly coding: CodingWork;
   readonly codingSocket: string | null;
@@ -82,6 +108,13 @@ export class SalaamService {
         this.tasks = new TaskContext(this.store, this.artifacts);
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
+        if (options.admitModelRequest) {
+          const taskAdmission = this.store.taskModelAdmission!;
+          this.store.taskModelAdmission = (session, attempt, input, output) => {
+            taskAdmission(session, attempt, input, output);
+            options.admitModelRequest!(session, attempt, input, output);
+          };
+        }
         this.workspaces = new Workspaces(this.store, this.artifacts, options.codingRoot);
         if (options.codingSocket && !options.codingRoot)
           throw new Error('Command execution requires an explicit --coding-root');
@@ -90,6 +123,35 @@ export class SalaamService {
           (options.codingSocket
             ? new DockerCodingExecutor(engineRequest(options.codingSocket))
             : undefined);
+        if (
+          options.harnessConfig &&
+          (options.externalBackend ||
+            !(executor instanceof DockerCodingExecutor) ||
+            !options.codingSocket ||
+            !options.codingRoot)
+        )
+          throw Error(
+            'Harness configuration requires the real configured Docker executor and an exclusive backend',
+          );
+        if (options.a2aConfig && (options.externalBackend || !options.codingRoot || !executor))
+          throw Error(
+            'A2A configuration requires an owned coding root/executor and an exclusive backend',
+          );
+        const externalBackend =
+          options.externalBackend ??
+          new ExternalBackends([
+            ...(options.harnessConfig
+              ? [
+                  new DockerHarnessBackend(
+                    resolve(options.harnessConfig),
+                    join(resolve(options.codingRoot!), 'external'),
+                    options.codingSocket!,
+                    executor as DockerCodingExecutor,
+                  ),
+                ]
+              : []),
+            ...(options.a2aConfig ? [new A2ABackend(resolve(options.a2aConfig))] : []),
+          ]);
         this.coding = new CodingWork(
           this.store,
           this.workspaces,
@@ -125,14 +187,86 @@ export class SalaamService {
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
           approvalTtlMs: options.approvalTtlMs,
-          assertActive: (id, epoch, attempt) => this.supervisor.assertActive(id, epoch, attempt),
+          assertActive: (id, epoch, attempt) =>
+            this.external?.owns(id)
+              ? this.external.assertActive(id, epoch, attempt)
+              : this.supervisor.assertActive(id, epoch, attempt),
           reply: (id, epoch, request, confirmed) =>
             this.supervisor.replyUI(id, epoch, request, confirmed),
-          failed: (id, error) => this.supervisor.failControl(id, error),
+          failed: (id, error) =>
+            this.external?.owns(id)
+              ? this.external.failControl(id, error)
+              : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
-        this.children = new ChildWork(this.store, this.artifacts, this.supervisor);
+        this.agents = new AgentProfiles(
+          this.store,
+          this.supervisor.route,
+          async (route, session) => {
+            const prepared = await this.supervisor.prepareProviderRoute(route);
+            const task = this.taskWork.forSession(session);
+            if (task) this.supervisor.assertTaskProviderSupported(task.limits, prepared.output_cap);
+            return { route: prepared.route, output_cap: prepared.output_cap };
+          },
+        );
+        this.store.workerBoundary.profiles = this.agents;
+        this.agents.validateFrame = (session) => {
+          this.tasks.frame(session, 'x'.repeat(32));
+        };
+        this.repositories = new RepositorySnapshots(this.store, this.artifacts, this.workspaces);
+        this.supervisor.repositories = this.repositories;
+        this.children = new ChildWork(
+          this.store,
+          this.artifacts,
+          this.supervisor,
+          this.repositories,
+        );
         this.supervisor.children = this.children;
+        this.workerWorkspaces = new WorkerWorkspaces(
+          this.store,
+          this.workspaces,
+          this.repositories,
+          this.artifacts,
+          this.coding,
+          this.children,
+        );
+        this.children.workspaces = this.workerWorkspaces;
+        this.agents.assertExecution = () => {
+          this.workerWorkspaces.execution();
+        };
+        this.store.workerBoundary.assertIsolation = (binding) =>
+          this.workerWorkspaces.assert(binding);
+        this.taskWork.assertStepReview = (task, step) =>
+          this.workerWorkspaces.assertStepReview(task, step);
+        this.team = new TeamWork(
+          this.store,
+          this.taskWork,
+          this.taskBudget,
+          this.children,
+          this.agents,
+        );
+        this.supervisor.team = this.team;
+        this.external = new ExternalWork(
+          this.store,
+          this.artifacts,
+          this.children,
+          this.taskBudget,
+          this.managed,
+          this.workspaces,
+          externalBackend,
+          options.admitModelRequest,
+        );
+        this.children.external = this.external;
+        const guardSubmission = this.store.guardTaskSubmission!;
+        this.store.guardTaskSubmission = (session, step) => {
+          const child = this.children.owned(session);
+          if (child && this.store.workerBoundary.view(child.id).binding.external)
+            throw new ServiceError(
+              'external_worker_owned',
+              'Use the owning team assignment and an explicit continuation',
+            );
+          guardSubmission(session, step);
+        };
         this.dispatcher = new Dispatcher(this.store, this.supervisor);
         this.taskDriver = new TaskDriver(
           this.store,
@@ -152,6 +286,7 @@ export class SalaamService {
         );
         this.recurring = new RecurringWork(this.jobs);
         this.inbox = new OperatorInbox(this.store, (error) => {
+          this.external.failAll(error);
           for (const session of this.store.sessions())
             this.supervisor.failControl(session.id, error);
         });
@@ -210,19 +345,26 @@ export class SalaamService {
       )
         throw new Error('Host executor does not match reviewed manifest');
       await service.supervisor.providerAuth();
+      await service.external.backend?.prepare?.();
       await service.supervisor.recover();
+      await service.external.recover();
       service.store.recoverWork();
       service.taskWork.recover();
       service.tasks.recover();
       service.workspaces.recover();
       service.coding.recover();
       service.children.recover();
+      service.workerWorkspaces.recover();
       service.managed.recover();
       await service.managed.reconcileAll();
       service.taskCheckpoints.recover();
       await service.jobs.recover();
       await service.recurring.recover();
       service.inbox.reconcile();
+      if (options.a2aListenConfig) {
+        service.a2aInbound = new A2AInbound(service, resolve(options.a2aListenConfig));
+        await service.a2aInbound.listen();
+      }
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
       service.taskDriver.start();
@@ -256,6 +398,54 @@ export class SalaamService {
       if (this.stopping) throw new ServiceError('stopping', 'Service is stopping', 503);
       const url = new URL(req.url ?? '/', 'http://local');
       const parts = url.pathname.split('/').filter(Boolean);
+      if (
+        !bridge &&
+        req.method === 'GET' &&
+        parts[0] === 'v1' &&
+        parts[1] === 'a2a' &&
+        parts[2] === 'grants' &&
+        parts[3] &&
+        parts.length === 4
+      ) {
+        this.send(res, 200, A2AInbound.binding(this, parts[3]));
+        return;
+      }
+      if (!bridge && parts[0] === 'v1' && parts[1] === 'harnesses') {
+        if (req.method === 'GET' && parts.length === 2) {
+          this.send(res, 200, this.external.runtimes());
+          return;
+        }
+        if (parts[2]) {
+          const raw = this.store.db
+            .prepare('SELECT * FROM child_tasks WHERE id=?')
+            .get(parts[2]) as unknown as import('./protocol.js').ChildTask | undefined;
+          if (!raw || !this.store.workerBoundary.view(raw.id).binding.external)
+            throw new ServiceError('not_found', 'External worker not found', 404);
+          if (req.method === 'GET' && parts.length === 3) {
+            this.send(res, 200, {
+              child: this.children.inspect(raw.parent_session, raw.id),
+              execution: this.external.view(raw.id),
+            });
+            return;
+          }
+          if (req.method === 'POST' && parts.length === 4 && parts[3] === 'reconcile') {
+            const body = object(await readJson(req));
+            const result = await this.external.reconcile(
+              raw,
+              string(body.request_id, 'request_id', 128),
+              string(body.run_id, 'run_id', 128),
+              () =>
+                this.store.authorizeControl(raw.parent_session, {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                }),
+            );
+            this.send(res, 200, result);
+            return;
+          }
+        }
+        throw new ServiceError('not_found', 'External worker route not found', 404);
+      }
       if (bridge) {
         if (req.method !== 'POST' || parts.length !== 3 || parts[0] !== 'worker')
           throw new ServiceError('not_found', 'Bridge route not found', 404);
@@ -465,7 +655,169 @@ export class SalaamService {
         }
         throw new ServiceError('not_found', 'Job route not found', 404);
       }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'integrations' &&
+        parts[2] &&
+        parts.length === 4 &&
+        parts[3] === 'resolve' &&
+        req.method === 'POST'
+      ) {
+        const body = object(await readJson(req)),
+          controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          },
+          parent = this.workerWorkspaces.owner(parts[2]);
+        this.send(
+          res,
+          200,
+          this.workerWorkspaces.resolve(
+            parts[2],
+            string(body.request_id, 'request_id', 128),
+            integer(body.workspace_revision, 'workspace_revision'),
+            string(body.workspace_digest, 'workspace_digest', 128),
+            () => this.store.authorizeControl(parent, controller),
+          ),
+        );
+        return;
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'integrations' &&
+        parts[2] &&
+        parts.length === 3 &&
+        req.method === 'GET'
+      ) {
+        this.send(res, 200, this.workerWorkspaces.inspect(parts[2]));
+        return;
+      }
+      if (parts[0] === 'v1' && parts[1] === 'workers' && parts[2] && parts.length === 4) {
+        const child = this.store.db
+          .prepare('SELECT parent_session FROM child_tasks WHERE id=?')
+          .get(parts[2]);
+        if (!child) throw new ServiceError('not_found', 'Worker not found', 404);
+        const parent = String(child.parent_session);
+        if (parts[3] === 'proposal' && req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            this.workerWorkspaces.proposal(
+              parent,
+              parts[2],
+              integer(Number(url.searchParams.get('offset') ?? '0'), 'offset'),
+            ),
+          );
+          return;
+        }
+        if (parts[3] === 'integrate' && req.method === 'POST') {
+          const body = object(await readJson(req)),
+            controller = {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            };
+          this.send(
+            res,
+            200,
+            this.workerWorkspaces.integrate(
+              parent,
+              parts[2],
+              string(body.request_id, 'request_id', 128),
+              integer(body.workspace_revision, 'workspace_revision'),
+              string(body.workspace_digest, 'workspace_digest', 128),
+              string(body.patch_digest, 'patch_digest', 128),
+              () => this.store.authorizeControl(parent, controller),
+            ),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'tasks') {
+        if (parts[2] && parts[3] === 'team') {
+          const task = this.taskWork.get(parts[2]);
+          if (req.method === 'GET' && parts.length === 4) {
+            this.send(res, 200, this.team.view(task.id));
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            const request = string(body.request_id, 'request_id', 128);
+            const controller = {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            };
+            const authorize = () => this.store.authorizeControl(task.session_id, controller);
+            let result: unknown;
+            if (parts.length === 5 && parts[4] === 'assign') {
+              if (body.runtime !== undefined && body.requests !== undefined)
+                throw new ServiceError(
+                  'worker_budget_scope',
+                  'Use invocations for an external runtime; requests always means model requests',
+                  400,
+                );
+              result = this.team.assign(
+                task.id,
+                string(body.step_id, 'step_id', 128),
+                string(body.profile_id, 'profile_id', 128),
+                integer(
+                  body.runtime === undefined ? body.requests : body.invocations,
+                  body.runtime === undefined ? 'requests' : 'invocations',
+                ),
+                request,
+                integer(body.expected_revision, 'expected_revision'),
+                controller,
+                body.runtime === undefined ? undefined : string(body.runtime, 'runtime', 128),
+              );
+            } else if (parts.length === 5 && parts[4] === 'send') {
+              result = this.team.send(
+                task.id,
+                'operator',
+                string(body.recipient, 'recipient', 128),
+                string(body.text, 'text', 4096),
+                request,
+                authorize,
+              );
+            } else if (parts.length === 6 && parts[4]) {
+              const assignment = this.team.get(parts[4]);
+              if (assignment.task_id !== task.id)
+                throw new ServiceError('team_message_scope', 'Assignment belongs to another task');
+              if (parts[5] === 'run')
+                result = this.team.run(
+                  assignment.id,
+                  request,
+                  integer(body.expected_revision, 'expected_revision'),
+                  integer(body.generation, 'generation'),
+                  body.instruction == null ? null : string(body.instruction, 'instruction', 4096),
+                  body.continues_attempt_id == null
+                    ? null
+                    : string(body.continues_attempt_id, 'continues_attempt_id', 128),
+                  controller,
+                );
+              else if (parts[5] === 'reject')
+                result = this.team.reject(
+                  assignment.id,
+                  request,
+                  integer(body.expected_revision, 'expected_revision'),
+                  integer(body.generation, 'generation'),
+                  string(body.reason, 'reason', 4096),
+                  controller,
+                );
+              else if (parts[5] === 'receive')
+                result = this.team.receive(assignment.id, request, authorize);
+              else if (parts[5] === 'ack')
+                result = this.team.acknowledge(
+                  assignment.id,
+                  string(body.message_id, 'message_id', 128),
+                  request,
+                  authorize,
+                );
+              else throw new ServiceError('not_found', 'Team action not found', 404);
+            } else throw new ServiceError('not_found', 'Team route not found', 404);
+            this.send(res, 200, result);
+            return;
+          }
+          throw new ServiceError('not_found', 'Team route not found', 404);
+        }
         if (req.method === 'GET' && parts.length === 2) {
           const session = string(url.searchParams.get('session_id'), 'session_id', 128);
           this.store.session(session);
@@ -643,6 +995,26 @@ export class SalaamService {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
           service: 'healthy',
+          a2a: {
+            inbound_enabled: !!this.a2aInbound,
+            listener: this.a2aInbound?.server.address() ?? null,
+            wire_version: '1.0',
+            remote_execution: 'unobserved',
+            inbound_authority: 'one-use-native-analysis-assignment',
+          },
+          external_workers: {
+            control: this.external.status(),
+            runtimes: this.external.runtimes(),
+            opaque_budget: 'explicit-invocations-only',
+            unknown_model_usage: true,
+            uncertain_stops: Number(
+              this.store.db
+                .prepare(
+                  "SELECT count(*) AS n FROM external_runs WHERE stopped=0 AND state='unknown'",
+                )
+                .get()!.n,
+            ),
+          },
           job_execution: {
             durable_jobs: true,
             one_shot_triggers: !!this.coding.executor,
@@ -755,6 +1127,60 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts[3] === 'agents') {
+          if (req.method === 'GET') {
+            const profile = url.searchParams.get('profile');
+            this.send(
+              res,
+              200,
+              profile
+                ? {
+                    ...this.agents.inspect(id, profile),
+                    digest: digest(this.agents.inspect(id, profile)),
+                  }
+                : this.agents.list(id).map((p) => ({ ...p, digest: digest(p) })),
+            );
+            return;
+          }
+          const body = object(await readJson(req));
+          const controller = {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          };
+          const request = string(body.request_id, 'request_id', 128);
+          if (parts[4] === 'admit') {
+            const facts =
+              body.fact_ids === undefined
+                ? []
+                : Array.isArray(body.fact_ids)
+                  ? body.fact_ids.map((x) => string(x, 'fact_id', 128))
+                  : (() => {
+                      throw new ServiceError('invalid_field', 'fact_ids must be an array');
+                    })();
+            this.send(
+              res,
+              201,
+              await this.agents.admit(
+                id,
+                request,
+                string(body.profile_id, 'profile_id', 128),
+                string(body.expected_digest, 'expected_digest', 64),
+                facts,
+                controller,
+              ),
+            );
+            return;
+          }
+          if (parts[4] === 'revoke') {
+            this.send(
+              res,
+              200,
+              this.agents.revoke(id, string(body.grant_id, 'grant_id', 128), request, controller),
+            );
+            return;
+          }
+          throw new ServiceError('not_found', 'Agent operation not found', 404);
+        }
         if (parts[3] === 'activity' && req.method === 'GET') {
           this.store.session(id);
           const rows = this.store.db
@@ -1016,12 +1442,14 @@ export class SalaamService {
           },
         );
         this.coding.cancelAttempt(attempt);
-        void this.children
-          .cancelOwned(attempt)
-          .then(() => this.supervisor.cancelAttempt(attempt))
-          .catch((error) =>
-            this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
-          );
+        const owned = this.children.owned(this.store.attempt(attempt).session_id);
+        void (
+          owned && this.store.workerBoundary.view(owned.id).binding.external
+            ? this.external.cancel(owned)
+            : this.children.cancelOwned(attempt).then(() => this.supervisor.cancelAttempt(attempt))
+        ).catch((error) =>
+          this.supervisor.failControl(this.store.attempt(attempt).session_id, error),
+        );
         this.send(res, 202, receipt);
         return;
       }
@@ -1260,6 +1688,8 @@ export class SalaamService {
     this.children.pause();
     const errors: unknown[] = [];
     try {
+      await this.a2aInbound?.close();
+      await this.external.close();
       await this.coding.close();
       try {
         await this.children.close();

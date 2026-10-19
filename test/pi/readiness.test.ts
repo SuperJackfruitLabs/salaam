@@ -18,6 +18,7 @@ test('real pinned Pi passes readiness, executes a gated turn, and persists its s
       'durable-approvals',
       'operation-ledger',
       'child-work',
+      'worker-boundary-v1',
       'usage-ledger',
       'durable-task-context',
       'managed-compaction',
