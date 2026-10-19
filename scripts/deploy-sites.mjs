@@ -3,6 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { root } from './release-check.mjs';
+import { selectedSiteProjects } from './site-targets.mjs';
+
+const projects = selectedSiteProjects(process.argv.slice(2), ['--built', '--dry-run']);
 
 if (!process.argv.includes('--built'))
   execFileSync('npm', ['run', 'sites:build'], { cwd: root, stdio: 'inherit' });
@@ -14,7 +17,7 @@ else
 // Explicit config/cwd prevents Wrangler's framework auto-detection from rewriting Astro.
 const scratch = mkdtempSync(join(tmpdir(), 'sal-sites-'));
 try {
-  for (const name of ['landing', 'docs-site']) {
+  for (const name of projects) {
     execFileSync(
       process.execPath,
       [

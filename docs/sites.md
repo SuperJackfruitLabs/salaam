@@ -39,7 +39,8 @@ The previews use ports 4341 and 4342. To keep cross-site navigation local, set
 `SALAAM_DOCS_URL=http://localhost:4342` for both processes.
 
 Every build checks generated internal links and assets across both sites, required
-entry pages, search and llms exports. CI runs these builds on pushes and PRs.
+entry pages (including specialists, harnesses and A2A), search and llms exports.
+CI runs these builds on main and PRs.
 The README stays short; detailed commands and recovery guidance live in docs.
 
 ## Deploy with existing Cloudflare login
@@ -61,14 +62,54 @@ The script builds and checks before deploying. `--built` rechecks existing outpu
 when the exact build already passed. A successful dry run is configuration
 validation, not evidence that a domain is live; verify production separately.
 
-## CI deployment (optional)
+## Connect automatic builds in the Cloudflare dashboard
 
-The manually triggered `Deploy public sites` workflow runs only from main, builds
-and checks both sites, then deploys through the `websites` GitHub environment.
-Configure `CLOUDFLARE_ACCOUNT_ID` as an environment/repository variable and a
-scope-limited `CLOUDFLARE_API_TOKEN` as an environment secret. It needs access to
-these Workers and the corresponding domain routes. Never copy OAuth credentials
-into Git or workflow source. No token is required for local OAuth deployment.
+Connect the two existing Workers to `SuperJackfruitLabs/salaam` in each Worker's
+Settings > Build page. Keep production on `main`, set the root directory to the
+repository root (`/`), and disable non-production branch deployments. No new
+Workers, domains or GitHub deployment secret are needed for this connection.
+
+Set build variables `NODE_VERSION=26.7.0` and `SKIP_DEPENDENCY_INSTALL=1` for both
+Workers. Use this build command to install the exact npm version, install from all
+three pinned lockfiles with scripts disabled, and check cross-site links:
+
+```sh
+npm install --global npm@11.19.0 --ignore-scripts && npm ci --ignore-scripts && npm --prefix landing ci --ignore-scripts && npm --prefix docs-site ci --ignore-scripts && npm run sites:build
+```
+
+Use a different deploy command for each Worker:
+
+| Worker           | Production domain | Deploy command                                                                                   |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| `salaam-landing` | `salaam.sh`       | `node scripts/deploy-sites.mjs --built --site landing && npm run sites:verify -- --site landing` |
+| `salaam-docs`    | `docs.salaam.sh`  | `node scripts/deploy-sites.mjs --built --site docs && npm run sites:verify -- --site docs`       |
+
+Each build checks both sites, but publishes and verifies only its selected Worker.
+This prevents two independent dashboard builds from racing to deploy both domains
+or failing verification while the other domain is still updating. The deployer
+uses explicit configs from a scratch directory, avoiding Astro auto-scaffolding.
+Cloudflare manages authentication for the connected build. The dashboard connection
+is an operator setup step; these settings alone do not establish that it is active.
+See [Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+and [build image variables](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/).
+
+The optional GitHub `Deploy public sites` workflow remains manual-only on main.
+It requires the `websites` environment's `CLOUDFLARE_ACCOUNT_ID` variable and
+`CLOUDFLARE_API_TOKEN` secret if used. Local OAuth deployment and dashboard builds
+do not require a token stored in GitHub. Never copy OAuth credentials into Git
+or workflow source.
+
+## Verify public deployments
+
+After publishing, `npm run sites:verify` fetches every generated public HTML page
+and static asset from both canonical domains, requires the expected HTTP status
+and matching SHA-256 bytes, and checks a missing-page response on each host.
+This covers the guides, navigation assets, diagram JavaScript, local search,
+robots/sitemaps, llms exports and hosted installer. Short propagation delays are
+retried. Failed verification exits unsuccessfully and preserves results in
+`.state/sites-verification.json`. Local verification uses the latest local builds;
+build the exact reviewed source first. Use `--site landing` or `--site docs` to
+verify only one independently deployed Worker.
 
 Website deployment is independent of CLI version tags. Update landing claims and
 docs with behavior changes, and preserve source/build/deployment distinctions in

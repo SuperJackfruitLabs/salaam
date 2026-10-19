@@ -444,6 +444,82 @@ h2 {
 .journey-list {
   padding-top: 8px;
 }
+.team-heading {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 90px;
+  align-items: end;
+  margin-bottom: 40px;
+}
+.team-heading > p {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 420px;
+  margin: 0 0 5px;
+}
+.worker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.worker-card {
+  display: flex;
+  flex-direction: column;
+  padding: 28px 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.worker-card .eyebrow {
+  font-size: 8px;
+  margin: 0 0 23px;
+}
+.worker-card .eyebrow span {
+  color: var(--muted);
+  margin-right: 5px;
+}
+.worker-card > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 14px 0 25px;
+}
+.worker-card .text-link {
+  margin-top: auto;
+  align-self: start;
+}
+.team-plan {
+  margin-top: 34px;
+}
+.team-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-block: 1px solid var(--line);
+}
+.team-flow li {
+  padding: 22px 18px;
+  min-width: 0;
+}
+.team-flow li + li {
+  border-left: 1px solid var(--line);
+}
+.team-flow span {
+  color: var(--jade);
+  font: 10px var(--mono);
+}
+.team-flow p {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+.team-boundaries {
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 800px;
+  margin: 22px 0 0;
+}
 .journey-list article {
   display: flex;
   gap: 25px;
@@ -636,7 +712,8 @@ footer nav {
     font-size: 6px;
   }
   .journey,
-  .evidence {
+  .evidence,
+  .team-heading {
     gap: 45px;
   }
   .modes,
@@ -669,6 +746,9 @@ footer nav {
     font-size: 12px;
   }
   .masthead nav a:first-child {
+    display: none;
+  }
+  .masthead nav a[href='#team'] {
     display: none;
   }
   .hero {
@@ -721,10 +801,21 @@ footer nav {
   }
   .journey,
   .evidence,
+  .team-heading,
+  .worker-grid,
   .modes,
   .start {
     grid-template-columns: 1fr;
     gap: 30px;
+  }
+  .team-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .team-flow li:nth-child(3) {
+    border-left: 0;
+  }
+  .team-flow li:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
   }
   h2 {
     font-size: 46px;
