@@ -21,7 +21,7 @@ You can [read the installer](https://salaam.sh/install.sh) before running it. To
 select a version and install under your account, pass arguments after `sh -s --`:
 
 ```sh
-curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.1 --prefix "$HOME/.local"
+curl -fsSL https://salaam.sh/install.sh | sh -s -- --version 0.0.2 --prefix "$HOME/.local"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -44,7 +44,7 @@ the tarball's listed SHA-256 digest (`sha256sum` on Linux or `shasum -a 256` on
 macOS), then install:
 
 ```sh
-npm install --global --ignore-scripts --offline --no-audit --no-fund ./salaam-cli-0.0.1.tgz
+npm install --global --ignore-scripts --offline --no-audit --no-fund ./salaam-cli-0.0.2.tgz
 ```
 
 Production dependencies are bundled from the reviewed lockfile. The package includes
@@ -57,7 +57,7 @@ development dependencies. No checkout or compiler is needed.
 Install a specific published version:
 
 ```sh
-npm install --global @superjackfruitlabs/salaam@0.0.1 --ignore-scripts
+npm install --global @superjackfruitlabs/salaam@0.0.2 --ignore-scripts
 ```
 
 ## Upgrade deliberately
