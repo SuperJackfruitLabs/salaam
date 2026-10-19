@@ -68,6 +68,7 @@
     "release:pack": "npm run build && node scripts/release-pack.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "sites:build": "npm --prefix landing run build && npm --prefix docs-site run build && node scripts/check-sites.mjs",
+    "sites:verify": "node scripts/verify-sites.mjs",
     "prepack": "node scripts/source-pack-guard.mjs"
   },
   "dependencies": {
