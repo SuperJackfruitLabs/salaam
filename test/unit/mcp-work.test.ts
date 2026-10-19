@@ -243,6 +243,39 @@ test('one logical MCP read retains its call and result receipt through retry and
   }
 });
 
+test('an operator cannot clear MCP uncertainty while local resource cleanup is unconfirmed', async () => {
+  const f = fixture();
+  try {
+    f.mode.closeFailure = true;
+    const call = f.prepare('unconfirmed-resolution', 'fixture_mutate', { value: 'fixture' });
+    f.approve(call.id);
+    f.start(call.id);
+    await until(
+      () => f.work.status(f.session.id),
+      (s) => s.active_calls.length === 0 && s.control_error !== null,
+    );
+    const op = f.managed.operation(call.operation_id!);
+    expect(op.state).toBe('outcome_unknown');
+    expect(() =>
+      f.managed.resolve(
+        op.id,
+        'unsafe-resolution',
+        op.revision,
+        op.operation_digest,
+        'failed_definite',
+        'Synthetic operator observation does not confirm local resource cleanup',
+      ),
+    ).toThrow(/resource|settled|cleanup/i);
+    expect(f.store.hasUnknown(f.session.id)).toBe(true);
+    await expect(f.work.close()).rejects.toThrow(/cleanup|reconciliation/i);
+    expect(() => new McpWork(f.store, f.managed, f.artifacts, f.work.options)).toThrow(
+      /registered/i,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('readiness binds progressive discovery to the current assignment without sending tools/call', async () => {
   const f = fixture();
   try {

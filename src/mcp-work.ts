@@ -95,15 +95,26 @@ export class McpWork {
   >();
   private closing = false;
   private assertOwned = (operation: Operation) => this.assertOperation(operation);
+  private unregisterOwner: () => void;
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
     readonly artifacts: Artifacts,
     readonly options: McpWorkOptions,
   ) {
-    if (managed.options.assertMcpOperation)
-      throw Error('MCP execution controller already registered');
-    managed.options.assertMcpOperation = this.assertOwned;
+    this.unregisterOwner = managed.registerMcpController('managed-http', {
+      owns: (op) =>
+        !!this.store.db.prepare('SELECT 1 FROM mcp_calls WHERE operation_id=?').get(op.id),
+      assert: this.assertOwned,
+      assertSettled: (op) => {
+        const call = this.ownedCall(op);
+        if (this.active.has(call.id) || this.stopFailures.has(call.session_id))
+          throw new ServiceError(
+            'mcp_resources_unconfirmed',
+            'MCP local resource cleanup is unconfirmed',
+          );
+      },
+    });
   }
   get(id: string): McpCall {
     const row = this.store.db.prepare('SELECT * FROM mcp_calls WHERE id=?').get(id) as unknown as
@@ -328,11 +339,10 @@ export class McpWork {
       throw new ServiceError('mcp_binding_changed', 'MCP call integrity changed');
     return assigned;
   }
-  private assertOperation(op: Operation): void {
+  private ownedCall(op: Operation): McpCall {
     const row = this.store.db.prepare('SELECT id FROM mcp_calls WHERE operation_id=?').get(op.id);
     if (!row) throw new ServiceError('mcp_binding_changed', 'MCP permission has no call owner');
     const call = this.get(String(row.id));
-    this.bound(call);
     if (
       op.session_id !== call.session_id ||
       op.worker_epoch !== call.worker_epoch ||
@@ -343,6 +353,10 @@ export class McpWork {
       op.target_version !== this.context(call)
     )
       throw new ServiceError('mcp_binding_changed', 'MCP permission differs from its call owner');
+    return call;
+  }
+  private assertOperation(op: Operation): void {
+    this.bound(this.ownedCall(op));
   }
   prepare(
     session: string,
@@ -714,9 +728,8 @@ export class McpWork {
     await Promise.allSettled([...this.readiness.values()].map((job) => job.done));
     for (const active of this.active.values()) this.abort(active);
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
-    if (this.managed.options.assertMcpOperation === this.assertOwned)
-      this.managed.options.assertMcpOperation = undefined;
     if (this.stopFailures.size)
       throw new ServiceError('mcp_stop_unconfirmed', 'MCP cleanup requires reconciliation');
+    this.unregisterOwner();
   }
 }

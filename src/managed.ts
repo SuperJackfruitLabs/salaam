@@ -25,8 +25,16 @@ export interface ManagedOptions {
   reply(session: string, epoch: number, request: string, confirmed: boolean): void;
   failed(session: string, error: Error): void;
   assertMcpOperation?: (operation: Operation) => void;
+  /** Legacy trusted controller seam; production controllers register their ownership below. */
+  assertMcpSettlement?: (operation: Operation) => void;
+}
+export interface McpPermissionController {
+  owns(operation: Operation): boolean;
+  assert(operation: Operation): void;
+  assertSettled(operation: Operation): void;
 }
 export class ManagedWork {
+  private mcpControllers = new Map<string, Readonly<McpPermissionController>>();
   private active = new Map<string, { controller: AbortController; done: Promise<void> }>();
   private reconciling = new Set<string>();
   private lookups = new Set<Promise<Operation>>();
@@ -45,6 +53,40 @@ export class ManagedWork {
       }
     }, 100);
     this.timer.unref();
+  }
+  /** Ownership comes from the controller's durable records, never a tool target prefix. */
+  registerMcpController(name: string, controller: McpPermissionController): () => void {
+    if (
+      !/^[a-z][a-z0-9-]{0,63}$/.test(name) ||
+      this.mcpControllers.has(name) ||
+      this.options.assertMcpOperation
+    )
+      throw Error('MCP execution controller already registered or invalid');
+    const registered = Object.freeze({ ...controller });
+    this.mcpControllers.set(name, registered);
+    return () => {
+      if (this.mcpControllers.get(name) === registered) this.mcpControllers.delete(name);
+    };
+  }
+  private mcpController(op: Operation): Readonly<McpPermissionController> {
+    if (this.mcpControllers.size && this.options.assertMcpOperation)
+      throw new ServiceError('mcp_owner_unavailable', 'MCP controller registration conflicts');
+    const owners = [...this.mcpControllers.values()].filter((owner) => owner.owns(op));
+    if (owners.length === 1) return owners[0]!;
+    if (owners.length === 0 && this.mcpControllers.size === 0 && this.options.assertMcpOperation)
+      return {
+        owns: () => true,
+        assert: this.options.assertMcpOperation,
+        assertSettled:
+          this.options.assertMcpSettlement ??
+          (() => {
+            throw new ServiceError(
+              'mcp_resources_unconfirmed',
+              'MCP resource settlement is unavailable',
+            );
+          }),
+      };
+    throw new ServiceError('mcp_owner_unavailable', 'MCP permission has no unique execution owner');
   }
   private changed = (event: DurableEvent) => {
     if (
@@ -169,7 +211,10 @@ export class ManagedWork {
     context: string,
   ): { operation: Operation; approval: Approval } {
     if (!this.store.db.isTransaction) throw Error('MCP preparation requires a transaction');
-    if (!this.options.assertMcpOperation || !/^[a-f0-9]{64}$/.test(context))
+    if (
+      (!this.options.assertMcpOperation && this.mcpControllers.size === 0) ||
+      !/^[a-f0-9]{64}$/.test(context)
+    )
       throw new ServiceError('mcp_disabled', 'A reviewed MCP execution controller is required');
     return this.insertPrepared(session, epoch, attempt, call, 'mcp', target, value, context);
   }
@@ -384,9 +429,7 @@ export class ManagedWork {
     if (op.kind === 'effect' && this.options.connector?.id !== op.connector)
       throw new ServiceError('connector_changed', 'Effect connector changed');
     if (op.kind === 'mcp') {
-      if (!this.options.assertMcpOperation)
-        throw new ServiceError('mcp_disabled', 'MCP execution controller is unavailable');
-      this.options.assertMcpOperation(op);
+      this.mcpController(op).assert(op);
     }
   }
   bindDialog(session: string, epoch: number, id: string, binding: string, request: string): void {
@@ -714,6 +757,7 @@ export class ManagedWork {
           );
         if (op.operation_digest !== binding || binding !== this.binding(op))
           throw new ServiceError('binding_changed', 'Resolution binding mismatch');
+        if (op.kind === 'mcp') this.mcpController(op).assertSettled(op);
         this.transition(
           op,
           outcome,
@@ -799,5 +843,6 @@ export class ManagedWork {
     await Promise.all([...this.active.values()].map((active) => active.done));
     await Promise.allSettled(this.lookups);
     this.store.changes.off('event', this.changed);
+    this.mcpControllers.clear();
   }
 }
