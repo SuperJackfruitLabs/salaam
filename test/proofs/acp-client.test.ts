@@ -24,6 +24,7 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
     const init = await a.initialize();
     expect(init).toMatchObject({
       protocolVersion: 1,
+      _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } },
       agentInfo: { name: 'salaam', title: 'Salaam', version: VERSION },
       agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {} } },
       authMethods: [],
@@ -55,6 +56,10 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
     expect(
       cli.messages.some((m: { text: string }) => m.text === 'Offline reply: Salaam through ACP'),
     ).toBe(true);
+    const sourceId = a.messages.find(
+      (m) => m.params?.update?.content?.text === 'Offline reply: Salaam through ACP',
+    )?.params?.update?._meta?.['salaam.dev/updateId'];
+    expect(sourceId).toMatch(/^[a-f0-9]{64}$/);
     const attempts = f.service.store.snapshot(sessionId).attempts;
     await a.close();
     a = client(f.dir);
@@ -72,6 +77,11 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
       sessionId,
       ...prompt('Salaam through ACP', logical),
     });
+    expect(
+      a.messages.find(
+        (m) => m.params?.update?.content?.text === 'Offline reply: Salaam through ACP',
+      )?.params?.update?._meta?.['salaam.dev/updateId'],
+    ).toBe(sourceId);
     expect(repeated._meta['salaam.dev/attemptId']).toBe(result._meta['salaam.dev/attemptId']);
     expect(f.service.store.snapshot(sessionId).attempts).toEqual(attempts);
     await expect(

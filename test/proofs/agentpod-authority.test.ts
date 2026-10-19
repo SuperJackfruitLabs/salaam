@@ -68,7 +68,7 @@ test('only a node-admitted, fresh bound ACP client can execute; detach and resta
       SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
       SALAAM_AGENTPOD_TOKEN: admitted.token,
     });
-    await a.initialize();
+    await a.initialize({ _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } } });
     expect((await a.request('session/new', { cwd: f.dir, mcpServers: [] })).sessionId).toBe(
       admitted.session_id,
     );
@@ -80,7 +80,32 @@ test('only a node-admitted, fresh bound ACP client can execute; detach and resta
       _meta: { 'salaam.dev/requestId': logical },
     };
     const result = await a.request('session/prompt', params);
+    expect(
+      a.messages.some(
+        (m) =>
+          m.params?.update?._meta?.['salaam.dev/promptReceipt']?.requestId === logical &&
+          m.params.update._meta['salaam.dev/promptReceipt'].attemptId ===
+            result._meta['salaam.dev/attemptId'],
+      ),
+    ).toBe(true);
     await a.close();
+    const legacy = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    try {
+      await legacy.initialize();
+      await legacy.request('session/load', {
+        sessionId: admitted.session_id,
+        cwd: f.dir,
+        mcpServers: [],
+      });
+      expect(
+        legacy.messages.some((m) => m.params?.update?._meta?.['salaam.dev/promptReceipt']),
+      ).toBe(false);
+    } finally {
+      await legacy.close();
+    }
     await f.reopen();
     await expect(f.service.supervisor.start(admitted.session_id)).rejects.toThrow(
       /authority|lease/i,
@@ -99,7 +124,7 @@ test('only a node-admitted, fresh bound ACP client can execute; detach and resta
       SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
       SALAAM_AGENTPOD_TOKEN: admitted.token,
     });
-    await a.initialize();
+    await a.initialize({ _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } } });
     await a.request('session/new', { cwd: f.dir, mcpServers: [] });
     const repeated = await a.request('session/prompt', params);
     expect(repeated._meta['salaam.dev/attemptId']).toBe(result._meta['salaam.dev/attemptId']);
@@ -240,7 +265,7 @@ test('the authority deadline denies grants before the expiry sweep; the dedicate
   let a: ReturnType<typeof client> | undefined;
   try {
     a = client(f.state);
-    await a.initialize();
+    await a.initialize({ _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } } });
     await expect(
       a.request('session/new', {
         cwd: f.dir,
