@@ -113,6 +113,7 @@ export type AttemptState =
   | 'cancelled'
   | 'delegated';
 export interface Attempt {
+  outcome?: import('./acp-outcome.js').AttemptOutcome | null;
   id: string;
   session_id: string;
   submission_id: string;

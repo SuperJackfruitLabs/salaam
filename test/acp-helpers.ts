@@ -33,7 +33,11 @@ export function client(state: string, env: Record<string, string> = {}) {
       Boolean,
       15000,
     );
-    if (response!.error) throw new Error(response!.error.message);
+    if (response!.error)
+      throw Object.assign(new Error(response!.error.message), {
+        code: response!.error.code,
+        data: response!.error.data,
+      });
     return response!.result;
   };
   return {

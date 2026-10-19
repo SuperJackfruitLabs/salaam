@@ -97,6 +97,7 @@ export function bundleDigest(): string {
     provider_usage: textDigest(readFileSync(join(ROOT, 'dist/src/provider-usage.js'), 'utf8')),
     provider_model: textDigest(readFileSync(join(ROOT, 'dist/src/provider-model.js'), 'utf8')),
     live_provider: textDigest(readFileSync(join(ROOT, 'dist/src/live-provider.js'), 'utf8')),
+    acp_outcome: textDigest(readFileSync(join(ROOT, 'dist/src/acp-outcome.js'), 'utf8')),
     provider_payload: textDigest(readFileSync(join(ROOT, 'dist/src/provider-payload.js'), 'utf8')),
     provider_transport: textDigest(
       readFileSync(join(ROOT, 'dist/src/provider-transport.js'), 'utf8'),

@@ -38,6 +38,15 @@ import type { CodingWork } from './coding.js';
 import type { TaskLimits } from './task-policy.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
 import type { TeamWork } from './team-work.js';
+import {
+  acpFailure,
+  credentialStrings,
+  parseAcpFailure,
+  providerOutcome,
+  redactFailureText,
+  toolMetadata,
+  type AttemptOutcome,
+} from './acp-outcome.js';
 
 export interface Launch {
   command: string;
@@ -59,6 +68,7 @@ export interface SupervisorOptions {
   providerEnvironment?: NodeJS.ProcessEnv;
 }
 interface Worker {
+  secrets?: string[];
   route: ProviderRoute;
   providerOutputCap?: boolean;
   id: string;
@@ -360,6 +370,7 @@ export class Supervisor extends EventEmitter {
       reject,
     };
     this.workers.set(id, worker);
+    worker.secrets = [worker.token, ...(this.apiKey ? [this.apiKey] : [])];
     // Attach a rejection handler before spawn/identity checks can fail.
     void handshake.catch(() => {});
     let timer: NodeJS.Timeout | undefined;
@@ -459,6 +470,13 @@ export class Supervisor extends EventEmitter {
                 attempt_id: worker.attempt,
                 worker_epoch: epoch,
                 ...observation,
+                ...(observation.phase === 'started'
+                  ? toolMetadata(
+                      observation.tool,
+                      observation.input,
+                      this.coding?.workspaces.find(id)?.root,
+                    )
+                  : {}),
               });
               return { recorded: true };
             },
@@ -738,6 +756,7 @@ export class Supervisor extends EventEmitter {
         w.providerOutputCap = prepared.output_cap;
         this.assertSessionProviderSupported(id, prepared.output_cap);
         const auth = prepared.auth;
+        w.secrets = [...new Set([...(w.secrets ?? []), ...credentialStrings(auth)])];
         return auth;
       }
       if (method === 'coding.files' || method === 'coding.command') {
@@ -1090,11 +1109,19 @@ export class Supervisor extends EventEmitter {
     const work = this.store.attempt(attempt);
     const w = this.workers.get(work.session_id);
     if (!w?.pi || w.attempt !== attempt) return;
+    const settled = w.pi.waitFor('agent_settled', 5000);
+    void settled.catch(() => {});
     try {
       await w.pi.command('abort', {}, 5000);
+      await settled;
     } catch {
       await this.stopWorker(w);
     }
+  }
+  attemptActive(attempt: string): boolean {
+    const work = this.store.attempt(attempt),
+      worker = this.workers.get(work.session_id);
+    return worker?.attempt === attempt && worker.busy;
   }
   assertIdle(id: string): Worker {
     this.store.execution.assert(id);
@@ -1221,18 +1248,39 @@ export class Supervisor extends EventEmitter {
     // Approval deadlines belong to the journal, not an adapter-side timer.
     const settled = w.pi.waitFor('agent_settled', 0);
     void settled.catch(() => {});
-    let outcomeError: string | null = null;
+    let outcome: AttemptOutcome | undefined;
     const record = (value: Record<string, unknown>) => {
       if (value.type === 'message_end') {
         const message = object(value.message);
-        if (
-          message.role === 'assistant' &&
-          ['error', 'aborted'].includes(String(message.stopReason))
-        )
-          outcomeError = String(message.errorMessage ?? message.stopReason);
+        if (message.role === 'assistant') {
+          const explicit = parseAcpFailure(message.salaamFailure);
+          const candidate: AttemptOutcome = explicit
+            ? {
+                version: 1,
+                stopReason:
+                  explicit.kind === 'refusal'
+                    ? 'refusal'
+                    : explicit.kind === 'max_tokens'
+                      ? 'max_tokens'
+                      : 'error',
+                failure: { ...explicit, message: redactFailureText(explicit.message, w.secrets) },
+              }
+            : providerOutcome(
+                String(message.stopReason),
+                String(message.errorMessage ?? ''),
+                w.route,
+                undefined,
+                w.secrets,
+              );
+          if (candidate.stopReason !== 'end_turn') outcome = candidate;
+        }
       }
       if (value.type === 'tool_execution_end' && value.isError === true)
-        outcomeError = 'Tool execution failed';
+        outcome ??= {
+          version: 1,
+          stopReason: 'error',
+          failure: acpFailure(new ServiceError('tool_failed', 'Tool execution failed')),
+        };
     };
     w.pi.on('record', record);
     try {
@@ -1247,15 +1295,17 @@ export class Supervisor extends EventEmitter {
       this.childBoundary(id, w.epoch);
       this.store.finish(
         work.attempt.id,
-        outcomeError ? 'failed' : 'completed',
+        outcome ? 'failed' : 'completed',
         String(result.text ?? ''),
-        outcomeError,
+        outcome?.failure?.message ?? null,
         { epoch: w.epoch, ...entries },
+        outcome,
       );
     } catch (error) {
+      const message = redactFailureText((error as Error).message, w.secrets);
       if (!w.stopping && !this.store.cancelled(work.attempt.id))
-        this.invalidate(w, 'Attempt interrupted: ' + (error as Error).message);
-      this.store.finish(work.attempt.id, 'interrupted', null, (error as Error).message);
+        this.invalidate(w, 'Attempt interrupted: ' + message);
+      this.store.finish(work.attempt.id, 'interrupted', null, message);
     } finally {
       w.pi.off('record', record);
       w.busy = false;

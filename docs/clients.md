@@ -116,3 +116,29 @@ Zed may forward existing MCP configuration when starting an external agent. If S
 ACP carries the service's durable inbox entries in `session/update` metadata `salaam.dev/inbox` with a textual attention summary. `_salaam/inbox/list` accepts an optional pagination offset. `_salaam/inbox/ack` accepts the exact item ID, expected revision and stable request ID; the source session must already be connected and its controller acquired. Acknowledgement never decides a permission or retries work. Normal operation-bound `session/request_permission` remains the approval path.
 
 These are Salaam ACP extensions. Inbox acknowledgement does not approve an operation or retry work. See [jobs and inbox](jobs.md).
+
+### Durable outcomes and cancellation receipts
+
+ACP errors carry a bounded typed failure in `data["salaam.dev/failure"]` with its
+logical prompt, session and attempt IDs where available. Token-limit and refusal
+outcomes preserve `max_tokens` and `refusal`; partial text does not turn them into
+success. Attempts saved before durable outcome verification remain unverified
+rather than being replayed automatically.
+
+Clients can advertise `_meta["salaam.dev/executionFeatures"]` with
+`{"failures":1,"cancellationReceipts":1,"toolSemantics":1}` during initialization.
+This namespace is separate from the existing prompt-receipt capability. For an
+idempotent cancellation, send `session/cancel` with
+`_meta["salaam.dev/cancellationId"]` (a UUID) and
+`_meta["salaam.dev/targetRequestId"]` (the original logical prompt ID). The daemon
+records the stop before aborting work, including when cancellation arrives before
+the prompt itself. Retrying the same cancellation preserves its original target.
+
+Opted-in clients receive durable `salaam.dev/cancellationReceipt` update metadata.
+`requested` is an accepted stop intent; `confirmed` requires observed settlement
+and reconciled effects; `unknown` preserves uncertainty about owned resources or
+external effects. Loading the same session replays these receipts. Closing an ACP
+client detaches; it does not cancel work. Session revocation is a separate boundary.
+Tool calls preserve their read/search/edit/delete/execute kind on live and replayed
+updates. Locations identify actual guarded workspace files; repository snapshots
+do not invent editable source paths.

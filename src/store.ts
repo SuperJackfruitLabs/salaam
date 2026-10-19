@@ -7,6 +7,7 @@ import { WorkerBoundary } from './worker-boundary.js';
 import { ExecutionAuthority } from './execution-authority.js';
 import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
 import { canonical } from './protocol.js';
+import { acpFailure, type AttemptOutcome } from './acp-outcome.js';
 import {
   digest,
   ServiceError,
@@ -66,7 +67,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 19) {
+    if (version > 20) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -266,6 +267,14 @@ export class Store {
           CREATE TABLE agentpod_admissions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),hub_session_id TEXT NOT NULL UNIQUE,run_key TEXT NOT NULL UNIQUE,binding TEXT NOT NULL,digest TEXT NOT NULL,pins_digest TEXT NOT NULL,lease_sequence INTEGER NOT NULL DEFAULT 0,expires_at INTEGER NOT NULL,boot_id TEXT,monotonic_deadline REAL,state TEXT NOT NULL DEFAULT 'pending');
           CREATE TABLE agentpod_station_epochs(station_id TEXT PRIMARY KEY,occupancy_epoch INTEGER NOT NULL,principal_id TEXT NOT NULL);
           PRAGMA user_version=19; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 20
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          ALTER TABLE attempts ADD COLUMN outcome TEXT;
+          CREATE TABLE turn_cancellations(request_id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),target_request_id TEXT,attempt_ids TEXT NOT NULL,receipt TEXT NOT NULL,requested_at INTEGER NOT NULL);
+          CREATE INDEX turn_cancellations_target ON turn_cancellations(session_id,target_request_id);
+          PRAGMA user_version=20; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -534,6 +543,15 @@ export class Store {
     taskStep?: string,
   ): { id: string; attempt_id: string; state: 'accepted' } {
     if (!this.db.isTransaction) throw new Error('Submission requires a transaction');
+    if (
+      this.db
+        .prepare('SELECT 1 FROM turn_cancellations WHERE session_id=? AND target_request_id=?')
+        .get(id, requestId)
+    )
+      throw new ServiceError(
+        'prompt_cancelled',
+        'This logical instruction was cancelled before dispatch',
+      );
     this.execution.assert(id);
     this.guardTaskSubmission?.(id, taskStep);
     if (controller) this.authorizeControl(id, controller);
@@ -654,7 +672,23 @@ export class Store {
     const row = this.db.prepare('SELECT * FROM attempts WHERE id=?').get(id) as unknown as
       Attempt | undefined;
     if (!row) throw new ServiceError('not_found', 'Attempt not found', 404);
-    return row;
+    return {
+      ...row,
+      outcome: row.outcome ? (JSON.parse(String(row.outcome)) as AttemptOutcome) : null,
+    };
+  }
+  toolMetadata(id: string, call: string): { kind: string; locations: unknown[] } | null {
+    this.session(id);
+    const row = this.db
+      .prepare(
+        "SELECT payload FROM events WHERE session_id=? AND kind='tool.started' AND json_extract(payload,'$.tool_call_id')=? ORDER BY seq DESC LIMIT 1",
+      )
+      .get(id, call);
+    if (!row) return null;
+    const payload = JSON.parse(String(row.payload));
+    return typeof payload.kind === 'string'
+      ? { kind: payload.kind, locations: Array.isArray(payload.locations) ? payload.locations : [] }
+      : null;
   }
   claim(id: string, epoch: number): { attempt: Attempt; submission: Submission } | null {
     return this.transaction(() => {
@@ -716,10 +750,12 @@ export class Store {
     result: string | null,
     error: string | null,
     transcript?: { epoch: number; entries: { id: string }[]; leaf: string | null },
+    outcome?: AttemptOutcome,
   ): void {
     this.transaction(() => {
       const attempt = this.attempt(id);
       if (!['dispatching', 'running'].includes(attempt.state)) return;
+      if (state === 'completed' && outcome && outcome.stopReason !== 'end_turn') state = 'failed';
       if (this.cancelled(id)) state = 'cancelled';
       else if (this.hasUnknown(attempt.session_id)) {
         state = 'interrupted';
@@ -732,9 +768,39 @@ export class Store {
           transcript.entries,
           transcript.leaf,
         );
+      const finalOutcome: AttemptOutcome =
+        state === 'completed'
+          ? (outcome ?? { version: 1, stopReason: 'end_turn' })
+          : state === 'cancelled'
+            ? {
+                version: 1,
+                stopReason: 'cancelled',
+                failure: acpFailure(new ServiceError('attempt_cancelled', 'Attempt cancelled')),
+              }
+            : state === 'interrupted'
+              ? {
+                  version: 1,
+                  stopReason: 'interrupted',
+                  failure: acpFailure(
+                    new ServiceError('attempt_interrupted', error ?? 'Attempt interrupted'),
+                  ),
+                }
+              : (outcome ?? {
+                  version: 1,
+                  stopReason: 'error',
+                  failure: acpFailure(
+                    new ServiceError('attempt_failed', error ?? 'Attempt failed'),
+                  ),
+                });
+      if (finalOutcome.failure)
+        finalOutcome.failure = {
+          ...finalOutcome.failure,
+          sessionId: attempt.session_id,
+          attemptId: id,
+        };
       this.db
-        .prepare('UPDATE attempts SET state=?,result=?,error=? WHERE id=?')
-        .run(state, result, error, id);
+        .prepare('UPDATE attempts SET state=?,result=?,error=?,outcome=? WHERE id=?')
+        .run(state, result, error, JSON.stringify(finalOutcome), id);
       this.db
         .prepare('UPDATE submissions SET state=? WHERE id=?')
         .run(state, attempt.submission_id);
@@ -744,6 +810,7 @@ export class Store {
         text: result?.slice(0, 65536) ?? null,
         truncated: (result?.length ?? 0) > 65536,
         error,
+        outcome: finalOutcome,
       });
       this.projectTaskAttempt?.(this.attempt(id));
       this.finishChild?.(this.attempt(id));
@@ -793,7 +860,13 @@ export class Store {
       resultBudget -= result?.length ?? 0;
       const error = attempt.error?.slice(0, Math.min(4096, errorBudget)) ?? null;
       errorBudget -= error?.length ?? 0;
-      return { ...attempt, result, error, result_truncated: (attempt.result?.length ?? 0) > cap };
+      return {
+        ...attempt,
+        outcome: attempt.outcome ? JSON.parse(String(attempt.outcome)) : null,
+        result,
+        error,
+        result_truncated: (attempt.result?.length ?? 0) > cap,
+      };
     });
     const boundedSubmissions = submissions.map((submission) => {
       const cap = Math.min(inputBudget, 8192);

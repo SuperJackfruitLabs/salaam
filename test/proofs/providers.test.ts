@@ -10,9 +10,78 @@ import { PiProcess } from '../../src/pi.js';
 import { ROOT } from '../../src/config.js';
 import { create, ready, until, control } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
+import { client } from '../acp-helpers.js';
+import { randomUUID } from 'node:crypto';
 
 const routes = PI_PROVIDERS.filter((p) => p.id !== 'openai-codex').flatMap((p) =>
   [...new Set(p.getModels().map((m) => m.api))].map((api) => [p.id, api] as const),
+);
+
+test.each(['max-output', 'refusal'])(
+  'M19.4: real provider %s after partial text is a durable failure',
+  async (mode) => {
+    const f = await setup('anthropic', 'anthropic-messages', mode);
+    try {
+      const session = await create(f.service, f.dir);
+      await ready(f.service, session.id);
+      const request = await submit(f.service, session.id, 'Return a fixture partial response');
+      const final = await until(
+        () => f.service.store.attempt(request.attempt_id),
+        (a) => ['completed', 'failed', 'interrupted'].includes(a.state),
+      );
+      expect(final).toMatchObject({
+        state: 'failed',
+        outcome: {
+          version: 1,
+          stopReason: mode === 'max-output' ? 'max_tokens' : 'refusal',
+          failure: { kind: mode === 'max-output' ? 'max_tokens' : 'refusal' },
+        },
+      });
+      expect((await f.stats()).count).toBe(1);
+      const a = client(f.dir);
+      try {
+        await a.initialize({
+          _meta: {
+            'salaam.dev/executionFeatures': {
+              failures: 1,
+              cancellationReceipts: 1,
+              toolSemantics: 1,
+            },
+          },
+        });
+        await a.request('session/load', { sessionId: session.id, cwd: f.dir, mcpServers: [] });
+        const logical = randomUUID();
+        const result = await a.request('session/prompt', {
+          sessionId: session.id,
+          prompt: [{ type: 'text', text: 'Partial output through ACP' }],
+          _meta: { 'salaam.dev/requestId': logical, 'salaam.dev/takeover': true },
+        });
+        expect(result).toMatchObject({
+          stopReason: mode === 'max-output' ? 'max_tokens' : 'refusal',
+          _meta: {
+            'salaam.dev/failure': {
+              sessionId: session.id,
+              requestId: logical,
+              kind: mode === 'max-output' ? 'max_tokens' : 'refusal',
+            },
+          },
+        });
+        expect(result._meta['salaam.dev/failure'].attemptId).toBe(
+          result._meta['salaam.dev/attemptId'],
+        );
+        expect((await f.stats()).count).toBe(2);
+      } finally {
+        await a.close();
+      }
+      await f.restart();
+      expect(f.service.store.attempt(request.attempt_id)).toMatchObject({
+        state: 'failed',
+        outcome: { stopReason: mode === 'max-output' ? 'max_tokens' : 'refusal' },
+      });
+    } finally {
+      await f.close();
+    }
+  },
 );
 async function setup(
   provider: string,

@@ -14,6 +14,112 @@ const prompt = (text: string, requestId?: string) => ({
   ...(requestId ? { _meta: { 'salaam.dev/requestId': requestId } } : {}),
 });
 
+test('ACP durable cancellation survives client loss and fences a prompt before dispatch', async () => {
+  const f = await fixture();
+  let a = client(f.dir);
+  const capabilities = {
+    _meta: {
+      'salaam.dev/executionFeatures': { failures: 1, cancellationReceipts: 1, toolSemantics: 1 },
+    },
+  };
+  try {
+    await a.initialize(capabilities);
+    const { sessionId } = await a.request('session/new', { cwd: f.dir, mcpServers: [] });
+    await ready(f.service, sessionId);
+    const target = randomUUID(),
+      cancellation = randomUUID();
+    await a.request('session/cancel', {
+      sessionId,
+      _meta: { 'salaam.dev/cancellationId': cancellation, 'salaam.dev/targetRequestId': target },
+    });
+    const receipt = () =>
+      a.messages.find(
+        (m) =>
+          m.params?.update?._meta?.['salaam.dev/cancellationReceipt']?.requestId === cancellation,
+      )?.params.update._meta['salaam.dev/cancellationReceipt'];
+    expect(await until(receipt, Boolean)).toMatchObject({
+      state: 'confirmed',
+      targetRequestId: target,
+      attemptIds: [],
+    });
+    await a.close();
+    a = client(f.dir);
+    await a.initialize(capabilities);
+    await a.request('session/load', { sessionId, cwd: f.dir, mcpServers: [] });
+    expect(await until(receipt, Boolean)).toMatchObject({
+      state: 'confirmed',
+      requestId: cancellation,
+      targetRequestId: target,
+    });
+    await expect(
+      a.request('session/prompt', { sessionId, ...prompt('Fenced instruction', target) }),
+    ).rejects.toMatchObject({
+      data: {
+        'salaam.dev/failure': {
+          kind: 'cancelled',
+          code: 'prompt_cancelled',
+          sessionId,
+          requestId: target,
+        },
+      },
+    });
+    expect(f.service.store.snapshot(sessionId).attempts).toHaveLength(0);
+    expect(
+      (
+        await a.request('session/prompt', {
+          sessionId,
+          ...prompt('Distinct instruction', randomUUID()),
+        })
+      ).stopReason,
+    ).toBe('end_turn');
+  } finally {
+    await a.close();
+    await f.close();
+  }
+});
+
+test('ACP concurrent prompt and cancellation share a fresh controller and preserve one target', async () => {
+  const f = await fixture();
+  const a = client(f.dir);
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    await a.initialize({
+      _meta: {
+        'salaam.dev/executionFeatures': { failures: 1, cancellationReceipts: 1, toolSemantics: 1 },
+      },
+    });
+    await a.request('session/resume', { sessionId: session.id, cwd: f.dir, mcpServers: [] });
+    const target = randomUUID(),
+      cancellation = randomUUID();
+    const pending = a.request('session/prompt', {
+      sessionId: session.id,
+      ...prompt('[review] cancelled-concurrently', target),
+    });
+    void pending.catch(() => {});
+    await a.request('session/cancel', {
+      sessionId: session.id,
+      _meta: { 'salaam.dev/cancellationId': cancellation, 'salaam.dev/targetRequestId': target },
+    });
+    await until(
+      () =>
+        a.messages.find(
+          (m) => m.params?.update?._meta?.['salaam.dev/cancellationReceipt']?.state === 'confirmed',
+        ),
+      Boolean,
+    );
+    const outcome = await pending.then(
+      (v) => v.stopReason,
+      (e) => e.data?.['salaam.dev/failure']?.kind,
+    );
+    expect(outcome).toBe('cancelled');
+    expect(f.service.store.snapshot(session.id).attempts.length).toBeLessThanOrEqual(1);
+  } finally {
+    await a.close();
+    await f.close();
+  }
+});
+
 test('ACP v1 negotiates only supported features, shares CLI sessions and deduplicates logical prompts across client restarts', async () => {
   const f = await fixture();
   let a = client(f.dir);
@@ -94,6 +200,34 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
       }),
     ).rejects.toThrow('Only text');
     expect(a.stderr()).toBe('');
+  } finally {
+    await a.close();
+    await f.close();
+  }
+});
+
+test('ACP never upgrades legacy unverified completion into a successful receipt or reruns it', async () => {
+  const f = await fixture();
+  const a = client(f.dir);
+  try {
+    await a.initialize();
+    const { sessionId } = await a.request('session/new', { cwd: f.dir, mcpServers: [] });
+    await ready(f.service, sessionId);
+    const logical = randomUUID();
+    const input = { sessionId, ...prompt('Legacy saved reply', logical) };
+    const result = await a.request('session/prompt', input);
+    const attempt = result._meta['salaam.dev/attemptId'];
+    f.service.store.db.prepare('UPDATE attempts SET outcome=NULL WHERE id=?').run(attempt);
+    await expect(a.request('session/prompt', input)).rejects.toMatchObject({
+      data: {
+        'salaam.dev/failure': {
+          code: 'legacy_outcome_unverified',
+          attemptId: attempt,
+          requestId: logical,
+        },
+      },
+    });
+    expect(f.service.store.snapshot(sessionId).attempts).toHaveLength(1);
   } finally {
     await a.close();
     await f.close();
@@ -182,6 +316,9 @@ test('ACP disconnect during a running tool preserves one attempt; resume omits o
         ),
       (messages) => messages.length > 0,
     );
+    expect(
+      a.messages.find((m) => m.params?.update?.sessionUpdate === 'tool_call')?.params.update,
+    ).toMatchObject({ kind: 'other', locations: [] });
     await a.close();
     expect(f.service.store.attempt(attempt.id).state).toBe('running');
     a = client(f.dir);
@@ -196,6 +333,13 @@ test('ACP disconnect during a running tool preserves one attempt; resume omits o
     );
     expect(f.service.store.snapshot(session.id).attempts).toHaveLength(1);
     expect(f.service.store.attempt(attempt.id).state).toBe('completed');
+    await a.close();
+    a = client(f.dir);
+    await a.initialize();
+    await a.request('session/load', { sessionId: session.id, cwd: f.dir, mcpServers: [] });
+    expect(
+      a.messages.find((m) => m.params?.update?.sessionUpdate === 'tool_call')?.params.update,
+    ).toMatchObject({ kind: 'other', locations: [] });
   } finally {
     await a.close();
     await f.close();
