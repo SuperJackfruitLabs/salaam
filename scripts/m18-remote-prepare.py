@@ -74,6 +74,17 @@ if run([node, "--version"]).strip() != "v26.7.0":
 if phase == "prepare":
     run([node_root / "bin/npm", "ci", "--prefix", root / "sdk", "--ignore-scripts", "--no-audit", "--no-fund", "--registry=https://registry.npmjs.org/"])
     print(json.dumps({"root": str(root), "node": str(node), "node_version": "26.7.0", "npm_version": run([node_root / "bin/npm", "--version"]).strip(), "sdk": str(root / "sdk/node_modules/@a2a-js/sdk"), "system": platform.system(), "release": platform.release(), "machine": platform.machine(), "original_node_untouched": "/usr/bin/node"}))
+elif phase == "install":
+    archive = root / "uploads/salaam-cli-0.0.1.tgz"
+    manifest = json.loads((root / "uploads/release.json").read_text())
+    if manifest["dirty"] or hashlib.sha256(archive.read_bytes()).hexdigest() != manifest["package_sha256"]:
+        raise RuntimeError("Candidate identity changed")
+    cli = root / "cli"
+    if cli.exists():
+        shutil.rmtree(cli)
+    cli.mkdir(mode=0o700)
+    run([node_root / "bin/npm", "install", "--prefix", cli, "--ignore-scripts", "--offline", "--no-audit", "--no-fund", archive])
+    print(json.dumps({"installed_candidate": manifest["commit"], "package_sha256": manifest["package_sha256"], "source_checkout_required": False}))
 elif phase == "smoke":
     print(run([node, root / "uploads/package-smoke.mjs", root / "uploads/salaam-cli-0.0.1.tgz"]))
 elif phase == "coding":
