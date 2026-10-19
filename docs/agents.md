@@ -148,6 +148,38 @@ sal team run TASK_ID --assignment ASSIGNMENT_ID --generation N --revision N \
 ```
 
 Rejection survives restart and does not rewrite the earlier attempt's outcome.
+
+## Combine worker runtimes
+
+One checked task can use a native explorer, an [external coding harness](external-harnesses.md),
+a native reviewer and an [A2A analysis peer](a2a.md). Configure the execution host's
+provider, proven Docker backend and reviewed runtime/peer registries first. Each
+assignment keeps its own identity, authority and accounting in the same task.
+
+Make exploration a predecessor of repair, and repair a predecessor of review.
+Inspect the explorer's actual repository evidence before completing its step.
+Review concrete harness approvals in the shared inbox, then inspect and explicitly
+integrate the stopped builder's proposal. The native reviewer reads the integrated
+snapshot; the peer receives only its explicitly configured file disclosure.
+Inspect both reports before completing their steps.
+
+The plan needs native request limits and an explicit invocation allowance for
+external turns. Set `token_units` to `null` when using opaque runtimes; their
+internal spending remains unknown. A peer's successful task state is analysis,
+and a harness's completed turn is a result to inspect. Finish only after fresh
+checks pass against the integrated parent workspace:
+
+```sh
+sal tasks verify TASK_ID --check CHECK_KEY --revision N
+sal tasks inspect TASK_ID
+sal tasks finish TASK_ID --revision N
+```
+
+Use the newly inspected task revision for each mutation. The TUI Context view
+shows native, harness and peer workers together. A remote terminal can detach and
+reattach to the same session with `sal remote HOST --session SESSION_ID --observe`.
+Disconnecting grants no new work; daemon recovery preserves uncertain work for
+explicit inspection and continuation.
 Interrupted attempts still require their exact `--continues ATTEMPT_ID`. Workers,
 commands and checks all consume root task concurrency; allow enough capacity when
 running multiple writing workers. Cancelling a task revokes child authority and

@@ -8,6 +8,16 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 - Add the complete pinned Pi provider catalog, model listing, API-key and OAuth setup, and cloud credentials.
 - Validate all ten chat APIs at dispatch, preserve provider-bound recovery and usage, and allow uncapped subscription routes for durable tasks with an explicit token-budget opt-out, while preserving request/runtime limits and rejecting unsupported token caps.
+- Add admitted native specialist profiles, immutable repository evidence, reviewer
+  findings, durable task-step assignments and passive team messages.
+- Give coding specialists private drafts with explicit hash-bound integration,
+  protected human edits and fresh parent acceptance checks.
+- Add pinned Gemini ACP, Claude ACP and Codex app-server workers with isolated
+  execution, concrete shared approvals and durable invocation/recovery records.
+- Add pinned A2A analysis peers, private one-use inbound grants, owned task
+  reconciliation and named Hermes/OpenClaw transport interoperability.
+- Show native, harness and peer workers together in the Salaam terminal, with
+  saved identities across disconnects and explicit recovery of uncertain work.
 
 ## [0.0.1] - 2026-10-18
 
