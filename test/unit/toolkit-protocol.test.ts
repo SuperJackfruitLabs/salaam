@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { toolkitRequest } from '../../src/toolkit-protocol.js';
+import { toolkitRequest, toolkitControl } from '../../src/toolkit-protocol.js';
 import { digest } from '../../src/protocol.js';
 
 // Read with the actual JavaScript decoder: the corpus includes an invalid lone
@@ -29,4 +29,18 @@ for (const sample of corpus.requests)
     expect(digest(['stk.managed-mcp.v1', request.root_digest, request.invocation_id])).toBe(
       sample.id,
     );
+  });
+
+const controls = JSON.parse(
+  readFileSync(new URL('../fixtures/toolkit-managed-control-v1.json', import.meta.url), 'utf8'),
+) as {
+  controls: { name: string; accept: boolean; value: unknown; control_digest?: string }[];
+};
+for (const sample of controls.controls)
+  test(`Toolkit control owner corpus: ${sample.name}`, () => {
+    if (!sample.accept) {
+      expect(() => toolkitControl(sample.value)).toThrow();
+      return;
+    }
+    expect(digest(toolkitControl(sample.value))).toBe(sample.control_digest);
   });
