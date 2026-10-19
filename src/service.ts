@@ -100,6 +100,7 @@ export class SalaamService {
   private bridgeServer: Server;
   private release: () => void;
   private stopping = false;
+  private shutdownFailure?: AggregateError;
   private handlers = new Set<Promise<void>>();
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
@@ -1971,60 +1972,61 @@ export class SalaamService {
   async close(): Promise<void> {
     if (this.stopping) {
       await this.closed;
+      if (this.shutdownFailure) throw this.shutdownFailure;
       return;
     }
     this.stopping = true;
     clearInterval(this.authorityTimer);
-    this.inbox.close();
-    this.recurring.close();
-    this.jobs.close();
-    await this.taskDriver.close();
-    this.dispatcher.pause();
-    this.managed.pause();
-    this.children.pause();
     const errors: unknown[] = [];
-    try {
-      await this.a2aInbound?.close();
-      await Promise.allSettled(this.revocationStops);
-      await this.external.close();
-      await this.coding.close();
+    const attempt = async (cleanup: () => unknown) => {
       try {
-        await this.mcp?.close();
+        await cleanup();
       } catch (error) {
         errors.push(error);
       }
-      try {
-        await this.children.close();
-        await this.supervisor.close();
-      } catch (error) {
-        errors.push(error);
-      }
-      await this.dispatcher.drain();
-      await this.managed.close();
-      await Promise.all(
+    };
+    await attempt(() => this.inbox.close());
+    await attempt(() => this.recurring.close());
+    await attempt(() => this.jobs.close());
+    await attempt(() => this.taskDriver.close());
+    await attempt(() => this.dispatcher.pause());
+    await attempt(() => this.managed.pause());
+    await attempt(() => this.children.pause());
+    await attempt(() => this.a2aInbound?.close());
+    await Promise.all([...this.revocationStops].map((stop) => attempt(() => stop)));
+    await attempt(() => this.external.close());
+    await attempt(() => this.coding.close());
+    await attempt(() => this.mcp?.close());
+    await attempt(() => this.children.close());
+    await attempt(() => this.supervisor.close());
+    await attempt(() => this.dispatcher.drain());
+    await attempt(() => this.managed.close());
+    await attempt(() =>
+      Promise.all(
         [this.operator, this.bridgeServer].map(
           (server) =>
-            new Promise<void>((resolve) => {
+            new Promise<void>((resolve, reject) => {
               if (!server.listening) {
                 resolve();
                 return;
               }
-              server.close(() => resolve());
+              server.close((error) => (error ? reject(error) : resolve()));
               server.closeAllConnections();
             }),
         ),
-      );
-      await Promise.all(this.handlers);
-      try {
-        this.store.close();
-      } catch (error) {
-        errors.push(error);
-      }
-    } finally {
-      this.release();
-      this.resolveClosed();
-    }
+      ),
+    );
+    await Promise.all([...this.handlers].map((handler) => attempt(() => handler)));
+    await attempt(() => this.store.close());
+    // A replacement must not mistake an empty resource map for proof that this
+    // process stopped all of its workers. OS death releases a retained lock.
+    if (!errors.length) await attempt(() => this.release());
     if (errors.length)
-      throw new AggregateError(errors, 'Service shutdown could not persist all final states');
+      this.shutdownFailure = new AggregateError(
+        errors,
+        'Service shutdown could not confirm all resources and final states; state ownership retained until process exit',
+      );
+    this.resolveClosed();
+    if (this.shutdownFailure) throw this.shutdownFailure;
   }
 }
