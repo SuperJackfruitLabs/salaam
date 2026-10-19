@@ -75,7 +75,7 @@
   "hermes": {
     "version": "0.22.2",
     "commit": "d923a5eb487a17c0a68801bba9ef0f56c81040a8",
-    "archive": "https://api.github.com/repos/NousResearch/hermes-agent/tarball/d923a5eb487a17c0a68801bba9ef0f56c81040a8",
+    "archive": "https://codeload.github.com/NousResearch/hermes-agent/legacy.tar.gz/d923a5eb487a17c0a68801bba9ef0f56c81040a8",
     "archive_sha256": "5edfd880860fd908336565c9aef337a9ba6557a1d5d28aa983ed33a2febf8768"
   }
 }
