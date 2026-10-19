@@ -77,7 +77,11 @@ export class McpAdmission {
       ) ||
       canonical(assignment.servers.map((s) => s.name).sort()) !==
         canonical(profile.servers.map((s) => s.name).sort()) ||
-      assignment.servers.some((s) => new URL(s.url).origin !== profile.proxy_origin)
+      assignment.servers.some(
+        (s) =>
+          new URL(s.url).origin !== profile.proxy_origin ||
+          new URL(s.url).pathname.split('/')[4] !== digest(current),
+      )
     )
       throw new ServiceError(
         'mcp_assignment_mismatch',

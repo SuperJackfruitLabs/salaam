@@ -23,7 +23,7 @@ async function fixture(call?: (id: number, res: ServerResponse) => void) {
   const server = createServer((req, res) => {
     const handle = async () => {
       expect(req.method).toBe('POST');
-      expect(req.url).toBe(`/stations/${assignment.binding.station_id}/mcp/superlibrary`);
+      expect(req.url).toBe(new URL(serverConfig.url).pathname);
       expect(req.headers['x-agentpod-proxy-key']).toBe(serverConfig.headers[0]!.value);
       expect(req.headers.authorization).toBeUndefined();
       const buffers: Buffer[] = [];

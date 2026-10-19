@@ -36,7 +36,18 @@ function fixture(calls = 16) {
   writeFileSync(config, JSON.stringify(profile), { mode: 0o600 });
   const profileDigest = digest({ profile, pins_digest: digest(pins) });
   const admission = new McpAdmission(config, pins, profileDigest);
-  const assignment = { ...corpus.assignments[0]!.value, binding, profile_digest: profileDigest };
+  const assignment = {
+    ...corpus.assignments[0]!.value,
+    binding,
+    profile_digest: profileDigest,
+    servers: corpus.assignments[0]!.value.servers.map((server) => ({
+      ...server,
+      url: server.url.replace(
+        /mcp-managed-v1\/[a-f0-9]{64}\//,
+        `mcp-managed-v1/${digest(binding)}/`,
+      ),
+    })),
+  };
   const path = join(dir, 'state.sqlite');
   let store = new Store(path),
     artifacts = new Artifacts(join(dir, 'artifacts'), store);

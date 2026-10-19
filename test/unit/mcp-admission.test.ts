@@ -51,6 +51,13 @@ function fixture() {
     ...corpus.assignments[0]!.value,
     binding,
     profile_digest: profileDigest,
+    servers: corpus.assignments[0]!.value.servers.map((server) => ({
+      ...server,
+      url: server.url.replace(
+        /mcp-managed-v1\/[a-f0-9]{64}\//,
+        `mcp-managed-v1/${digest(binding)}/`,
+      ),
+    })),
   };
   return { dir, workspace, pins, path, profile, binding, profileDigest, assignment };
 }
@@ -139,4 +146,18 @@ test('rotating a proxy key or credential generation changes the private call bin
     })),
   };
   expect(admission.accept(rotated, f.binding).assignment_digest).not.toBe(second.assignment_digest);
+});
+
+test('a well-formed managed route must bind the fresh authority, not merely pass wire validation', () => {
+  const f = fixture(),
+    admission = new McpAdmission(f.path, f.pins, f.profileDigest);
+  const wrong = {
+    ...f.assignment,
+    servers: f.assignment.servers.map((server) => ({
+      ...server,
+      url: server.url.replace(digest(f.binding), 'b'.repeat(64)),
+    })),
+  };
+  expect(mcpAssignment(wrong)).toEqual(wrong);
+  expect(() => admission.accept(wrong, f.binding)).toThrow();
 });

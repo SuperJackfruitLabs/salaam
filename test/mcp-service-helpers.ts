@@ -50,7 +50,7 @@ export async function mcpServiceFixture(options: { liveFixture?: boolean } = {})
       }
       if (
         req.headers['x-agentpod-proxy-key'] !== mode.key ||
-        req.url !== `/stations/${binding.station_id}/mcp/superlibrary`
+        req.url !== `/stations/${binding.station_id}/mcp-managed-v1/${digest(binding)}/superlibrary`
       )
         throw Error('Fixture received wrong private station assignment');
       const chunks: Buffer[] = [];
@@ -115,7 +115,7 @@ export async function mcpServiceFixture(options: { liveFixture?: boolean } = {})
     servers: [
       {
         ...corpus.assignments[0]!.value.servers[0]!,
-        url: `${profile.proxy_origin}/stations/${binding.station_id}/mcp/superlibrary`,
+        url: `${profile.proxy_origin}/stations/${binding.station_id}/mcp-managed-v1/${digest(binding)}/superlibrary`,
       },
     ],
   };

@@ -231,11 +231,12 @@ export function mcpAssignment(input: unknown): McpAssignment {
             u.hash ||
             u.href !== url ||
             url !== u.origin + u.pathname ||
-            parts.length !== 5 ||
+            parts.length !== 6 ||
             parts[1] !== 'stations' ||
             decodeURIComponent(parts[2]!) !== binding.station_id ||
-            parts[3] !== 'mcp' ||
-            parts[4] !== (name === 'agentpod' ? 'hub' : 'superlibrary')
+            parts[3] !== 'mcp-managed-v1' ||
+            !/^[a-f0-9]{64}$/.test(parts[4]!) ||
+            parts[5] !== (name === 'agentpod' ? 'hub' : 'superlibrary')
           )
             invalid();
           const headers = array(s.headers, 1).map(

@@ -100,7 +100,7 @@ async function fixture(phase: 'before' | 'after' | 'stored' | 'cancel') {
     servers: [
       {
         ...corpus.assignments[0]!.value.servers[0]!,
-        url: `${origin}/stations/${binding.station_id}/mcp/superlibrary`,
+        url: `${origin}/stations/${binding.station_id}/mcp-managed-v1/${digest(binding)}/superlibrary`,
       },
     ],
   };
