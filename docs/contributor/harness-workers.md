@@ -71,9 +71,11 @@ container identities. Unit tests reject changed image, user, network, memory, CP
 mount source, capabilities, command, environment and ownership before dispatch.
 An earlier macOS sandbox experiment failed and establishes no supported boundary.
 
-The execution CI job runs the same real proof on Linux. Named harness turns,
-independent approve/deny decisions, owned-session reconnect, durable invocation
-admission and the final mixed-runtime portfolio remain required gates.
+The execution CI job runs the same real proof on Linux. At this initial boundary
+checkpoint, named turns, approve/deny decisions, owned-session reconnect and durable
+invocation admission were not established by that proof alone. Their completed
+records follow below; the final [mixed-runtime portfolio](mixed-runtime-acceptance.md)
+is recorded separately.
 
 ## Live Claude gateway and protocol checkpoints
 
@@ -110,9 +112,8 @@ map local approve/deny only to once-only ACP options or Codex accept/decline.
 Storage failure closes control and denies all later grants.
 
 Independent SQLite-backed protocol fixtures exercise these barriers and wrong-owner
-cases. The core still needs connection to the service's assignment, invocation,
-approval and recovery records; standalone conformance and live scripts do not
-establish that integration. Gemini/Codex preflight captured their actual provider
+cases. These earlier standalone results do not establish daemon integration by themselves;
+the completed service integration is recorded below. Gemini/Codex preflight captured their actual provider
 payloads inside the boundary without forwarding to a live provider. The subsequent
 named live turns and process-reconnect scope are recorded below.
 
@@ -200,5 +201,7 @@ The full local suite passed 2,117 tests before final packaging/configuration
 checks. Fixture proofs cover restart, cancellation, warm-up model rejection,
 changed runtime, lost cleanup, storage failure and a real PTY team board. These
 are local revision-bound observations; M17 federation, M18 mixed workflows and
-independent final Linux/package evidence remain separate gates. All failed live
-requests remain charged: the shared allowance stands at 115 of 200 requests.
+independent final Linux/package evidence are recorded separately in
+[mixed-runtime acceptance](mixed-runtime-acceptance.md). At this earlier M16
+checkpoint, the shared allowance stood at 115 of 200 requests; later charged
+requests and exact final candidate identities are in that completion record.

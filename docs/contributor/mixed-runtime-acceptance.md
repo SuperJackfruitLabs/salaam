@@ -82,6 +82,54 @@ The adapter accepts only those observed literal wrappers and still binds the
 exact captured command, workdir, model-call identity and pinned Codex version.
 Foreign shells, appended argv, expansions and command changes remain rejected.
 
-Final source-bound candidate, mixed-run and CI receipts are recorded below after
-all acceptance gates complete. Published npm 0.0.1 is a separate artifact; a local
-candidate retaining that version is not a new publication.
+## Observed completion
+
+The source-bound [capability matrix](multi-agent-capabilities.json) records the exact
+source/build, Pi bundle, prepared harness, acceptance-adapter and package identities.
+The original live workflow used clean candidate `e32e101`; the installed terminal
+layout and restart proof used clean candidate `4e66461`. Only terminal presentation
+changed between those candidates. Both are unreleased 0.0.1 build artifacts; the
+already published npm 0.0.1 package is separate.
+
+The combined task passed with 12 real Claude requests capped at 4,096 output tokens.
+The native explorer supplied checked file evidence. Codex received two concrete
+once-only command approvals, produced the exact single-file repair and stopped
+before integration. The replacement native reviewer published a low-severity
+informational annotation describing the change as correct. Operator inspection
+accepted that annotation; an exact empty array is not a model-output requirement.
+The peer received only `app.js` and `app.test.js`, with no human-file disclosure.
+Fresh parent tests passed and the task reached `succeeded`.
+
+One native review generation was actually cancelled at the transport barrier with
+zero provider forwards; its replacement required a new explicit generation. Later
+operator acceptance resumed the same task and saved predecessor results, without
+redispatching exploration, repair or review. Two installed Mac SSH PTYs reached
+connected, guarded-workspace state, displayed the same native/harness/peer team,
+and detached with exit zero and restored terminal settings. The final captures
+are under the ignored mixed-run evidence directory.
+
+Actual Linux daemon SIGKILL and reopen preserved all five child identities (four
+completed, one cancelled), the same verified task and workspace digest, parent
+command receipts, task accounting and verification records. Repeating the saved
+peer-run request with an expired controller returned the same child before fresh
+authority checks. Recovery made zero new model requests. The source fixture,
+protected tests, package metadata and human bytes remained unchanged.
+
+The complete local suite passed **2,143 tests**. Both installed package aliases,
+pinned Pi readiness, an offline turn and restart deduplication passed macOS arm64
+and Linux x64 install acceptance. Public site validation passed **22 pages, 1,011
+links/assets and zero broken links**; planning and maintenance records remain
+excluded. Named peer interoperability and real execution-boundary CI are green
+on the final product revision. Longer repeated service CI remains a separate
+check in [PR #9](https://github.com/SuperJackfruitLabs/salaam/pull/9).
+
+The shared live ledger stands at **158 of 200 requests**. Failed rehearsals retain
+their charges. They include a rejected placeholder-auth request before the pinned
+Pi dispatcher preload was corrected, denied Linux shell correlation before both
+observed Bash paths were admitted, and a four-request reviewer limit that fenced
+its final reply after findings had been saved. Those outcomes remain recorded;
+no failed run is counted as successful verification.
+
+Cleanup inspected all six saved harness/peer runs and seven parent command runs.
+No owned worker or container remained active. The marker-verified disposable VPS
+root was removed after exporting evidence; production services were untouched.

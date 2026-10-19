@@ -2,7 +2,7 @@
 
 This contributor record covers the M17 implementation. The public operator guide
 is [A2A peers](../a2a.md). M18 mixed-runtime, installed Linux and failure-portfolio
-acceptance remain separate gates.
+results are recorded separately in [combined acceptance](mixed-runtime-acceptance.md).
 
 ## Contract and authority
 
@@ -79,7 +79,7 @@ are real pinned plugin transport tests, not full gateway/model/tool claims.
 | OpenClaw named ingress | Same release plus Salaam's `openclaw-2026.10.5-header-and-tenant-v1` adapter | Explicit grant and version-named endpoint normalize only the missing version/tenant from operator scope. Wrong supplied versions/tenants and all legacy method fallbacks remain rejected. One real native offline child completes analysis. |
 
 The full local suite passed 2,139 tests. The locked operator preparation command and the five opt-in cases in [the peer portfolio](../../test/acceptance/a2a-interop.test.ts)
-passed together on freshly prepared artifacts. The pinned peer CI job repeats that portfolio independently on Linux; its result must be checked before making a Linux claim. Ignored receipts are under `.state/evidence/m17/`: `hermes-plugin-interop`,
+passed together on freshly prepared artifacts. The pinned peer CI job also passed all five cases independently on Linux at the final product revision; its exact job link is in the [capability matrix](multi-agent-capabilities.json). Ignored receipts are under `.state/evidence/m17/`: `hermes-plugin-interop`,
 `hermes-client-interop`, `openclaw-plugin-interop`, `openclaw-client-interop` and
 `openclaw-named-ingress`, each with a `.json` extension. The unsupported default
 OpenClaw path is recorded as unsupported, not reported as successful interoperability.
@@ -117,5 +117,6 @@ task/child identities establish deduplication. Fixtures do not establish live
 model usefulness, external process confinement or Linux deployment support.
 
 No M17 conformance run used live model requests. The shared M13–M18 authorization
-remains 200 requests with at most 4,096 output tokens each; the ledger currently
-records 115 spent and 85 remaining. Failed requests are never refunded.
+remains 200 requests with at most 4,096 output tokens each. At the M17 checkpoint,
+the ledger recorded 115 spent and 85 remaining. The final M18 count is recorded
+in [combined acceptance](mixed-runtime-acceptance.md); failed requests are never refunded.
