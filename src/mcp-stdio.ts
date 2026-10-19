@@ -222,7 +222,8 @@ export class ManagedStdioTransport implements Transport {
     if ('method' in message && 'id' in message) {
       if (this.pending !== undefined) throw failed();
       if (message.method === 'tools/call') {
-        // The durable owner commits its one-time dispatch marker here, synchronously.
+        // The owner records invocation delivery here, synchronously. Native Toolkit
+        // dispatch consumes its effect grant through the separate fresh owner callback.
         try {
           this.beforeToolCall();
         } catch {
