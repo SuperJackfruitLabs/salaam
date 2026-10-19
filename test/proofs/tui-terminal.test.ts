@@ -7,6 +7,82 @@ import { ROOT } from '../../src/config.js';
 import { PtyClient } from '../terminal-helpers.js';
 import { call } from '../../src/transport.js';
 import type { SessionSnapshot } from '../../src/protocol.js';
+import { OperatorClient } from '../../src/tui-client.js';
+
+test('an observer frame can precede its held snapshot without approving unseen work', async () => {
+  const f = await fixture(),
+    writer = new OperatorClient(f.dir);
+  const state = join(f.dir, 'snapshot-client');
+  mkdirSync(state);
+  let terminal: PtyClient | undefined,
+    release!: () => void,
+    snapshotHeld = false;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  const upstreams = new Set<ReturnType<typeof request>>();
+  const proxy = createServer(async (req, res) => {
+    if (!snapshotHeld && req.method === 'GET' && req.url?.endsWith('/snapshot')) {
+      snapshotHeld = true;
+      await gate;
+    }
+    if (res.destroyed) return;
+    const upstream = request(
+      {
+        socketPath: f.service.socket,
+        path: req.url,
+        method: req.method,
+        headers: req.headers,
+        agent: false,
+      },
+      (reply) => {
+        res.writeHead(reply.statusCode ?? 500, reply.headers);
+        reply.pipe(res);
+      },
+    );
+    upstreams.add(upstream);
+    upstream.on('error', () => res.destroy());
+    res.once('close', () => {
+      upstreams.delete(upstream);
+      upstream.destroy();
+    });
+    req.pipe(upstream);
+  });
+  try {
+    await new Promise<void>((done) => proxy.listen(join(state, 'operator.sock'), done));
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    await writer.open(session.id);
+    await writer.submit('[review] snapshot-boundary');
+    await until(
+      () => f.service.store.approvals(session.id),
+      (rows) => rows.filter((a) => a.state === 'pending').length === 1,
+    );
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'tui', '--session', session.id, '--observe', '--state', state],
+      { state, columns: 116, rows: 40 },
+    );
+    await terminal.contains('Observer');
+    await until(() => snapshotHeld, Boolean);
+    // Exactly the early frame seen by the failed Linux acceptance run. The
+    // observer label is visible while the actual approval snapshot is held.
+    await terminal.write('\x0f');
+    await terminal.contains('No approvals are waiting.');
+    expect((await terminal.screen()).includes('Review approval')).toBe(false);
+    expect(f.service.store.approvals(session.id)[0]?.state).toBe('pending');
+    expect(f.service.store.controlView(session.id).client_id).toBe(writer.clientId);
+    await terminal.command({ op: 'signal', signal: 'SIGKILL', target: 'process' });
+    await terminal.exit();
+    terminal = undefined;
+  } finally {
+    release();
+    await terminal?.close();
+    for (const upstream of upstreams) upstream.destroy();
+    await new Promise<void>((done) => proxy.close(() => done()));
+    await writer.close();
+    await f.close();
+  }
+}, 30000);
 
 test('real PTY opens Salaam, preserves Unicode multiline paste, resizes and restores the terminal on detach', async () => {
   const f = await fixture();

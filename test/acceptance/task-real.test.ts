@@ -242,6 +242,8 @@ test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bou
       { state, columns: 120, rows: 42 },
     );
     await terminal.contains('Observer');
+    // The observer frame can precede the first session/approval snapshot.
+    await terminal.contains('1 approval waiting');
     await terminal.write('\x0f');
     await terminal.contains('Review approval');
     await terminal.write('\x1b[F');
