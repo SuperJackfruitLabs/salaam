@@ -6,6 +6,7 @@ import type { ExecutionBackend } from '../src/coding-executor.js';
 import type { WorkTask } from '../src/task-work.js';
 import { call } from '../src/transport.js';
 import { control, create, ready, until } from './helpers.js';
+import { ServiceError } from '../src/protocol.js';
 
 import { TaskFixtureBackend } from './fixtures/task-backend.mjs';
 export { TaskFixtureBackend };
@@ -51,13 +52,29 @@ export async function taskFixture(options: Partial<ServiceOptions> = {}) {
       `/v1/tasks?session_id=${session.id}`,
     );
   const action = async <T = any>(verb: string, body: Record<string, unknown> = {}, id?: string) => {
-    const current = await task();
-    return call<T>(service.socket, `/v1/tasks/${id ?? current.id}/${verb}`, {
-      ...actor,
-      request_id: randomUUID(),
-      expected_revision: current.revision,
-      ...body,
-    });
+    const request = randomUUID();
+    for (let attempt = 0; ; attempt++) {
+      const current = await task();
+      try {
+        return await call<T>(service.socket, `/v1/tasks/${id ?? current.id}/${verb}`, {
+          ...actor,
+          request_id: request,
+          expected_revision: current.revision,
+          ...body,
+        });
+      } catch (error) {
+        // Background worker receipts can advance the task between GET and POST.
+        // Retry only an explicit pre-mutation revision rejection, never a lost
+        // response or a caller-specified revision used by a conflict proof.
+        if (
+          !(error instanceof ServiceError) ||
+          error.code !== 'revision_conflict' ||
+          Object.hasOwn(body, 'expected_revision') ||
+          attempt >= 3
+        )
+          throw error;
+      }
+    }
   };
   return {
     dir,

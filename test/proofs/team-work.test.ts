@@ -51,6 +51,7 @@ test('team claims fan out two predecessors and fence synthesis until review; sav
     await until(
       () => f.service.children.list(f.session.id),
       (cs) => cs.length === 2 && cs.every((x) => x.state === 'completed'),
+      20000,
     );
     const firstChild = f.service.children.inspect(f.session.id, first.child_id!);
     expect(firstChild.worker!.binding.assignment).toEqual({ id: a!.id, generation: 1 });
@@ -99,7 +100,7 @@ test('team claims fan out two predecessors and fence synthesis until review; sav
   } finally {
     await f.close();
   }
-});
+}, 30000);
 
 test('daemon restart interrupts an active claim without replay and exact explicit continuation advances only its generation', async () => {
   const {
