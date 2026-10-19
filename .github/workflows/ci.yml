@@ -1,15 +1,51 @@
 name: checks
 on:
   push:
+    branches: [main]
   pull_request:
+  schedule:
+    - cron: '19 2 * * *'
+  workflow_dispatch:
+    inputs:
+      profile:
+        type: choice
+        options: [full, quick]
+        default: full
   workflow_call:
+    inputs:
+      profile:
+        type: string
+        default: full
+    outputs:
+      package_artifact_id:
+        value: ${{ jobs.package-build.outputs.artifact_id }}
+      certificate_artifact_id:
+        value: ${{ jobs.ci-gate.outputs.artifact_id }}
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CI_PROFILE: ${{ inputs.profile || (github.event_name == 'pull_request' && 'quick' || 'full') }}
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      profile: ${{ steps.profile.outputs.value }}
+    steps:
+      - id: profile
+        run: |
+          case "$CI_PROFILE" in
+            quick|full) echo "value=$CI_PROFILE" >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
   package-build:
     name: Build release package
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.package.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -20,9 +56,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run release:check
       - run: npm run release:pack
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: salaam-cli
+          name: salaam-cli-${{ github.run_attempt }}
           path: .state/release/
           if-no-files-found: error
           retention-days: 14
@@ -43,10 +80,16 @@ jobs:
       - run: npm install --global npm@11.19.0 --ignore-scripts
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: salaam-cli
+          artifact-ids: ${{ needs.package-build.outputs.artifact_id }}
           path: .state/release/
       # No checkout dependencies installed: only the packed artifact supplies the runtime.
-      - run: npm run test:package
+      - run: node scripts/package-smoke.mjs > .state/package-install.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-install-${{ matrix.os }}-${{ github.run_attempt }}
+          path: .state/package-install.json
+          if-no-files-found: error
+          retention-days: 14
   sites:
     name: Build and check public sites
     runs-on: ubuntu-latest
@@ -147,6 +190,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   service:
+    needs: plan
     env:
       SALAAM_TUI_CAPTURE_DIR: .state/evidence/m10/screens
       SALAAM_JOB_CAPTURE_DIR: .state/evidence/m12/screens
@@ -155,6 +199,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -163,18 +208,111 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.19.0 --ignore-scripts
       - run: npm ci --ignore-scripts
-      - run: npm run format:check
-      - run: npm run check
-      - run: npm run test:acceptance
+      - run: npm run test:acceptance -- --profile "$ACCEPTANCE_PROFILE"
+        env:
+          ACCEPTANCE_PROFILE: ${{ needs.plan.outputs.profile == 'full' && 'baseline' || 'quick' }}
       - run: npm run setup:cli
       - run: salaam --help
       - run: sal --version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: acceptance-${{ matrix.os }}
+          name: acceptance-base-${{ matrix.os }}-${{ github.run_attempt }}
           path: |
             .state/evidence/acceptance
             .state/evidence/m10/screens
             .state/evidence/m12/screens
           retention-days: 14
+  stress:
+    needs: plan
+    if: needs.plan.outputs.profile == 'full'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shard: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm run test:acceptance -- --profile proofs --shard "$PROOF_SHARD/4"
+        env:
+          PROOF_SHARD: ${{ matrix.shard }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: acceptance-proofs-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .state/evidence/acceptance/
+          if-no-files-found: error
+          retention-days: 14
+  ci-gate:
+    name: CI evidence gate
+    needs:
+      [
+        plan,
+        package-build,
+        package-install,
+        sites,
+        execution-boundary,
+        a2a-peer-interop,
+        service,
+        stress,
+      ]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+    env:
+      CI_PROFILE: ${{ needs.plan.outputs.profile }}
+      CI_NEEDS: ${{ toJSON(needs) }}
+      CI_PACKAGE_ARTIFACT_ID: ${{ needs.package-build.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/ci-evidence.mjs --gates-only
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.package-build.outputs.artifact_id }}
+          path: .state/release/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: acceptance-*
+          path: .state/ci-input/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: package-install-*
+          path: .state/ci-input/
+      - run: node scripts/ci-evidence.mjs
+      - id: evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-release-evidence-${{ github.run_attempt }}
+          path: .state/ci-evidence/ci-release-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+  certify:
+    name: Attest verified main artifact
+    needs: [plan, ci-gate, package-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'full'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.package-build.outputs.artifact_id }}
+          path: .state/release/
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: .state/release/salaam-cli-*.tgz

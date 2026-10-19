@@ -138,6 +138,8 @@ try {
   console.log(
     JSON.stringify(
       {
+        workflow_run_id: process.env.GITHUB_RUN_ID ?? null,
+        workflow_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
         package: pkg.name,
         version: pkg.version,
         sha256: hash,

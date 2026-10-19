@@ -10,14 +10,19 @@ on:
         type: string
 permissions:
   contents: read
+  actions: read
+  attestations: read
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     outputs:
       sha: ${{ steps.target.outputs.sha }}
+      reused: ${{ steps.source.outputs.reused }}
+      artifact_id: ${{ steps.promote.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,31 +37,42 @@ jobs:
         run: node scripts/release-check.mjs "$RELEASE_TAG"
       - id: target
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-  # The exact release revision reruns all service, boundary, package and site checks.
+      # Reuse requires a successful full main run for this exact SHA, complete
+      # platform/shard evidence, the same package bytes, and verified CI provenance.
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-source.mjs
+      - id: promote
+        if: steps.source.outputs.reused == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: promoted-cli-${{ github.run_attempt }}
+          path: .state/release/
+          if-no-files-found: error
+          retention-days: 14
+      - if: steps.source.outputs.reused == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-promotion-${{ github.run_attempt }}
+          path: .state/release-promotion.json
+          if-no-files-found: error
   checks:
     needs: validate
-    if: github.event_name == 'push'
+    if: needs.validate.outputs.reused != 'true'
     uses: ./.github/workflows/ci.yml
-  # Manual retries must run on the requested tag as the workflow's ref. Otherwise
-  # a local reusable workflow would test the branch selected in the Run workflow UI.
-  manual-ref:
-    needs: validate
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require the selected workflow ref to be the requested tag
-        env:
-          TARGET_SHA: ${{ needs.validate.outputs.sha }}
-          WORKFLOW_SHA: ${{ github.sha }}
-        run: test "$TARGET_SHA" = "$WORKFLOW_SHA"
-  manual-checks:
-    needs: manual-ref
-    if: github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/ci.yml
+    with:
+      profile: full
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
   github-release:
-    needs: [validate, checks, manual-checks]
-    if: ${{ !cancelled() && needs.validate.result == 'success' && (needs.checks.result == 'success' || needs.manual-checks.result == 'success') }}
+    needs: [validate, checks]
+    if: ${{ !cancelled() && needs.validate.result == 'success' && (needs.validate.outputs.reused == 'true' || needs.checks.result == 'success') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       id-token: write
@@ -70,10 +86,11 @@ jobs:
           node-version-file: .nvmrc
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: salaam-cli
+          artifact-ids: ${{ needs.validate.outputs.artifact_id || needs.checks.outputs.package_artifact_id }}
           path: .state/release/
       - run: cd .state/release && sha256sum --check SHA256SUMS
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - if: needs.validate.outputs.reused != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: .state/release/salaam-cli-*.tgz
       - name: Upload a complete draft, then publish (never replace published assets)
@@ -81,11 +98,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/github-release.mjs
   npm:
-    needs: github-release
+    needs: [validate, checks, github-release]
     # Bootstrap package ownership once, then enable this repository variable.
-    if: vars.NPM_PUBLISH_ENABLED == 'true'
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && vars.NPM_PUBLISH_ENABLED == 'true' }}
     environment: npm
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
@@ -100,7 +118,7 @@ jobs:
       - run: npm install --global npm@11.19.0 --ignore-scripts
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: salaam-cli
+          artifact-ids: ${{ needs.validate.outputs.artifact_id || needs.checks.outputs.package_artifact_id }}
           path: .state/release/
       - name: Publish the exact verified tarball through npm OIDC
         run: node scripts/npm-release.mjs

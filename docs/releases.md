@@ -6,12 +6,11 @@ documented behavior. State upgrades are forward-only; see [safe upgrades](instal
 
 ## Prepare a version
 
-For the initial release, `package.json`, its lockfile and `CHANGELOG.md` already
-record 0.0.1. Do not bump it again just to publish it. For a subsequent version,
-start from a clean checkout:
+Start from a clean checkout and choose the next version. For example, after
+0.0.2:
 
 ```sh
-npm run release:version -- 0.0.2
+npm run release:version -- 0.0.3
 ```
 
 This updates package/lock versions and moves Unreleased notes into a dated
@@ -30,17 +29,26 @@ From the reviewed main commit:
 git switch main
 git pull --ff-only
 npm run release:check
-git tag -a v0.0.1 -m 'Salaam 0.0.1'
-git push origin v0.0.1
+git tag -a v0.0.3 -m 'Salaam 0.0.3'
+git push origin v0.0.3
 ```
 
-`.github/workflows/release.yml` validates the tag and reruns the reusable CI
-workflow against that exact revision: service acceptance on macOS/Linux, actual
-Linux Docker execution proofs, public site builds and installable package checks.
-The pipeline builds **one** CLI tarball and tests those exact bytes on both platforms.
+`.github/workflows/release.yml` validates the tag and its main ancestry. It looks
+for successful **full main CI for the exact tagged commit**. If that run is still
+active, it waits up to 45 minutes. A reusable run must have complete macOS/Linux
+acceptance evidence, all 20 recovery rounds on each platform, package installation
+receipts for the same tarball, matching source/runtime/pin identities, and a GitHub
+build attestation signed by this repository's main CI workflow for that commit.
+
+The release promotes those exact verified bytes without rebuilding. PR/quick
+runs, another commit, a fork, a failed run, a stale attempt, incomplete evidence,
+or changed bytes cannot authorize promotion. Missing/expired evidence uses the
+complete reusable CI gate instead; a certificate or provenance mismatch fails
+closed. The fallback builds one CLI tarball and tests those exact bytes on both
+platforms, including real Linux Docker execution and public site checks.
 
 Only after every gate passes, a publisher downloads the checked artifact, verifies
-checksums, creates a build attestation, uploads all assets to a draft GitHub Release,
+checksums, preserves the verified main build attestation (or attests the fresh fallback build), uploads all assets to a draft GitHub Release,
 then publishes it. Assets are the CLI tarball, `SHA256SUMS`, `release.json` and
 `install.sh`. Release metadata identifies the Git commit, package/runtime versions
 and Pi pin. The package installs from an empty npm cache with scripts disabled;
@@ -105,3 +113,15 @@ lock bytes to `npm-shrinkwrap.json`, bundles dependencies and emits assets under
 ignored `.state/release/`. It does not mutate the source lock, publish anything or
 touch user services. Direct `npm pack` from the checkout fails with instructions
 to use this builder; published packages contain no lifecycle scripts.
+
+## CI profiles
+
+PRs run every test on macOS and Linux plus one additional round of each recovery
+portfolio. Main, daily scheduled runs and release fallback use full acceptance:
+the complete suite, three operator/task/job rounds, and 20 S1–S6 rounds per
+platform. Four isolated five-round jobs run the S1–S6 stress rounds in parallel.
+The evidence gate checks all test files, reports, logs, platforms and round IDs
+before declaring full acceptance. A quick run never receives that claim.
+
+See [CI execution and artifact promotion](contributor/ci.md) for commands,
+recovery of failed runs, and evidence validation.
