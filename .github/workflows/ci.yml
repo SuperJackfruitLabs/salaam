@@ -139,6 +139,8 @@ jobs:
           npm run test:coding -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-coding
       - name: Provision the pinned whole-harness image with Bash
         run: docker image pull docker.io/library/node@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
+      - name: Prove AgentPod startup with private Node and no system Node or Docker socket
+        run: node scripts/agentpod-startup-acceptance.mjs
       - name: Prove real tasks, isolated native teams and whole-harness boundary
         env:
           SALAAM_TASK_REAL_SOCKET: /var/run/docker.sock
@@ -155,6 +157,7 @@ jobs:
             .state/evidence/m11
             .state/evidence/m15
             .state/evidence/m16
+            .state/evidence/m19
           retention-days: 14
   a2a-peer-interop:
     name: Pinned A2A peer interoperability

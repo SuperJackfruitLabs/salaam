@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
@@ -81,7 +81,40 @@ interface Worker {
   reject: (error: Error) => void;
 }
 export function processIdentity(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
   try {
+    if (process.platform === 'linux') {
+      // /proc stat field 22 is the boot-relative start tick. Pair it with boot,
+      // process group, executable and argv, and re-read to reject PID reuse mid-snapshot.
+      const path = `/proc/${pid}`;
+      const stat = () => {
+        const value = readFileSync(path + '/stat', 'utf8');
+        const end = value.lastIndexOf(') ');
+        if (end < 0 || !value.startsWith(pid + ' (')) throw Error('Invalid process stat');
+        const fields = value
+          .slice(end + 2)
+          .trim()
+          .split(/\s+/);
+        if (!/^\d+$/.test(fields[19] ?? '') || !/^\d+$/.test(fields[2] ?? ''))
+          throw Error('Invalid process start identity');
+        return { start: fields[19], group: fields[2], session: fields[3] };
+      };
+      const before = stat(),
+        boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
+        executable = readlinkSync(path + '/exe'),
+        argv = readFileSync(path + '/cmdline');
+      if (
+        !/^[a-f0-9-]{36}$/.test(boot) ||
+        !argv.length ||
+        argv.length > 16384 ||
+        canonical(before) !== canonical(stat())
+      )
+        return null;
+      return (
+        'linux-proc-v1:' +
+        textDigest(canonical({ pid, boot, ...before, executable, argv: argv.toString('base64') }))
+      );
+    }
     return (
       execFileSync('/bin/ps', ['-ww', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], {
         encoding: 'utf8',

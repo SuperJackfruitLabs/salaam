@@ -102,6 +102,7 @@ chmod 600 host-manifest.json
 salaam host inspect --manifest host-manifest.json
 salaam host unit --manifest host-manifest.json --platform systemd|launchd
 salaam host run --manifest host-manifest.json
+salaam host start --manifest host-manifest.json
 
 Config requires absolute state, coding_root and coding_socket paths; optional
 provider, model, max_output_tokens and workspace_id. Planning probes the existing
@@ -109,7 +110,13 @@ executor and pins Node, source/build, Pi, provider, profile and engine identity.
 Review generated units before installing with your host's service manager. No key
 is stored in the manifest: configure it in the service user's credential home.
 Run uses an exclusive supervisor lock, durable health, bounded restart/backoff,
-and refuses source/build or executor drift before the daemon admits work.`,
+and refuses source/build or executor drift before the daemon admits work.
+
+For a bound AgentPod host, use mode="agentpod", state and agentpod_config instead
+of coding_root/coding_socket. This profile enables no station tools. The private
+manifest pins Node, CLI, source/build, Pi, provider and authority pins. Invoke the
+canonical Node executable explicitly. host start waits for matching live health
+and safely coalesces concurrent callers; it never installs or upgrades packages.`,
   schedules: `salaam schedules create TASK_ID --name NAME --revision N --max-steps N [--schedule FILE] [--compact]
 salaam schedules list [--offset N]
 salaam schedules inspect JOB_ID

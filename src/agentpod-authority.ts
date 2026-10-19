@@ -49,6 +49,36 @@ function privateBytes(path: string): Buffer {
   }
 }
 
+export function readAgentPodPins(configPath: string, state: string): AgentPodPins {
+  const pins = Object.freeze(
+    object(JSON.parse(privateBytes(configPath).toString())),
+  ) as unknown as AgentPodPins;
+  const p = pins;
+  if (
+    Object.keys(p).sort().join(',') !==
+    ['version', 'organization_id', 'node_id', 'station_key', 'workspace'].sort().join(',')
+  )
+    throw Error('AgentPod pins contain unsupported fields');
+  agentpodBinding({
+    ...p,
+    principal_id: 'prn_00000000000000000000',
+    station_id: 'validate',
+    occupancy_epoch: 1,
+    hub_session_id: 'validate',
+    run: { source: 'agentpod', id: 'validate', epoch: 1 },
+  });
+  if (
+    p.station_key !==
+    'salaam:' + createHash('sha256').update(p.workspace).digest('hex').slice(0, 16)
+  )
+    throw Error('AgentPod station key must identify the pinned workspace');
+  if (realpathSync(p.workspace) !== p.workspace)
+    throw Error('AgentPod workspace pin must be its canonical absolute path');
+  if (state === p.workspace || state.startsWith(p.workspace.replace(/\/$/, '') + '/'))
+    throw Error('AgentPod private daemon state must be outside the station workspace');
+  return pins;
+}
+
 /** A local node admission, not an Accounts token issuer or a provider login. */
 export class AgentPodAuthority {
   readonly boot = randomUUID();
@@ -60,32 +90,7 @@ export class AgentPodAuthority {
     readonly configPath: string,
     readonly cancel: (attempt: string) => void,
   ) {
-    this.pins = Object.freeze(
-      object(JSON.parse(privateBytes(configPath).toString())),
-    ) as unknown as AgentPodPins;
-    const p = this.pins;
-    if (
-      Object.keys(p).sort().join(',') !==
-      ['version', 'organization_id', 'node_id', 'station_key', 'workspace'].sort().join(',')
-    )
-      throw Error('AgentPod pins contain unsupported fields');
-    agentpodBinding({
-      ...p,
-      principal_id: 'prn_00000000000000000000',
-      station_id: 'validate',
-      occupancy_epoch: 1,
-      hub_session_id: 'validate',
-      run: { source: 'agentpod', id: 'validate', epoch: 1 },
-    });
-    if (
-      p.station_key !==
-      'salaam:' + createHash('sha256').update(p.workspace).digest('hex').slice(0, 16)
-    )
-      throw Error('AgentPod station key must identify the pinned workspace');
-    if (realpathSync(p.workspace) !== p.workspace)
-      throw Error('AgentPod workspace pin must be its canonical absolute path');
-    if (state === p.workspace || state.startsWith(p.workspace.replace(/\/$/, '') + '/'))
-      throw Error('AgentPod private daemon state must be outside the station workspace');
+    this.pins = readAgentPodPins(configPath, state);
     const keyPath = join(state, 'agentpod-control-key');
     try {
       const fd = openSync(keyPath, 'wx', 0o600);
