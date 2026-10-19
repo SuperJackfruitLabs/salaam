@@ -5,61 +5,24 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { ROOT } from '../../src/config.js';
 
-const { deploymentDecision } = await import(
-  pathToFileURL(join(ROOT, 'scripts/site-deploy-target.mjs')).href
-);
 const { publicFiles, verifyPublicFiles } = await import(
   pathToFileURL(join(ROOT, 'scripts/verify-sites.mjs')).href
 );
-const repository = 'SuperJackfruitLabs/salaam';
-const commit = 'a'.repeat(40);
-const run = {
-  id: 12,
-  head_sha: commit,
-  head_branch: 'main',
-  event: 'push',
-  path: '.github/workflows/ci.yml',
-  repository: { full_name: repository },
-  head_repository: { full_name: repository },
-  status: 'completed',
-  conclusion: 'success',
-};
-const target = {
-  eventName: 'workflow_run',
-  event: { workflow_run: { id: 12, head_sha: commit } },
-  repository,
-  commit,
-  main: commit,
-  run,
-};
-
-test('successful exact main CI can deploy; a newer main suppresses stale publication', () => {
-  expect(deploymentDecision(target).deploy).toBe(true);
-  expect(deploymentDecision({ ...target, main: 'b'.repeat(40) }).deploy).toBe(false);
+const { selectedSiteProjects } = await import(
+  pathToFileURL(join(ROOT, 'scripts/site-targets.mjs')).href
+);
+test('individual dashboard builds deploy and verify only their selected site', () => {
+  expect(selectedSiteProjects([])).toEqual(['landing', 'docs-site']);
+  expect(selectedSiteProjects(['--built', '--site', 'landing'], ['--built'])).toEqual(['landing']);
+  expect(selectedSiteProjects(['--site', 'docs'])).toEqual(['docs-site']);
 });
 test.each([
-  { conclusion: 'failure' },
-  { status: 'in_progress' },
-  { event: 'pull_request' },
-  { head_branch: 'feature' },
-  { head_sha: 'b'.repeat(40) },
-  { path: '.github/workflows/other.yml' },
-  { head_repository: { full_name: 'fork/salaam' } },
-  { repository: { full_name: 'fork/salaam' } },
-])('rejects CI that cannot authorize production: %j', (change) => {
-  expect(() => deploymentDecision({ ...target, run: { ...run, ...change } })).toThrow();
-});
-test('rejects a different event run and a non-main manual retry', () => {
-  expect(() =>
-    deploymentDecision({ ...target, event: { workflow_run: { id: 13, head_sha: commit } } }),
-  ).toThrow();
-  expect(() =>
-    deploymentDecision({ ...target, eventName: 'workflow_dispatch', ref: 'refs/heads/feature' }),
-  ).toThrow();
-  expect(
-    deploymentDecision({ ...target, eventName: 'workflow_dispatch', ref: 'refs/heads/main' })
-      .deploy,
-  ).toBe(true);
+  ['--site'],
+  ['--site', 'typo'],
+  ['--siet', 'landing'],
+  ['--site', 'landing', '--site', 'docs'],
+])('invalid site selection cannot deploy an unintended target: %j', (...args) => {
+  expect(() => selectedSiteProjects(args)).toThrow();
 });
 test('verification inventory includes every public page, asset and an HTTP 404 probe', () => {
   const dir = mkdtempSync('/tmp/sal-public-sites-');

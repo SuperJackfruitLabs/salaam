@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { site, docs } from '../site.config.mjs';
+import { selectedSiteProjects } from './site-targets.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 export function publicFiles(directory, base) {
@@ -105,10 +106,10 @@ export async function verifyPublicFiles(
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const targets = [
-    { directory: join(root, 'landing/dist'), base: site },
-    { directory: join(root, 'docs-site/dist'), base: docs },
-  ];
+  const targets = selectedSiteProjects(process.argv.slice(2)).map((project) => ({
+    directory: join(root, project, 'dist'),
+    base: project === 'landing' ? site : docs,
+  }));
   const report = await verifyPublicFiles(targets.flatMap((t) => publicFiles(t.directory, t.base)));
   report.commit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: root,

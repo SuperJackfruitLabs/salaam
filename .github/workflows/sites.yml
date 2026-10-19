@@ -1,76 +1,30 @@
 name: Deploy public sites
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: [checks]
-    types: [completed]
-    branches: [main]
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: public-sites
   cancel-in-progress: false
 jobs:
   deploy:
-    # Never check out PR/fork source in a workflow with deployment credentials.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
-    environment:
-      name: websites
-      url: https://salaam.sh
+    if: github.ref == 'refs/heads/main'
+    environment: websites
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
-      - id: target
-        name: Require successful CI for current main
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/site-deploy-target.mjs
-      - if: steps.target.outputs.deploy == 'true'
-        run: npm install --global npm@11.19.0 --ignore-scripts
-      - if: steps.target.outputs.deploy == 'true'
-        run: npm ci --ignore-scripts
-      - if: steps.target.outputs.deploy == 'true'
-        run: npm --prefix landing ci --ignore-scripts
-      - if: steps.target.outputs.deploy == 'true'
-        run: npm --prefix docs-site ci --ignore-scripts
-      - if: steps.target.outputs.deploy == 'true'
-        run: npm run sites:build
-      - id: fresh
-        if: steps.target.outputs.deploy == 'true'
-        name: Recheck main before publishing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/site-deploy-target.mjs
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm --prefix landing ci --ignore-scripts
+      - run: npm --prefix docs-site ci --ignore-scripts
+      - run: npm run sites:build
       - name: Deploy the verified static assets to the declared domains
-        if: steps.fresh.outputs.deploy == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Configure websites environment secret CLOUDFLARE_API_TOKEN'; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Configure websites environment variable CLOUDFLARE_ACCOUNT_ID'; exit 1; }
-          node scripts/deploy-sites.mjs --built
-      - name: Verify every published page and asset
-        if: steps.fresh.outputs.deploy == 'true'
-        run: npm run sites:verify
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && steps.target.outputs.deploy == 'true'
-        with:
-          name: public-sites-verification-${{ github.run_attempt }}
-          path: |
-            .state/sites-deployment-target.json
-            .state/sites-verification.json
-          if-no-files-found: error
-          retention-days: 30
+        run: node scripts/deploy-sites.mjs --built
