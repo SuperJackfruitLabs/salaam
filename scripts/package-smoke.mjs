@@ -30,6 +30,13 @@ let stderr = '';
 const run = async (command, ...args) =>
   (await exec(command, args, { cwd: temp, env, timeout: 45_000, maxBuffer: 8 * 1024 * 1024 }))
     .stdout;
+// Cold macOS runners can spend longer than a CLI command extracting the bundled runtime.
+// Keep installation offline and bounded, with its duration in the acceptance evidence.
+const install = async (...args) => {
+  const started = performance.now();
+  await exec('npm', args, { cwd: temp, env, timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
+  return Math.round(performance.now() - started);
+};
 const wait = async (observe, accepts = Boolean) => {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
@@ -60,8 +67,7 @@ try {
   const manifest = JSON.parse(readFileSync(join(dirname(tarball), 'release.json')));
   const hash = createHash('sha256').update(readFileSync(tarball)).digest('hex');
   assert.equal(hash, manifest.package_sha256);
-  await run(
-    'npm',
+  const installMs = await install(
     'install',
     '--global',
     '--prefix',
@@ -146,6 +152,7 @@ try {
         platform: process.platform,
         arch: process.arch,
         install: 'offline empty-cache',
+        install_duration_ms: installMs,
         aliases: true,
         pinned_pi_readiness: true,
         offline_turn: true,
