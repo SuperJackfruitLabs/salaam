@@ -134,6 +134,30 @@ export class AgentPodAuthority {
     this.assert(row);
     return JSON.parse(row.binding) as AgentPodBinding;
   }
+  /** Fresh admission lease data for a separately owned native operation. This
+   * consumes no effect permission. The caller must also bind its actual worker,
+   * attempt, process resource and exact operation before granting dispatch.
+   * Keep the immutable invocation/review deadline separate from this duration. */
+  leaseWindow(session: string, expectedBindingDigest: string, maximumMs: number): number {
+    if (!Number.isSafeInteger(maximumMs) || maximumMs < 1 || maximumMs > AGENTPOD_LEASE_MS)
+      throw new ServiceError('invalid_authority_window', 'Invalid native authority duration', 400);
+    const row = this.bySession(session);
+    this.assert(row);
+    if (row.digest !== expectedBindingDigest)
+      throw new ServiceError(
+        'authority_binding',
+        'Native operation belongs to a different execution root',
+      );
+    const remaining = Math.floor(
+      Math.min(maximumMs, row.expires_at - Date.now(), row.monotonic_deadline! - performance.now()),
+    );
+    if (!Number.isFinite(remaining) || remaining < 1)
+      throw new ServiceError(
+        'authority_expired',
+        'AgentPod authority lease has no remaining native grant window',
+      );
+    return remaining;
+  }
   private checked(input: unknown): AgentPodBinding {
     const b = agentpodBinding(input);
     for (const k of Object.keys(this.pins) as (keyof AgentPodPins)[])
