@@ -114,3 +114,20 @@ identity and its own generation again after minting. Upstreams retain their exis
 issuer, audience and entitlement checks. These proofs do not establish live Library or fleet
 acceptance. A separate Anthropic-adapter proof uses a local mock API to verify that the actual
 model tool inventory includes `salaam_mcp` and receives its result without the proxy key.
+
+Managed assignments use a separate `/stations/<id>/mcp-managed-v1/<binding-digest>/<server>`
+namespace. The daemon and node verify the digest against the fresh root binding; the
+proxy verifies its persisted identity before minting or forwarding. A bound credential
+cannot use the older transparent route. The actual M19 proxy artifact rejects the new
+namespace before token minting, so rolling back the proxy fails closed for an existing
+managed assignment. Shape validation alone cannot establish that the digest is current.
+
+The internal stdio transport is preparation for the separate Toolkit integration.
+It uses an exact executable checksum, explicit environment, pinned negotiation,
+request/response/stderr bounds and a total response deadline. A synchronous owner
+guard runs before each tool-call handoff. Closing it signals the owned process
+group and confirms that the group disappeared; failed cleanup remains unconfirmed.
+Its process proofs use a disposable fixture, not Toolkit. This primitive does not
+admit configuration or grant authority, and no public ACP stdio capability or
+Toolkit execution tool is enabled by its presence. Pending broker decisions still
+require owner binding, revocation and recovery conformance before integration.
