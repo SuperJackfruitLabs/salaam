@@ -40,6 +40,9 @@ test.runIf(Boolean(process.env.SALAAM_M18_TERMINAL_CONTEXT))(
         await terminal.contains('TEAM BOARD', 30000);
         await terminal.contains('codex', 30000);
         await terminal.contains('mac-reviewer', 30000);
+        await terminal.contains('● connected', 30000);
+        await terminal.contains('Owned copy · r1', 30000);
+        await terminal.contains('Files · guarded', 30000);
         const path = join(context.local, `remote-team-${index}.svg`);
         await terminal.capture(path);
         captures.push(path);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import { ROOT } from '../dist/src/config.js';
@@ -35,7 +35,11 @@ if (
   throw Error('Select the already authorized owned VPS rehearsal');
 const run = prior?.run_id ?? 'mixed-runtime-' + randomUUID(),
   local = join(ROOT, '.state', run),
-  reportPath = join(ROOT, '.state/evidence/m18', run + (prior ? '.continued.json' : '.json'));
+  reportPath = join(
+    ROOT,
+    '.state/evidence/m18',
+    run + (prior ? '.continued-' + randomUUID().slice(0, 8) + '.json' : '.json'),
+  );
 fs.mkdirSync(local, { recursive: true, mode: 0o700 });
 const budget = new LiveAcceptanceBudget(join(ROOT, '.state/m13-m18-live-budget.json')),
   report = {
@@ -64,6 +68,9 @@ const budget = new LiveAcceptanceBudget(join(ROOT, '.state/m13-m18-live-budget.j
 if (prior) {
   Object.assign(report, prior);
   report.resumed_from = resolve(process.argv[resumeIndex + 1]);
+  report.resumed_from_digest = createHash('sha256')
+    .update(fs.readFileSync(report.resumed_from))
+    .digest('hex');
   report.prior_failure = report.failure;
   report.continuation_runner_digest = createHash('sha256')
     .update(fs.readFileSync(new URL(import.meta.url)))
@@ -92,8 +99,12 @@ const until = async (fn, accept, timeout = 240000) => {
   throw Error('Mixed acceptance deadline reached');
 };
 const progress = (phase) => process.stdout.write(JSON.stringify({ run_id: run, phase }) + '\n');
-const upload = async (files, to) =>
-  exec('scp', ['-q', ...ssh, ...files, remote.host + ':' + to], { maxBuffer: 1048576 });
+const upload = async (files, to) => {
+  if (to !== join(remote.root, 'uploads/')) throw Error('Unowned acceptance upload');
+  await remoteWrite(
+    Object.fromEntries(files.map((file) => ['uploads/' + basename(file), fs.readFileSync(file)])),
+  );
+};
 async function remoteWrite(files) {
   const code =
     "import sys,json,base64,os\nfrom pathlib import Path\nv=json.load(sys.stdin);root=Path(v['root'])\nfor name,body in v['files'].items():\n p=root/name\n if '..' in Path(name).parts or Path(name).is_absolute():raise RuntimeError('Unsafe fixture path')\n p.parent.mkdir(parents=True,exist_ok=True,mode=0o700)\n p.write_bytes(base64.b64decode(body));p.chmod(0o600)";
@@ -103,8 +114,18 @@ async function remoteWrite(files) {
     });
     let error = '';
     child.stderr.on('data', (b) => (error += b));
-    child.once('error', reject);
-    child.once('exit', (code) => (code === 0 ? resolve() : reject(Error(error))));
+    const deadline = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(Error('Owned fixture transfer timed out'));
+    }, 45000);
+    child.once('error', (error) => {
+      clearTimeout(deadline);
+      reject(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(deadline);
+      code === 0 ? resolve() : reject(Error(error));
+    });
     child.stdin.end(
       JSON.stringify({
         root: remote.root,
