@@ -242,10 +242,36 @@ test('a model completing its attempt cannot complete a job whose configured chec
   try {
     f.backend.exitOverride = 1;
     const { job } = await define(f);
+    // Hold progression at the model/check boundary, independent of timer ordering.
+    let paused: Promise<void> | undefined;
+    const pauseAfterDispatch = (event: { kind: string }) => {
+      if (event.kind !== 'attempt.running') return;
+      f.service.store.changes.off('event', pauseAfterDispatch);
+      paused = f.service.taskDriver.close();
+    };
+    f.service.store.changes.on('event', pauseAfterDispatch);
     f.service.jobs.trigger(job.id, 'run-job', job.revision, 'once', f.actor);
+    await until(
+      () => f.service.store.snapshot(f.session.id).attempts,
+      (attempts) => attempts[0]?.state === 'completed',
+    );
+    await paused;
+    await until(
+      () => f.service.jobs.view(job.id),
+      (j) => j.state === 'blocked' && j.task_state === 'blocked',
+    );
+    expect(f.service.taskVerification.list(job.task_id)).toEqual([]);
+    f.service.taskDriver.start();
+    await until(
+      () => f.service.taskVerification.list(job.task_id),
+      (checks) => checks.some((check) => check.state === 'failed'),
+    );
     const result = await until(
       () => f.service.jobs.view(job.id),
-      (j) => ['blocked', 'partially_completed'].includes(j.state) && j.task_state !== 'running',
+      (j) =>
+        ['blocked', 'partially_completed'].includes(j.state) &&
+        ['blocked', 'partially_completed'].includes(j.task_state) &&
+        f.service.taskDriver.view(job.task_id).runtime.auto_enabled === 0,
       15000,
     );
     expect(result.state).not.toBe('succeeded');
