@@ -124,6 +124,36 @@ input.on('line', (line) => {
         if (!service || !value.path.startsWith('/v1/')) throw Error('Unconfigured operator API');
         const result = await call(service.socket, value.path, value.body, undefined, 120000);
         emit({ kind: 'reply', id: value.id, result });
+      } else if (value.op === 'saved_peer_run') {
+        const task = service.taskWork.get(value.task),
+          assignment = service.team.get(value.assignment);
+        if (
+          service.store.session(task.session_id).cwd !== join(config.root, 'source') ||
+          assignment.task_id !== task.id ||
+          service.external.assignment(assignment.id)?.kind !== 'a2a' ||
+          !/^mixed-runtime-[0-9a-f-]{36}:peer-review-once$/.test(value.request_id)
+        )
+          throw Error('Not an owned peer run');
+        const saved = service.store.db
+          .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
+          .get('local-operator', value.request_id);
+        if (!saved) throw Error('No saved owned request');
+        const { digest } = await import(pathToFileURL(join(pkg, 'dist/src/protocol.js')));
+        let body;
+        for (let expected = 0; expected <= Math.min(task.revision, 1024); expected++)
+          if (
+            digest({
+              kind: 'team-run',
+              id: assignment.id,
+              expected,
+              generation: 0,
+              instruction: null,
+              continuation: null,
+            }) === saved.hash
+          )
+            body = { request_id: value.request_id, expected_revision: expected, generation: 0 };
+        if (!body) throw Error('Saved request fingerprint differs');
+        emit({ kind: 'reply', id: value.id, result: { body, result: JSON.parse(saved.response) } });
       } else if (value.op === 'evidence') {
         const session = service.store.session(value.session);
         if (session.cwd !== join(config.root, 'source'))

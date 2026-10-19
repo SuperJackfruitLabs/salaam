@@ -44,7 +44,7 @@ test.runIf(Boolean(process.env.SALAAM_M18_TERMINAL_CONTEXT))(
         await terminal.capture(path);
         captures.push(path);
         await terminal.write('\x03');
-        expect((await terminal.exit()).restored).toBe(true);
+        expect(await terminal.exit()).toEqual({ code: 0, restored: true });
       } finally {
         await terminal.close();
       }

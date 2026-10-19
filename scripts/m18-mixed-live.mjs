@@ -11,9 +11,19 @@ import { LiveAcceptanceBudget } from './live-acceptance-budget.mjs';
 import { AcceptanceChannel, AcceptanceModels } from './m18-host-channel.mjs';
 const exec = promisify(execFile),
   quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+const resumeIndex = process.argv.indexOf('--resume'),
+  prior =
+    resumeIndex < 0
+      ? null
+      : JSON.parse(fs.readFileSync(resolve(process.argv[resumeIndex + 1]), 'utf8'));
+if (
+  prior &&
+  (!prior.failed_audit?.task || !/^mixed-runtime-[0-9a-f-]{36}$/.test(prior.run_id ?? ''))
+)
+  throw Error('Select an owned failed rehearsal report');
 const prepareOnly = process.argv.includes('--prepare-only'),
   codexProbe = process.argv.includes('--codex-probe');
-if (!prepareOnly && !codexProbe && !process.argv.includes('--run'))
+if (!prepareOnly && !codexProbe && !prior && !process.argv.includes('--run'))
   throw Error('Use --prepare-only or --run for the authorized live portfolio');
 const remote = JSON.parse(fs.readFileSync(join(ROOT, '.state/m18-remote-context.json'), 'utf8')),
   runtime = JSON.parse(fs.readFileSync(join(ROOT, '.state/m18-vps-preparation.json'), 'utf8')),
@@ -23,9 +33,9 @@ if (
   !/^\/home\/hermes\/\.cache\/salaam-m10\.eByB1aeQ\/m18-[0-9a-f-]{36}$/.test(remote.root)
 )
   throw Error('Select the already authorized owned VPS rehearsal');
-const run = 'mixed-runtime-' + randomUUID(),
+const run = prior?.run_id ?? 'mixed-runtime-' + randomUUID(),
   local = join(ROOT, '.state', run),
-  reportPath = join(ROOT, '.state/evidence/m18', run + '.json');
+  reportPath = join(ROOT, '.state/evidence/m18', run + (prior ? '.continued.json' : '.json'));
 fs.mkdirSync(local, { recursive: true, mode: 0o700 });
 const budget = new LiveAcceptanceBudget(join(ROOT, '.state/m13-m18-live-budget.json')),
   report = {
@@ -51,6 +61,21 @@ const budget = new LiveAcceptanceBudget(join(ROOT, '.state/m13-m18-live-budget.j
       package: JSON.parse(fs.readFileSync(join(ROOT, '.state/m18-release/release.json'), 'utf8')),
     },
   };
+if (prior) {
+  Object.assign(report, prior);
+  report.resumed_from = resolve(process.argv[resumeIndex + 1]);
+  report.prior_failure = report.failure;
+  report.continuation_runner_digest = createHash('sha256')
+    .update(fs.readFileSync(new URL(import.meta.url)))
+    .digest('hex');
+  delete report.failure;
+  delete report.failed_audit;
+  report.success = false;
+  report.continued_candidate = JSON.parse(
+    fs.readFileSync(join(ROOT, '.state/m18-release/release.json'), 'utf8'),
+  );
+  report.previous_service = prior.service;
+}
 const models = new AcceptanceModels(budget, run, report),
   proxyToken = 'salaam-acceptance-proxy-' + randomBytes(32).toString('base64url'),
   peerToken = 'salaam-peer-' + randomBytes(32).toString('base64url'),
@@ -137,7 +162,7 @@ async function assign(index, profile, runtimeId) {
   return action('team/assign', {
     step_id: task.steps[index].id,
     profile_id: profile,
-    ...(runtimeId ? { runtime: runtimeId, invocations: 1 } : { requests: 4 }),
+    ...(runtimeId ? { runtime: runtimeId, invocations: 1 } : { requests: 8 }),
   });
 }
 async function runAssignment(a, key, instruction) {
@@ -396,244 +421,282 @@ try {
     report.success = true;
   } else {
     models.enabled = true;
-    progress('native-explorer');
-    session = await api('/v1/sessions', {
-      request_id: run + '-session',
-      cwd: join(remote.root, 'source'),
-      coding: true,
-    });
-    await until(
-      () => api(`/v1/sessions/${session.id}`),
-      (s) => s.state === 'ready',
-    );
-    await control();
-    for (const id of ['salaam/explorer', 'salaam/reviewer', 'project/mixed-builder']) {
-      const profile = await api(
-        `/v1/sessions/${session.id}/agents?profile=${encodeURIComponent(id)}`,
-      );
-      await api(`/v1/sessions/${session.id}/agents/admit`, {
-        ...actor,
-        request_id: randomUUID(),
-        profile_id: id,
-        expected_digest: profile.digest,
-        fact_ids: [],
+    let nativeReview;
+    if (!prior) {
+      progress('native-explorer');
+      session = await api('/v1/sessions', {
+        request_id: run + '-session',
+        cwd: join(remote.root, 'source'),
+        coding: true,
       });
-    }
-    const instruction = `The admitted explorer has shown app.js exports answer=41. Do not run preliminary read commands. Repair ONLY app.js through exec_command with cmd exactly ${repair}, workdir=/workspace and sandbox_permissions=require_escalated. Then run exactly node --test app.test.js using exec_command with workdir=/workspace and sandbox_permissions=require_escalated. Preserve all other bytes. Do not install, delegate or use network.`;
-    task = await api('/v1/tasks', {
-      ...actor,
-      request_id: run + '-task',
-      session_id: session.id,
-      expected_revision: 0,
-      plan: {
-        objective:
-          'Explore, repair and independently review a guarded fixture across native, harness and A2A runtimes',
-        constraints: [
-          'Preserve human bytes and test files',
-          'Only explicit integration changes the parent workspace',
-        ],
-        steps: [
-          {
-            key: 'explore',
-            title: 'Native exploration',
-            instruction:
-              'Inspect app.js and app.test.js through salaam_repository. Explain the seeded contract mismatch with concrete file and line evidence. Do not execute or edit.',
-            depends_on: [],
-            checks: ['suite'],
-          },
-          {
-            key: 'repair',
-            title: 'Pinned Codex repair',
-            instruction,
-            depends_on: ['explore'],
-            checks: ['suite'],
-          },
-          {
-            key: 'review',
-            title: 'Native review',
-            instruction:
-              'Review the integrated diff and app.js contract using salaam_repository. Publish actual correctness findings through salaam_findings, including an empty findings array if the repair is correct. Do not execute or edit.',
-            depends_on: ['repair'],
-            checks: ['suite'],
-          },
-          {
-            key: 'peer',
-            title: 'A2A review',
-            instruction:
-              'Review only the disclosed app.js and app.test.js. The exported answer must be 42. Return concise correctness analysis; do not claim execution, integration or human authority.',
-            depends_on: ['review'],
-            checks: ['suite'],
-          },
-        ],
-        acceptance: [{ key: 'suite', command: 'node --test app.test.js', cwd: '.' }],
-        deliverables: ['app.js', 'human.txt'],
-        limits: {
-          invocations: 2,
-          token_units: null,
-          requests: 40,
-          runtime_ms: 900000,
-          concurrency: 3,
-        },
-      },
-    });
-    const baseline = await action('verify', { check_key: 'suite' });
-    report.baseline = await until(
-      async () => (await current()).verification.checks.find((c) => c.id === baseline.id),
-      (c) => c && ['passed', 'failed'].includes(c.state),
-    );
-    assert.equal(report.baseline.state, 'failed');
-    const explorer = await assign(0, 'salaam/explorer'),
-      exploration = await runAssignment(explorer, 'explore-once');
-    assert.equal((await settle(exploration.result.child_id)).state, 'completed');
-    let audit = await service.request('evidence', { session: session.id });
-    const explored = audit.children.find((c) => c.child.id === exploration.result.child_id);
-    assert(explored.reads > 0);
-    assert.match(explored.result.result.text, /app\.js|answer|41|42/);
-    report.explorer = explored;
-    await complete(
-      0,
-      'Inspected actual immutable repository read receipts and bounded explorer evidence',
-    );
-    progress('isolated-codex-builder-shared-inbox-and-takeover');
-    const builder = await assign(1, 'project/mixed-builder', 'codex'),
-      built = await runAssignment(
-        builder,
-        'repair-once',
-        instruction + '\nExplorer evidence: ' + explored.result.result.text.slice(0, 1200),
+      await until(
+        () => api(`/v1/sessions/${session.id}`),
+        (s) => s.state === 'ready',
       );
-    let tookOver = false;
-    await until(
-      async () => {
-        const approvals = await api('/v1/approvals');
-        for (const approval of approvals) {
-          const details = await api(`/v1/operations/${approval.operation_id}`);
-          if (details.kind !== 'harness') continue;
-          const scope = JSON.parse(details.value).scope,
-            a = scope.arguments,
-            yes =
-              scope.kind === 'command' &&
-              [repair, 'node --test app.test.js'].includes(a.cmd ?? a.command);
-          const inbox = await api('/v1/inbox');
-          assert(inbox.items.some((i) => i.source_key === 'approval:' + approval.id));
-          if (!tookOver) {
-            const old = { ...actor };
-            await control(true);
-            const retry = await api(`/v1/tasks/${task.id}/team/${builder.id}/run`, {
-              ...built.body,
-              client_id: 'expired',
-              token: 'expired',
+      await control();
+      for (const id of ['salaam/explorer', 'salaam/reviewer', 'project/mixed-builder']) {
+        const profile = await api(
+          `/v1/sessions/${session.id}/agents?profile=${encodeURIComponent(id)}`,
+        );
+        await api(`/v1/sessions/${session.id}/agents/admit`, {
+          ...actor,
+          request_id: randomUUID(),
+          profile_id: id,
+          expected_digest: profile.digest,
+          fact_ids: [],
+        });
+      }
+      const instruction = `The admitted explorer has shown app.js exports answer=41. Do not run preliminary read commands. Repair ONLY app.js through exec_command with cmd exactly ${repair}, workdir=/workspace and sandbox_permissions=require_escalated. Then run exactly node --test app.test.js using exec_command with workdir=/workspace and sandbox_permissions=require_escalated. Preserve all other bytes. Do not install, delegate or use network.`;
+      task = await api('/v1/tasks', {
+        ...actor,
+        request_id: run + '-task',
+        session_id: session.id,
+        expected_revision: 0,
+        plan: {
+          objective:
+            'Explore, repair and independently review a guarded fixture across native, harness and A2A runtimes',
+          constraints: [
+            'Preserve human bytes and test files',
+            'Only explicit integration changes the parent workspace',
+          ],
+          steps: [
+            {
+              key: 'explore',
+              title: 'Native exploration',
+              instruction:
+                'Inspect app.js and app.test.js through salaam_repository. Explain the seeded contract mismatch with concrete file and line evidence. Do not execute or edit.',
+              depends_on: [],
+              checks: ['suite'],
+            },
+            {
+              key: 'repair',
+              title: 'Pinned Codex repair',
+              instruction,
+              depends_on: ['explore'],
+              checks: ['suite'],
+            },
+            {
+              key: 'review',
+              title: 'Native review',
+              instruction:
+                'Review the integrated diff and app.js contract using salaam_repository. Publish actual correctness findings through salaam_findings, including an empty findings array if the repair is correct. Do not execute or edit.',
+              depends_on: ['repair'],
+              checks: ['suite'],
+            },
+            {
+              key: 'peer',
+              title: 'A2A review',
+              instruction:
+                'Review only the disclosed app.js and app.test.js. The exported answer must be 42. Return concise correctness analysis; do not claim execution, integration or human authority.',
+              depends_on: ['review'],
+              checks: ['suite'],
+            },
+          ],
+          acceptance: [{ key: 'suite', command: 'node --test app.test.js', cwd: '.' }],
+          deliverables: ['app.js', 'human.txt'],
+          limits: {
+            invocations: 2,
+            token_units: null,
+            requests: 40,
+            runtime_ms: 900000,
+            concurrency: 3,
+          },
+        },
+      });
+      const baseline = await action('verify', { check_key: 'suite' });
+      report.baseline = await until(
+        async () => (await current()).verification.checks.find((c) => c.id === baseline.id),
+        (c) => c && ['passed', 'failed'].includes(c.state),
+      );
+      assert.equal(report.baseline.state, 'failed');
+      const explorer = await assign(0, 'salaam/explorer'),
+        exploration = await runAssignment(explorer, 'explore-once');
+      assert.equal((await settle(exploration.result.child_id)).state, 'completed');
+      let audit = await service.request('evidence', { session: session.id });
+      const explored = audit.children.find((c) => c.child.id === exploration.result.child_id);
+      assert(explored.reads > 0);
+      assert.match(explored.result.result.text, /app\.js|answer|41|42/);
+      report.explorer = explored;
+      await complete(
+        0,
+        'Inspected actual immutable repository read receipts and bounded explorer evidence',
+      );
+      progress('isolated-codex-builder-shared-inbox-and-takeover');
+      const builder = await assign(1, 'project/mixed-builder', 'codex'),
+        built = await runAssignment(
+          builder,
+          'repair-once',
+          instruction + '\nExplorer evidence: ' + explored.result.result.text.slice(0, 1200),
+        );
+      let tookOver = false;
+      await until(
+        async () => {
+          const approvals = await api('/v1/approvals');
+          for (const approval of approvals) {
+            const details = await api(`/v1/operations/${approval.operation_id}`);
+            if (details.kind !== 'harness') continue;
+            const scope = JSON.parse(details.value).scope,
+              a = scope.arguments,
+              yes =
+                scope.kind === 'command' &&
+                [repair, 'node --test app.test.js'].includes(a.cmd ?? a.command);
+            const inbox = await api('/v1/inbox');
+            assert(inbox.items.some((i) => i.source_key === 'approval:' + approval.id));
+            if (!tookOver) {
+              const old = { ...actor };
+              await control(true);
+              const retry = await api(`/v1/tasks/${task.id}/team/${builder.id}/run`, {
+                ...built.body,
+                client_id: 'expired',
+                token: 'expired',
+              });
+              assert.equal(retry.child_id, built.result.child_id);
+              report.takeover = {
+                same_child: retry.child_id,
+                saved_request_replayed: true,
+                old_client: old.client_id,
+              };
+              tookOver = true;
+            }
+            await api(`/v1/approvals/${approval.id}/decision`, {
+              request_id: 'decision:' + approval.id,
+              expected_revision: approval.revision,
+              operation_digest: approval.operation_digest,
+              decision: yes ? 'approve' : 'deny',
             });
-            assert.equal(retry.child_id, built.result.child_id);
-            report.takeover = {
-              same_child: retry.child_id,
-              saved_request_replayed: true,
-              old_client: old.client_id,
-            };
-            tookOver = true;
+            report.decisions.push({ id: approval.id, scope, decision: yes ? 'approve' : 'deny' });
           }
-          await api(`/v1/approvals/${approval.id}/decision`, {
-            request_id: 'decision:' + approval.id,
-            expected_revision: approval.revision,
-            operation_digest: approval.operation_digest,
-            decision: yes ? 'approve' : 'deny',
-          });
-          report.decisions.push({ id: approval.id, scope, decision: yes ? 'approve' : 'deny' });
-        }
-        return child(built.result.child_id);
-      },
-      (c) => c.state !== 'accepted',
-    );
-    assert.equal((await child(built.result.child_id)).state, 'completed');
-    const proposal = await api(`/v1/workers/${built.result.child_id}/proposal`);
-    assert(proposal.changes.length > 0 && proposal.changes.every((c) => c.path === 'app.js'));
-    const workspace = await api(`/v1/sessions/${session.id}/workspace`);
-    report.integration = await api(`/v1/workers/${built.result.child_id}/integrate`, {
-      ...actor,
-      request_id: run + ':integrate-once',
-      workspace_revision: workspace.revision,
-      workspace_digest: workspace.digest,
-      patch_digest: proposal.patch_digest,
-    });
-    assert.equal(report.integration.state, 'applied');
-    await complete(
-      1,
-      'Inspected stopped Codex proposal and applied its exact hash-bound integration receipt',
-    );
-    progress('selected-native-reviewer-cancellation');
-    const reviewer = await assign(2, 'salaam/reviewer');
-    models.holdNextLinux = true;
-    const stopped = await runAssignment(reviewer, 'review-stop-once');
-    await until(
-      () => models.held.size,
-      (n) => n === 1,
-    );
-    const selected = await child(stopped.result.child_id),
-      selectedSnapshot = await api(`/v1/sessions/${selected.child_session}/snapshot`),
-      selectedClient = randomUUID(),
-      selectedLease = await api(`/v1/sessions/${selected.child_session}/control`, {
-        request_id: randomUUID(),
+          return child(built.result.child_id);
+        },
+        (c) => c.state !== 'accepted',
+      );
+      assert.equal((await child(built.result.child_id)).state, 'completed');
+      const proposal = await api(`/v1/workers/${built.result.child_id}/proposal`);
+      assert(proposal.changes.length > 0 && proposal.changes.every((c) => c.path === 'app.js'));
+      const workspace = await api(`/v1/sessions/${session.id}/workspace`);
+      report.integration = await api(`/v1/workers/${built.result.child_id}/integrate`, {
+        ...actor,
+        request_id: run + ':integrate-once',
+        workspace_revision: workspace.revision,
+        workspace_digest: workspace.digest,
+        patch_digest: proposal.patch_digest,
+      });
+      assert.equal(report.integration.state, 'applied');
+      await complete(
+        1,
+        'Inspected stopped Codex proposal and applied its exact hash-bound integration receipt',
+      );
+      progress('selected-native-reviewer-cancellation');
+      const reviewer = await assign(2, 'salaam/reviewer');
+      models.holdNextLinux = true;
+      const stopped = await runAssignment(reviewer, 'review-stop-once');
+      await until(
+        () => models.held.size,
+        (n) => n === 1,
+      );
+      const selected = await child(stopped.result.child_id),
+        selectedSnapshot = await api(`/v1/sessions/${selected.child_session}/snapshot`),
+        selectedClient = randomUUID(),
+        selectedLease = await api(`/v1/sessions/${selected.child_session}/control`, {
+          request_id: randomUUID(),
+          client_id: selectedClient,
+          action: 'acquire',
+          expected_epoch: selectedSnapshot.control.epoch,
+        }),
+        selectedSession = await api(`/v1/sessions/${selected.child_session}`),
+        callsBeforeStop = report.admissions.length;
+      report.selected_stop = await api(`/v1/attempts/${selected.child_attempt}/cancel`, {
+        request_id: run + ':selected-stop-once',
         client_id: selectedClient,
-        action: 'acquire',
-        expected_epoch: selectedSnapshot.control.epoch,
-      }),
-      selectedSession = await api(`/v1/sessions/${selected.child_session}`),
-      callsBeforeStop = report.admissions.length;
-    report.selected_stop = await api(`/v1/attempts/${selected.child_attempt}/cancel`, {
-      request_id: run + ':selected-stop-once',
-      client_id: selectedClient,
-      token: selectedLease.token,
-      expected_revision: selectedSession.revision,
-    });
-    report.stopped_child = await settle(selected.id);
-    assert.equal(report.stopped_child.state, 'cancelled');
-    await until(
-      async () => (await service.request('evidence', { session: session.id })).workers,
-      (workers) =>
-        workers
-          .filter((w) => w.session_id === selected.child_session)
-          .every((w) => w.state === 'exited'),
-    );
-    await until(
-      () => models.held.size,
-      (n) => n === 0,
-    );
-    assert.equal(report.admissions.length, callsBeforeStop);
-    progress('explicit-new-generation-native-reviewer');
-    const reviewed = await runAssignment(
-      { ...reviewer, generation: 1 },
-      'review-follow-up-once',
-      'The operator cancelled the previous generation before provider forwarding. Review the integrated diff and app.js through salaam_repository. Publish actual findings with salaam_findings, including findings:[] if correct. Do not edit or execute.',
-    );
-    assert.notEqual(reviewed.result.child_id, selected.id);
-    assert.equal((await settle(reviewed.result.child_id)).state, 'completed');
-    audit = await service.request('evidence', { session: session.id });
-    const nativeReview = audit.children.find((c) => c.child.id === reviewed.result.child_id);
-    assert(nativeReview.reads > 0);
-    assert(nativeReview.findings);
-    assert.deepEqual(nativeReview.findings.findings, []);
-    report.native_reviewer = nativeReview;
-    await complete(2, 'Inspected independent native findings and actual repository/diff reads');
-    progress('mac-a2a-specialist-through-private-reverse-ssh');
-    const peerAssignment = await assign(3, 'salaam/reviewer', 'mac-reviewer'),
+        token: selectedLease.token,
+        expected_revision: selectedSession.revision,
+      });
+      report.stopped_child = await settle(selected.id);
+      assert.equal(report.stopped_child.state, 'cancelled');
+      await until(
+        async () => (await service.request('evidence', { session: session.id })).workers,
+        (workers) =>
+          workers
+            .filter((w) => w.session_id === selected.child_session)
+            .every((w) => w.state === 'exited'),
+      );
+      await until(
+        () => models.held.size,
+        (n) => n === 0,
+      );
+      assert.equal(report.admissions.length, callsBeforeStop);
+      progress('explicit-new-generation-native-reviewer');
+      const reviewed = await runAssignment(
+        { ...reviewer, generation: 1 },
+        'review-follow-up-once',
+        'The operator cancelled the previous generation before provider forwarding. Review the integrated diff and app.js through salaam_repository. Publish actual findings with salaam_findings, including findings:[] if correct. Do not edit or execute.',
+      );
+      assert.notEqual(reviewed.result.child_id, selected.id);
+      assert.equal((await settle(reviewed.result.child_id)).state, 'completed');
+      audit = await service.request('evidence', { session: session.id });
+      nativeReview = audit.children.find((c) => c.child.id === reviewed.result.child_id);
+      assert(nativeReview.reads > 0);
+      assert(nativeReview.findings);
+      assert(nativeReview.findings.findings.every((f) => f.severity === 'low'));
+      report.native_reviewer = nativeReview;
+    } else {
+      progress('resume-same-task-after-inspecting-informational-native-findings');
+      task = prior.failed_audit.task;
+      session = { id: task.session_id };
+      await control();
+      const reviewStep = task.steps[2];
+      nativeReview = prior.failed_audit.children.find(
+        (c) => c.child.child_attempt === reviewStep.attempt_id,
+      );
+      assert.equal(nativeReview.child.state, 'completed');
+      assert(nativeReview.reads > 0);
+      assert(nativeReview.findings.findings.every((f) => f.severity === 'low'));
+      report.native_reviewer = nativeReview;
+      report.predecessors_not_redispatched = prior.failed_audit.children.map((c) => c.child.id);
+    }
+    if ((await current()).steps[2].state !== 'completed')
+      await complete(2, 'Inspected independent native findings and actual repository/diff reads');
+    let peerAssignment, peerRun;
+    if ((await current()).steps[3].state !== 'completed') {
+      progress('mac-a2a-specialist-through-private-reverse-ssh');
+      peerAssignment = await assign(3, 'salaam/reviewer', 'mac-reviewer');
       peerRun = await runAssignment(peerAssignment, 'peer-review-once');
-    assert.equal((await settle(peerRun.result.child_id)).state, 'completed');
-    assert.equal(report.peer_disclosure.contains_human_bytes, false);
-    assert.equal((report.model_errors ?? []).length, 0);
-    report.peer = await api(`/v1/harnesses/${peerRun.result.child_id}`);
-    await complete(
-      3,
-      'Inspected the same peer/task/context and unverified independent analysis; no execution claim',
-    );
-    progress('fresh-parent-checks');
-    const check = await action('verify', { check_key: 'suite' });
-    report.final_check = await until(
-      async () => (await current()).verification.checks.find((c) => c.id === check.id),
-      (c) => c && ['passed', 'failed'].includes(c.state),
-    );
-    assert.equal(report.final_check.state, 'passed');
-    report.task = await action('finish');
+      assert.equal((await settle(peerRun.result.child_id)).state, 'completed');
+      assert.equal(report.peer_disclosure.contains_human_bytes, false);
+      assert.equal((report.model_errors ?? []).length, 0);
+      report.peer = await api(`/v1/harnesses/${peerRun.result.child_id}`);
+      await complete(
+        3,
+        'Inspected the same peer/task/context and unverified independent analysis; no execution claim',
+      );
+    } else {
+      models.enabled = false;
+      progress('inspect-existing-peer-run-without-redispatch');
+      peerAssignment = (await api(`/v1/tasks/${task.id}/team`)).assignments.find(
+        (a) => a.step_id === task.steps[3].id,
+      );
+      peerRun = await service.request('saved_peer_run', {
+        task: task.id,
+        assignment: peerAssignment.id,
+        request_id: run + ':peer-review-once',
+      });
+      report.peer = prior.peer;
+    }
+    if ((await current()).state !== 'succeeded') {
+      progress('fresh-parent-checks');
+      const check = await action('verify', { check_key: 'suite' });
+      report.final_check = await until(
+        async () => (await current()).verification.checks.find((c) => c.id === check.id),
+        (c) => c && ['passed', 'failed'].includes(c.state),
+      );
+      assert.equal(report.final_check.state, 'passed');
+      report.task = await action('finish');
+    } else {
+      report.task = await current();
+      assert(report.task.verification.completion.fresh);
+    }
     assert.equal(report.task.state, 'succeeded');
-    audit = await service.request('evidence', { session: session.id });
+    let audit = await service.request('evidence', { session: session.id });
     for (const [path, bytes] of Object.entries(sourceFiles)) {
       assert.equal(Buffer.from(audit.source[path].content, 'base64').toString(), bytes);
       if (path !== 'app.js')
@@ -715,12 +778,12 @@ try {
     await until(() => service.exit, Boolean);
     report.restarted_service = await startService(peerPort);
     assert.notEqual(report.restarted_service.pid, report.service.pid);
-    const replay = await api(`/v1/tasks/${task.id}/team/${builder.id}/run`, {
-      ...built.body,
+    const replay = await api(`/v1/tasks/${task.id}/team/${peerAssignment.id}/run`, {
+      ...peerRun.body,
       client_id: 'expired',
       token: 'expired',
     });
-    assert.equal(replay.child_id, built.result.child_id);
+    assert.equal(replay.child_id, peerRun.result.child_id);
     const recovered = await service.request('evidence', { session: session.id });
     assert.equal(recovered.task.state, 'succeeded');
     assert.deepEqual(
@@ -728,12 +791,16 @@ try {
       audit.children.map((c) => c.child.id),
     );
     assert.equal(recovered.workspace.digest, audit.workspace.digest);
+    assert.deepEqual(recovered.commands, audit.commands);
+    assert.deepEqual(recovered.task.runtime, audit.task.runtime);
+    assert.deepEqual(recovered.task.verification, audit.task.verification);
+    report.recovered_audit = recovered;
     assert.equal(report.admissions.length, beforeRestartCalls);
     assert.equal((report.model_errors ?? []).length, 0);
     report.restart = {
       signal: 'SIGKILL',
       same_task: recovered.task.id,
-      same_builder: replay.child_id,
+      same_external_child: replay.child_id,
       same_workspace_digest: recovered.workspace.digest,
       same_children: recovered.children.length,
       new_model_requests: 0,

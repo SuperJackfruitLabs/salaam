@@ -68,7 +68,7 @@ export async function taskFixture(options: Partial<ServiceOptions> = {}) {
         // response or a caller-specified revision used by a conflict proof.
         if (
           !(error instanceof ServiceError) ||
-          error.code !== 'revision_conflict' ||
+          error.code !== 'task_revision_conflict' ||
           Object.hasOwn(body, 'expected_revision') ||
           attempt >= 3
         )
