@@ -82,7 +82,9 @@ export function matchesCodexCommandScope(
   const words = literalWords(params.command);
   return (
     words?.length === 3 &&
-    words[0] === '/usr/bin/bash' &&
+    // The pinned image exposes Bash at both paths. Codex selects /bin/bash
+    // for its UID-1000 passwd entry and /usr/bin/bash for an unmapped UID.
+    ['/usr/bin/bash', '/bin/bash'].includes(words[0]!) &&
     words[1] === '-lc' &&
     words[2] === intent.arguments.cmd
   );

@@ -27,8 +27,15 @@ test('Codex approval binds the actual shell argv, workdir and model-call ID rath
     command: "/usr/bin/bash -lc 'node --test app.test.js'",
   };
   expect(matchesCodexCommandScope('0.163.0', intent, params)).toBe(true);
+  expect(
+    matchesCodexCommandScope('0.163.0', intent, {
+      ...params,
+      command: "/bin/bash -lc 'node --test app.test.js'",
+    }),
+  ).toBe(true);
   for (const changed of [
     { ...params, itemId: 'foreign' },
+    { ...params, command: "/tmp/bash -lc 'node --test app.test.js'" },
     { ...params, cwd: '/another' },
     { ...params, command: params.command + '; touch /workspace/escape' },
     { ...params, command: '/usr/bin/bash -lc "$(touch /workspace/escape)"' },
