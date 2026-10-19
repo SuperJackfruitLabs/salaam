@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import type { JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
+import { admittedMcpSchema } from './mcp-schema.js';
 import {
   CallToolResultSchema,
   ListToolsResultSchema,
@@ -9,6 +9,7 @@ import {
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { McpAssignment, McpProfile, McpServerPin } from './mcp-protocol.js';
+import { redactMcpData } from './mcp-protocol.js';
 import { canonical, digest, object, ServiceError } from './protocol.js';
 
 /** Pin the complete definition: descriptions/annotations can affect context too. */
@@ -122,12 +123,10 @@ export class ManagedHttpMcp {
         // Only compile definitions after their complete catalog and individual pins match.
         // A fresh validator per schema prevents unrelated tools sharing an AJV $id cache.
         this.validators.set(pin.name, {
-          input: new AjvJsonSchemaValidator().getValidator(tool.inputSchema as JsonSchemaType),
+          input: admittedMcpSchema(tool.inputSchema as JsonSchemaType),
           ...(tool.outputSchema
             ? {
-                output: new AjvJsonSchemaValidator().getValidator(
-                  tool.outputSchema as JsonSchemaType,
-                ),
+                output: admittedMcpSchema(tool.outputSchema as JsonSchemaType),
               }
             : {}),
         });
@@ -224,22 +223,7 @@ export class ManagedHttpMcp {
     }
   }
   private redact(value: unknown): unknown {
-    if (typeof value === 'string') {
-      for (const secret of this.secrets)
-        for (const text of [
-          secret,
-          encodeURIComponent(secret),
-          Buffer.from(secret).toString('base64'),
-        ])
-          value = (value as string).replaceAll(text, '[redacted]');
-      return value;
-    }
-    if (Array.isArray(value)) return value.map((v) => this.redact(v));
-    if (value && typeof value === 'object')
-      return Object.fromEntries(
-        Object.entries(value).map(([k, v]) => [String(this.redact(k)), this.redact(v)]),
-      );
-    return value;
+    return redactMcpData(value, [...this.secrets]);
   }
   private result(result: CallToolResult): McpReturnedResult {
     if (

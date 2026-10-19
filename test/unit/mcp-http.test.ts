@@ -145,6 +145,55 @@ test('arguments must match the admitted input schema before dispatch', async () 
   }
 });
 
+test('current MCP JSON Schema constraints are enforced before dispatch', async () => {
+  const definition = {
+    ...tool,
+    inputSchema: { ...tool.inputSchema, unevaluatedProperties: false },
+  };
+  const f = fixture(undefined, definition),
+    client = new ManagedHttpMcp(f.server, f.pin, f.profile.limits, f.fetcher);
+  try {
+    await client.connect();
+    await expect(
+      client.call(
+        tool.name,
+        { query: 'fixture', forbidden: 'must-not-cross' },
+        AbortSignal.timeout(1000),
+        () => {},
+      ),
+    ).rejects.toMatchObject({ sent: false });
+    expect(f.requests.filter((r) => r.method === 'tools/call')).toHaveLength(0);
+  } finally {
+    await client.close();
+  }
+});
+
+test('explicit supported legacy schemas work while asynchronous schema extensions fail admission', async () => {
+  const legacy = {
+    ...tool,
+    inputSchema: { ...tool.inputSchema, $schema: 'http://json-schema.org/draft-07/schema#' },
+  };
+  const f = fixture(undefined, legacy),
+    client = new ManagedHttpMcp(f.server, f.pin, f.profile.limits, f.fetcher);
+  try {
+    await client.connect();
+    await expect(
+      client.call(tool.name, { query: 'fixture' }, AbortSignal.timeout(1000), () => {}),
+    ).resolves.toMatchObject({ protocol_result: 'returned' });
+  } finally {
+    await client.close();
+  }
+  const asynchronous = { ...tool, inputSchema: { ...tool.inputSchema, $async: true } };
+  const other = fixture(undefined, asynchronous),
+    rejected = new ManagedHttpMcp(other.server, other.pin, other.profile.limits, other.fetcher);
+  try {
+    await expect(rejected.connect()).rejects.toMatchObject({ sent: false });
+    expect(other.requests.filter((r) => r.method === 'tools/call')).toHaveLength(0);
+  } finally {
+    await rejected.close();
+  }
+});
+
 test('the synchronous durable authority gate runs immediately before the one allowed tools/call POST', async () => {
   const f = fixture(),
     client = new ManagedHttpMcp(f.server, f.pin, f.profile.limits, f.fetcher);

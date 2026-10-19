@@ -37,6 +37,28 @@ export interface McpAssignment {
     headers: { name: 'X-Agentpod-Proxy-Key'; value: string }[];
   }[];
 }
+/** Shared final egress guard, including adapters that do not use the HTTP client. */
+export function redactMcpData(value: unknown, secrets: readonly string[]): unknown {
+  const patterns = secrets.flatMap((secret) => [
+    secret,
+    encodeURIComponent(secret),
+    Buffer.from(secret).toString('base64'),
+    Buffer.from(secret).toString('base64url'),
+  ]);
+  const walk = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      for (const pattern of patterns) value = (value as string).replaceAll(pattern, '[redacted]');
+      return value;
+    }
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === 'object')
+      return Object.fromEntries(
+        Object.entries(value).map(([key, v]) => [String(walk(key)), walk(v)]),
+      );
+    return value;
+  };
+  return walk(value);
+}
 function invalid(): never {
   throw new ServiceError('invalid_mcp_config', 'Unsupported managed MCP configuration', 400);
 }
