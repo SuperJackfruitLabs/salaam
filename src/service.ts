@@ -35,8 +35,11 @@ import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
 import { AgentPodAuthority } from './agentpod-authority.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
+import { VERSION } from './config.js';
+import { TurnCancellations } from './turn-cancellations.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  hostManifestDigest?: string;
   agentpodConfig?: string;
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
@@ -59,6 +62,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
   readonly stateDir: string;
@@ -95,7 +99,9 @@ export class SalaamService {
   private handlers = new Set<Promise<void>>();
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
+  private readonly hostManifestDigest: string | null;
   private constructor(options: ServiceOptions) {
+    this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
     if (
@@ -322,6 +328,22 @@ export class SalaamService {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
             },
           );
+        this.cancellations = new TurnCancellations(
+          this.store,
+          this.managed,
+          (id) => this.supervisor.attemptActive(id),
+          async (attempt) => {
+            this.managed.abortCancelled(attempt);
+            this.coding.cancelAttempt(attempt);
+            const owned = this.children.owned(this.store.attempt(attempt).session_id);
+            if (owned && this.store.workerBoundary.view(owned.id).binding.external)
+              await this.external.cancel(owned);
+            else {
+              await this.children.cancelOwned(attempt);
+              await this.supervisor.cancelAttempt(attempt);
+            }
+          },
+        );
       } catch (error) {
         this.store.close();
         throw error;
@@ -375,6 +397,7 @@ export class SalaamService {
       await service.supervisor.providerAuth();
       await service.external.backend?.prepare?.();
       await service.supervisor.recover();
+      service.cancellations.recover();
       await service.external.recover();
       service.store.recoverWork();
       service.taskWork.recover();
@@ -1133,6 +1156,10 @@ export class SalaamService {
       if (url.pathname === '/v1/health' && req.method === 'GET') {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
+          host_manifest_digest: this.hostManifestDigest,
+          host_supervisor_connected: this.hostManifestDigest ? process.connected === true : null,
+          runtime_node: realpathSync(process.execPath),
+          service_version: VERSION,
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
           service: 'healthy',
@@ -1688,6 +1715,46 @@ export class SalaamService {
               : null,
           });
           return;
+        }
+        if (parts[3] === 'tool-metadata' && req.method === 'GET') {
+          this.send(
+            res,
+            200,
+            this.store.toolMetadata(id, string(url.searchParams.get('call_id'), 'call_id', 512)),
+          );
+          return;
+        }
+        if (parts[3] === 'cancellations') {
+          if (req.method === 'GET') {
+            const request = url.searchParams.get('request_id');
+            this.send(
+              res,
+              200,
+              request
+                ? this.cancellations.get(id, string(request, 'request_id', 128))
+                : this.cancellations.list(id),
+            );
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              202,
+              this.cancellations.begin(
+                id,
+                string(body.request_id, 'request_id', 128),
+                body.target_request_id == null
+                  ? null
+                  : string(body.target_request_id, 'target_request_id', 128),
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+              ),
+            );
+            return;
+          }
         }
         if (parts[3] === 'control' && req.method === 'POST') {
           const body = object(await readJson(req));

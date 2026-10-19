@@ -16,13 +16,13 @@ test('v16 upgrade preserves saved admissions and event bytes before enabling pee
     const requests = store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all(),
       events = store.db.prepare('SELECT * FROM events ORDER BY session_id,seq').all();
     store.db.exec(
-      'DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; PRAGMA user_version=16;',
+      'DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; PRAGMA user_version=16;',
     );
     store.close();
     store = new Store(path);
     expect(store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all()).toEqual(requests);
     expect(store.db.prepare('SELECT * FROM events ORDER BY session_id,seq').all()).toEqual(events);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(20);
     expect(() =>
       store.db
         .prepare('INSERT INTO a2a_inbound VALUES (?,?,?,?,?,?,?,?,?,?,?,0)')

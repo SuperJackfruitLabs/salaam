@@ -173,7 +173,15 @@ const server = createServer(async (req, res) => {
     });
     event('content_block_stop', { index: 0 });
     event('message_delta', {
-      delta: { stop_reason: tool ? 'tool_use' : 'end_turn' },
+      delta: {
+        stop_reason: tool
+          ? 'tool_use'
+          : mode === 'max-output'
+            ? 'max_tokens'
+            : mode === 'refusal'
+              ? 'refusal'
+              : 'end_turn',
+      },
       usage: { output_tokens: 8 },
     });
     event('message_stop', {});

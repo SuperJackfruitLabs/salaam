@@ -540,14 +540,20 @@ async function main(): Promise<void> {
       await runHost(file);
       return;
     }
+    if (verb === 'start') {
+      const { startHost } = await import('./host-start.js');
+      console.log(JSON.stringify(await startHost(file)));
+      return;
+    }
     if (verb === 'serve') {
       const m = readHost(file),
         service = await SalaamService.open({
           stateDir: m.state,
-          codingRoot: m.coding_root,
-          codingSocket: m.coding_socket,
+          ...(m.schema === 1
+            ? { codingRoot: m.coding_root, codingSocket: m.coding_socket, expectedExecution: m }
+            : { agentpodConfig: m.agentpod_config }),
+          hostManifestDigest: digest(m),
           providerRoute: m.provider,
-          expectedExecution: m,
         });
       if (process.connected) process.once('disconnect', () => void service.close());
       for (const signal of ['SIGTERM', 'SIGINT'] as const)
@@ -556,7 +562,7 @@ async function main(): Promise<void> {
       if (process.connected) process.disconnect?.();
       return;
     }
-    throw new Error('Use host plan, unit, run or inspect');
+    throw new Error('Use host plan, start, unit, run or inspect');
   }
   if (group === 'remote' && verb) {
     const { remote } = await import('./remote.js');

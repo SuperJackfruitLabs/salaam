@@ -12,10 +12,14 @@ import {
   existsSync,
   statSync,
   realpathSync,
+  constants,
+  fstatSync,
+  lstatSync,
 } from 'node:fs';
 import { join, resolve, isAbsolute, sep } from 'node:path';
 import { ROOT, bundleDigest } from './config.js';
-import { digest, object, string, ServiceError } from './protocol.js';
+import { canonical, digest, object, string, ServiceError } from './protocol.js';
+import { readAgentPodPins } from './agentpod-authority.js';
 import { bindProviderConfiguration } from './provider-model.js';
 import { resolveProviderAuth } from './provider-auth.js';
 import { providerRoute, type ProviderRoute } from './provider-config.js';
@@ -23,8 +27,7 @@ import { engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor } from './coding-executor.js';
 import { acquireStateLock } from './state-lock.js';
 import { call } from './transport.js';
-export interface HostManifest {
-  schema: 1;
+interface HostIdentity {
   node: string;
   node_version: string;
   repo: string;
@@ -32,11 +35,93 @@ export interface HostManifest {
   build_digest: string;
   pi_bundle_digest: string;
   state: string;
+  provider: ProviderRoute;
+}
+export interface CodingHostManifest extends HostIdentity {
+  schema: 1;
   coding_root: string;
   coding_socket: string;
-  provider: ProviderRoute;
   profile_digest: string;
   engine_id: string;
+}
+export interface AgentPodHostManifest extends HostIdentity {
+  schema: 2;
+  mode: 'agentpod';
+  agentpod_config: string;
+  pins_digest: string;
+  workspace: string;
+  cli_digest: string;
+}
+export type HostManifest = CodingHostManifest | AgentPodHostManifest;
+
+function privateDocument(path: string): Record<string, unknown> {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.uid !== process.getuid?.() || st.mode & 0o077 || st.size > 65536)
+      throw Error('Host manifest must be private (mode 600), owner-held and bounded');
+    return object(JSON.parse(readFileSync(fd, 'utf8')));
+  } finally {
+    closeSync(fd);
+  }
+}
+function privateState(path: string): string {
+  if (!isAbsolute(path) || resolve(path) !== path)
+    throw Error('Use canonical absolute private state paths');
+  // Existing ancestors must resolve to their literal identity; never follow a workspace symlink.
+  let existing = path;
+  while (!existsSync(existing)) existing = join(existing, '..');
+  if (realpathSync(existing) !== existing)
+    throw Error('Private state path must not contain symlinks');
+  if (existsSync(path)) {
+    const st = lstatSync(path);
+    if (!st.isDirectory() || st.uid !== process.getuid?.() || st.mode & 0o077)
+      throw Error('Host state must be a private owner-held directory');
+  }
+  return path;
+}
+async function planAgentPod(c: Record<string, unknown>): Promise<AgentPodHostManifest> {
+  const fields = [
+    'mode',
+    'state',
+    'agentpod_config',
+    'provider',
+    'model',
+    'max_output_tokens',
+    'workspace_id',
+  ];
+  if (Object.keys(c).some((k) => !fields.includes(k)))
+    throw Error('Unexpected AgentPod host config field');
+  const state = privateState(string(c.state, 'state'));
+  const config = string(c.agentpod_config, 'agentpod_config');
+  if (!isAbsolute(config) || realpathSync(config) !== config)
+    throw Error('Use a canonical absolute pins path');
+  const pins = readAgentPodPins(config, state);
+  for (const path of [ROOT, process.execPath, config, state])
+    if (path === pins.workspace || path.startsWith(pins.workspace + sep))
+      throw Error('AgentPod private runtime, pins and state must be outside the workspace');
+  let route = providerRoute(
+    c.provider === undefined ? 'offline' : String(c.provider),
+    c.model as string | undefined,
+    c.max_output_tokens as number | undefined,
+    c.workspace_id as string | undefined,
+  );
+  if (route.provider !== 'salaam-proof')
+    route = bindProviderConfiguration(route, await resolveProviderAuth(route));
+  return {
+    schema: 2,
+    mode: 'agentpod',
+    node: realpathSync(process.execPath),
+    node_version: process.version,
+    repo: realpathSync(ROOT),
+    ...hostDigests(),
+    state,
+    provider: route,
+    agentpod_config: config,
+    pins_digest: digest(pins),
+    workspace: pins.workspace,
+    cli_digest: digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')),
+  };
 }
 export function hostDigests() {
   const hashDir = (path: string) =>
@@ -54,6 +139,7 @@ export function hostDigests() {
 }
 export async function planHost(input: unknown): Promise<HostManifest> {
   const c = object(input);
+  if (c.mode === 'agentpod') return planAgentPod(c);
   if (
     Object.keys(c).some(
       (k) =>
@@ -103,11 +189,9 @@ export async function planHost(input: unknown): Promise<HostManifest> {
   };
 }
 export function readHost(path: string): HostManifest {
-  if ((statSync(path).mode & 0o077) !== 0)
-    throw new Error('Host manifest must be private (mode 600)');
-  const m = object(JSON.parse(readFileSync(path, 'utf8'))) as unknown as HostManifest;
+  const m = privateDocument(path) as unknown as HostManifest;
   if (
-    m.schema !== 1 ||
+    ![1, 2].includes(m.schema) ||
     m.node_version !== 'v26.7.0' ||
     process.version !== m.node_version ||
     realpathSync(process.execPath) !== m.node ||
@@ -117,6 +201,51 @@ export function readHost(path: string): HostManifest {
   const hashes = hostDigests();
   for (const key of ['source_digest', 'build_digest', 'pi_bundle_digest'] as const)
     if (m[key] !== hashes[key]) throw new Error('Host source/build changed: ' + key);
+  if (m.schema === 2) {
+    const fields = [
+      'schema',
+      'mode',
+      'node',
+      'node_version',
+      'repo',
+      'source_digest',
+      'build_digest',
+      'pi_bundle_digest',
+      'state',
+      'provider',
+      'agentpod_config',
+      'pins_digest',
+      'workspace',
+      'cli_digest',
+    ];
+    if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
+      throw Error('Unsupported AgentPod host manifest fields');
+    privateState(m.state);
+    if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
+      throw Error('Host CLI changed');
+    const pins = readAgentPodPins(m.agentpod_config, m.state);
+    if (
+      !isAbsolute(m.agentpod_config) ||
+      realpathSync(m.agentpod_config) !== m.agentpod_config ||
+      pins.workspace !== m.workspace ||
+      digest(pins) !== m.pins_digest
+    )
+      throw Error('AgentPod host pins changed');
+    for (const p of [m.node, m.repo, m.state, m.agentpod_config, realpathSync(path)])
+      if (p === m.workspace || p.startsWith(m.workspace + sep))
+        throw Error('AgentPod private host paths overlap the workspace');
+    const route =
+      m.provider.provider === 'salaam-proof'
+        ? providerRoute()
+        : providerRoute(
+            m.provider.provider,
+            m.provider.model,
+            m.provider.max_tokens,
+            m.provider.workspace_id,
+            m.provider.connection,
+          );
+    if (canonical(route) !== canonical(m.provider)) throw Error('Invalid reviewed provider route');
+  }
   return m;
 }
 export function hostUnit(path: string, platform: string): string {
@@ -189,7 +318,9 @@ export async function runHost(path: string): Promise<void> {
   process.once('SIGINT', stop);
   try {
     for (let failures = 0; !stopping;) {
-      readHost(path);
+      if (digest(readHost(path)) !== digest(m))
+        throw Error('Reviewed host manifest changed; restart explicitly');
+      healthy = false;
       const started = Date.now();
       child = spawn(
         m.node,
@@ -219,6 +350,14 @@ export async function runHost(path: string): Promise<void> {
       let checking = false;
       const timer = setInterval(() => {
         if (checking) return;
+        try {
+          if (digest(readHost(path)) !== digest(m)) throw Error('Reviewed host manifest changed');
+        } catch (error) {
+          healthy = false;
+          report((error as Error).message);
+          child?.kill('SIGTERM');
+          return;
+        }
         checking = true;
         void call<any>(join(m.state, 'operator.sock'), '/v1/health')
           .then((h) => {

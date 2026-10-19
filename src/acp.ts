@@ -6,6 +6,8 @@ import { call } from './transport.js';
 import { acquireControl, Outbox, subscribe, type Feed } from './attach.js';
 import { AcpJournal } from './acp-journal.js';
 import { VERSION } from './config.js';
+import { acpFailure, AcpFailureError, toolMetadata } from './acp-outcome.js';
+import type { CancellationReceipt } from './turn-cancellations.js';
 import {
   object,
   string,
@@ -21,9 +23,12 @@ type Json = Record<string, unknown>;
 interface Connection {
   id: string;
   lease?: ControlLease;
+  controlPending?: Promise<ControlLease>;
   client: string;
   seen: Set<string>;
   promptStates: Map<string, string>;
+  cancellations: Map<string, string>;
+  activePrompts: Map<string, number>;
   liveTools: Set<string>;
   operations: Map<string, string>;
   permissions: Set<string>;
@@ -54,7 +59,9 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     : undefined;
   let closed = false,
     initialized = false,
-    wantsReceipts = false;
+    wantsReceipts = false,
+    wantsCancellations = false,
+    wantsTypedStops = false;
   const sessions = new Map<string, Connection>();
   const permissionReplies = new Map<string, (result: Json) => Promise<void>>();
   const activeRequests = new Set<string>();
@@ -89,9 +96,9 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     if (!bound || !wantsReceipts) return;
     const attempt = await call<Attempt>(socket, `/v1/attempts/${attemptId}`);
     const state =
-      attempt.state === 'completed'
+      attempt.state === 'completed' && attempt.outcome?.stopReason === 'end_turn'
         ? 'completed'
-        : ['interrupted', 'failed', 'cancelled'].includes(attempt.state)
+        : ['interrupted', 'failed', 'cancelled', 'completed'].includes(attempt.state)
           ? 'interrupted'
           : 'accepted';
     const connection = sessions.get(session);
@@ -105,6 +112,24 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       },
     });
   };
+  const cancellationReceipt = async (c: Connection, receipt: CancellationReceipt) => {
+    const value = JSON.stringify(receipt);
+    if (c.cancellations.get(receipt.requestId) === value) return;
+    c.cancellations.set(receipt.requestId, value);
+    if (wantsCancellations)
+      await update(c.id, {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '' },
+        _meta: { 'salaam.dev/cancellationReceipt': receipt },
+      });
+  };
+  const cancellationReceipts = async (c: Connection) => {
+    for (const receipt of await call<CancellationReceipt[]>(
+      socket,
+      `/v1/sessions/${c.id}/cancellations`,
+    ))
+      await cancellationReceipt(c, receipt);
+  };
   const text = (id: string, role: string, content: string, message: string, part = 0) =>
     update(id, {
       sessionUpdate: role === 'user' ? 'user_message_chunk' : 'agent_message_chunk',
@@ -113,6 +138,11 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       content: { type: 'text', text: content },
     });
   const snapshot = (id: string) => call<SessionSnapshot>(socket, `/v1/sessions/${id}/snapshot`);
+  const toolDetails = async (session: string, id: string, name: string, input: unknown) =>
+    (await call<Json | null>(
+      socket,
+      `/v1/sessions/${session}/tool-metadata?call_id=${encodeURIComponent(id)}`,
+    )) ?? toolMetadata(name, input);
   const readEntry = async (id: string, entry: string): Promise<Json> => {
     let content = '',
       offset: number | null = 0;
@@ -162,7 +192,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
                   sessionUpdate: 'tool_call',
                   toolCallId: String(part.id),
                   title: String(part.name),
-                  kind: 'other',
+                  ...(await toolDetails(c.id, String(part.id), String(part.name), part.arguments)),
                   status: 'in_progress',
                   rawInput: part.arguments,
                 });
@@ -184,19 +214,33 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     }
   };
   const controller = async (c: Connection, takeover = false) => {
-    if (!c.lease) c.lease = await acquireControl(socket, c.id, c.client, takeover);
+    if (!c.lease) {
+      c.controlPending ??= acquireControl(socket, c.id, c.client, takeover)
+        .then((lease) => {
+          c.lease = lease;
+          return lease;
+        })
+        .finally(() => {
+          delete c.controlPending;
+        });
+      await c.controlPending;
+    }
+    if (!c.lease)
+      throw new ServiceError('control_required', 'A current controller lease is required');
     return { client_id: c.client, token: c.lease.token };
   };
-  const cancel = async (c: Connection) => {
+  const cancel = async (
+    c: Connection,
+    request: string = randomUUID(),
+    target: string | null = c.activePrompts.keys().next().value ?? null,
+  ) => {
     const actor = await controller(c);
-    const view = await snapshot(c.id);
-    for (const work of view.attempts.filter((a) =>
-      ['accepted', 'dispatching', 'running'].includes(a.state),
-    )) {
-      const outbox = new Outbox(state, c.id);
-      outbox.enqueueCancellation(work.id, (await snapshot(c.id)).revision);
-      await outbox.flush(socket, c.id, actor);
-    }
+    const receipt = await call<CancellationReceipt>(socket, `/v1/sessions/${c.id}/cancellations`, {
+      ...actor,
+      request_id: request,
+      target_request_id: target,
+    });
+    await cancellationReceipt(c, receipt);
   };
   const approvals = async (c: Connection, view: SessionSnapshot) => {
     for (const approval of view.approvals.filter((a) => a.state === 'pending')) {
@@ -265,6 +309,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         c.dirty = false;
         const view = await snapshot(c.id);
         await replay(c, true);
+        if (wantsCancellations || c.cancellations.size) await cancellationReceipts(c);
         if (bound && wantsReceipts)
           for (const record of journal.records(c.id)) {
             if (
@@ -320,6 +365,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           tool?: string;
           input?: string;
           failed?: boolean;
+          kind?: string;
+          locations?: unknown[];
         };
         if (typeof p.tool_call_id === 'string') {
           const started = event.kind === 'tool.started';
@@ -329,7 +376,12 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
             sessionUpdate: started && fresh ? 'tool_call' : 'tool_call_update',
             toolCallId: p.tool_call_id,
             title: p.tool ?? 'Tool',
-            kind: 'other',
+            ...(started
+              ? {
+                  kind: p.kind ?? toolMetadata(p.tool ?? '', p.input).kind,
+                  locations: p.locations ?? [],
+                }
+              : {}),
             status: started ? 'in_progress' : p.failed ? 'failed' : 'completed',
             ...(started && p.input ? { rawInput: p.input } : {}),
             ...(p.parent_tool_call_id
@@ -350,6 +402,12 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           'approval.decided',
           'operation.succeeded',
           'operation.outcome_unknown',
+          'turn.cancel_requested',
+          'turn.cancel_status',
+          'attempt.cancelled',
+          'attempt.failed',
+          'attempt.interrupted',
+          'attempt.completed',
         ].includes(event.kind)
       )
         void refresh(c).catch((error) => {
@@ -387,6 +445,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       client: randomUUID(),
       seen: new Set(),
       promptStates: new Map(),
+      cancellations: new Map(),
+      activePrompts: new Map(),
       liveTools: new Set(),
       operations: new Map(),
       permissions: new Set(),
@@ -422,6 +482,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       }
       for (const record of journal.records(id))
         if (record.receipt) await promptReceipt(id, record.request_id, record.receipt.attempt_id);
+      if (wantsCancellations) await cancellationReceipts(c);
       await approvals(c, view);
       watch(c);
     } catch (error) {
@@ -452,8 +513,24 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         advertised !== null &&
         typeof advertised === 'object' &&
         object(advertised).promptReceipts === 1;
+      const execution = object(object(params.clientCapabilities ?? {})._meta ?? {})[
+        'salaam.dev/executionFeatures'
+      ];
+      wantsCancellations =
+        execution !== null &&
+        typeof execution === 'object' &&
+        object(execution).cancellationReceipts === 1;
+      wantsTypedStops =
+        execution !== null && typeof execution === 'object' && object(execution).failures === 1;
       return {
-        _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } },
+        _meta: {
+          'salaam.dev/features': { promptReceipts: 1, updateIds: 1 },
+          'salaam.dev/executionFeatures': {
+            failures: 1,
+            cancellationReceipts: 1,
+            toolSemantics: 1,
+          },
+        },
         protocolVersion: 1,
         agentCapabilities: {
           loadSession: true,
@@ -524,7 +601,16 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     const c = sessions.get(string(params.sessionId, 'sessionId', 128));
     if (!c) throw new Error('Load or resume this session first');
     if (method === 'session/cancel') {
-      await cancel(c);
+      const meta = object(params._meta ?? {});
+      await cancel(
+        c,
+        meta['salaam.dev/cancellationId'] === undefined
+          ? randomUUID()
+          : string(meta['salaam.dev/cancellationId'], 'cancellationId', 128),
+        meta['salaam.dev/targetRequestId'] === undefined
+          ? (c.activePrompts.keys().next().value ?? null)
+          : string(meta['salaam.dev/targetRequestId'], 'targetRequestId', 128),
+      );
       return {};
     }
     if (method !== 'session/prompt')
@@ -541,41 +627,94 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       })
       .join('\n');
     const meta = object(params._meta ?? {});
-    const actor = await controller(c, meta['salaam.dev/takeover'] === true);
-    await call(socket, `/v1/sessions/${c.id}/resume`, actor);
-    const view = await snapshot(c.id);
     const logical =
       meta['salaam.dev/requestId'] === undefined
         ? randomUUID()
         : string(meta['salaam.dev/requestId'], 'requestId', 128);
-    const record = journal.prepare(
-      c.id,
-      logical,
-      input,
-      view.revision,
-      meta['salaam.dev/continuesAttemptId'] === undefined
-        ? undefined
-        : string(meta['salaam.dev/continuesAttemptId'], 'continuesAttemptId', 128),
-    );
-    const accepted = await journal.dispatch(socket, record, actor);
-    await promptReceipt(c.id, logical, accepted.attempt_id);
-    while (!closed) {
-      if (c.failed) throw c.failed;
-      const attempt = await call<Attempt>(socket, `/v1/attempts/${accepted.attempt_id}`);
-      await refresh(c);
-      if (!['accepted', 'dispatching', 'running'].includes(attempt.state)) {
-        if (attempt.state === 'interrupted' || attempt.state === 'failed')
-          throw new Error(attempt.error ?? 'Attempt did not complete');
-        await promptReceipt(c.id, logical, accepted.attempt_id);
-        return {
-          stopReason: attempt.state === 'cancelled' ? 'cancelled' : 'end_turn',
-          _meta: { 'salaam.dev/requestId': logical, 'salaam.dev/attemptId': attempt.id },
-        };
+    if (c.activePrompts.size && !c.activePrompts.has(logical))
+      throw new ServiceError('worker_busy', 'A prompt is already active on this transport');
+    c.activePrompts.set(logical, (c.activePrompts.get(logical) ?? 0) + 1);
+    try {
+      const actor = await controller(c, meta['salaam.dev/takeover'] === true);
+      await call(socket, `/v1/sessions/${c.id}/resume`, actor);
+      const view = await snapshot(c.id);
+      const record = journal.prepare(
+        c.id,
+        logical,
+        input,
+        view.revision,
+        meta['salaam.dev/continuesAttemptId'] === undefined
+          ? undefined
+          : string(meta['salaam.dev/continuesAttemptId'], 'continuesAttemptId', 128),
+      );
+      const accepted = await journal.dispatch(socket, record, actor);
+      await promptReceipt(c.id, logical, accepted.attempt_id);
+      while (!closed) {
+        if (c.failed) throw c.failed;
+        const attempt = await call<Attempt>(socket, `/v1/attempts/${accepted.attempt_id}`);
+        await refresh(c);
+        if (!['accepted', 'dispatching', 'running'].includes(attempt.state)) {
+          await promptReceipt(c.id, logical, accepted.attempt_id);
+          const context = { sessionId: c.id, requestId: logical, attemptId: attempt.id };
+          const failure = attempt.outcome?.failure;
+          if (
+            attempt.state === 'interrupted' ||
+            (attempt.state === 'failed' &&
+              ((bound && !wantsTypedStops) ||
+                !['refusal', 'max_tokens'].includes(attempt.outcome?.stopReason ?? '')))
+          )
+            throw new AcpFailureError(
+              failure
+                ? { ...failure, ...context }
+                : acpFailure(
+                    new ServiceError(
+                      'attempt_interrupted',
+                      attempt.error ?? 'Attempt did not complete',
+                    ),
+                    context,
+                  ),
+            );
+          if (attempt.state === 'completed' && !attempt.outcome)
+            throw new AcpFailureError(
+              acpFailure(
+                new ServiceError(
+                  'legacy_outcome_unverified',
+                  'This saved turn predates typed outcomes; inspect its history before starting new work',
+                ),
+                context,
+              ),
+            );
+          return {
+            stopReason:
+              attempt.state === 'cancelled'
+                ? 'cancelled'
+                : (attempt.outcome?.stopReason ?? 'end_turn'),
+            _meta: {
+              'salaam.dev/requestId': logical,
+              'salaam.dev/attemptId': attempt.id,
+              ...(failure ? { 'salaam.dev/failure': { ...failure, ...context } } : {}),
+            },
+          };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 75));
       }
-      await new Promise((resolve) => setTimeout(resolve, 75));
+      return { stopReason: 'cancelled' }; // Transport closed; no service cancellation is issued.
+    } catch (error) {
+      throw new AcpFailureError(acpFailure(error, { sessionId: c.id, requestId: logical }));
+    } finally {
+      const count = (c.activePrompts.get(logical) ?? 1) - 1;
+      if (count) c.activePrompts.set(logical, count);
+      else c.activePrompts.delete(logical);
     }
-    return { stopReason: 'cancelled' }; // Transport closed; no service cancellation is issued.
   };
+  const cancellationPoll = setInterval(() => {
+    for (const c of sessions.values())
+      if ([...c.cancellations.values()].some((value) => JSON.parse(value).state !== 'confirmed'))
+        void refresh(c).catch((error) => {
+          c.failed = error;
+        });
+  }, 250);
+  cancellationPoll.unref();
   const renew = setInterval(() => {
     for (const c of sessions.values())
       if (c.lease) {
@@ -640,8 +779,16 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           id,
           error: {
             code:
-              error instanceof ServiceError && error.code === 'method_not_found' ? -32601 : -32602,
-            message: (error as Error).message,
+              error instanceof ServiceError && error.code === 'method_not_found'
+                ? -32601
+                : error instanceof AcpFailureError
+                  ? -32000
+                  : error instanceof ServiceError &&
+                      !['invalid_field', 'invalid_json'].includes(error.code)
+                    ? -32000
+                    : -32602,
+            message: acpFailure(error).message,
+            data: { 'salaam.dev/failure': acpFailure(error) },
           },
         });
       else console.error('ACP notification rejected:', (error as Error).message);
@@ -675,6 +822,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
   } finally {
     closed = true;
     clearInterval(renew);
+    clearInterval(cancellationPoll);
     permissionReplies.clear();
     for (const c of sessions.values()) {
       c.feed?.close();

@@ -15,6 +15,7 @@ import {
   type ProviderRoute,
 } from './provider-config.js';
 import { ProviderUsageReceipt } from './provider-usage.js';
+import { credentialStrings, providerOutcome, providerRefusalEvent } from './acp-outcome.js';
 import { materialize, generationOptions } from './provider-model.js';
 import { validateProviderPayload } from './provider-payload.js';
 import { installProviderTransport, withProviderTransport } from './provider-transport.js';
@@ -69,6 +70,7 @@ export function registerLiveProvider(
         source = 'salaam-request:' + randomUUID(),
         receipt = new ProviderUsageReceipt();
       let failed = false,
+        refusal = false,
         dispatched = false,
         status: number | undefined,
         last: AssistantMessage | undefined;
@@ -196,7 +198,9 @@ export function registerLiveProvider(
                 failed = true;
                 throw new Error('Provider request denied by Salaam');
               }
-              return rawFetch(input, { ...init, redirect: 'error' });
+              const response = await rawFetch(input, { ...init, redirect: 'error' });
+              status = response.status;
+              return response;
             },
             bedrock: async (request: {
               protocol: string;
@@ -269,6 +273,7 @@ export function registerLiveProvider(
                 }
               },
               onProviderStreamEvent: async (event, rawModel) => {
+                refusal ||= providerRefusalEvent(catalog.api, event);
                 receipt.observe(catalog.api, event);
                 await options?.onProviderStreamEvent?.(event, rawModel);
               },
@@ -290,16 +295,28 @@ export function registerLiveProvider(
                   usage: message.usage,
                   provider_response_id: event.message.responseId ?? null,
                 });
-              output.push({ ...event, message });
+              if (refusal) {
+                const outcome = providerOutcome('refusal', '', route);
+                Object.assign(message, { salaamFailure: outcome.failure });
+                message.stopReason = 'error';
+                message.errorMessage = outcome.failure!.message;
+                output.push({ type: 'error', reason: 'error', error: message });
+              } else output.push({ ...event, message });
             } else if (event.type === 'error') {
               const message = normalize(event.error);
               const code = /^(?:Error:\s*)?(\d{3})\b/.exec(message.errorMessage ?? '')?.[1];
               status ??= code ? Number(code) : undefined;
               delete message.diagnostics;
               message.content = [];
-              message.errorMessage = options?.signal?.aborted
-                ? 'Provider request cancelled'
-                : `Provider request failed${status ? ` (HTTP ${status})` : ''}`;
+              const outcome = providerOutcome(
+                refusal ? 'refusal' : options?.signal?.aborted ? 'aborted' : 'error',
+                message.errorMessage ?? '',
+                route,
+                status,
+                credentialStrings(auth),
+              );
+              Object.assign(message, { salaamFailure: outcome.failure });
+              message.errorMessage = outcome.failure!.message;
               output.push({ ...event, error: message });
             } else
               output.push(

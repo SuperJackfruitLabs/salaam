@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
@@ -38,6 +38,15 @@ import type { CodingWork } from './coding.js';
 import type { TaskLimits } from './task-policy.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
 import type { TeamWork } from './team-work.js';
+import {
+  acpFailure,
+  credentialStrings,
+  parseAcpFailure,
+  providerOutcome,
+  redactFailureText,
+  toolMetadata,
+  type AttemptOutcome,
+} from './acp-outcome.js';
 
 export interface Launch {
   command: string;
@@ -59,6 +68,7 @@ export interface SupervisorOptions {
   providerEnvironment?: NodeJS.ProcessEnv;
 }
 interface Worker {
+  secrets?: string[];
   route: ProviderRoute;
   providerOutputCap?: boolean;
   id: string;
@@ -81,7 +91,40 @@ interface Worker {
   reject: (error: Error) => void;
 }
 export function processIdentity(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
   try {
+    if (process.platform === 'linux') {
+      // /proc stat field 22 is the boot-relative start tick. Pair it with boot,
+      // process group, executable and argv, and re-read to reject PID reuse mid-snapshot.
+      const path = `/proc/${pid}`;
+      const stat = () => {
+        const value = readFileSync(path + '/stat', 'utf8');
+        const end = value.lastIndexOf(') ');
+        if (end < 0 || !value.startsWith(pid + ' (')) throw Error('Invalid process stat');
+        const fields = value
+          .slice(end + 2)
+          .trim()
+          .split(/\s+/);
+        if (!/^\d+$/.test(fields[19] ?? '') || !/^\d+$/.test(fields[2] ?? ''))
+          throw Error('Invalid process start identity');
+        return { start: fields[19], group: fields[2], session: fields[3] };
+      };
+      const before = stat(),
+        boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
+        executable = readlinkSync(path + '/exe'),
+        argv = readFileSync(path + '/cmdline');
+      if (
+        !/^[a-f0-9-]{36}$/.test(boot) ||
+        !argv.length ||
+        argv.length > 16384 ||
+        canonical(before) !== canonical(stat())
+      )
+        return null;
+      return (
+        'linux-proc-v1:' +
+        textDigest(canonical({ pid, boot, ...before, executable, argv: argv.toString('base64') }))
+      );
+    }
     return (
       execFileSync('/bin/ps', ['-ww', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], {
         encoding: 'utf8',
@@ -327,6 +370,7 @@ export class Supervisor extends EventEmitter {
       reject,
     };
     this.workers.set(id, worker);
+    worker.secrets = [worker.token, ...(this.apiKey ? [this.apiKey] : [])];
     // Attach a rejection handler before spawn/identity checks can fail.
     void handshake.catch(() => {});
     let timer: NodeJS.Timeout | undefined;
@@ -426,6 +470,13 @@ export class Supervisor extends EventEmitter {
                 attempt_id: worker.attempt,
                 worker_epoch: epoch,
                 ...observation,
+                ...(observation.phase === 'started'
+                  ? toolMetadata(
+                      observation.tool,
+                      observation.input,
+                      this.coding?.workspaces.find(id)?.root,
+                    )
+                  : {}),
               });
               return { recorded: true };
             },
@@ -705,6 +756,7 @@ export class Supervisor extends EventEmitter {
         w.providerOutputCap = prepared.output_cap;
         this.assertSessionProviderSupported(id, prepared.output_cap);
         const auth = prepared.auth;
+        w.secrets = [...new Set([...(w.secrets ?? []), ...credentialStrings(auth)])];
         return auth;
       }
       if (method === 'coding.files' || method === 'coding.command') {
@@ -1057,11 +1109,19 @@ export class Supervisor extends EventEmitter {
     const work = this.store.attempt(attempt);
     const w = this.workers.get(work.session_id);
     if (!w?.pi || w.attempt !== attempt) return;
+    const settled = w.pi.waitFor('agent_settled', 5000);
+    void settled.catch(() => {});
     try {
       await w.pi.command('abort', {}, 5000);
+      await settled;
     } catch {
       await this.stopWorker(w);
     }
+  }
+  attemptActive(attempt: string): boolean {
+    const work = this.store.attempt(attempt),
+      worker = this.workers.get(work.session_id);
+    return worker?.attempt === attempt && worker.busy;
   }
   assertIdle(id: string): Worker {
     this.store.execution.assert(id);
@@ -1188,18 +1248,39 @@ export class Supervisor extends EventEmitter {
     // Approval deadlines belong to the journal, not an adapter-side timer.
     const settled = w.pi.waitFor('agent_settled', 0);
     void settled.catch(() => {});
-    let outcomeError: string | null = null;
+    let outcome: AttemptOutcome | undefined;
     const record = (value: Record<string, unknown>) => {
       if (value.type === 'message_end') {
         const message = object(value.message);
-        if (
-          message.role === 'assistant' &&
-          ['error', 'aborted'].includes(String(message.stopReason))
-        )
-          outcomeError = String(message.errorMessage ?? message.stopReason);
+        if (message.role === 'assistant') {
+          const explicit = parseAcpFailure(message.salaamFailure);
+          const candidate: AttemptOutcome = explicit
+            ? {
+                version: 1,
+                stopReason:
+                  explicit.kind === 'refusal'
+                    ? 'refusal'
+                    : explicit.kind === 'max_tokens'
+                      ? 'max_tokens'
+                      : 'error',
+                failure: { ...explicit, message: redactFailureText(explicit.message, w.secrets) },
+              }
+            : providerOutcome(
+                String(message.stopReason),
+                String(message.errorMessage ?? ''),
+                w.route,
+                undefined,
+                w.secrets,
+              );
+          if (candidate.stopReason !== 'end_turn') outcome = candidate;
+        }
       }
       if (value.type === 'tool_execution_end' && value.isError === true)
-        outcomeError = 'Tool execution failed';
+        outcome ??= {
+          version: 1,
+          stopReason: 'error',
+          failure: acpFailure(new ServiceError('tool_failed', 'Tool execution failed')),
+        };
     };
     w.pi.on('record', record);
     try {
@@ -1214,15 +1295,17 @@ export class Supervisor extends EventEmitter {
       this.childBoundary(id, w.epoch);
       this.store.finish(
         work.attempt.id,
-        outcomeError ? 'failed' : 'completed',
+        outcome ? 'failed' : 'completed',
         String(result.text ?? ''),
-        outcomeError,
+        outcome?.failure?.message ?? null,
         { epoch: w.epoch, ...entries },
+        outcome,
       );
     } catch (error) {
+      const message = redactFailureText((error as Error).message, w.secrets);
       if (!w.stopping && !this.store.cancelled(work.attempt.id))
-        this.invalidate(w, 'Attempt interrupted: ' + (error as Error).message);
-      this.store.finish(work.attempt.id, 'interrupted', null, (error as Error).message);
+        this.invalidate(w, 'Attempt interrupted: ' + message);
+      this.store.finish(work.attempt.id, 'interrupted', null, message);
     } finally {
       w.pi.off('record', record);
       w.busy = false;
