@@ -511,88 +511,6 @@ export class DocumentView implements Component {
           ...this.text(job.reason, width),
         );
       }
-      const task = c.snapshot.work_task;
-      if (task) {
-        lines.push(
-          ...this.title('DURABLE TASK · ' + task.state.toUpperCase(), width),
-          ...this.text(
-            task.id + ' · revision ' + task.revision + ' · plan ' + task.plan_revision,
-            width,
-          ),
-          ...this.text(task.objective, width),
-          ...this.text(task.reason, width),
-        );
-        if (task.runtime)
-          lines.push(
-            ...this.text(
-              'Requests ' +
-                task.runtime.requests_spent +
-                ' spent + ' +
-                task.runtime.reserved_requests +
-                ' reserved / ' +
-                task.limits.requests,
-              width,
-            ),
-            ...this.text(
-              task.limits.token_units === null
-                ? 'Token budget disabled · ' +
-                    (task.limits.output_token_bound === null
-                      ? 'no task output-token bound'
-                      : 'output bound ' + task.limits.output_token_bound)
-                : 'Declared token units ' +
-                    task.runtime.token_units +
-                    ' + ' +
-                    task.runtime.reserved_tokens +
-                    ' reserved / ' +
-                    task.limits.token_units,
-              width,
-            ),
-            ...this.text(
-              'Bounded progression ' +
-                (task.runtime.auto_enabled
-                  ? 'enabled · ' + task.runtime.remaining_steps + ' new steps remain'
-                  : 'paused') +
-                (task.runtime.auto_error ? ' · ' + task.runtime.auto_error : ''),
-              width,
-            ),
-          );
-        if (task.verification)
-          lines.push(
-            ...this.title('VERIFICATION', width),
-            ...this.text(JSON.stringify(task.verification, null, 2), width),
-          );
-        for (const constraint of task.constraints)
-          lines.push(...this.text('Constraint: ' + constraint, width));
-        for (const step of task.steps)
-          lines.push(
-            ...this.title(step.key + ' · ' + step.state, width, 'muted'),
-            ...this.text(step.title, width),
-            ...this.text(step.instruction, width),
-            ...this.text(
-              'Step ' + step.id + (step.attempt_id ? ' · attempt ' + step.attempt_id : ''),
-              width,
-            ),
-            ...this.text('Depends on: ' + (step.depends_on.join(', ') || 'none'), width),
-            ...(step.review ? this.text('Operator review: ' + step.review, width) : []),
-          );
-        lines.push(
-          ...this.text(
-            'Ctrl+K → Task actions · receipts bind the exact workspace revision.',
-            width,
-          ),
-          t.fill('', width),
-        );
-      }
-      lines.push(...this.title('TASK FACTS', width));
-      const facts = c.facts.filter((f) => !(f as { superseded_by?: string }).superseded_by);
-      if (!facts.length)
-        lines.push(...this.text('No explicit task facts have been recorded.', width));
-      for (const fact of facts)
-        lines.push(
-          ...this.title(fact.kind.toUpperCase(), width, 'muted'),
-          ...this.prose(fact.id, fact.text, width - 4).map((line) => t.line(line, width)),
-          t.fill('', width),
-        );
       const team = c.snapshot.team as
         | {
             assignments: {
@@ -694,6 +612,111 @@ export class DocumentView implements Component {
             ),
           );
       }
+      const task = c.snapshot.work_task;
+      if (task) {
+        lines.push(
+          ...this.title('DURABLE TASK · ' + task.state.toUpperCase(), width),
+          ...this.text(
+            task.id + ' · revision ' + task.revision + ' · plan ' + task.plan_revision,
+            width,
+          ),
+          ...this.text(task.objective, width),
+          ...this.text(task.reason, width),
+        );
+        if (task.runtime)
+          lines.push(
+            ...this.text(
+              'Requests ' +
+                task.runtime.requests_spent +
+                ' spent + ' +
+                task.runtime.reserved_requests +
+                ' reserved / ' +
+                task.limits.requests,
+              width,
+            ),
+            ...this.text(
+              task.limits.token_units === null
+                ? 'Token budget disabled · ' +
+                    (task.limits.output_token_bound === null
+                      ? 'no task output-token bound'
+                      : 'output bound ' + task.limits.output_token_bound)
+                : 'Declared token units ' +
+                    task.runtime.token_units +
+                    ' + ' +
+                    task.runtime.reserved_tokens +
+                    ' reserved / ' +
+                    task.limits.token_units,
+              width,
+            ),
+            ...this.text(
+              'Bounded progression ' +
+                (task.runtime.auto_enabled
+                  ? 'enabled · ' + task.runtime.remaining_steps + ' new steps remain'
+                  : 'paused') +
+                (task.runtime.auto_error ? ' · ' + task.runtime.auto_error : ''),
+              width,
+            ),
+          );
+        if (task.verification) {
+          const verification = task.verification as {
+            checks?: {
+              id: string;
+              check_key: string;
+              state: string;
+              fresh: boolean;
+              workspace_revision: number;
+            }[];
+            completion?: { state: string; fresh: boolean } | null;
+          };
+          lines.push(...this.title('VERIFICATION', width));
+          for (const check of verification.checks ?? [])
+            lines.push(
+              ...this.text(
+                `${check.check_key} · ${check.state} · ${check.fresh ? 'current' : 'historical'} · r${check.workspace_revision} · ${shortId(check.id)}`,
+                width,
+              ),
+            );
+          if (verification.completion)
+            lines.push(
+              ...this.text(
+                `Task ${verification.completion.state} · ${verification.completion.fresh ? 'current verification' : 'verification needs refresh'}`,
+                width,
+              ),
+            );
+          lines.push(...this.text('Ctrl+K → Inspect task for complete check receipts.', width));
+        }
+        for (const constraint of task.constraints)
+          lines.push(...this.text('Constraint: ' + constraint, width));
+        for (const step of task.steps)
+          lines.push(
+            ...this.title(step.key + ' · ' + step.state, width, 'muted'),
+            ...this.text(step.title, width),
+            ...this.text(step.instruction, width),
+            ...this.text(
+              'Step ' + step.id + (step.attempt_id ? ' · attempt ' + step.attempt_id : ''),
+              width,
+            ),
+            ...this.text('Depends on: ' + (step.depends_on.join(', ') || 'none'), width),
+            ...(step.review ? this.text('Operator review: ' + step.review, width) : []),
+          );
+        lines.push(
+          ...this.text(
+            'Ctrl+K → Task actions · receipts bind the exact workspace revision.',
+            width,
+          ),
+          t.fill('', width),
+        );
+      }
+      lines.push(...this.title('TASK FACTS', width));
+      const facts = c.facts.filter((f) => !(f as { superseded_by?: string }).superseded_by);
+      if (!facts.length)
+        lines.push(...this.text('No explicit task facts have been recorded.', width));
+      for (const fact of facts)
+        lines.push(
+          ...this.title(fact.kind.toUpperCase(), width, 'muted'),
+          ...this.prose(fact.id, fact.text, width - 4).map((line) => t.line(line, width)),
+          t.fill('', width),
+        );
       lines.push(...this.title('CHILD WORK', width));
       for (const agent of c.snapshot.agents ?? [])
         lines.push(
