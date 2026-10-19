@@ -471,6 +471,7 @@ export class Workspaces {
         throw new ServiceError('request_conflict', 'Patch ID already binds different arguments');
       return prior;
     }
+    this.store.execution.assert(session);
     this.verify(session);
     if (integer(args.expected_revision, 'expected_revision') !== w.revision)
       throw new ServiceError('workspace_changed', 'Workspace revision changed');

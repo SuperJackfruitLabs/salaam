@@ -201,12 +201,16 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
                      [--harness-config OWNER_ONLY_FILE] [--a2a-config OWNER_ONLY_FILE]
                      [--a2a-listen-config OWNER_ONLY_FILE]
+                     [--agentpod-config OWNER_ONLY_FILE]
 salaam service status
 salaam service stop
 
 The default provider is offline. Anthropic defaults to claude-sonnet-5-5.
 Other providers require --model; use salaam providers list and salaam models list PROVIDER.
-Start with --foreground for process-supervisor use; otherwise the service detaches.`,
+Start with --foreground for process-supervisor use; otherwise the service detaches.
+An AgentPod daemon requires node-bound admissions and a fresh authority lease.
+Keep its private state outside the pinned workspace. Coding, external runtimes,
+effect connectors and managed MCP are unavailable in this profile.`,
   session: `salaam session create [--cwd DIR] [--request-id ID] [--coding]
 salaam session list
 salaam session inspect SESSION_ID
@@ -214,12 +218,17 @@ salaam session submit SESSION_ID --text TEXT
 salaam session continue SESSION_ID --attempt ATTEMPT_ID --text NEW_INSTRUCTION
 salaam session resume SESSION_ID
 salaam session cancel SESSION_ID --attempt ATTEMPT_ID [--takeover]
+salaam session revoke SESSION_ID --reason TEXT [--request-id ID] [--takeover]
+salaam session revocation SESSION_ID
 salaam session probe SESSION_ID [--takeover]
 salaam session children SESSION_ID
 salaam session usage SESSION_ID
 salaam session compact SESSION_ID --task-version N [--takeover] [--request-id ID]
 
 Submissions are durable. Continuing an interrupted attempt creates a new instruction.
+Revocation permanently fences the session and its descendants. Its receipt confirms
+authority withdrawal; process stop and external effects require their own evidence.
+Retry a lost revocation reply with the same request ID and reason.
 Use salaam attach SESSION_ID for an interactive terminal.`,
   attach: `salaam attach SESSION_ID [--observe|--takeover] [--plain]
 
@@ -308,6 +317,7 @@ const valueOptions = new Set([
   '--state',
   '--cwd',
   '--request-id',
+  '--reason',
   '--text',
   '--attempt',
   '--provider',
@@ -335,6 +345,7 @@ const valueOptions = new Set([
   '--coding-socket',
   '--harness-config',
   '--a2a-config',
+  '--agentpod-config',
   '--a2a-listen-config',
   '--assignment',
   '--peer',

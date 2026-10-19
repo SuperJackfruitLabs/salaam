@@ -51,6 +51,19 @@ only to their reviewed binding.
 
 ## Restart and interruption
 
+Detaching preserves admitted work. To permanently withdraw a session's execution
+authority, use `salaam session revoke SESSION_ID --reason TEXT`.
+This records a durable fence for the session and its descendants before requesting
+worker and command cleanup. Controller takeover, reconnect and service restart
+cannot remove the fence. Create a new session for newly authorized work.
+
+The revocation receipt acknowledges authority withdrawal, with
+`stop_confirmation: "not_reported"`. It does not claim that a process has stopped
+or that an external write was undone. Inspect worker, command and operation
+outcomes separately; uncertain external operations retain their identities and
+require reconciliation. `salaam session revocation SESSION_ID` reads the saved
+receipt. Retry a lost reply with the same request ID and reason.
+
 Detaching leaves the service and admitted work running. A service or worker crash
 is different: dispatched attempts become interrupted and require inspection and
 explicit continuation. They are never inferred complete from a transcript or

@@ -71,6 +71,7 @@ export class CodingWork {
     };
   }
   assertSafe(session: string): void {
+    this.store.execution.assert(session);
     if (
       this.store.db
         .prepare("SELECT 1 FROM command_runs WHERE session_id=? AND state='outcome_unknown'")
@@ -274,17 +275,46 @@ export class CodingWork {
     let run = this.get(session, id);
     if (run.profile_digest !== backend.profileDigest || run.engine_id !== backend.engineId)
       throw new Error('Executor identity changed');
+    const cancelled = () =>
+      !!this.get(session, id).cancelled || !!this.store.execution.revocation(session);
+    const stopCancelled = () =>
+      this.finish(
+        this.get(session, id),
+        'cancelled',
+        null,
+        'Cancellation requested before further execution',
+      );
+    if (cancelled()) {
+      await stopCancelled();
+      return;
+    }
     if (run.state === 'accepted') {
       this.materialize(run);
       this.transition(run, 'creating');
       const container = await backend.create(this.source(run), id);
       this.transition(run, 'created', { container_id: container });
+      if (cancelled()) {
+        await stopCancelled();
+        return;
+      }
       run = this.get(session, id);
       await backend.start(container, this.source(run), id);
+      if (cancelled()) {
+        await stopCancelled();
+        return;
+      }
       await backend.ready(container, id);
+      if (cancelled()) {
+        await stopCancelled();
+        return;
+      }
       this.transition(run, 'exec_creating');
       const exec = await backend.exec(container, id, run.command, run.cwd);
       this.transition(run, 'launching', { exec_id: exec });
+      if (cancelled()) {
+        await stopCancelled();
+        return;
+      }
       await backend.launch(exec);
       this.transition(run, 'running');
       run = this.get(session, id);

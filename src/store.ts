@@ -4,6 +4,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
 import { WorkerBoundary } from './worker-boundary.js';
+import { ExecutionAuthority } from './execution-authority.js';
 import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
 import { canonical } from './protocol.js';
 import {
@@ -28,6 +29,9 @@ export class Store {
   readonly changes = new EventEmitter();
   readonly usage = new UsageLedger(this);
   readonly workerBoundary = new WorkerBoundary(this);
+  readonly execution = new ExecutionAuthority(this);
+  agentpodAuthorityCheck?: (session: string) => void;
+  requireAgentPodAuthority = false;
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
   projectTaskAttempt?: (attempt: Attempt) => void;
@@ -62,7 +66,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 17) {
+    if (version > 19) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -249,6 +253,19 @@ export class Store {
         this.db.exec(`BEGIN IMMEDIATE;
           CREATE TABLE a2a_inbound(id TEXT PRIMARY KEY,peer TEXT NOT NULL,tenant TEXT NOT NULL,message_id TEXT NOT NULL,input_digest TEXT NOT NULL,assignment_id TEXT NOT NULL UNIQUE REFERENCES team_assignments(id),grant_digest TEXT NOT NULL,context_id TEXT NOT NULL UNIQUE,child_id TEXT NOT NULL UNIQUE REFERENCES child_tasks(id),created_at INTEGER NOT NULL,skill TEXT NOT NULL,cancel_requested INTEGER NOT NULL DEFAULT 0,UNIQUE(peer,tenant,message_id));
           PRAGMA user_version=17; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 18
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE session_revocations(session_id TEXT PRIMARY KEY REFERENCES sessions(id),receipt TEXT NOT NULL);
+          PRAGMA user_version=18; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 19
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE agentpod_admissions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),hub_session_id TEXT NOT NULL UNIQUE,run_key TEXT NOT NULL UNIQUE,binding TEXT NOT NULL,digest TEXT NOT NULL,pins_digest TEXT NOT NULL,lease_sequence INTEGER NOT NULL DEFAULT 0,expires_at INTEGER NOT NULL,boot_id TEXT,monotonic_deadline REAL,state TEXT NOT NULL DEFAULT 'pending');
+          CREATE TABLE agentpod_station_epochs(station_id TEXT PRIMARY KEY,occupancy_epoch INTEGER NOT NULL,principal_id TEXT NOT NULL);
+          PRAGMA user_version=19; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -429,6 +446,7 @@ export class Store {
   }
   allocate(id: string, bootId: string): number {
     return this.transaction(() => {
+      this.execution.assert(id);
       const old = this.session(id);
       if (['starting', 'ready'].includes(old.state))
         throw new ServiceError('worker_exists', 'Worker already active');
@@ -516,6 +534,7 @@ export class Store {
     taskStep?: string,
   ): { id: string; attempt_id: string; state: 'accepted' } {
     if (!this.db.isTransaction) throw new Error('Submission requires a transaction');
+    this.execution.assert(id);
     this.guardTaskSubmission?.(id, taskStep);
     if (controller) this.authorizeControl(id, controller);
     if (text.trimStart().startsWith('/'))
@@ -639,6 +658,7 @@ export class Store {
   }
   claim(id: string, epoch: number): { attempt: Attempt; submission: Submission } | null {
     return this.transaction(() => {
+      if (this.execution.revocation(id)) return null;
       if (this.assertEpoch(id, epoch).state !== 'ready') return null;
       if (this.hasUnknown(id)) return null;
       if (
@@ -825,6 +845,13 @@ export class Store {
     }
     return {
       ...session,
+      ...(this.db.prepare('SELECT id FROM agentpod_admissions WHERE session_id=?').get(id)
+        ? {
+            agentpod_admission_id: String(
+              this.db.prepare('SELECT id FROM agentpod_admissions WHERE session_id=?').get(id)!.id,
+            ),
+          }
+        : {}),
       control: this.controlView(id),
       attempts: boundedAttempts,
       submissions: boundedSubmissions,

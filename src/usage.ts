@@ -24,6 +24,7 @@ export class UsageLedger {
           .get(key);
         if (old)
           throw new ServiceError('request_replay', 'A provider request cannot be forwarded twice');
+        this.store.execution.assert(session);
         this.store.taskModelAdmission?.(session, attempt, bounds?.input ?? 0, bounds?.output ?? 0);
         if (attempt) {
           this.budget(attempt);
