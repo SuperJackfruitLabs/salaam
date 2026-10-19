@@ -26,6 +26,14 @@ service must recheck authority and commit the durable dispatch marker there.
 Historical request lookup precedes any new grant. A generation number in a parsed
 assignment alone does not prove freshness.
 
+MCP mutation permissions use the existing durable approval ledger with a distinct
+operation kind and immutable call-context digest. Their preparation, one-time
+consumption and result recording can share the caller's transaction. Only the
+registered execution controller can consume a permission. A generic protocol
+reply leaves an opaque external mutation unresolved; a human reconciliation or a
+separately conformant owner receipt is required to settle its effect. An unknown
+effect blocks consumption of other permissions, including already approved ones.
+
 The exact MCP SDK version is locked and bundled with the CLI. The managed HTTP
 profile negotiates the reviewed protocol version, uses POST responses containing
 JSON or SSE, refreshes the catalog before each call, and exposes no sampling,

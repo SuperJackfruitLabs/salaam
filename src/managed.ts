@@ -24,6 +24,7 @@ export interface ManagedOptions {
   assertActive(session: string, epoch: number, attempt: string): void;
   reply(session: string, epoch: number, request: string, confirmed: boolean): void;
   failed(session: string, error: Error): void;
+  assertMcpOperation?: (operation: Operation) => void;
 }
 export class ManagedWork {
   private active = new Map<string, { controller: AbortController; done: Promise<void> }>();
@@ -143,6 +144,44 @@ export class ManagedWork {
     target: string,
     value: string,
   ): Promise<{ operation: Operation; approval: Approval }> {
+    return this.prepareBound(session, epoch, attempt, call, kind, target, value);
+  }
+  async prepareMcp(
+    session: string,
+    epoch: number,
+    attempt: string,
+    call: string,
+    target: string,
+    value: string,
+    context: string,
+  ): Promise<{ operation: Operation; approval: Approval }> {
+    return this.store.transaction(() =>
+      this.prepareMcpInTransaction(session, epoch, attempt, call, target, value, context),
+    );
+  }
+  prepareMcpInTransaction(
+    session: string,
+    epoch: number,
+    attempt: string,
+    call: string,
+    target: string,
+    value: string,
+    context: string,
+  ): { operation: Operation; approval: Approval } {
+    if (!this.store.db.isTransaction) throw Error('MCP preparation requires a transaction');
+    if (!this.options.assertMcpOperation || !/^[a-f0-9]{64}$/.test(context))
+      throw new ServiceError('mcp_disabled', 'A reviewed MCP execution controller is required');
+    return this.insertPrepared(session, epoch, attempt, call, 'mcp', target, value, context);
+  }
+  private async prepareBound(
+    session: string,
+    epoch: number,
+    attempt: string,
+    call: string,
+    kind: 'review' | 'effect' | 'harness',
+    target: string,
+    value: string,
+  ): Promise<{ operation: Operation; approval: Approval }> {
     this.options.assertActive(session, epoch, attempt);
     const old = this.store.db
       .prepare('SELECT id FROM operations WHERE session_id=? AND worker_epoch=? AND tool_call_id=?')
@@ -172,91 +211,113 @@ export class ManagedWork {
         : kind === 'review'
           ? 'read-only'
           : await connector!.version(target, AbortSignal.timeout(2500));
-    return this.store.transaction(() => {
-      this.options.assertActive(session, epoch, attempt);
-      const existing = this.store.db
-        .prepare(
-          'SELECT id FROM operations WHERE session_id=? AND worker_epoch=? AND tool_call_id=?',
-        )
-        .get(session, epoch, call) as { id: string } | undefined;
-      if (existing) {
-        const op = this.operation(existing.id);
-        if (
-          op.attempt_id !== attempt ||
-          op.kind !== kind ||
-          op.target !== target ||
-          op.value !== value
-        )
-          throw new ServiceError(
-            'operation_conflict',
-            'Tool invocation already binds different arguments',
-          );
-        return { operation: op, approval: this.forOperation(op.id) };
-      }
-      const id = randomUUID();
-      const op: Operation = {
-        id,
-        session_id: session,
-        attempt_id: attempt,
-        worker_epoch: epoch,
-        tool_call_id: call,
-        kind,
-        action_key: digest({ id, attempt, epoch, call, target, value, version }),
-        argument_digest: digest({ target, value, target_version: version }),
-        operation_digest: '',
-        target,
-        value,
-        target_version: version,
-        policy_digest: POLICY_DIGEST,
-        connector:
-          kind === 'harness'
+    return this.store.transaction(() =>
+      this.insertPrepared(session, epoch, attempt, call, kind, target, value, version, connector),
+    );
+  }
+  private insertPrepared(
+    session: string,
+    epoch: number,
+    attempt: string,
+    call: string,
+    kind: Operation['kind'],
+    target: string,
+    value: string,
+    version: string,
+    connector?: EffectConnector,
+  ): { operation: Operation; approval: Approval } {
+    if (!this.store.db.isTransaction) throw Error('Operation preparation requires a transaction');
+    this.options.assertActive(session, epoch, attempt);
+    const existing = this.store.db
+      .prepare('SELECT id FROM operations WHERE session_id=? AND worker_epoch=? AND tool_call_id=?')
+      .get(session, epoch, call) as { id: string } | undefined;
+    if (existing) {
+      const op = this.operation(existing.id);
+      if (
+        op.attempt_id !== attempt ||
+        op.kind !== kind ||
+        op.target !== target ||
+        op.value !== value ||
+        (kind === 'mcp' && op.target_version !== version)
+      )
+        throw new ServiceError(
+          'operation_conflict',
+          'Tool invocation already binds different arguments',
+        );
+      return { operation: op, approval: this.forOperation(op.id) };
+    }
+    if (this.paused || this.store.hasUnknown(session))
+      throw new ServiceError('operation_blocked', 'Unresolved effects block new operations');
+    const id = randomUUID();
+    const op: Operation = {
+      id,
+      session_id: session,
+      attempt_id: attempt,
+      worker_epoch: epoch,
+      tool_call_id: call,
+      kind,
+      action_key: digest({ id, attempt, epoch, call, target, value, version }),
+      argument_digest: digest({ target, value, target_version: version }),
+      operation_digest: '',
+      target,
+      value,
+      target_version: version,
+      policy_digest: POLICY_DIGEST,
+      connector:
+        kind === 'mcp'
+          ? 'managed-mcp-protocol-v1'
+          : kind === 'harness'
             ? 'external-harness-once-v1'
             : kind === 'review'
               ? 'local-review-v1'
               : connector!.id,
-        replay: kind === 'harness' ? 'opaque' : kind === 'review' ? 'read-only' : connector!.replay,
-        revision: 1,
-        state: 'prepared',
-        receipt: null,
-        error: null,
-        resolution: null,
-      };
-      op.operation_digest = this.binding(op);
-      const approval: Approval = {
-        id: randomUUID(),
-        operation_id: id,
-        session_id: session,
-        worker_epoch: epoch,
-        operation_digest: op.operation_digest,
-        revision: 1,
-        actor_scope: 'local-operator',
-        policy_digest: POLICY_DIGEST,
-        expires_at: Date.now() + (this.options.approvalTtlMs ?? 300000),
-        state: 'pending',
-        decision: null,
-        decided_by: null,
-      };
-      this.insert('operations', op);
-      this.insert('approvals', approval);
-      this.store.event(session, 'operation.prepared', {
-        operation_id: id,
-        attempt_id: attempt,
-        operation_digest: op.operation_digest,
-        target,
-        value,
-        target_version: version,
-      });
-      this.store.event(session, 'approval.requested', {
-        approval_id: approval.id,
-        operation_id: id,
-        operation_digest: op.operation_digest,
-        target,
-        value,
-        target_version: version,
-        expires_at: approval.expires_at,
-      });
-      return { operation: op, approval };
+      replay:
+        kind === 'harness' || kind === 'mcp'
+          ? 'opaque'
+          : kind === 'review'
+            ? 'read-only'
+            : connector!.replay,
+      revision: 1,
+      state: 'prepared',
+      receipt: null,
+      error: null,
+      resolution: null,
+    };
+    op.operation_digest = this.binding(op);
+    const approval: Approval = {
+      id: randomUUID(),
+      operation_id: id,
+      session_id: session,
+      worker_epoch: epoch,
+      operation_digest: op.operation_digest,
+      revision: 1,
+      actor_scope: 'local-operator',
+      policy_digest: POLICY_DIGEST,
+      expires_at: Date.now() + (this.options.approvalTtlMs ?? 300000),
+      state: 'pending',
+      decision: null,
+      decided_by: null,
+    };
+    this.insert('operations', op);
+    this.insert('approvals', approval);
+    this.store.event(session, 'operation.prepared', {
+      operation_id: id,
+      attempt_id: attempt,
+      operation_digest: op.operation_digest,
+      target,
+      value,
+      target_version: version,
     });
+    this.store.event(session, 'approval.requested', {
+      approval_id: approval.id,
+      operation_id: id,
+      operation_digest: op.operation_digest,
+      target,
+      value,
+      target_version: version,
+      expires_at: approval.expires_at,
+    });
+    return { operation: op, approval };
   }
   forOperation(id: string): Approval {
     const row = this.store.db.prepare('SELECT id FROM approvals WHERE operation_id=?').get(id) as
@@ -322,6 +383,11 @@ export class ManagedWork {
       throw new ServiceError('approval_stale', 'Approval expired or was invalidated');
     if (op.kind === 'effect' && this.options.connector?.id !== op.connector)
       throw new ServiceError('connector_changed', 'Effect connector changed');
+    if (op.kind === 'mcp') {
+      if (!this.options.assertMcpOperation)
+        throw new ServiceError('mcp_disabled', 'MCP execution controller is unavailable');
+      this.options.assertMcpOperation(op);
+    }
   }
   bindDialog(session: string, epoch: number, id: string, binding: string, request: string): void {
     this.store.transaction(() => {
@@ -398,10 +464,10 @@ export class ManagedWork {
   }
   start(id: string, session: string, epoch: number, attempt: string): Operation {
     const op = this.operation(id);
-    if (op.kind === 'harness')
+    if (op.kind === 'harness' || op.kind === 'mcp')
       throw new ServiceError(
         'operation_scope',
-        'A harness permission can only be consumed by its owned runtime',
+        'An owned permission can only be consumed by its execution controller',
       );
     if (op.session_id !== session || op.worker_epoch !== epoch || op.attempt_id !== attempt)
       throw new ServiceError('operation_scope', 'Operation belongs to another invocation', 403);
@@ -426,28 +492,56 @@ export class ManagedWork {
   }
   /** Commit a one-time grant handoff before replying to the owned runtime. This is not a tool receipt. */
   takePermission(id: string): boolean {
-    return this.store.transaction(() => {
-      const op = this.operation(id);
-      if (op.kind !== 'harness' || op.state !== 'prepared') return false;
-      this.fresh(op);
-      const approval = this.forOperation(id);
-      if (approval.state !== 'decided' || approval.decision !== 'approve') return false;
-      this.transition(op, 'dispatching');
-      return true;
-    });
+    return this.store.transaction(() => this.takePermissionInTransaction(id));
+  }
+  /** The caller atomically commits its call marker with this one-time permission. */
+  takePermissionInTransaction(id: string): boolean {
+    if (!this.store.db.isTransaction) throw Error('Owned permission requires a transaction');
+    const op = this.operation(id);
+    if (!['harness', 'mcp'].includes(op.kind) || op.state !== 'prepared') return false;
+    this.fresh(op);
+    if (this.paused || this.store.hasUnknown(op.session_id))
+      throw new ServiceError('operation_blocked', 'Unresolved effects block new permissions');
+    const approval = this.forOperation(id);
+    if (approval.state !== 'decided' || approval.decision !== 'approve') return false;
+    this.transition(op, 'dispatching');
+    return true;
   }
   permissionResult(id: string, success: boolean, receipt: unknown): void {
+    this.store.transaction(() => this.permissionResultInTransaction(id, success, receipt));
+  }
+  permissionResultInTransaction(id: string, success: boolean, receipt: unknown): void {
+    if (!this.store.db.isTransaction) throw Error('Owned result requires a transaction');
     const op = this.operation(id);
-    if (op.kind !== 'harness' || op.state !== 'dispatching') return;
-    this.store.transaction(() =>
-      this.transition(
-        op,
-        success ? 'succeeded' : 'outcome_unknown',
-        success ? null : 'Harness tool failed after permission delivery; inspect actual effects',
-        JSON.stringify(receipt),
-        'owned-harness-tool-return',
-      ),
+    if (!['harness', 'mcp'].includes(op.kind) || op.state !== 'dispatching') return;
+    this.transition(
+      op,
+      success && op.kind !== 'mcp' ? 'succeeded' : 'outcome_unknown',
+      op.kind === 'mcp'
+        ? 'An MCP protocol result does not verify the external effect; inspect the bound receipt'
+        : success
+          ? null
+          : 'Owned tool failed after permission delivery; inspect actual effects',
+      JSON.stringify(receipt),
+      op.kind === 'mcp' ? 'managed-mcp-protocol-return' : 'owned-harness-tool-return',
     );
+  }
+  mcpNotSent(id: string): void {
+    this.store.transaction(() => this.mcpNotSentInTransaction(id));
+  }
+  mcpNotSentInTransaction(id: string): void {
+    if (!this.store.db.isTransaction) throw Error('MCP failure requires a transaction');
+    const op = this.operation(id);
+    if (op.kind !== 'mcp') throw new ServiceError('operation_scope', 'Not an MCP permission');
+    if (op.state === 'dispatching') {
+      this.permissionResultInTransaction(id, false, { protocol_result: 'unknown' });
+      return;
+    }
+    if (op.state !== 'prepared') return;
+    const approval = this.forOperation(id);
+    if (['pending', 'decided'].includes(approval.state))
+      this.invalidateApproval(approval, 'invalidated');
+    this.transition(op, 'failed_definite', 'MCP call failed before transport handoff');
   }
   private async dispatch(id: string, signal: AbortSignal): Promise<void> {
     try {
@@ -490,6 +584,11 @@ export class ManagedWork {
   }
   recordReceipt(id: string, receipt: EffectReceipt): void {
     const op = this.operation(id);
+    if (op.kind === 'mcp' || op.kind === 'harness')
+      throw new ServiceError(
+        'operation_scope',
+        'An owned result requires its execution controller',
+      );
     if (!['dispatching', 'outcome_unknown'].includes(op.state)) return;
     if (
       canonical(receipt.payload) !== canonical(this.input(op)) ||

@@ -179,7 +179,7 @@ export interface Operation {
   attempt_id: string;
   worker_epoch: number;
   tool_call_id: string;
-  kind: 'review' | 'effect' | 'harness';
+  kind: 'review' | 'effect' | 'harness' | 'mcp';
   action_key: string;
   argument_digest: string;
   operation_digest: string;
