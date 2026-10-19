@@ -1,9 +1,9 @@
 # Managed MCP execution contract
 
-The admission and HTTP transport modules are internal foundations. Session MCP
-capability remains disabled until the service connects them to durable dispatch,
-approvals, revocation and recovery. A passing parser or transport test does not
-establish a usable AgentPod station integration.
+The admission, HTTP transport and call controller are internal foundations.
+Session MCP capability remains disabled until host startup, worker grants and
+node delivery use this controller. A passing component proof does not establish
+a usable AgentPod station integration.
 
 AgentPod owns the canonical profile and private assignment schemas in
 `packages/contract/src/salaam-mcp.ts`. Its `salaam-mcp-v1.json` corpus is mirrored
@@ -40,6 +40,11 @@ JSON or SSE, refreshes the catalog before each call, and exposes no sampling,
 roots, elicitation or task handoff capability. It opens no unsolicited GET stream.
 Only admitted schemas are compiled for argument and structured-result validation.
 Missing external schema references fail without fetching them.
+Schemas default to the MCP-defined 2020-12 dialect; an explicit supported draft-07
+schema uses a separate validator. This matters for constraints such as
+`unevaluatedProperties`, which a draft-07 validator does not enforce. See the
+[MCP schema rules](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and [Ajv schema versions](https://ajv.js.org/json-schema.html#json-schema-versions).
 The initial result profile accepts text and structured data. Media, task handoffs
 and empty success acknowledgements fail explicitly rather than losing their
 meaning during conversion.
@@ -58,3 +63,18 @@ schema drift, argument/result validation, bounded streaming, redirect refusal,
 credential redaction, one send and observed local cancellation. They do not call
 the deployed Library, exercise real Accounts grants, or confirm that remote work
 stops when a local HTTP response closes.
+
+Journal schema 21 stores immutable call identities, context fingerprints and
+sanitized result artifact references. Private assignment headers remain in the
+controller's memory. Repeating an identical assignment during reconnect leaves
+in-flight work alone; a changed generation invalidates its old calls and decisions.
+A saved call is looked up before another grant or quota reservation. SQLite commits
+the dispatch marker and consumed permission together, immediately before the
+transport handoff.
+
+The controller process proofs use real HTTP and SQLite with synthetic authority.
+SIGKILL before dispatch leaves an unsent call; after acceptance it leaves a fenced
+unknown mutation; after result storage it preserves the original receipt. Durable
+cancellation closes the observed local response while retaining an accepted
+mutation as unknown. An empty active-call list is not a remote effect or process
+stop receipt; host stop confirmation must account for its actual owned resources.

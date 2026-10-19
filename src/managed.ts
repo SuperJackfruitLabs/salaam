@@ -543,6 +543,17 @@ export class ManagedWork {
       this.invalidateApproval(approval, 'invalidated');
     this.transition(op, 'failed_definite', 'MCP call failed before transport handoff');
   }
+  /** A broken adapter boundary is uncertainty, never evidence that no mutation happened. */
+  mcpUnknownInTransaction(id: string): void {
+    if (!this.store.db.isTransaction) throw Error('MCP uncertainty requires a transaction');
+    const op = this.operation(id);
+    if (op.kind !== 'mcp') throw new ServiceError('operation_scope', 'Not an MCP permission');
+    if (!['prepared', 'dispatching'].includes(op.state)) return;
+    const approval = this.forOperation(id);
+    if (['pending', 'decided'].includes(approval.state))
+      this.invalidateApproval(approval, 'invalidated');
+    this.transition(op, 'outcome_unknown', 'MCP transport dispatch boundary is unconfirmed');
+  }
   private async dispatch(id: string, signal: AbortSignal): Promise<void> {
     try {
       let op = this.operation(id);
