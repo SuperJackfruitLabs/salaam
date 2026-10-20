@@ -2,6 +2,8 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AgentPodWork } from '../../src/agentpod-work.js';
+import type { AgentPodAuthority } from '../../src/agentpod-authority.js';
 import { Store } from '../../src/store.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { TaskContext } from '../../src/task-context.js';
@@ -556,7 +558,37 @@ test.each([false, true])(
       expect(await f.verification.viewAsync(completed)).toMatchObject({
         completion: { fresh: true, state: 'succeeded' },
       });
+      const admission = JSON.parse(
+        readFileSync(new URL('../fixtures/agentpod-work-v1.json', import.meta.url), 'utf8'),
+      ).admissions[0].value;
+      f.store.db
+        .prepare('INSERT INTO agentpod_work VALUES (?,?,?,?,?,?)')
+        .run(
+          'synthetic-run',
+          f.session.id,
+          task.id,
+          admission.request_id,
+          canonical(admission),
+          '{}',
+        );
+      const work = new AgentPodWork(
+        f.store,
+        {
+          inspect: () => ({ session_id: f.session.id, binding: admission.binding }),
+        } as unknown as AgentPodAuthority,
+        f.tasks,
+        f.verification,
+      );
+      const outcome = await work.completion(admission.binding);
+      expect(outcome).toMatchObject({
+        state: 'verified',
+        task_id: task.id,
+        work_request_id: admission.request_id,
+        plan_revision: task.plan_revision,
+      });
+      expect(await work.completion(admission.binding)).toEqual(outcome);
       f.changeTree();
+      await expect(work.completion(admission.binding)).rejects.toThrow('Fresh unchanged');
       expect(await f.verification.viewAsync(completed)).toMatchObject({
         completion: { fresh: false },
       });

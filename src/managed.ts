@@ -491,6 +491,12 @@ export class ManagedWork {
     if (!row) throw new ServiceError('approval_missing', 'Operation has no approval');
     return this.approval(row.id);
   }
+  assertDecisionOffer(id: string): void {
+    const approval = this.approval(id);
+    if (approval.state !== 'pending')
+      throw new ServiceError('approval_stale', 'Approval is no longer pending');
+    this.fresh(this.operation(approval.operation_id));
+  }
   decide(
     id: string,
     request: string,
@@ -499,7 +505,10 @@ export class ManagedWork {
     decision: 'approve' | 'deny',
     scoped?: { receipt: Record<string, unknown>; authorize: () => void },
   ): Approval {
-    return this.store.request(
+    const requestWork = this.store.db.isTransaction
+      ? this.store.requestInTransaction.bind(this.store)
+      : this.store.request.bind(this.store);
+    return requestWork<Approval>(
       'local-operator',
       request,
       {

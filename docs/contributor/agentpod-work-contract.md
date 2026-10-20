@@ -105,3 +105,19 @@ observes durable process-group cleanup/cancellation, but its filesystem receipt
 is synthetic. Real protected Linux/systemd acceptance, live Superpipeline flow,
 human-decision binding and scoped product canary remain required before M21 is
 complete or the capability is advertised.
+
+The private `work-decisions` and `work-decision` routes join a durable offer to the
+existing ManagedWork approval, immutable operation digest, work request, task plan,
+and deadline. Only the authenticated producer may deliver the exact correlated
+Superpipeline answer. Answer persistence and the existing approval decision commit
+atomically; replay returns that receipt without granting another permission or
+executing the operation. Actual execution still consumes its original permission.
+The canonical decision fixture is mirrored from AgentPod.
+
+`work-completion` never caches a freshness claim: each request awaits protected
+check, tree, and deliverable observations, then rechecks task revision, authority,
+resource closure and the saved completion artifact. Its stable receipt includes
+work/task/plan/binding identity plus the completion artifact and evidence digest.
+The AgentPod producer must persist this receipt before reporting, and reconcile
+an uncertain report against the original Superpipeline run. These private routes
+remain unadvertised pending integrated Linux and product acceptance.

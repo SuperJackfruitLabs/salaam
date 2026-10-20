@@ -5,6 +5,7 @@ import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
+import { AgentPodWorkDecisions } from './agentpod-work-decisions.js';
 import { AgentPodWork } from './agentpod-work.js';
 import { agentpodWorkAdmission } from './agentpod-work-protocol.js';
 import { TaskVerification } from './task-verification.js';
@@ -787,6 +788,34 @@ export class SalaamService {
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-completion') {
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station backend required',
+            );
+          if (Object.keys(body).join(',') !== 'binding')
+            throw new ServiceError('invalid_work_payload', 'Closed completion request required');
+          this.send(res, 200, await this.agentpodWork.completion(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-decisions' || parts[2] === 'work-decision') {
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station backend required',
+            );
+          const answering = parts[2] === 'work-decision';
+          if (Object.keys(body).sort().join(',') !== (answering ? 'answer,binding' : 'binding'))
+            throw new ServiceError('invalid_work_decision', 'Closed decision payload required');
+          const decisions = new AgentPodWorkDecisions(this.agentpodWork, this.managed);
+          this.send(
+            res,
+            200,
+            answering ? decisions.answer(body.binding, body.answer) : decisions.list(body.binding),
+          );
           return;
         }
         if (parts[2] === 'work-admit') {

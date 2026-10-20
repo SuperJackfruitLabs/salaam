@@ -192,6 +192,10 @@ export class StationTaskVerification {
           });
         });
       } catch (error) {
+        // Concurrent observation or unsettled resource is not a failed command.
+        // Keep it running and unverified until reconciliation proves closure.
+        if (error instanceof ServiceError && ['task_busy', 'task_uncertain'].includes(error.code))
+          continue;
         this.failed(id, error);
       }
     }

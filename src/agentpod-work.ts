@@ -18,7 +18,7 @@ export interface AgentPodWorkReceipt {
   binding_digest: string;
   plan_revision: number;
 }
-/** Internal, deliberately not routed or advertised. The authenticated control
+/** Private control-only, not advertised. The authenticated control
  * adapter must supply its own session and independently admitted work identity.
  * This receipt records task admission, never successful work or permission to run.
  */
@@ -29,6 +29,54 @@ export class AgentPodWork {
     readonly tasks: TaskWork,
     readonly verification: TaskVerification,
   ) {}
+
+  async completion(binding: unknown) {
+    const root = this.authority.inspect(binding);
+    const row = this.store.db
+      .prepare('SELECT * FROM agentpod_work WHERE session_id=?')
+      .get(root.session_id);
+    if (!row) throw new ServiceError('work_missing', 'Admitted work required');
+    const admission = agentpodWorkAdmission(JSON.parse(String(row.admission_json)));
+    if (canonical(admission.binding) !== canonical(root.binding))
+      throw new ServiceError('work_authority_mismatch', 'Exact work authority required');
+    this.store.execution.assert(root.session_id);
+    const task = this.tasks.get(String(row.task_id));
+    if (!this.verification.station || task.state !== 'succeeded')
+      throw new ServiceError('verification_required', 'Protected verified completion required');
+    const view = (await this.verification.viewAsync(task)) as {
+      completion: Record<string, unknown> | null;
+    };
+    this.store.execution.assert(root.session_id);
+    const current = this.tasks.get(task.id),
+      completion = view.completion;
+    if (
+      current.revision !== task.revision ||
+      current.plan_revision !== task.plan_revision ||
+      current.state !== 'succeeded' ||
+      !completion?.fresh ||
+      completion.state !== 'succeeded' ||
+      completion.plan_revision !== task.plan_revision
+    )
+      throw new ServiceError('verification_required', 'Fresh unchanged completion required');
+    this.verification.assertIdle(current);
+    const record = this.store.db
+      .prepare('SELECT * FROM task_completions WHERE task_id=?')
+      .get(task.id);
+    if (!record || record.artifact_id !== completion.artifact_id)
+      throw new ServiceError('verification_required', 'Completion changed');
+    const evidence = JSON.parse(this.verification.artifacts.read(String(record.artifact_id)));
+    this.store.execution.assert(root.session_id);
+    return {
+      version: 1 as const,
+      state: 'verified' as const,
+      work_request_id: String(row.request_id),
+      task_id: task.id,
+      plan_revision: task.plan_revision,
+      binding_digest: digest(root.binding),
+      completion_id: String(record.artifact_id),
+      evidence_digest: digest(evidence),
+    };
+  }
 
   admit(
     session: string,
