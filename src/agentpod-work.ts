@@ -150,6 +150,137 @@ export class AgentPodWork {
       },
     );
   }
+  expire(
+    binding: unknown,
+    request: string,
+    workRequest: string,
+    decisionRequest: string,
+    terminalDigest: string,
+    driver: TaskDriver,
+  ) {
+    const { root, row, task } = this.owned(binding);
+    if (workRequest !== row.request_id || !/^[a-f0-9]{64}$/.test(terminalDigest))
+      throw new ServiceError(
+        'work_settlement_conflict',
+        'Exact original work and terminal digest required',
+      );
+    const saved = this.store.db
+      .prepare(
+        "SELECT response FROM requests WHERE actor='agentpod-work-decision-offer' AND json_extract(response,'$.request_id')=?",
+      )
+      .get(decisionRequest);
+    const offered = saved ? JSON.parse(String(saved.response)) : null;
+    if (
+      !offered ||
+      offered.work_request_id !== workRequest ||
+      offered.task_id !== task.id ||
+      offered.binding_digest !== digest(root.binding) ||
+      offered.plan_revision !== task.plan_revision
+    )
+      throw new ServiceError('approval_mismatch', 'Exact original saved decision required');
+    const stopped = () => {
+      const current = this.authority.inspect(binding);
+      if (
+        !current.revoked ||
+        current.authorized ||
+        !current.owned_execution_stopped ||
+        current.unresolved_operations.length ||
+        current.active_attempts.length ||
+        current.interrupted_attempts.length
+      )
+        throw new ServiceError(
+          'work_settlement_unsafe',
+          'Exact revoked root must have confirmed stopped resources and no uncertainty',
+        );
+    };
+    stopped();
+    return this.store.request(
+      'agentpod-work-expiry',
+      workRequest,
+      {
+        request_id: request,
+        binding: root.binding,
+        work_request_id: workRequest,
+        decision_request_id: decisionRequest,
+        producer_terminal_digest: terminalDigest,
+      },
+      () => {
+        stopped();
+        this.assertPlan(task, JSON.parse(String(row.admission_json)));
+        const approval = this.store.db
+          .prepare('SELECT * FROM approvals WHERE id=?')
+          .get(offered.approval_id);
+        const op = this.store.db
+          .prepare('SELECT * FROM operations WHERE id=?')
+          .get(offered.operation_id);
+        const runtime = this.store.db
+          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+          .get(task.id);
+        if (
+          !approval ||
+          !op ||
+          approval.session_id !== root.session_id ||
+          op.session_id !== root.session_id ||
+          approval.operation_id !== op.id ||
+          approval.operation_digest !== offered.operation_digest ||
+          op.operation_digest !== offered.operation_digest ||
+          approval.expires_at !== offered.expires_at ||
+          Number(approval.expires_at) > Date.now() ||
+          approval.state !== 'expired' ||
+          Number(approval.revision) !== offered.approval_revision + 1 ||
+          approval.decision !== null ||
+          op.state !== 'cancelled_before_dispatch' ||
+          !this.store.db
+            .prepare("SELECT 1 FROM attempts WHERE id=? AND session_id=? AND state='cancelled'")
+            .get(String(op.attempt_id), root.session_id) ||
+          task.state !== 'blocked' ||
+          task.steps.some((s) => !['pending', 'cancelled'].includes(s.state)) ||
+          !runtime ||
+          runtime.auto_enabled ||
+          runtime.reserved_requests ||
+          runtime.reserved_tokens ||
+          runtime.verification_runs ||
+          this.store.db
+            .prepare('SELECT 1 FROM operations WHERE session_id=? AND id!=?')
+            .get(root.session_id, String(op.id)) ||
+          this.store.db
+            .prepare("SELECT 1 FROM attempts WHERE session_id=? AND (id!=? OR state!='cancelled')")
+            .get(root.session_id, String(op.attempt_id)) ||
+          this.store.db
+            .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+            .get(root.session_id) ||
+          this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
+          this.store.db
+            .prepare(
+              "SELECT 1 FROM station_calls WHERE session_id=? AND kind!='read' AND (operation_id IS NULL OR operation_id!=? OR state!='cancelled' OR helper_state!='none')",
+            )
+            .get(root.session_id, String(op.id))
+        )
+          throw new ServiceError(
+            'work_settlement_unsafe',
+            'Only the exact expired unanswered unapplied operation can be settled',
+          );
+        driver.cancelInTransaction(task.id, task.revision, stopped);
+        const receipt = {
+          version: 1 as const,
+          state: 'cancelled' as const,
+          effects: 'expired_approval_unapplied' as const,
+          request_id: request,
+          work_request_id: workRequest,
+          decision_request_id: decisionRequest,
+          approval_id: offered.approval_id,
+          operation_digest: offered.operation_digest,
+          session_id: root.session_id,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          binding_digest: digest(root.binding),
+          producer_terminal_digest: terminalDigest,
+        };
+        this.store.event(root.session_id, 'agentpod.work_expired', receipt, request);
+        return receipt;
+      },
+    );
+  }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);
     const view = await driver.viewAsync(task.id);

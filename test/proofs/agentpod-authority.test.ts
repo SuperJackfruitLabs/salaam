@@ -522,6 +522,12 @@ test('strict work is private-owner only and refuses missing protected verificati
     await expect(call(f.service.socket, '/v1/agentpod/work-settle', settlement)).rejects.toThrow(
       'not enabled',
     );
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-expire', {
+        ...settlement,
+        decision_request_id: randomUUID(),
+      }),
+    ).rejects.toThrow('Bridge route not found');
     expect(f.service.store.db.prepare('SELECT count(*) AS n FROM durable_tasks').get()!.n).toBe(0);
   } finally {
     await f.close();

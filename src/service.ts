@@ -843,6 +843,31 @@ export class SalaamService {
           }
           return;
         }
+        if (parts[2] === 'work-expire') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict work expiry is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,decision_request_id,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit expiry request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.expire(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.decision_request_id, 'decision_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+              this.taskDriver,
+            ),
+          );
+          return;
+        }
         if (parts[2] === 'work-settle') {
           if (!this.agentpodWork || !this.agentpodWorkProgression)
             throw new ServiceError('work_disabled', 'Strict work settlement is not enabled');

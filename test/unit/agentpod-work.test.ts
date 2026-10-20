@@ -4,6 +4,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
 import { AgentPodAuthority } from '../../src/agentpod-authority.js';
+import { ManagedWork } from '../../src/managed.js';
+import { AgentPodWorkDecisions } from '../../src/agentpod-work-decisions.js';
 import { AgentPodWork } from '../../src/agentpod-work.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { TaskContext } from '../../src/task-context.js';
@@ -568,3 +570,128 @@ test('actual settlement receipt conforms to the shared AgentPod v1 wire fixture'
     f.close();
   }
 });
+
+async function expiredWorkFixture() {
+  const f = fixture(),
+    admitted = f.run();
+  const step = f.tasks.get(admitted.task_id).steps[0]!;
+  const submission = f.store.transaction(() =>
+    f.store.enqueue(f.session, randomUUID(), 'Test exact expiry', undefined, null, step.id),
+  );
+  const epoch = f.store.allocate(f.session, 'test');
+  f.store.state(f.session, epoch, 'ready');
+  f.store.claim(f.session, epoch);
+  f.store.running(submission.attempt_id);
+  const managed = new ManagedWork(f.store, {
+    assertActive() {},
+    assertMcpOperation() {},
+    reply() {},
+    failed() {},
+    approvalTtlMs: 1000,
+  });
+  await managed.prepareMcp(
+    f.session,
+    epoch,
+    submission.attempt_id,
+    'expiry-call',
+    'library/fixture',
+    '{}',
+    'a'.repeat(64),
+  );
+  const offer = new AgentPodWorkDecisions(f.work, managed).list(f.binding).decisions[0]!;
+  await new Promise((r) => setTimeout(r, 1010));
+  managed.expire();
+  await managed.close();
+  f.store.db.prepare("UPDATE attempts SET state='cancelled' WHERE id=?").run(submission.attempt_id);
+  f.store.db.prepare("UPDATE durable_tasks SET state='blocked' WHERE id=?").run(admitted.task_id);
+  f.store.db.prepare("UPDATE task_steps SET state='cancelled' WHERE id=?").run(step.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'expired-revoke', 'Expired decision stopped');
+  return { f, admitted, offer, managed };
+}
+
+test('expired unanswered operation cancellation uses exact offer, preserves history and replays after restart', async () => {
+  const { f, admitted, offer, managed } = await expiredWorkFixture();
+  try {
+    const request = randomUUID();
+    const run = () =>
+      f.work.expire(
+        f.binding,
+        request,
+        admitted.request_id,
+        offer.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    expect(() =>
+      f.work.expire(
+        f.binding,
+        request,
+        admitted.request_id,
+        randomUUID(),
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow('saved decision');
+    const receipt = run();
+    expect(receipt).toMatchObject({
+      state: 'cancelled',
+      effects: 'expired_approval_unapplied',
+      approval_id: offer.approval_id,
+      operation_digest: offer.operation_digest,
+    });
+    const wire = JSON.parse(
+      readFileSync(new URL('../fixtures/agentpod-work-expiry-v1.json', import.meta.url), 'utf8'),
+    );
+    expect(receipt).toEqual({
+      ...wire.receipt,
+      request_id: request,
+      work_request_id: admitted.request_id,
+      decision_request_id: offer.request_id,
+      approval_id: offer.approval_id,
+      operation_digest: offer.operation_digest,
+      session_id: f.session,
+      task_id: admitted.task_id,
+      binding_digest: digest(f.binding),
+    });
+    expect(managed.operation(offer.operation_id).state).toBe('cancelled_before_dispatch');
+    expect(managed.approval(offer.approval_id).decision).toBeNull();
+    f.reopen();
+    expect(run()).toEqual(receipt);
+    expect(() =>
+      f.work.expire(
+        f.binding,
+        request,
+        admitted.request_id,
+        offer.request_id,
+        'b'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+  } finally {
+    f.close();
+  }
+});
+
+test.each(['outcome_unknown', 'succeeded'])(
+  'expired task settlement refuses operation state %s',
+  async (state) => {
+    const { f, admitted, offer } = await expiredWorkFixture();
+    try {
+      f.store.db.prepare('UPDATE operations SET state=? WHERE id=?').run(state, offer.operation_id);
+      expect(() =>
+        f.work.expire(
+          f.binding,
+          randomUUID(),
+          admitted.request_id,
+          offer.request_id,
+          'a'.repeat(64),
+          settlementDriver(f),
+        ),
+      ).toThrow();
+      expect(f.tasks.get(admitted.task_id).state).toBe('blocked');
+    } finally {
+      f.close();
+    }
+  },
+);

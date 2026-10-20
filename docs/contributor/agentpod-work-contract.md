@@ -186,3 +186,15 @@ settle previously dispatched work, erase uncertain effects, renew revoked
 admissions or authorize a replacement lease. AgentPod must separately commit its
 original-owner retirement only after the exact receipt is joined to the verified
 producer terminal run. No automatic operator settlement is enabled.
+
+A separate private `work-expire` receipt closes the exact expired, unanswered
+decision after producer terminal verification. It binds the original work and
+saved decision request, approval, operation digest and immutable producer terminal
+digest. The original root must be revoked and stopped without uncertainty. Only
+a blocked task with pending/cancelled steps, that single cancelled attempt and
+that single `cancelled_before_dispatch` operation is eligible; other operations,
+checks, children or native effect activity refuse settlement. Existing task
+cancellation records the final nonsuccess disposition without fabricating a
+human answer or reviving the expired permission. The receipt identifies
+`expired_approval_unapplied`, retains every historical record and cannot authorize
+a new lease. Cached replay still checks exact root access and resource stop.
