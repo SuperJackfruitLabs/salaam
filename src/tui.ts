@@ -365,7 +365,13 @@ export class SalaamApp {
     return;
   }
   private async execute(work: () => Promise<unknown>): Promise<void> {
-    if (this.view.busy) return;
+    if (this.view.busy) {
+      const session = this.client.snapshot?.id ?? this.options.session;
+      this.pendingAction = () => {
+        if (this.client.snapshot?.id === session) void this.execute(work);
+      };
+      return;
+    }
     this.view.busy = true;
     this.tui.requestRender();
     try {

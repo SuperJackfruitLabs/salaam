@@ -245,3 +245,27 @@ test('Tab completes slash input instead of switching views', () => {
   expect(internal.input('\t')).toEqual({ consume: true });
   expect(app.view.tab).toBe('changes');
 });
+
+test('palette action selected during session loading runs after loading, but not in a different session', async () => {
+  for (const switchSession of [false, true]) {
+    const app = new SalaamApp({ state: '/tmp/salaam-pending-action-proof', session: 'one' });
+    app['running'] = true;
+    let release!: () => void;
+    const loading = app['execute'](
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await app['execute'](async () => app.setTab('context'));
+    expect(app.view.tab).toBe('conversation');
+    app.client.snapshot = {
+      id: switchSession ? 'two' : 'one',
+      submissions: [],
+    } as unknown as SessionSnapshot;
+    release();
+    await loading;
+    expect(app.view.tab).toBe(switchSession ? 'conversation' : 'context');
+    app['running'] = false;
+  }
+});
