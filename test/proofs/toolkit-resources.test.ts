@@ -104,6 +104,51 @@ test('actual SDK startup durably records broker identity before any tool deliver
   }
 });
 
+test('private admission is synchronous and rechecked after startup before actual SDK tool delivery', async () => {
+  const { f, launch, spec, resources } = await setup();
+  let checks = 0,
+    changed = false;
+  const client = new Client({ name: 'admission-drift-proof', version: '1' }, { capabilities: {} });
+  try {
+    const transport = resources.transport(spec, launch, () => {
+      checks++;
+      if (changed) throw Error('private profile changed');
+    });
+    await client.connect(transport);
+    expect(checks).toBeGreaterThanOrEqual(3); // prepare, pre-spawn, actual PID registration
+    changed = true;
+    await expect(
+      client.request(
+        { method: 'tools/call', params: { name: 'fixture', arguments: {} } },
+        CallToolResultSchema,
+      ),
+    ).rejects.toThrow();
+    expect(transport.toolCallsSent).toBe(0);
+    await resources.stop(spec.id);
+    expect(resources.stopProof(spec.id).method).toBe('observed_exit');
+  } finally {
+    await client.close();
+    await resources.close();
+    await f.close();
+  }
+});
+
+test('an asynchronous private check cannot create even a prepared process resource', async () => {
+  const { f, launch, spec, resources } = await setup();
+  try {
+    expect(() =>
+      resources.transport(spec, launch, async () => {
+        throw Error('asynchronous check is not authority');
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'toolkit_resources_unconfirmed' }));
+    expect(f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resources').get()!.n).toBe(
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('an unrecorded launch remains fenced after registry reconstruction; an unused prepared intent can settle', async () => {
   const { f, launch, spec, resources } = await setup();
   try {

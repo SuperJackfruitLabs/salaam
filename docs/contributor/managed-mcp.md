@@ -172,3 +172,28 @@ The actual private effect-owner endpoint, protected Toolkit profile/credential
 delegation, durable call/permission controller, turn/attempt mapping and model
 tool integration are still required. No native Toolkit station capability or
 real provider/Library acceptance is claimed by the resource registry.
+
+### Private native launch admission
+
+`ToolkitAdmission` is an internal host admission primitive. Its pinned private
+profile delegates one credential store to the exact organization, principal and
+full AgentPod binding (including occupant and run epochs). A new binding requires
+a new reviewed profile; an existing store is never implicitly inherited.
+
+The profile pins the executable, manifest and passphrase bytes. The manifest pins
+the policy and Toolkit-owned protocol/profile fingerprint. All files, directories
+and the owner socket must be canonical, owner-only and outside the workspace;
+files cannot have additional hardlinks, and writable ancestors are rejected except
+root-owned sticky temporary directories. Launch uses only `managed-mcp-v1`, an
+explicit manifest/hash and a closed environment.
+
+`ToolkitAdmission.transport` applies the admission through the resource controller
+at preparation, before spawn, before PID registration and before SDK tool delivery.
+An asynchronous check cannot admit a launch or delivery. Drift after startup closes
+the transport before any tool bytes are sent.
+
+This checks configuration integrity and delegation. It does not verify that a
+binary implements the required broker protocol, grant a native effect, establish
+sandbox isolation, or enable a station capability. The real effect controller must
+also check admission and actual resources at fresh native grants, combine them
+with durable call/permission ownership, and validate actual broker capabilities.

@@ -71,6 +71,7 @@ export class ToolkitResources {
   private active = new Map<string, ManagedStdioTransport>();
   private observed = new Map<string, { pid: number; identity: string | null }>();
   private blocked = new Set<string>();
+  private admissions = new Map<string, () => void>();
   private closing = false;
   constructor(
     readonly store: Store,
@@ -102,8 +103,13 @@ export class ToolkitResources {
         'Toolkit resource belongs to another execution root',
       );
   }
-  transport(input: ToolkitResourceSpec, launch: StdioLaunch): ManagedStdioTransport {
+  transport(
+    input: ToolkitResourceSpec,
+    launch: StdioLaunch,
+    admission?: () => void,
+  ): ManagedStdioTransport {
     if (this.closing) unavailable();
+    this.checkAdmission(admission);
     const spec = structuredClone(input);
     if (!this.authority)
       throw new ServiceError(
@@ -180,6 +186,7 @@ export class ToolkitResources {
         );
       this.event(this.get(spec.id), 'prepared');
     });
+    if (admission) this.admissions.set(spec.id, admission);
     const transport = new ManagedStdioTransport(launch, () => this.assertLive(spec.id), {
       starting: () => this.launching(spec.id),
       spawned: (pid) => this.spawned(spec.id, pid),
@@ -190,7 +197,16 @@ export class ToolkitResources {
     this.active.set(spec.id, transport);
     return transport;
   }
+  private checkAdmission(check?: () => void): void {
+    if (!check) return;
+    const result: unknown = check();
+    if (result !== undefined) {
+      if (result instanceof Promise) void result.catch(() => {});
+      unavailable();
+    }
+  }
   launching(id: string): void {
+    this.checkAdmission(this.admissions.get(id));
     this.store.transaction(() => {
       const row = this.get(id);
       this.current(row);
@@ -208,6 +224,7 @@ export class ToolkitResources {
     // following database write fails. A reconstructed controller has no such proof.
     this.observed.set(id, { pid, identity });
     if (!identity) unavailable();
+    this.checkAdmission(this.admissions.get(id));
     this.store.transaction(() => {
       const row = this.get(id);
       this.current(row);
@@ -224,6 +241,7 @@ export class ToolkitResources {
   assertLive(id: string): void {
     const row = this.get(id);
     this.current(row);
+    this.checkAdmission(this.admissions.get(id));
     if (
       this.closing ||
       this.blocked.has(id) ||
@@ -392,6 +410,7 @@ export class ToolkitResources {
     });
     this.active.delete(id);
     this.observed.delete(id);
+    this.admissions.delete(id);
   }
   async recover(): Promise<{ stopped: string[]; unconfirmed: string[] }> {
     const result = { stopped: [] as string[], unconfirmed: [] as string[] };
