@@ -176,9 +176,16 @@ export class StationSystemd {
       !v.InvocationID ||
       !/^[a-f0-9]{32}$/.test(v.InvocationID) ||
       (v.ControlGroup !== '/system.slice/' + this.unit(id) &&
-        !(v.ControlGroup === '' && ['inactive', 'failed'].includes(v.ActiveState!)))
+        !(
+          v.ControlGroup === '' &&
+          (['inactive', 'failed'].includes(v.ActiveState!) ||
+            (v.ActiveState === 'active' && v.SubState === 'exited' && v.ExecMainCode === '1'))
+        ))
     )
       stationUnavailable();
+    // systemd may collect an empty cgroup while RemainAfterExit keeps the
+    // exact invocation active/exited. Reconstruct only its fixed owned path;
+    // stop() still observes that path empty/absent before issuing a receipt.
     const result: StationUnit = {
       id: this.unit(id),
       description,
