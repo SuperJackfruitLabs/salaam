@@ -368,7 +368,59 @@ response remains an opaque product outcome requiring independent reconciliation
 or explicit operator attestation.
 
 These paths have actual offline Pi and compiled native-broker conformance proofs.
-The current assignment is a trusted internal service seam, with no ACP registration
-or arbitrary CLI command path. Private host/CLI manifest delivery, protected station
-workspace execution and the real scoped Library/Claude canary remain required
-before native station capability rollout.
+The assignment can also be delivered through the private host manifest described
+below. Protected station workspace execution and the real scoped Library/Claude
+canary remain required before native station capability rollout.
+
+### Private native host configuration
+
+A reviewed AgentPod host-plan input can supply `toolkit_config`, an absolute path
+to an owner-only native assignment. This produces host schema 4, with the canonical
+configuration digest in `managed_toolkit`. An optional `mcp_config` retains the
+existing HTTP assignment alongside native tools. Schema 2 remains plain AgentPod;
+schema 3 remains HTTP-only. Adding native fields to an older schema is rejected.
+The node startup receipt remains version 1 and binds the entire host manifest.
+
+The private assignment has this closed envelope:
+
+```json
+{
+  "version": 1,
+  "profile_path": "/absolute/private/toolkit-profile.json",
+  "profile_sha256": "<SHA-256 of the exact reviewed profile file>",
+  "catalog": {
+    "catalog_digest": "<reviewed complete meta-tool catalogue digest>",
+    "actions": [
+      {
+        "category": "github",
+        "action": "get_user",
+        "kind": "read",
+        "policy": "agent",
+        "digest": "<reviewed native action-detail digest>"
+      }
+    ]
+  }
+}
+```
+
+These are reviewed pins, not values accepted from a model or automatically trusted
+because a server advertised them. Config and profile paths must be canonical,
+regular owner-only files outside the station workspace. Symlinks, hardlinks,
+unsupported versions, extra fields and partial profile upgrades are rejected.
+Planning verifies the private references without opening credential stores or
+materializing a callback key. Actual executable, root, process and protocol
+admission still precede worker readiness.
+
+`host start --manifest /absolute/private/host.json` coalesces concurrent cold starts
+through the existing supervisor and requires the matching native digest in daemon
+health. The daemon reads the pinned assignment itself, and rechecks it before fresh
+native grants; a changed file cannot use the interval before the supervisor's next
+poll to dispatch an approved action. Drift invalidates readiness. Restoring the
+reviewed files and manifest permits normal startup again. Historical cleanup and
+operator reconciliation retain their separate, recorded authority.
+
+Native process recovery requires an operating-system init or equivalent child
+reaper. A bare Node process as container PID 1 does not reap orphaned brokers after
+daemon death. An unreaped resource remains `unconfirmed`, blocks replacements and
+prevents native settlement controls; it is not a stop receipt. Container runners
+must provide and verify an init/reaper before claiming crash-recovery support.

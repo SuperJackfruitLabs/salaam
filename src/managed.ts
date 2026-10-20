@@ -259,6 +259,63 @@ export class ManagedWork {
       throw new ServiceError('mcp_disabled', 'A reviewed MCP execution controller is required');
     return this.insertPrepared(session, epoch, attempt, call, 'mcp', target, value, context);
   }
+  prepareWorkspaceInTransaction(
+    session: string,
+    epoch: number,
+    attempt: string,
+    call: string,
+    target: string,
+    value: string,
+    context: string,
+  ): { operation: Operation; approval: Approval } {
+    if (
+      !this.store.db.isTransaction ||
+      !/^[a-f0-9]{64}$/.test(context) ||
+      !this.mcpControllers.size
+    )
+      throw new ServiceError('workspace_disabled', 'A reviewed workspace controller is required');
+    return this.insertPrepared(session, epoch, attempt, call, 'workspace', target, value, context);
+  }
+  workspaceResultInTransaction(id: string, receipt: unknown): void {
+    if (!this.store.db.isTransaction) throw Error('Workspace result requires a transaction');
+    const op = this.operation(id);
+    if (op.kind !== 'workspace' || op.state !== 'dispatching')
+      throw new ServiceError('operation_scope', 'Not a dispatched workspace permission');
+    this.mcpController(op).assertSettled(op);
+    this.transition(op, 'succeeded', null, JSON.stringify(receipt), 'workspace-content-receipt-v1');
+  }
+  workspaceUnknownInTransaction(id: string): void {
+    const op = this.operation(id);
+    if (!this.store.db.isTransaction || op.kind !== 'workspace')
+      throw new ServiceError('operation_scope', 'Not a workspace permission');
+    if (op.state === 'dispatching')
+      this.transition(
+        op,
+        'outcome_unknown',
+        'Workspace apply result is unconfirmed; inspect the recorded intent',
+      );
+  }
+  workspaceDefiniteFailureInTransaction(id: string): void {
+    const op = this.operation(id);
+    if (!this.store.db.isTransaction || op.kind !== 'workspace' || op.state !== 'dispatching')
+      throw new ServiceError('operation_scope', 'Not a dispatched workspace permission');
+    this.mcpController(op).assertSettled(op);
+    this.transition(
+      op,
+      'failed_definite',
+      'Protected filesystem refused before its mutation boundary',
+    );
+  }
+  workspaceNotSentInTransaction(id: string): void {
+    const op = this.operation(id);
+    if (!this.store.db.isTransaction || op.kind !== 'workspace')
+      throw new ServiceError('operation_scope', 'Not a workspace permission');
+    if (op.state !== 'prepared') return;
+    const approval = this.forOperation(id);
+    if (['pending', 'decided'].includes(approval.state))
+      this.invalidateApproval(approval, 'invalidated');
+    this.transition(op, 'failed_definite', 'Workspace apply was cancelled before dispatch');
+  }
   private async prepareBound(
     session: string,
     epoch: number,
@@ -324,7 +381,7 @@ export class ManagedWork {
         op.kind !== kind ||
         op.target !== target ||
         op.value !== value ||
-        (kind === 'mcp' && op.target_version !== version)
+        (['mcp', 'workspace'].includes(kind) && op.target_version !== version)
       )
         throw new ServiceError(
           'operation_conflict',
@@ -350,19 +407,23 @@ export class ManagedWork {
       target_version: version,
       policy_digest: POLICY_DIGEST,
       connector:
-        kind === 'mcp'
-          ? 'managed-mcp-protocol-v1'
-          : kind === 'harness'
-            ? 'external-harness-once-v1'
-            : kind === 'review'
-              ? 'local-review-v1'
-              : connector!.id,
+        kind === 'workspace'
+          ? 'station-workspace-v1'
+          : kind === 'mcp'
+            ? 'managed-mcp-protocol-v1'
+            : kind === 'harness'
+              ? 'external-harness-once-v1'
+              : kind === 'review'
+                ? 'local-review-v1'
+                : connector!.id,
       replay:
-        kind === 'harness' || kind === 'mcp'
+        kind === 'harness' || kind === 'workspace'
           ? 'opaque'
-          : kind === 'review'
-            ? 'read-only'
-            : connector!.replay,
+          : kind === 'mcp'
+            ? 'opaque'
+            : kind === 'review'
+              ? 'read-only'
+              : connector!.replay,
       revision: 1,
       state: 'prepared',
       receipt: null,
@@ -469,7 +530,7 @@ export class ManagedWork {
       throw new ServiceError('approval_stale', 'Approval expired or was invalidated');
     if (op.kind === 'effect' && this.options.connector?.id !== op.connector)
       throw new ServiceError('connector_changed', 'Effect connector changed');
-    if (op.kind === 'mcp') {
+    if (op.kind === 'mcp' || op.kind === 'workspace') {
       this.mcpController(op).assert(op);
     }
   }
@@ -548,7 +609,7 @@ export class ManagedWork {
   }
   start(id: string, session: string, epoch: number, attempt: string): Operation {
     const op = this.operation(id);
-    if (op.kind === 'harness' || op.kind === 'mcp')
+    if (op.kind === 'harness' || op.kind === 'mcp' || op.kind === 'workspace')
       throw new ServiceError(
         'operation_scope',
         'An owned permission can only be consumed by its execution controller',
@@ -582,7 +643,7 @@ export class ManagedWork {
   takePermissionInTransaction(id: string): boolean {
     if (!this.store.db.isTransaction) throw Error('Owned permission requires a transaction');
     const op = this.operation(id);
-    if (!['harness', 'mcp'].includes(op.kind) || op.state !== 'prepared') return false;
+    if (!['harness', 'mcp', 'workspace'].includes(op.kind) || op.state !== 'prepared') return false;
     this.fresh(op);
     if (this.paused || this.store.hasUnknown(op.session_id))
       throw new ServiceError('operation_blocked', 'Unresolved effects block new permissions');
@@ -679,7 +740,7 @@ export class ManagedWork {
   }
   recordReceipt(id: string, receipt: EffectReceipt): void {
     const op = this.operation(id);
-    if (op.kind === 'mcp' || op.kind === 'harness')
+    if (op.kind === 'mcp' || op.kind === 'harness' || op.kind === 'workspace')
       throw new ServiceError(
         'operation_scope',
         'An owned result requires its execution controller',
@@ -802,7 +863,8 @@ export class ManagedWork {
         );
       if (op.operation_digest !== binding || binding !== this.binding(op))
         throw new ServiceError('binding_changed', 'Resolution binding mismatch');
-      if (op.kind === 'mcp') this.assertMcpResolution(op, request, input);
+      if (op.kind === 'mcp' || op.kind === 'workspace')
+        this.assertMcpResolution(op, request, input);
       this.transition(
         op,
         outcome,

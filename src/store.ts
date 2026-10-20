@@ -69,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 25) {
+    if (version > 26) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -315,6 +315,13 @@ export class Store {
           CREATE TABLE toolkit_resolutions(id TEXT PRIMARY KEY NOT NULL,request_id TEXT NOT NULL UNIQUE,call_id TEXT NOT NULL UNIQUE REFERENCES toolkit_calls(id),operation_id TEXT UNIQUE REFERENCES operations(id),call_revision INTEGER NOT NULL,request_digest TEXT NOT NULL,context_json TEXT NOT NULL,context_digest TEXT NOT NULL,input_json TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','native_settled','committed')),native_receipt_json TEXT,revision INTEGER NOT NULL DEFAULT 1);
           CREATE TABLE toolkit_resolution_controls(id TEXT PRIMARY KEY NOT NULL,resolution_id TEXT NOT NULL REFERENCES toolkit_resolutions(id),resource_id TEXT NOT NULL UNIQUE REFERENCES toolkit_resources(id),control_json TEXT NOT NULL,result_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','returned','outcome_unknown')));
           PRAGMA user_version=25; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 26
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE station_calls(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('patch','check','read')),input_digest TEXT NOT NULL,root_digest TEXT NOT NULL,configuration_digest TEXT NOT NULL,args_json TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','returned','failed','outcome_unknown','cancelled')),revision INTEGER NOT NULL DEFAULT 1,result_json TEXT,helper_pid INTEGER,helper_identity TEXT,helper_state TEXT NOT NULL DEFAULT 'none',helper_stop_json TEXT,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE TABLE station_units(id TEXT PRIMARY KEY NOT NULL,session_id TEXT REFERENCES sessions(id),call_id TEXT UNIQUE REFERENCES station_calls(id),context_digest TEXT NOT NULL,config_json TEXT NOT NULL,snapshot_path TEXT NOT NULL,output_path TEXT NOT NULL,unit_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','launching','running','unconfirmed','stopped')),stop_json TEXT);
+          PRAGMA user_version=26; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

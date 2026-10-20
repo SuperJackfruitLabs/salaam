@@ -28,6 +28,8 @@ import { engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor } from './coding-executor.js';
 import { acquireStateLock } from './state-lock.js';
 import { call } from './transport.js';
+import { readStationConfig } from './station-config.js';
+import { readToolkitConfig } from './toolkit-config.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -59,7 +61,32 @@ export interface AgentPodMcpHostManifest extends AgentPodHostIdentity {
   schema: 3;
   managed_mcp: { config: string; profile_digest: string };
 }
-export type HostManifest = CodingHostManifest | AgentPodHostManifest | AgentPodMcpHostManifest;
+export interface AgentPodToolkitHostManifest extends AgentPodHostIdentity {
+  schema: 4;
+  managed_toolkit: { config: string; configuration_digest: string };
+  managed_mcp?: AgentPodMcpHostManifest['managed_mcp'];
+}
+export interface AgentPodStationHostManifest extends AgentPodHostIdentity {
+  schema: 5;
+  station_execution: { config: string; configuration_digest: string };
+  managed_toolkit?: AgentPodToolkitHostManifest['managed_toolkit'];
+  managed_mcp?: AgentPodMcpHostManifest['managed_mcp'];
+}
+export type HostManifest =
+  | CodingHostManifest
+  | AgentPodHostManifest
+  | AgentPodMcpHostManifest
+  | AgentPodToolkitHostManifest
+  | AgentPodStationHostManifest;
+export function hostMcp(m: HostManifest): AgentPodMcpHostManifest['managed_mcp'] | undefined {
+  return m.schema === 3 || m.schema === 4 || m.schema === 5 ? m.managed_mcp : undefined;
+}
+
+export function hostToolkit(
+  m: HostManifest,
+): AgentPodToolkitHostManifest['managed_toolkit'] | undefined {
+  return m.schema === 4 || m.schema === 5 ? m.managed_toolkit : undefined;
+}
 
 function privateDocument(path: string): Record<string, unknown> {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -89,7 +116,12 @@ function privateState(path: string): string {
 }
 async function planAgentPod(
   c: Record<string, unknown>,
-): Promise<AgentPodHostManifest | AgentPodMcpHostManifest> {
+): Promise<
+  | AgentPodHostManifest
+  | AgentPodMcpHostManifest
+  | AgentPodToolkitHostManifest
+  | AgentPodStationHostManifest
+> {
   const fields = [
     'mode',
     'state',
@@ -99,6 +131,8 @@ async function planAgentPod(
     'max_output_tokens',
     'workspace_id',
     'mcp_config',
+    'toolkit_config',
+    'station_config',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -128,8 +162,45 @@ async function planAgentPod(
             pins_digest: digest(pins),
           }),
         };
+  const toolkit =
+    c.toolkit_config === undefined
+      ? undefined
+      : {
+          config: string(c.toolkit_config, 'toolkit_config'),
+          configuration_digest: digest(
+            readToolkitConfig(
+              string(c.toolkit_config, 'toolkit_config'),
+              undefined,
+              pins.workspace,
+            ),
+          ),
+        };
+  const station =
+    c.station_config === undefined
+      ? undefined
+      : {
+          config: string(c.station_config, 'station_config'),
+          configuration_digest: digest(
+            readStationConfig(string(c.station_config, 'station_config'), pins.workspace),
+          ),
+        };
   return {
-    ...(managed ? { schema: 3 as const, managed_mcp: managed } : { schema: 2 as const }),
+    ...(station
+      ? {
+          schema: 5 as const,
+          station_execution: station,
+          ...(toolkit ? { managed_toolkit: toolkit } : {}),
+          ...(managed ? { managed_mcp: managed } : {}),
+        }
+      : toolkit
+        ? {
+            schema: 4 as const,
+            managed_toolkit: toolkit,
+            ...(managed ? { managed_mcp: managed } : {}),
+          }
+        : managed
+          ? { schema: 3 as const, managed_mcp: managed }
+          : { schema: 2 as const }),
     mode: 'agentpod',
     node: realpathSync(process.execPath),
     node_version: process.version,
@@ -211,7 +282,7 @@ export async function planHost(input: unknown): Promise<HostManifest> {
 export function readHost(path: string): HostManifest {
   const m = privateDocument(path) as unknown as HostManifest;
   if (
-    ![1, 2, 3].includes(m.schema) ||
+    ![1, 2, 3, 4, 5].includes(m.schema) ||
     m.node_version !== 'v26.7.0' ||
     process.version !== m.node_version ||
     realpathSync(process.execPath) !== m.node ||
@@ -221,7 +292,7 @@ export function readHost(path: string): HostManifest {
   const hashes = hostDigests();
   for (const key of ['source_digest', 'build_digest', 'pi_bundle_digest'] as const)
     if (m[key] !== hashes[key]) throw new Error('Host source/build changed: ' + key);
-  if (m.schema === 2 || m.schema === 3) {
+  if (m.schema === 2 || m.schema === 3 || m.schema === 4 || m.schema === 5) {
     const fields = [
       'schema',
       'mode',
@@ -237,7 +308,13 @@ export function readHost(path: string): HostManifest {
       'pins_digest',
       'workspace',
       'cli_digest',
-      ...(m.schema === 3 ? ['managed_mcp'] : []),
+      ...(m.schema === 3 || ([4, 5].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))
+        ? ['managed_mcp']
+        : []),
+      ...(m.schema === 4 || (m.schema === 5 && Object.hasOwn(m, 'managed_toolkit'))
+        ? ['managed_toolkit']
+        : []),
+      ...(m.schema === 5 ? ['station_execution'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
@@ -245,10 +322,30 @@ export function readHost(path: string): HostManifest {
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
-    if (m.schema === 3) {
-      if (Object.keys(object(m.managed_mcp)).sort().join(',') !== 'config,profile_digest')
+    const managed = hostMcp(m);
+    if (m.schema === 3 || ([4, 5].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {
+      if (!managed) throw Error('Missing managed MCP host fields');
+      if (Object.keys(object(managed)).sort().join(',') !== 'config,profile_digest')
         throw Error('Unsupported managed MCP host fields');
-      new McpAdmission(m.managed_mcp.config, pins, m.managed_mcp.profile_digest);
+      new McpAdmission(managed.config, pins, managed.profile_digest);
+    }
+    const native = hostToolkit(m);
+    if (m.schema === 4 || (m.schema === 5 && Object.hasOwn(m, 'managed_toolkit'))) {
+      if (!native) throw Error('Missing native Toolkit host fields');
+      if (Object.keys(object(native)).sort().join(',') !== 'config,configuration_digest')
+        throw Error('Unsupported native Toolkit host fields');
+      readToolkitConfig(native.config, native.configuration_digest, pins.workspace);
+    }
+    if (m.schema === 5) {
+      if (
+        Object.keys(object(m.station_execution)).sort().join(',') !== 'config,configuration_digest'
+      )
+        throw Error('Unsupported station execution fields');
+      readStationConfig(
+        m.station_execution.config,
+        pins.workspace,
+        m.station_execution.configuration_digest,
+      );
     }
     if (
       !isAbsolute(m.agentpod_config) ||

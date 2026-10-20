@@ -44,6 +44,8 @@ import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
+import { StationWork } from './station-work.js';
+import { readToolkitConfig } from './toolkit-config.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
@@ -51,6 +53,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   managedMcp?: { config: string; profile_digest: string };
   /** Internal trusted host seam; never accepted from ACP or a worker. */
   managedToolkit?: ToolkitWorkConfig;
+  managedToolkitConfig?: { config: string; configuration_digest: string };
+  stationConfig?: { config: string; configuration_digest: string };
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
   a2aConfig?: string;
@@ -77,6 +81,7 @@ export class SalaamService {
   readonly toolkitResolutions: ToolkitResolutions;
   readonly mcp?: McpWork;
   readonly toolkit?: ToolkitWork;
+  readonly station?: StationWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
@@ -122,8 +127,12 @@ export class SalaamService {
     this.stateDir = resolve(options.stateDir);
     if (options.managedMcp && !options.agentpodConfig)
       throw Error('Managed MCP requires reviewed AgentPod authority pins');
-    if (options.managedToolkit && !options.agentpodConfig)
+    if ((options.managedToolkit || options.managedToolkitConfig) && !options.agentpodConfig)
       throw Error('Native Toolkit requires reviewed AgentPod authority pins');
+    if (options.stationConfig && !options.agentpodConfig)
+      throw Error('Station execution requires reviewed AgentPod authority');
+    if (options.managedToolkit && options.managedToolkitConfig)
+      throw Error('Use one reviewed native Toolkit assignment');
     if (
       options.agentpodConfig &&
       (options.codingRoot ||
@@ -354,10 +363,13 @@ export class SalaamService {
             (attempt) => {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
               this.mcp?.cancelInTransaction(attempt, 'agentpod-revocation');
+              this.station?.cancelInTransaction(attempt);
               cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
             },
             (session) =>
-              (this.mcp?.stopped(session) ?? true) && this.toolkitResources.stopped(session),
+              (this.mcp?.stopped(session) ?? true) &&
+              this.toolkitResources.stopped(session) &&
+              (this.station?.stopped(session) ?? true),
           );
         this.toolkitResources = new ToolkitResources(this.store, this.agentpod);
         this.toolkitOwners = new ToolkitOwners(this.store, this.toolkitResources, this.socket);
@@ -367,8 +379,11 @@ export class SalaamService {
           this.toolkitResources,
           this.toolkitOwners,
         );
-        this.store.nativeResourceCheck = (session) => this.toolkitResources.assertSession(session);
-        if (options.managedToolkit) {
+        this.store.nativeResourceCheck = (session) => {
+          this.toolkitResources.assertSession(session);
+          this.station?.assertResources(session);
+        };
+        if (options.managedToolkit || options.managedToolkitConfig) {
           if (!this.agentpod)
             throw new Error('Native Toolkit requires AgentPod execution authority');
           this.toolkit = new ToolkitWork(
@@ -377,14 +392,48 @@ export class SalaamService {
             this.agentpod,
             this.toolkitResources,
             this.toolkitOwners,
-            options.managedToolkit,
+            options.managedToolkit ??
+              readToolkitConfig(
+                options.managedToolkitConfig!.config,
+                options.managedToolkitConfig!.configuration_digest,
+                this.agentpod.pins.workspace,
+              ),
             {
+              configurationCheck: () => {
+                if (options.managedToolkitConfig)
+                  readToolkitConfig(
+                    options.managedToolkitConfig.config,
+                    options.managedToolkitConfig.configuration_digest,
+                    this.agentpod!.pins.workspace,
+                  );
+              },
               assertActive: (session, epoch, attempt) =>
                 this.supervisor.assertActive(session, epoch, attempt),
               failed: (session, error) => this.supervisor.failControl(session, error),
             },
           );
           this.supervisor.toolkit = this.toolkit;
+        }
+        if (options.stationConfig) {
+          if (!this.agentpod) throw Error('Station execution requires AgentPod authority');
+          this.station = new StationWork(
+            this.store,
+            this.managed,
+            this.agentpod,
+            options.stationConfig,
+            this.stateDir,
+            {
+              assertActive: (session, epoch, attempt) =>
+                this.supervisor.assertActive(session, epoch, attempt),
+              failed: (session, error) => this.supervisor.failControl(session, error),
+            },
+          );
+          this.supervisor.station = this.station;
+          const cancelOwned = this.store.cancelChildren;
+          this.store.cancelChildren = (attempt) => {
+            cancelOwned?.(attempt);
+            this.station!.cancelInTransaction(attempt);
+          };
         }
         if (options.managedMcp) {
           this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
@@ -404,7 +453,9 @@ export class SalaamService {
             this.managed.abortCancelled(attempt);
             this.mcp?.abortAttempt(attempt);
             this.toolkit?.abortAttempt(attempt);
+
             const stopped = await Promise.allSettled([
+              this.station?.abortAttempt(attempt),
               this.toolkitResources.stopAttempt(attempt),
               (async () => {
                 this.coding.cancelAttempt(attempt);
@@ -427,9 +478,11 @@ export class SalaamService {
         );
         this.cancellations.cancelAdditional = (attempt) => {
           this.mcp?.cancelInTransaction(attempt);
+          this.station?.cancelInTransaction(attempt);
           cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
         };
         this.cancellations.additionalResources = (session, attempt) => [
+          ...(this.station?.unconfirmed(session, attempt) ?? []),
           ...(this.mcp && !this.mcp.stopped(session) ? ['managed-mcp:' + session] : []),
           ...(this.store.db
             .prepare(
@@ -498,6 +551,7 @@ export class SalaamService {
       await service.supervisor.providerAuth();
       await service.external.backend?.prepare?.();
       await service.toolkitResources.recover();
+      await service.station?.initialize();
       recoverToolkitCalls(service.store, service.managed);
       await service.supervisor.recover();
       service.cancellations.recover();
@@ -566,11 +620,13 @@ export class SalaamService {
       this.managed.abortCancelled(attempt);
       this.mcp?.abortAttempt(attempt);
       this.toolkit?.abortAttempt(attempt);
+      await this.station?.abortAttempt(attempt);
     });
     for (const session of receipt.session_ids) {
       jobs.push(this.toolkitResources.stopSession(session));
       if (this.mcp) jobs.push(this.mcp.stopSession(session));
       if (this.toolkit) jobs.push(this.toolkit.stopSession(session));
+      if (this.station) jobs.push(this.station.stopSession(session));
       jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
       jobs.push(
         Promise.resolve().then(async () => {
@@ -1304,6 +1360,9 @@ export class SalaamService {
           managed_toolkit: this.toolkit
             ? { configuration_digest: this.toolkit.configurationDigest }
             : null,
+          station_execution: this.station
+            ? { configuration_digest: this.station.configurationDigest }
+            : null,
           service: 'healthy',
           a2a: {
             inbound_enabled: !!this.a2aInbound,
@@ -1461,6 +1520,7 @@ export class SalaamService {
             (attempt) => {
               this.managed.cancelInTransaction(attempt, request, 'session-revocation');
               this.mcp?.cancelInTransaction(attempt, 'session-revocation');
+              this.station?.cancelInTransaction(attempt);
             },
           );
           // The receipt commits before any asynchronous process/executor cleanup.
@@ -1784,6 +1844,19 @@ export class SalaamService {
           );
           return;
         }
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'station' &&
+        parts[2] === 'calls' &&
+        parts[3] &&
+        parts.length === 4 &&
+        req.method === 'GET'
+      ) {
+        if (!this.station)
+          throw new ServiceError('station_disabled', 'Station execution is unavailable');
+        this.send(res, 200, this.station.view(parts[3]));
+        return;
       }
       if (
         parts[0] === 'v1' &&
@@ -2116,6 +2189,7 @@ export class SalaamService {
     await attempt(() => this.coding.close());
     await attempt(() => this.mcp?.close());
     await attempt(() => this.toolkit?.close());
+    await attempt(() => this.station?.close());
     await attempt(() => this.toolkitResources.close());
     await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());

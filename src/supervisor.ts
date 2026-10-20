@@ -22,6 +22,7 @@ import { PiProcess, PiCommandError } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import type { McpWork, McpWorkerBinding } from './mcp-work.js';
+import type { StationWork, StationBinding } from './station-work.js';
 import type { ToolkitWork, ToolkitWorkerBinding } from './toolkit-work.js';
 import type { ChildWork } from './children.js';
 import {
@@ -72,6 +73,7 @@ export interface SupervisorOptions {
 interface Worker {
   mcp?: McpWorkerBinding;
   toolkit?: ToolkitWorkerBinding;
+  station?: StationBinding;
   secrets?: string[];
   route: ProviderRoute;
   providerOutputCap?: boolean;
@@ -157,6 +159,7 @@ export class Supervisor extends EventEmitter {
   managed?: ManagedWork;
   mcp?: McpWork;
   toolkit?: ToolkitWork;
+  station?: StationWork;
   children?: ChildWork;
   coding?: CodingWork;
   repositories?: RepositorySnapshots;
@@ -204,6 +207,7 @@ export class Supervisor extends EventEmitter {
       undefined,
       !!this.mcp,
       !!this.toolkit,
+      !!this.station,
     );
   }
   private childBoundary(id: string, epoch: number) {
@@ -387,6 +391,7 @@ export class Supervisor extends EventEmitter {
       const child = this.children?.owned(id);
       if (this.mcp && !child) worker.mcp = await this.mcp.ready(id);
       if (this.toolkit && !child) worker.toolkit = await this.toolkit.ready(id);
+      if (this.station && !child) worker.station = this.station.ready(id);
       this.store.execution.assert(id);
       if (worker.stopping || worker.invalid) throw new Error('Worker startup cancelled');
       if (child) this.store.workerBoundary.claim(child, epoch, route);
@@ -416,6 +421,7 @@ export class Supervisor extends EventEmitter {
         coding: this.codingBinding(id),
         ...(worker.mcp ? { mcp: worker.mcp } : {}),
         ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
+        ...(worker.station ? { station: worker.station } : {}),
       };
       const args = [
         PI_CLI,
@@ -489,7 +495,9 @@ export class Supervisor extends EventEmitter {
                   ? toolMetadata(
                       observation.tool,
                       observation.input,
-                      this.coding?.workspaces.find(id)?.root,
+                      observation.tool === 'salaam_station'
+                        ? this.station?.config.workspace
+                        : this.coding?.workspaces.find(id)?.root,
                     )
                   : {}),
               });
@@ -609,6 +617,12 @@ export class Supervisor extends EventEmitter {
     if (worker.pi) void this.stopWorker(worker).catch(() => {});
   }
   private cancelMcpWorker(worker: Worker): void {
+    if (this.station && worker.attempt) {
+      this.store.transaction(() => this.station!.cancelInTransaction(worker.attempt!));
+      void this.station.abortAttempt(worker.attempt).catch(() => {
+        worker.invalid = 'Station stop is unconfirmed';
+      });
+    }
     if (this.toolkit && worker.attempt) {
       this.store.transaction(() => this.toolkit!.cancelInTransaction(worker.attempt!));
       this.toolkit.abortAttempt(worker.attempt);
@@ -661,6 +675,7 @@ export class Supervisor extends EventEmitter {
       this.store.execution.assert(id);
       if (w.mcp) this.mcp!.assertBinding(id, w.mcp);
       if (w.toolkit) this.toolkit!.assertBinding(id, w.toolkit);
+      if (w.station) this.station!.assertBinding(id, w.station);
     } catch (error) {
       this.invalidate(w, 'Session execution authority revoked');
       throw error;
@@ -686,6 +701,7 @@ export class Supervisor extends EventEmitter {
           ...(boundary ? { worker_binding: boundary } : {}),
           ...(w.mcp ? { mcp: w.mcp } : {}),
           ...(w.toolkit ? { toolkit: w.toolkit } : {}),
+          ...(w.station ? { station: w.station } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))
@@ -874,6 +890,38 @@ export class Supervisor extends EventEmitter {
               }
             : {}),
         };
+      }
+      if (method.startsWith('station.')) {
+        if (!this.station || !w.station || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('station_disabled', 'Station execution is unavailable');
+        this.assertActive(id, w.epoch, w.attempt);
+        this.store.taskGrantCheck?.(id);
+        if (method === 'station.read')
+          return this.station.read(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            object(body.args),
+          );
+        if (method === 'station.prepare')
+          return this.station.prepare(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            object(body.args),
+          );
+        const c = this.station.get(string(body.call_id, 'call_id', 128));
+        if (c.session_id !== id || c.worker_epoch !== w.epoch || c.attempt_id !== w.attempt)
+          throw new ServiceError(
+            'station_scope',
+            'Station call belongs to another invocation',
+            403,
+          );
+        if (method === 'station.run') return this.station.run(c.id);
+        if (method === 'station.status') return this.station.view(c.id);
+        throw new ServiceError('invalid_field', 'Unsupported station method');
       }
       if (method === 'coding.files' || method === 'coding.command') {
         if (!this.coding || !this.codingBinding(id) || !w.attempt)
@@ -1088,6 +1136,20 @@ export class Supervisor extends EventEmitter {
       return { ok: true };
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
+      if (
+        method.startsWith('station.') &&
+        error instanceof ServiceError &&
+        [
+          'invalid_field',
+          'request_conflict',
+          'station_files_changed',
+          'station_scope',
+          'station_call_limit',
+          'station_busy',
+          'not_found',
+        ].includes(error.code)
+      )
+        throw error;
       if (
         (method.startsWith('mcp.') || method.startsWith('toolkit.')) &&
         error instanceof ServiceError &&

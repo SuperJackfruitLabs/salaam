@@ -17,7 +17,7 @@ import { PiProcess } from '../src/pi.js';
 import type { ToolkitWorkConfig } from '../src/toolkit-work.js';
 import corpus from './fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
-export async function toolkitServiceFixture(mode = 'normal') {
+export async function toolkitServiceFixture(mode = 'normal', privateConfig = false) {
   const dir = realpathSync(mkdtempSync('/tmp/tks-')),
     workspace = join(dir, 'workspace'),
     state = join(dir, 'private');
@@ -170,11 +170,16 @@ readline.createInterface({input:process.stdin}).on('line',line=>{void(async()=>{
     },
   };
   const configs: Record<string, unknown>[] = [];
+  const configPath = join(state, 'toolkit.json');
+  if (privateConfig)
+    writeFileSync(configPath, JSON.stringify({ version: 1, ...config }), { mode: 0o600 });
   const open = () =>
     SalaamService.open({
       stateDir: state,
       agentpodConfig: pins,
-      managedToolkit: config,
+      ...(privateConfig
+        ? { managedToolkitConfig: { config: configPath, configuration_digest: digest(config) } }
+        : { managedToolkit: config }),
       launch: (l) => {
         configs.push(JSON.parse(l.env.SALAAM_WORKER_CONFIG!));
         return new PiProcess(l.command, l.args, l.cwd, l.env);
@@ -197,6 +202,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{void(async()=>{
     workspace,
     binding,
     config,
+    configPath,
     session,
     lines,
     profilePath,

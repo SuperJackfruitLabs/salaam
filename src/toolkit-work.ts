@@ -67,6 +67,7 @@ export class ToolkitWork {
     readonly owners: ToolkitOwners,
     config: ToolkitWorkConfig,
     readonly options: {
+      configurationCheck?(): void;
       assertActive(session: string, epoch: number, attempt: string): void;
       failed(session: string, error: Error): void;
     },
@@ -78,7 +79,10 @@ export class ToolkitWork {
     this.calls = new ToolkitCalls(store, managed, {
       authority,
       resources,
-      assertActive: options.assertActive,
+      assertActive: (session, epoch, attempt) => {
+        options.configurationCheck?.();
+        options.assertActive(session, epoch, attempt);
+      },
       action: (resource, category, action) => {
         const entry = [...this.entries.values()].find((e) => e.resource === resource);
         if (!entry) unavailable();
@@ -99,6 +103,7 @@ export class ToolkitWork {
     if (this.closing || this.fatal.has(session)) unavailable();
     const entry = this.entries.get(session);
     if (!entry) unavailable();
+    this.options.configurationCheck?.();
     const binding = this.authority.binding(session),
       admitted = entry.admission.launch(binding);
     if (
@@ -127,6 +132,7 @@ export class ToolkitWork {
   }
   private async initialize(session: string): Promise<ToolkitWorkerBinding> {
     if (this.closing || this.fatal.has(session) || this.store.hasUnknown(session)) unavailable();
+    this.options.configurationCheck?.();
     const previous = this.entries.get(session);
     if (previous?.retiring) await previous.retiring;
     if (previous && this.resources.get(previous.resource).state !== 'stopped')

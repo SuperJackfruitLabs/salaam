@@ -32,3 +32,20 @@ Stop a foreground supervisor with Ctrl+C or stop its native unit. `sal service s
 A supervisor death closes its private IPC channel; the daemon stops its owned workers and service. A replacement supervisor recovers the same journal rather than keeping an unowned worker set. SIGTERM requests orderly shutdown. The journal and its events remain the execution authority; a restart counter is not permission to retry an interrupted task. Startup checks the build/runtime and proves the exact executor before exposing operator sockets or enabling schedules. Changed source/build/engine/profile fails closed and requires a newly reviewed manifest, never an automatic retargeting of admitted jobs.
 
 Back up service state only with a deliberate stopped-service or SQLite-aware backup procedure. Schema 11 cannot be opened by older binaries. Restore the corresponding build/runtime/profile and inspect uncertain work before explicit continuation; never delete journals or reset task state to clear an error. `jobs`, `schedules`, `inbox`, task history, actual command logs and health expose durable recovery state. A full disk or required control failure blocks fresh grants. Host status is operational metadata and does not replace those records.
+
+AgentPod hosts opt in to managed tools through private `mcp_config` (HTTP) and
+`toolkit_config` (native Toolkit) references in the host-plan input. The latter
+binds the exact reviewed native execution profile and catalog; credentials remain
+in private producer configuration. [Managed MCP admission](./contributor/managed-mcp.md)
+describes the protocol, recovery and limits.
+
+An AgentPod station can additionally supply `station_config` to select the
+explicit Linux systemd protected station profile. This requires a root-owned
+controller, a reviewed runtime root and the pinned node file primitive. It is a
+system-service profile, rather than the ordinary user-unit configuration above.
+Do not enable it on macOS or on an unsupported Linux substrate. The host manifest
+binds every private reference; the executing daemon proves the actual boundary
+before worker readiness. See [protected station execution](./contributor/station-execution.md)
+for file limits, exact human approvals, read-only command snapshots and resource
+stop receipts. A successful host plan is not a deployment or kernel acceptance
+result.

@@ -63,6 +63,38 @@ function textResult(result: CallToolResult): unknown {
   return JSON.parse(result.content[0].text);
 }
 
+export function toolkitCatalogReview(value: unknown): ToolkitCatalogReview {
+  const review = structuredClone(object(value)) as unknown as ToolkitCatalogReview;
+  if (
+    Object.keys(review).sort().join(',') !== 'actions,catalog_digest' ||
+    typeof review.catalog_digest !== 'string' ||
+    !hashShape.test(review.catalog_digest) ||
+    !Array.isArray(review.actions) ||
+    !review.actions.length ||
+    review.actions.length > 256
+  )
+    bad();
+  const unique = new Set<string>();
+  for (const r of review.actions) {
+    closed(r, 'category,action,kind,policy,digest');
+    if (
+      typeof r.category !== 'string' ||
+      typeof r.action !== 'string' ||
+      typeof r.digest !== 'string' ||
+      !nameShape.test(r.category) ||
+      !nameShape.test(r.action) ||
+      !hashShape.test(r.digest) ||
+      !['read', 'write', 'destructive'].includes(r.kind) ||
+      !['agent', 'approval'].includes(r.policy) ||
+      (r.kind !== 'read' && r.policy !== 'approval') ||
+      unique.has(r.category + '/' + r.action)
+    )
+      bad();
+    unique.add(r.category + '/' + r.action);
+  }
+  return review;
+}
+
 /** Actual pinned SDK/catalogue consumer. The transport must already belong to
  * ToolkitResources and ToolkitOwners; this class grants no effect authority.
  * A caller uses ToolkitCalls for durable delivery and native callback grants. */
@@ -83,34 +115,7 @@ export class ToolkitMcp {
     review: ToolkitCatalogReview,
     private readonly failed: () => void,
   ) {
-    this.review = structuredClone(review);
-    if (
-      Object.keys(review).sort().join(',') !== 'actions,catalog_digest' ||
-      typeof review.catalog_digest !== 'string' ||
-      !hashShape.test(review.catalog_digest) ||
-      !Array.isArray(review.actions) ||
-      !review.actions.length ||
-      review.actions.length > 256
-    )
-      bad();
-    const unique = new Set<string>();
-    for (const r of this.review.actions) {
-      closed(r, 'category,action,kind,policy,digest');
-      if (
-        typeof r.category !== 'string' ||
-        typeof r.action !== 'string' ||
-        typeof r.digest !== 'string' ||
-        !nameShape.test(r.category) ||
-        !nameShape.test(r.action) ||
-        !hashShape.test(r.digest) ||
-        !['read', 'write', 'destructive'].includes(r.kind) ||
-        !['agent', 'approval'].includes(r.policy) ||
-        (r.kind !== 'read' && r.policy !== 'approval') ||
-        unique.has(r.category + '/' + r.action)
-      )
-        bad();
-      unique.add(r.category + '/' + r.action);
-    }
+    this.review = toolkitCatalogReview(review);
     this.client.onerror = () => this.fail();
     this.client.onclose = () => {
       if (!this.closing) this.fail();
