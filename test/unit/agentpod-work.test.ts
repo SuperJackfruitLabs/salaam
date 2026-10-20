@@ -745,6 +745,18 @@ async function knownEffectFailureFixture() {
       offer.operation_id,
       JSON.stringify(result),
     );
+  f.store.db
+    .prepare('UPDATE attempts SET error=? WHERE id=?')
+    .run(
+      'Required control failed: Provider payload exceeds declared per-request token bounds',
+      String(op.attempt_id),
+    );
+  f.store.transaction(() =>
+    f.store.event(f.session, 'work_task.budget_blocked', {
+      task_id: admitted.task_id,
+      reason: 'Provider payload exceeds declared per-request token bounds',
+    }),
+  );
   return x;
 }
 
@@ -819,3 +831,29 @@ test.each(['unknown', 'receipt-drift', 'unconfirmed', 'wrong-budget'])(
     }
   },
 );
+
+test('known-effect retirement retains original budget evidence after later elapsed runtime block', async () => {
+  const { f, admitted } = await knownEffectFailureFixture();
+  try {
+    f.store.db
+      .prepare(
+        "UPDATE task_runtime SET blocked_reason='Task runtime limit reached',started_at=? WHERE task_id=?",
+      )
+      .run(Date.now(), admitted.task_id);
+    const run = () =>
+      f.work.fail(
+        f.binding,
+        'elapsed-failure',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    expect(run).toThrow();
+    f.store.db
+      .prepare('UPDATE task_runtime SET started_at=? WHERE task_id=?')
+      .run(Date.now() - f.tasks.get(admitted.task_id).limits.runtime_ms - 1, admitted.task_id);
+    expect(run().effects).toBe('known_effects_preserved');
+  } finally {
+    f.close();
+  }
+});

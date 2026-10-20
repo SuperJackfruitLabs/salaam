@@ -341,10 +341,23 @@ export class AgentPodWork {
           : undefined;
         const effect = op?.receipt ? JSON.parse(String(op.receipt)) : null;
         const bound = 'Provider payload exceeds declared per-request token bounds';
+        const originalBlock = this.store.db
+          .prepare(
+            "SELECT seq,payload FROM events WHERE session_id=? AND kind='work_task.budget_blocked' AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.reason')=? ORDER BY seq LIMIT 1",
+          )
+          .get(root.session_id, task.id, bound);
+        const runtimeExpired =
+          runtime?.blocked_reason === 'Task runtime limit reached' &&
+          runtime.started_at !== null &&
+          Number.isFinite(Number(runtime.started_at)) &&
+          Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
+
         if (
           task.state !== 'blocked' ||
           !runtime ||
-          runtime.blocked_reason !== bound ||
+          !originalBlock ||
+          (runtime.blocked_reason !== bound && !runtimeExpired) ||
+          attempt?.error !== 'Required control failed: ' + bound ||
           runtime.auto_enabled ||
           runtime.reserved_requests ||
           runtime.reserved_tokens ||
