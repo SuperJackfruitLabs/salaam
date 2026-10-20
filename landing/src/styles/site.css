@@ -89,52 +89,6 @@ button:focus-visible {
 .skip:focus {
   top: 16px;
 }
-.masthead {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 30px 0;
-  border-bottom: 1px solid var(--line);
-}
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  text-decoration: none;
-  font-size: 29px;
-  font-weight: 650;
-  letter-spacing: -0.07em;
-}
-.brand-dot {
-  color: var(--accent);
-}
-nav {
-  display: flex;
-  align-items: center;
-  gap: 30px;
-  font-size: 13px;
-}
-nav a {
-  text-decoration: none;
-}
-nav a:hover {
-  color: var(--accent);
-}
-nav a span {
-  color: var(--muted);
-  margin-left: 5px;
-}
-.theme {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--text);
-  border-radius: 50%;
-  width: 33px;
-  height: 33px;
-  font-size: 21px;
-  display: grid;
-  place-content: center;
-}
 .eyebrow {
   font-family: var(--mono);
   font-size: 10px;
@@ -639,25 +593,6 @@ figcaption {
   background: transparent;
   font: 9px var(--mono);
 }
-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-  padding: 30px 0;
-  border-top: 1px solid var(--line);
-}
-footer .brand {
-  font-size: 22px;
-}
-footer > span {
-  color: var(--muted);
-  font-size: 10px;
-}
-footer nav {
-  font-size: 10px;
-  gap: 22px;
-}
 @media (max-width: 1000px) {
   .wrap {
     width: calc(100% - 48px);
@@ -679,29 +614,10 @@ footer nav {
   .team-heading {
     gap: 45px;
   }
-  footer > span {
-    display: none;
-  }
 }
 @media (max-width: 700px) {
   .wrap {
     width: calc(100% - 40px);
-  }
-  .masthead {
-    padding: 22px 0;
-  }
-  .brand {
-    font-size: 26px;
-  }
-  nav {
-    gap: 18px;
-    font-size: 12px;
-  }
-  .masthead nav a:first-child {
-    display: none;
-  }
-  .masthead nav a[href='#team'] {
-    display: none;
   }
   h1 {
     font-size: clamp(63px, 15vw, 90px);
@@ -748,15 +664,6 @@ footer nav {
   }
   h2 {
     font-size: 46px;
-  }
-  footer {
-    align-items: start;
-  }
-  footer nav {
-    flex-wrap: wrap;
-    justify-content: end;
-    gap: 8px 20px;
-    max-width: 200px;
   }
 }
 /* One content layout for every section below the hero: same container as .hero. */
@@ -894,16 +801,6 @@ footer nav {
   .terminal.playing * {
     animation: none !important;
   }
-}
-
-/* The landing page has no page-wide wrapper: every section brings its own .container, and
-   the masthead and footer share the same 1080px column so every left edge lines up. */
-.page > .masthead,
-.page > footer {
-  max-width: 1080px;
-  margin-inline: auto;
-  padding-inline: 24px;
-  box-sizing: border-box;
 }
 
 /* The demo's status line names the theme it is drawn in. */

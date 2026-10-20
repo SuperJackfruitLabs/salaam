@@ -8,9 +8,12 @@
     "dev": "astro dev --host 127.0.0.1 --port 4341",
     "prebuild": "node ../scripts/sync-installer.mjs",
     "build": "astro build",
-    "preview": "astro preview --host 127.0.0.1 --port 4341"
+    "preview": "astro preview --host 127.0.0.1 --port 4341",
+    "check:frame": "node scripts/check-frame.mjs"
   },
   "dependencies": {
+    "@superjackfruit/frontdoor": "file:vendor/superjackfruit-frontdoor-0.0.2.tgz",
+    "@superjackfruit/vibekit": "file:vendor/superjackfruit-vibekit-0.0.14.tgz",
     "astro": "7.4.0"
   }
 }
