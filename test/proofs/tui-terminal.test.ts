@@ -482,3 +482,52 @@ test('TUI preserves M8 daemon compatibility when health and coding routes lack M
     await f.close();
   }
 }, 30000);
+
+test('slash completion, help and model selection work in a real terminal without becoming model prompts', async () => {
+  const f = await fixture();
+  const client = new OperatorClient(f.dir);
+  let terminal: PtyClient | undefined;
+  try {
+    const id = await client.create(f.dir, false);
+    await ready(f.service, id);
+    await client.close();
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'tui', '--session', id, '--state', f.dir],
+      { state: f.dir, columns: 116, rows: 40 },
+    );
+    await terminal.contains('You have control');
+    await terminal.write('\x1b[200~/help\x1b[201~\r');
+    await terminal.contains('Salaam commands');
+    await terminal.write('\x1b');
+    await until(
+      () => terminal!.screen(),
+      (screen) => !screen.includes('Salaam commands'),
+    );
+    await terminal.write('/mod');
+    await terminal.contains('Choose provider and model');
+    await terminal.write('\t');
+    await terminal.write('\r');
+    await terminal.contains('Provider · applies to a new session');
+    await terminal.write('offline\r');
+    await terminal.contains('New session · scripted');
+    await terminal.write('\r');
+    await until(
+      () => f.service.store.sessions(),
+      (sessions) => sessions.length === 2,
+    );
+    const added = f.service.store.sessions().find((s) => s.id !== id)!;
+    await ready(f.service, added.id);
+    expect(f.service.store.localWorkspace(added.id)).toBe(true);
+    expect(f.service.store.providerRoute(id)?.provider).toBe('salaam-proof');
+    for (const session of f.service.store.sessions()) {
+      expect(f.service.store.snapshot(session.id).submissions).toHaveLength(0);
+      expect(f.service.store.events(session.id, 0).some((e) => e.kind === 'model.admitted')).toBe(
+        false,
+      );
+    }
+  } finally {
+    await terminal?.close();
+    await client.close();
+    await f.close();
+  }
+}, 30000);

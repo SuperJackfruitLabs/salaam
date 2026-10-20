@@ -284,6 +284,25 @@ export class ManagedWork {
     this.mcpController(op).assertSettled(op);
     this.transition(op, 'succeeded', null, JSON.stringify(receipt), 'workspace-content-receipt-v1');
   }
+  localExecutionResultInTransaction(id: string, success: boolean, receipt: unknown): void {
+    const op = this.operation(id);
+    if (
+      !this.store.db.isTransaction ||
+      op.kind !== 'workspace' ||
+      !['dispatching', 'outcome_unknown'].includes(op.state)
+    )
+      throw new ServiceError('operation_scope', 'Not a dispatched local execution');
+    this.mcpController(op).assertSettled(op);
+    this.transition(
+      op,
+      success ? 'succeeded' : 'failed_definite',
+      success
+        ? null
+        : 'Local command ended without success; recorded output and any workspace effects remain available',
+      JSON.stringify(receipt),
+      'local-command-exit-v1',
+    );
+  }
   workspaceUnknownInTransaction(id: string): void {
     const op = this.operation(id);
     if (!this.store.db.isTransaction || op.kind !== 'workspace')

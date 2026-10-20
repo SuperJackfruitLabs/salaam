@@ -810,3 +810,40 @@ test('switching to subscription auth requires an existing capped plan to explici
     await f.close();
   }
 });
+
+test('local subscription model selection retains its uncapped capability on a capped daemon and rejects an explicit cap', async () => {
+  const f = await setup('openai', 'openai-responses', 'tool', true);
+  const selected = { provider: 'openai', model: f.service.supervisor.route.model };
+  const { call } = await import('../../src/transport.js');
+  try {
+    f.options.providerRoute = providerRoute();
+    await f.restart();
+    expect(f.service.supervisor.providerCapabilities().output_token_cap).toBe(true);
+    await expect(
+      call(f.service.socket, '/v1/sessions', {
+        request_id: randomUUID(),
+        cwd: f.dir,
+        local_workspace: true,
+        route: { ...selected, max_tokens: 4096 },
+      }),
+    ).rejects.toThrow('cannot enforce');
+    const session = await call<import('../../src/protocol.js').Session>(
+      f.service.socket,
+      '/v1/sessions',
+      { request_id: randomUUID(), cwd: f.dir, local_workspace: true, route: selected },
+    );
+    await ready(f.service, session.id);
+    expect(f.service.supervisor.inspect(session.id).provider_capabilities?.output_token_cap).toBe(
+      false,
+    );
+    expect(f.service.store.localOutputCap(session.id)).toBe(false);
+    await f.restart();
+    await f.service.supervisor.start(session.id);
+    expect(f.service.supervisor.inspect(session.id).provider_capabilities?.output_token_cap).toBe(
+      false,
+    );
+    expect((await f.stats()).count).toBe(0);
+  } finally {
+    await f.close();
+  }
+}, 30000);

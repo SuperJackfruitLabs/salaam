@@ -23,6 +23,7 @@ export interface OperatorHealth {
     durable_tasks: boolean;
     warning: string | null;
   };
+  local_workspace?: { inspection: boolean; session_routes: boolean; coding?: boolean };
   coding_root?: string | null;
   execution?: { commands?: boolean; available: boolean; backend?: Record<string, unknown> };
 }
@@ -118,11 +119,50 @@ export class OperatorClient extends EventEmitter {
     }
     this.changed();
   }
-  async create(cwd: string, coding: boolean): Promise<string> {
+  async compact(): Promise<void> {
+    const id = this.snapshot?.id;
+    if (!id) throw new Error('Choose a session first.');
+    const state = await call<{ version: number }>(this.socket, `/v1/sessions/${id}/task`);
+    await call(this.socket, `/v1/sessions/${id}/compact`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      expected_version: state.version,
+    });
+    await this.refresh();
+  }
+  async create(
+    cwd: string,
+    coding: boolean,
+    route?: import('./provider-config.js').ProviderRoute,
+    localCoding = false,
+  ): Promise<string> {
+    if (!coding) {
+      const health = await call<OperatorHealth>(this.socket, '/v1/health');
+      if (localCoding && !health.local_workspace?.coding)
+        throw new Error('Restart the daemon to load local coding support.');
+      if (!health.local_workspace?.inspection || !health.local_workspace.session_routes)
+        throw new Error(
+          'This daemon predates local workspace support. Finish its active work, then run sal service stop and reopen sal.',
+        );
+    }
     const session = await call<Session>(this.socket, '/v1/sessions', {
       request_id: randomUUID(),
       cwd,
       coding,
+      ...(!coding
+        ? {
+            local_workspace: true,
+            ...(localCoding ? { local_coding: true } : {}),
+            ...(route
+              ? {
+                  route:
+                    route.provider === 'salaam-proof'
+                      ? { provider: 'offline' }
+                      : { provider: route.provider, model: route.model },
+                }
+              : {}),
+          }
+        : {}),
     });
     await this.open(session.id);
     return session.id;

@@ -43,6 +43,8 @@ export function workerCapabilities(
     ...(childTools?.includes('salaam_mcp') ? ['managed-mcp-v1'] : []),
     ...(childTools?.includes('salaam_toolkit') ? ['managed-toolkit-v1'] : []),
     ...(childTools?.includes('salaam_station') ? ['protected-station-v1'] : []),
+    ...(childTools?.includes('salaam_workspace') ? ['local-workspace-read'] : []),
+    ...(childTools?.includes('salaam_local') ? ['local-coding-reviewed'] : []),
   ];
 }
 export function workerTools(
@@ -53,11 +55,14 @@ export function workerTools(
   mcp = false,
   toolkit = false,
   station = false,
+  local = false,
+  localCoding = false,
 ): string[] {
   return child
     ? [...(childTools ?? ['salaam_probe'])].sort()
     : [
-        ...TOOLS,
+        ...(local ? ['salaam_history', 'salaam_workspace'] : TOOLS),
+        ...(localCoding ? ['salaam_local'] : []),
         ...(effects ? ['salaam_effect'] : []),
         ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),

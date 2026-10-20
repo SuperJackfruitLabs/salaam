@@ -37,6 +37,7 @@ import { resolveProviderAuth } from './provider-auth.js';
 import { bindProviderConfiguration } from './provider-model.js';
 import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
+import { readLocalWorkspace } from './local-workspace.js';
 import type { CodingWork } from './coding.js';
 import type { TaskLimits } from './task-policy.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
@@ -154,6 +155,7 @@ function groupExists(pid: number): boolean {
   }
 }
 export class Supervisor extends EventEmitter {
+  localCoding?: import('./local-coding.js').LocalCoding;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
@@ -168,7 +170,9 @@ export class Supervisor extends EventEmitter {
     const child = this.children?.owned(id);
     return child
       ? (this.store.workerBoundary.view(child.id).binding.agent?.route ?? this.route)
-      : this.route;
+      : this.store.localWorkspace(id)
+        ? (this.store.providerRoute(id) ?? this.route)
+        : this.route;
   }
   async prepareProviderRoute(input: ProviderRoute) {
     const route = structuredClone(input);
@@ -208,6 +212,8 @@ export class Supervisor extends EventEmitter {
       !!this.mcp,
       !!this.toolkit,
       !!this.station,
+      this.store.localWorkspace(id),
+      this.store.localCoding(id),
     );
   }
   private childBoundary(id: string, epoch: number) {
@@ -419,6 +425,8 @@ export class Supervisor extends EventEmitter {
         worker_binding: this.childBoundary(id, epoch),
         route: route,
         coding: this.codingBinding(id),
+        local: this.store.localWorkspace(id),
+        localCoding: this.store.localCoding(id),
         ...(worker.mcp ? { mcp: worker.mcp } : {}),
         ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
         ...(worker.station ? { station: worker.station } : {}),
@@ -785,7 +793,7 @@ export class Supervisor extends EventEmitter {
         );
       }
       if (method === 'provider.auth') {
-        if (!this.children?.owned(id)) {
+        if (!this.children?.owned(id) && !this.store.localWorkspace(id)) {
           const auth = await this.providerAuth();
           if (canonical(this.route) !== canonical(route)) throw new Error('Provider route changed');
           w.providerOutputCap = this.outputCap;
@@ -795,7 +803,7 @@ export class Supervisor extends EventEmitter {
         const prepared = await this.prepareProviderRoute(route);
         const expectedCap = this.children?.owned(id)
           ? this.store.workerBoundary.view(this.children.owned(id)!.id).binding.agent?.output_cap
-          : this.outputCap;
+          : (this.store.localOutputCap(id) ?? this.outputCap);
         if (
           canonical(prepared.route) !== canonical(route) ||
           (expectedCap ?? this.outputCap) !== prepared.output_cap
@@ -922,6 +930,47 @@ export class Supervisor extends EventEmitter {
         if (method === 'station.run') return this.station.run(c.id);
         if (method === 'station.status') return this.station.view(c.id);
         throw new ServiceError('invalid_field', 'Unsupported station method');
+      }
+      if (method.startsWith('local.') && method !== 'local.read') {
+        if (
+          !this.localCoding ||
+          !this.store.localCoding(id) ||
+          this.children?.owned(id) ||
+          !w.attempt
+        )
+          throw new ServiceError('local_denied', 'Local coding is not admitted', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'local.prepare')
+          return this.localCoding.prepare(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            object(body.args),
+          );
+        const c = this.localCoding.get(string(body.call_id, 'call_id'));
+        if (c.session_id !== id || c.epoch !== w.epoch || c.attempt_id !== w.attempt)
+          throw new ServiceError('local_scope', 'Operation belongs to another invocation', 403);
+        if (method === 'local.run') return this.localCoding.run(c.id);
+        if (method === 'local.status') return this.localCoding.view(c.id);
+        throw new ServiceError('invalid_field', 'Unsupported local method');
+      }
+      if (method === 'local.read') {
+        if (!this.store.localWorkspace(id) || this.children?.owned(id) || !w.attempt)
+          throw new ServiceError('workspace_denied', 'Local workspace is not admitted', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        this.store.taskGrantCheck?.(id);
+        const args = object(body.args);
+        const result = readLocalWorkspace(this.store.session(id).cwd, args);
+        this.store.transaction(() =>
+          this.store.event(id, 'workspace.read', {
+            attempt_id: w.attempt,
+            tool_call_id: string(body.tool_call_id, 'tool_call_id', 512),
+            argument_digest: digest(args),
+            result_digest: digest(result),
+          }),
+        );
+        return result;
       }
       if (method === 'coding.files' || method === 'coding.command') {
         if (!this.coding || !this.codingBinding(id) || !w.attempt)
@@ -1176,15 +1225,19 @@ export class Supervisor extends EventEmitter {
           'binary_file',
           'line_limit',
           'invalid_field',
+          'local_busy',
+          'workspace_read_failed',
           'unsafe_path',
           'request_conflict',
         ].includes(error.code)
       )
         throw error;
       if (
-        method.startsWith('coding.') &&
+        (method.startsWith('coding.') || method.startsWith('local.')) &&
         error instanceof ServiceError &&
         [
+          'local_busy',
+          'workspace_read_failed',
           'unsafe_path',
           'workspace_changed',
           'workspace_busy',
@@ -1244,7 +1297,9 @@ export class Supervisor extends EventEmitter {
     const child = this.children?.owned(id);
     const cap = child
       ? this.store.workerBoundary.view(child.id).binding.agent?.output_cap
-      : undefined;
+      : this.store.localWorkspace(id)
+        ? this.store.localOutputCap(id)
+        : undefined;
     const state = {
       ...this.store.session(id),
       provider_route: this.store.providerRoute(id) ?? undefined,

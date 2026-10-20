@@ -69,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 26) {
+    if (version > 27) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -322,6 +322,12 @@ export class Store {
           CREATE TABLE station_calls(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('patch','check','read')),input_digest TEXT NOT NULL,root_digest TEXT NOT NULL,configuration_digest TEXT NOT NULL,args_json TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','returned','failed','outcome_unknown','cancelled')),revision INTEGER NOT NULL DEFAULT 1,result_json TEXT,helper_pid INTEGER,helper_identity TEXT,helper_state TEXT NOT NULL DEFAULT 'none',helper_stop_json TEXT,UNIQUE(session_id,worker_epoch,tool_call_id));
           CREATE TABLE station_units(id TEXT PRIMARY KEY NOT NULL,session_id TEXT REFERENCES sessions(id),call_id TEXT UNIQUE REFERENCES station_calls(id),context_digest TEXT NOT NULL,config_json TEXT NOT NULL,snapshot_path TEXT NOT NULL,output_path TEXT NOT NULL,unit_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','launching','running','unconfirmed','stopped')),stop_json TEXT);
           PRAGMA user_version=26; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 27
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE local_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),epoch INTEGER NOT NULL,tool_call TEXT NOT NULL,input_digest TEXT NOT NULL,root TEXT NOT NULL,args TEXT NOT NULL,operation_id TEXT NOT NULL UNIQUE REFERENCES operations(id),state TEXT NOT NULL,result TEXT,pid INTEGER,identity TEXT,UNIQUE(session_id,epoch,tool_call));
+          PRAGMA user_version=27; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -409,20 +415,86 @@ export class Store {
       );
     return JSON.parse(prior.response) as T;
   }
-  create(cwd: string, requestId: string, coding = false): Session {
+  create(
+    cwd: string,
+    requestId: string,
+    coding = false,
+    local?: {
+      workspace: true;
+      route: ProviderRoute;
+      requestedRoute?: ProviderRoute;
+      outputCap?: boolean;
+      coding?: boolean;
+    },
+  ): Session {
     return this.request(
       'local-operator',
       requestId,
-      { kind: 'create', cwd, ...(coding ? { coding: true } : {}) },
+      {
+        kind: 'create',
+        cwd,
+        ...(coding ? { coding: true } : {}),
+        ...(local
+          ? {
+              local: {
+                workspace: true,
+                route: local.requestedRoute ?? local.route,
+                ...(local.coding ? { coding: true } : {}),
+              },
+            }
+          : {}),
+      },
       () => {
         const id = randomUUID();
         this.db
           .prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)')
           .run(id, cwd, id);
-        this.event(id, 'session.created', { cwd }, requestId);
+        this.event(
+          id,
+          'session.created',
+          {
+            cwd,
+            ...(local
+              ? {
+                  local_workspace: true,
+                  local_coding: local.coding === true,
+                  output_cap: local.outputCap ?? true,
+                }
+              : {}),
+          },
+          requestId,
+        );
+        if (local) {
+          this.db
+            .prepare('INSERT INTO session_routes VALUES (?,?)')
+            .run(id, canonical(local.route));
+          this.event(id, 'provider.bound', { route: local.route });
+        }
         return this.session(id);
       },
     );
+  }
+  localCoding(id: string): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='session.created' AND json_extract(payload,'$.local_coding')=1",
+      )
+      .get(id);
+  }
+  localWorkspace(id: string): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='session.created' AND json_extract(payload,'$.local_workspace')=1",
+      )
+      .get(id);
+  }
+  localOutputCap(id: string): boolean | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT json_extract(payload,'$.output_cap') AS cap FROM events WHERE session_id=? AND kind='session.created' AND json_extract(payload,'$.local_workspace')=1",
+      )
+      .get(id);
+    return row ? row.cap === 1 : undefined;
   }
   session(id: string): Session {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id=?').get(id) as

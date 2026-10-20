@@ -215,3 +215,33 @@ test('mixed team stays visible before long verification history, with compact cu
   expect(text).toContain('Task succeeded · current verification');
   expect(text).not.toContain('verbose-private-receipt-field');
 });
+
+test('slash help is local even without a session, and invalid slash input is retained', async () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-slash-proof' });
+  const internal = app as unknown as { submit(): Promise<void>; modal?: unknown };
+  let submitted = 0;
+  app.client.submit = async () => {
+    submitted++;
+    return 'never';
+  };
+  app.editor.setText('/help');
+  await internal.submit();
+  expect(submitted).toBe(0);
+  expect(internal.modal).toBeTruthy();
+  expect(app.editor.getExpandedText()).toBe('');
+  app.editor.setText('/made-up');
+  await expect(internal.submit()).rejects.toThrow('Unknown command');
+  expect(app.editor.getExpandedText()).toBe('/made-up');
+  expect(submitted).toBe(0);
+});
+
+test('Tab completes slash input instead of switching views', () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-tab-proof' });
+  const internal = app as unknown as { input(key: string): unknown };
+  app.editor.setText('/mod');
+  expect(internal.input('\t')).toBeUndefined();
+  expect(app.view.tab).toBe('conversation');
+  app.editor.setText('');
+  expect(internal.input('\t')).toEqual({ consume: true });
+  expect(app.view.tab).toBe('changes');
+});

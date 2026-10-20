@@ -1,5 +1,6 @@
 import {
   Editor,
+  CombinedAutocompleteProvider,
   ProcessTerminal,
   TuiAltScreen,
   ScrollView,
@@ -28,6 +29,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { ROOT } from './config.js';
+import { PI_PROVIDERS, providerRoute, type ProviderRoute } from './provider-config.js';
+import { SLASH_COMMANDS, slashCommand } from './tui-commands.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
 import { OperatorClient } from './tui-client.js';
@@ -129,6 +132,7 @@ export class SalaamApp {
   readonly document: DocumentView;
   readonly scroll: ScrollView;
   private rail = true;
+  private selectedRoute?: ProviderRoute;
   private modal?: OverlayHandle;
   private finish!: () => void;
   private readonly done: Promise<void>;
@@ -176,6 +180,9 @@ export class SalaamApp {
     );
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
+    this.editor.setAutocompleteProvider(
+      new CombinedAutocompleteProvider([...SLASH_COMMANDS], options.cwd ?? process.cwd(), null),
+    );
     this.editor.onChange = () => {
       const text = this.editor.getExpandedText(),
         clean = safeText(text);
@@ -211,7 +218,9 @@ export class SalaamApp {
           this.view.continuation
             ? 'Continue interrupted work · ' + shortId(this.view.continuation)
             : this.client.controlling
-              ? 'Ask Salaam to build, fix, or explore…'
+              ? this.client.snapshot?.capabilities.includes('local-workspace-read')
+                ? 'Ask about this project · /model · /help'
+                : 'Ask Salaam to build, fix, or explore…'
               : 'Observing · take control to write',
           this.view.continuation ? 'amber' : 'muted',
         ),
@@ -286,6 +295,11 @@ export class SalaamApp {
       return { consume: true };
     }
     if (this.modal) return;
+    if (
+      this.editor.isShowingAutocomplete() &&
+      (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
+    )
+      return;
     if (matchesKey(data, 'enter')) {
       void this.execute(() => this.submit());
       return { consume: true };
@@ -314,6 +328,8 @@ export class SalaamApp {
         else action();
         return { consume: true };
       }
+    if (matchesKey(data, 'tab') && this.editor.getExpandedText().trimStart().startsWith('/'))
+      return;
     if (matchesKey(data, 'tab')) {
       const names: ViewTab[] = ['conversation', 'changes', 'commands', 'context'];
       this.setTab(names[(names.indexOf(this.view.tab) + 1) % names.length]!);
@@ -410,10 +426,12 @@ export class SalaamApp {
   private async startService(): Promise<void> {
     await this.client.list();
     if (this.client.connection === 'connected') return;
-    const provider =
-      existsSync(credentialPath()) || existsSync(credentialPath() + '.json')
-        ? 'anthropic'
-        : 'offline';
+    if (
+      !this.selectedRoute &&
+      (existsSync(credentialPath()) || existsSync(credentialPath() + '.json'))
+    )
+      this.selectedRoute = providerRoute('anthropic');
+    const provider = 'offline';
     await promisify(execFile)(
       process.execPath,
       [
@@ -435,20 +453,103 @@ export class SalaamApp {
     if (this.client.connection === 'offline')
       throw new Error('Service did not become available. Inspect sal service status.');
   }
-  private async newSession(): Promise<void> {
+  private modelPicker(): void {
+    this.choice(
+      'Provider · applies to a new session',
+      [
+        {
+          value: 'offline',
+          label: 'Offline demo',
+          description: 'Scripted fixture, not an AI model',
+        },
+        ...PI_PROVIDERS.filter((p) => p.getModels().length).map((p) => ({
+          value: p.id,
+          label: p.name,
+          description: p.id,
+        })),
+      ],
+      (provider) => {
+        if (provider === 'offline') {
+          this.selectedRoute = providerRoute();
+          void this.execute(() => this.newSession());
+          return;
+        }
+        const catalog = PI_PROVIDERS.find((p) => p.id === provider)!;
+        this.choice(
+          'Model · ' + catalog.name,
+          catalog.getModels().map((m) => ({
+            value: m.id,
+            label: m.name,
+            description: m.id + ' · ' + m.contextWindow + ' context tokens',
+          })),
+          (model) => {
+            this.selectedRoute = providerRoute(provider, model);
+            void this.execute(() => this.newSession());
+          },
+        );
+      },
+    );
+  }
+  private async runSlashCommand(command: string): Promise<void> {
+    if (command === 'model') {
+      this.modelPicker();
+      return;
+    }
+    if (command === 'new' || command === 'coding') {
+      await this.newSession(command === 'coding');
+      return;
+    }
+    if (command === 'sessions') {
+      await this.sessions();
+      return;
+    }
+    if (command === 'compact') {
+      await this.client.compact();
+      return;
+    }
+    const text =
+      command === 'help'
+        ? SLASH_COMMANDS.map((c) => '/' + c.name + ' — ' + c.description).join('\n') +
+          '\n\nModel choices create a new session; existing work keeps its original model. Configure credentials with sal auth login PROVIDER or sal auth set PROVIDER.'
+        : JSON.stringify(
+            {
+              connection: this.client.connection,
+              session: this.client.snapshot?.id,
+              workspace: this.client.snapshot?.cwd,
+              route: this.client.snapshot?.provider_route ?? this.client.health?.provider_route,
+              capabilities: this.client.snapshot?.capabilities,
+            },
+            null,
+            2,
+          );
+    this.showModal(
+      new TextModal(
+        command === 'help' ? 'Salaam commands' : 'Session status',
+        text,
+        this.view.theme,
+        () => this.terminal.rows,
+        () => this.tui.requestRender(),
+        () => this.closeModal(),
+      ),
+    );
+  }
+  private async newSession(localCoding = false): Promise<void> {
     await this.startService();
     this.showModal(
       new FormModal(
-        'New Salaam session',
-        this.options.cwd ?? process.cwd(),
+        (localCoding
+          ? 'New coding session · reviewed edits and unsandboxed commands · '
+          : 'New session · ') +
+          (this.selectedRoute?.model ?? this.client.health?.provider_route.model ?? 'default'),
+        this.options.cwd ?? this.client.snapshot?.cwd ?? process.cwd(),
         this.view.theme,
-        !!this.client.health?.coding_root,
+        !localCoding && !!this.client.health?.coding_root,
         () => this.tui.requestRender(),
         () => this.closeModal(),
         (cwd, coding) => {
           this.closeModal();
           void this.execute(async () => {
-            await this.client.create(resolve(cwd), coding);
+            await this.client.create(resolve(cwd), coding, this.selectedRoute, localCoding);
             this.setTab('conversation');
           });
         },
@@ -468,7 +569,10 @@ export class SalaamApp {
         })),
       ],
       (value) => {
-        if (value === 'new') void this.execute(() => this.newSession());
+        if (value === 'model') this.modelPicker();
+        else if (value === 'help') void this.execute(() => this.runSlashCommand('help'));
+        else if (value === 'coding') void this.execute(() => this.newSession(true));
+        else if (value === 'new') void this.execute(() => this.newSession());
         else
           void this.execute(async () => {
             await this.client.open(value, {
@@ -485,6 +589,13 @@ export class SalaamApp {
       session = this.client.snapshot?.id,
       continuation = this.view.continuation;
     if (!text.trim()) return;
+    const command = slashCommand(text);
+    if (command) {
+      await this.runSlashCommand(command);
+      if (this.editor.getExpandedText() === text) this.editor.setText('');
+      if (session) this.drafts.delete(session);
+      return;
+    }
     if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
     if (Buffer.byteLength(text) > 65536)
       throw new Error('The composer accepts at most 64 KiB. Use an artifact for longer input.');
@@ -1187,7 +1298,14 @@ export class SalaamApp {
         label: 'Operator inbox',
         description: 'Shared durable attention and results',
       },
+      { value: 'model', label: 'Choose model and provider', description: '/model · new session' },
+      { value: 'help', label: 'Slash commands', description: '/help' },
       { value: 'new', label: 'New session', description: 'ctrl+n' },
+      {
+        value: 'coding',
+        label: 'New local coding session',
+        description: '/coding · reviewed edits and local commands',
+      },
       { value: 'sessions', label: 'Switch session', description: 'ctrl+p' },
       { value: 'conversation', label: 'Conversation', description: 'Messages and live progress' },
       {
@@ -1278,7 +1396,10 @@ export class SalaamApp {
         this.setTab(value as ViewTab);
         return;
       }
-      if (value === 'new') void this.execute(() => this.newSession());
+      if (value === 'model') this.modelPicker();
+      else if (value === 'help') void this.execute(() => this.runSlashCommand('help'));
+      else if (value === 'coding') void this.execute(() => this.newSession(true));
+      else if (value === 'new') void this.execute(() => this.newSession());
       else if (value === 'task') this.taskActions();
       else if (value === 'jobs') this.jobActions();
       else if (value === 'schedules') void this.execute(() => this.schedules());

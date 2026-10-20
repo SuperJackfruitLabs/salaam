@@ -30,6 +30,6 @@ Without `--state`, clients use `SALAAM_STATE_DIR` or `~/.local/state/salaam`. Ke
 the same path for one service. Short paths avoid macOS Unix-socket limits.
 The daemon detaches by default; `--foreground` keeps it under an external supervisor.
 
-The default session has no live shell or filesystem tool. Next, configure
-[Claude](providers.md), enable [coding](coding.md), or read [terminal controls](tui.md).
+The offline CLI example above uses the managed probe profile. For actual local file inspection, configure
+[Claude](providers.md), open `sal` and create a session (or use `sal session create --local`). Local inspection needs no Docker and cannot edit or run commands. To write code, enable [coding](coding.md), or read [terminal controls](tui.md).
 Creation and readiness make no model request.

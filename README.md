@@ -27,6 +27,11 @@ Salaam runs a service on your machine or execution host. A pinned Pi worker owns
 the conversation; Salaam owns the durable task and operation records. The terminal,
 SSH and ACP editor clients all connect to that same service.
 
+New local TUI sessions can list, read and search the selected workspace on macOS
+and Linux without Docker. Use `/model` to choose a provider and model for a new
+session, `/sessions` to reconnect, and `/help` for slash commands. Local inspection
+is read-only; guarded coding and command execution use a separate profile.
+
 The terminal has **Night** and **Paper** themes, a multiline composer, reviewed
 changes, command logs, approval review and an operator inbox.
 
@@ -146,3 +151,5 @@ Published assets are never silently replaced.
 
 See [release process](docs/releases.md), [site maintenance](docs/sites.md),
 [architecture](docs/architecture.md), and [milestones](docs/milestones.md).
+
+For local coding, use `/coding` in the TUI. Each proposed edit or command is reviewed before execution. Commands run as your OS user without an OS sandbox; read-only sessions keep their existing permissions. See [local coding](docs/tui.md#local-coding) for limits and recovery behavior.

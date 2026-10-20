@@ -9,22 +9,39 @@ sal attach SESSION_ID --observe
 sal attach SESSION_ID --takeover
 ```
 
+New sessions created in the TUI can inspect the selected local workspace on macOS and Linux without Docker. They can list, read and search actual files. The local inspection profile cannot edit files or execute commands. Hidden paths, credentials/secrets directories, dependency/build directories, symlinks, hard-linked files and database/key files are excluded. Reads are bounded to 256 KiB per file and 16 KiB per page; searches report truncation. Use a narrower path when a scan reaches its limit.
+
+Type `/` to see command completions. Tab or Enter accepts a completion; Enter then runs the command. Slash commands are handled locally and are never submitted as model prompts. Unknown commands remain in the composer with an error.
+
+| Command     | Action                                                    |
+| ----------- | --------------------------------------------------------- |
+| `/help`     | Show supported commands                                   |
+| `/model`    | Select a provider and model, then create a new session    |
+| `/new`      | Create a session in a workspace                           |
+| `/sessions` | Switch or resume a saved session                          |
+| `/status`   | Show the active session's route and capabilities          |
+| `/compact`  | Compact an idle session using its durable task checkpoint |
+
+Model selection keeps existing sessions and running work intact. Each local session retains its provider/model across daemon restarts. Configure authentication using `sal auth login PROVIDER` or `sal auth set PROVIDER`; choosing a catalog model does not establish account access. The header shows the selected session's model. Compaction preserves the saved transcript for history retrieval; its checkpoint is not a model-generated conversation summary.
+
+Older sessions retain their original capabilities. Create a new local session to gain workspace inspection. If the daemon predates this feature, finish active work, run `sal service stop`, and reopen `sal` to load the updated executable.
+
 The interface has two native palettes, **Night** and **Paper**, with jade accents, quiet surfaces, readable tool outcomes and no icon-font requirement. Choose `--theme night|paper` or switch from the action menu. `NO_COLOR=1` preserves the layout without color. Narrow terminals hide the workspace rail automatically; Ctrl+B toggles it on wide terminals. The terminal title and application chrome identify Salaam.
 
-| Key                                    | Action                                                                     |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| Enter                                  | Save the exact composer text to the durable outbox, then deliver it        |
-| Alt+Enter / Ctrl+J                     | Insert a newline; Shift+Enter also works with supported keyboard protocols |
-| Ctrl+K                                 | Search actions by visible name, description or ID                          |
-| Ctrl+P / Ctrl+N                        | Pick an existing session / create a new session                            |
-| Ctrl+O                                 | Review operation-bound approvals                                           |
-| Ctrl+G / Ctrl+T                        | Open checked changes / command results                                     |
-| Tab                                    | Cycle Conversation, Changes, Commands and Context                          |
-| PageUp / PageDown                      | Scroll the body; mouse wheel is also supported                             |
-| Ctrl+R                                 | Refresh service state and the current diff                                 |
-| Ctrl+E                                 | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                    |
-| F1                                     | Keyboard help                                                              |
-| Ctrl+C / Ctrl+D with an empty composer | Detach and leave work running                                              |
+| Key                                    | Action                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| Enter                                  | Save the exact composer text to the durable outbox, then deliver it               |
+| Alt+Enter / Ctrl+J                     | Insert a newline; Shift+Enter also works with supported keyboard protocols        |
+| Ctrl+K                                 | Search actions by visible name, description or ID                                 |
+| Ctrl+P / Ctrl+N                        | Pick an existing session / create a new session                                   |
+| Ctrl+O                                 | Review operation-bound approvals                                                  |
+| Ctrl+G / Ctrl+T                        | Open checked changes / command results                                            |
+| Tab                                    | Complete slash input, otherwise cycle Conversation, Changes, Commands and Context |
+| PageUp / PageDown                      | Scroll the body; mouse wheel is also supported                                    |
+| Ctrl+R                                 | Refresh service state and the current diff                                        |
+| Ctrl+E                                 | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                           |
+| F1                                     | Keyboard help                                                                     |
+| Ctrl+C / Ctrl+D with an empty composer | Detach and leave work running                                                     |
 
 The editor accepts multiline Unicode paste, keeps per-session drafts in memory, and offers accepted-input history. Unsubmitted drafts are not persisted after process loss. Quoted editor executable paths and arguments are supported; shell expansion is absent. The external editor gets normal terminal modes, a private temporary prompt file and a 64 KiB result limit. Terminal modes, alternate screen, bracketed paste and title are restored on normal detach and handled signals. A forced process kill cannot run terminal cleanup; open a new attachment to recover.
 
@@ -64,3 +81,13 @@ Ctrl+K → **Task actions** creates or revises a JSON plan, starts/continues/rev
 Ctrl+K → **Job actions** binds the current unstarted checked task to a one-shot definition, reviews its complete binding, submits a stable occurrence key, or cancels owned work. Context shows the shared job/occurrence IDs and state. Ctrl+Home/End jumps to the start/end of long pages. Hard terminal loss preserves admitted work; an observer can inspect the same occurrence after reconnect. A repeated trigger cannot restart an interrupted attempt. See [jobs](jobs.md) for authority, outbox and recovery semantics.
 
 Ctrl+K also exposes **Recurring jobs and schedules** and the global **Operator inbox**. Recurring templates capture a checked plan/workspace; each admitted occurrence has fresh work identities. Schedule revisions cannot change the template, and duplicate keys never dispatch another run. Inbox acknowledgement clears only the reviewed attention revision and never decides a permission. ACP shares the same records through Salaam extension methods/metadata.
+
+## Local coding
+
+Use `/coding` (or **New local coding session** in the action palette) to create a session with reviewed edits and native shell commands. Existing read-only sessions retain their permissions. The CLI equivalent is `sal session create --local-coding --cwd /absolute/project/path`.
+
+The model reads a file and supplies its content hash with an edit. Review shows the old and replacement contents for each file; approving binds that exact proposal. Salaam rechecks file contents immediately before each replacement and refuses stale proposals. This is optimistic local editing, not a filesystem transaction against other processes writing at the same instant. Up to eight files can be reviewed together, within a 32 KiB review limit. Individual file replacement is atomic; a failure between files is recorded as uncertain, with applied paths retained. There is no automatic rollback over subsequent human changes.
+
+Commands run as your local OS user, **without an OS sandbox**. The approval shows the exact command, working directory and timeout. They can access the user's files and network, even outside the project. Salaam supplies a minimal environment rather than inheriting daemon API keys. Commands have a two-minute maximum runtime and 64 KiB captured-output limit. Foreground process groups are cancelled with the attempt; deliberately daemonized programs are outside this process-group guarantee. Use foreground commands rather than starting background services.
+
+Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The local tabs show recorded proposals and outcomes, not a live Git diff. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
