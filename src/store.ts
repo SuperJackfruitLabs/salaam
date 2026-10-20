@@ -69,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 28) {
+    if (version > 29) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -328,6 +328,13 @@ export class Store {
         this.db.exec(`BEGIN IMMEDIATE;
           CREATE TABLE local_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),epoch INTEGER NOT NULL,tool_call TEXT NOT NULL,input_digest TEXT NOT NULL,root TEXT NOT NULL,args TEXT NOT NULL,operation_id TEXT NOT NULL UNIQUE REFERENCES operations(id),state TEXT NOT NULL,result TEXT,pid INTEGER,identity TEXT,UNIQUE(session_id,epoch,tool_call));
           PRAGMA user_version=27; COMMIT;`);
+      // Strict work is a lazy migration: a schema29 database must retain its mapping.
+      if (version === 29)
+        this.db
+          .prepare(
+            'SELECT run_key,session_id,task_id,request_id,admission_json,verification_json FROM agentpod_work LIMIT 0',
+          )
+          .all();
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
