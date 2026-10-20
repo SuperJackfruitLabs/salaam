@@ -282,7 +282,7 @@ belongs to that turn; cancelling an older completed instruction cannot stop a
 later worker or its broker. Root revocation still stops all root resources.
 
 A pending receipt preserves the original invocation and deadline. A denial before
-dispatch is definite. A result after a spent write grant remains uncertain until
+dispatch is definite. A result after a spent permission grant remains uncertain until
 independent inspection/resolution; a protocol return never verifies product work.
 Uncertain reads also fence root renewal and new work. Turn cancellation reports
 their call IDs as unconfirmed resources after local process stop and daemon reopen.
@@ -320,5 +320,55 @@ even a human `succeeded` verdict retains explicit operator-attestation provenanc
 and is never inferred from a native acknowledgement or protocol return. Historical
 settlement uses a separate role that cannot grant execution permission, including
 after execution-owner disposal. This adds no expired-authority execution bypass
-and never edits a Go journal. Native model tools and station coding remain disabled
-until their separate admission boundaries are connected and proven.
+and never edits a Go journal. Native model tools require the explicit trusted
+service assignment described below. Station coding has its own pending boundary.
+
+### Native SDK catalogue consumer
+
+`ToolkitMcp` consumes an already admitted and owned transport. Its review pins the
+complete four-meta-tool catalogue plus each allowed action's definition, native
+kind and policy. Readiness checks the actual managed producer's bounded-grant,
+native-kind and lifecycle-control capabilities, rejects legacy/paginated/drifting
+catalogues, and compiles argument schemas from the pinned native parameter detail.
+Only reviewed definitions enter progressive context; discovery does not grant
+execution. Client arguments are validated before native delivery.
+
+Invocation metadata comes from the immutable owner request. Replies must match
+its native invocation ID and request digest. The consumer validates the nested
+HTTP status/error/body and the outer MCP error flag together: a received response,
+pending human decision, denial or unknown outcome cannot masquerade as verified
+work. Required protocol failures close the owned transport and notify the parent
+to invalidate readiness.
+
+### Native daemon and model integration
+
+The internal `ServiceOptions.managedToolkit` assignment installs `ToolkitWork`.
+It materializes a fresh private process manifest, durably registers its owner and
+cleanup delegation, and checks the actual catalogue before Pi launches. Concurrent
+readiness requests share that owned process. The worker receives only root,
+profile, configuration and catalogue fingerprints. Private paths, passphrases,
+credential stores and callback keys remain in the daemon/broker boundary.
+
+Only a configured root worker gets `salaam_toolkit` and the observed
+`managed-toolkit-v1` readiness capability. Discovery is progressive; call arguments
+cannot supply a root, invocation ID, deadline or callback credential. Each model
+tool call binds its worker epoch and attempt to one durable native invocation.
+Saved calls are checked before fresh authority; an uncertain call cannot dispatch
+again after reconnect or daemon recovery. The original invocation deadline is
+clamped to the authority lease, and later lease renewal cannot extend it.
+
+The exact human approval precedes delivery for writes. Delivery spends no effect
+permission; only the native broker's authenticated post-credential callback spends
+one grant. The callback rechecks task/job controls after credential admission;
+an earlier grant cannot authorize dispatch after those controls end. Local denial
+or expiry before dispatch is definite and produces a tool
+failure. HTTP failures retain their nested error status. Protocol drift invalidates
+worker readiness and preserves uncertainty after dispatch. Even a write's 2xx
+response remains an opaque product outcome requiring independent reconciliation
+or explicit operator attestation.
+
+These paths have actual offline Pi and compiled native-broker conformance proofs.
+The current assignment is a trusted internal service seam, with no ACP registration
+or arbitrary CLI command path. Private host/CLI manifest delivery, protected station
+workspace execution and the real scoped Library/Claude canary remain required
+before native station capability rollout.

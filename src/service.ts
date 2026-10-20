@@ -43,11 +43,14 @@ import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
+import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
   agentpodConfig?: string;
   managedMcp?: { config: string; profile_digest: string };
+  /** Internal trusted host seam; never accepted from ACP or a worker. */
+  managedToolkit?: ToolkitWorkConfig;
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
   a2aConfig?: string;
@@ -73,6 +76,7 @@ export class SalaamService {
   readonly toolkitOwners: ToolkitOwners;
   readonly toolkitResolutions: ToolkitResolutions;
   readonly mcp?: McpWork;
+  readonly toolkit?: ToolkitWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
@@ -118,6 +122,8 @@ export class SalaamService {
     this.stateDir = resolve(options.stateDir);
     if (options.managedMcp && !options.agentpodConfig)
       throw Error('Managed MCP requires reviewed AgentPod authority pins');
+    if (options.managedToolkit && !options.agentpodConfig)
+      throw Error('Native Toolkit requires reviewed AgentPod authority pins');
     if (
       options.agentpodConfig &&
       (options.codingRoot ||
@@ -362,6 +368,24 @@ export class SalaamService {
           this.toolkitOwners,
         );
         this.store.nativeResourceCheck = (session) => this.toolkitResources.assertSession(session);
+        if (options.managedToolkit) {
+          if (!this.agentpod)
+            throw new Error('Native Toolkit requires AgentPod execution authority');
+          this.toolkit = new ToolkitWork(
+            this.store,
+            this.managed,
+            this.agentpod,
+            this.toolkitResources,
+            this.toolkitOwners,
+            options.managedToolkit,
+            {
+              assertActive: (session, epoch, attempt) =>
+                this.supervisor.assertActive(session, epoch, attempt),
+              failed: (session, error) => this.supervisor.failControl(session, error),
+            },
+          );
+          this.supervisor.toolkit = this.toolkit;
+        }
         if (options.managedMcp) {
           this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
             admission: mcpAdmission!,
@@ -379,6 +403,7 @@ export class SalaamService {
           async (attempt) => {
             this.managed.abortCancelled(attempt);
             this.mcp?.abortAttempt(attempt);
+            this.toolkit?.abortAttempt(attempt);
             const stopped = await Promise.allSettled([
               this.toolkitResources.stopAttempt(attempt),
               (async () => {
@@ -540,10 +565,12 @@ export class SalaamService {
     const jobs: Promise<unknown>[] = receipt.attempt_ids.map(async (attempt) => {
       this.managed.abortCancelled(attempt);
       this.mcp?.abortAttempt(attempt);
+      this.toolkit?.abortAttempt(attempt);
     });
     for (const session of receipt.session_ids) {
       jobs.push(this.toolkitResources.stopSession(session));
       if (this.mcp) jobs.push(this.mcp.stopSession(session));
+      if (this.toolkit) jobs.push(this.toolkit.stopSession(session));
       jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
       jobs.push(
         Promise.resolve().then(async () => {
@@ -1273,6 +1300,9 @@ export class SalaamService {
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
           managed_mcp: this.mcp
             ? { profile_digest: this.mcp.options.admission.profileDigest }
+            : null,
+          managed_toolkit: this.toolkit
+            ? { configuration_digest: this.toolkit.configurationDigest }
             : null,
           service: 'healthy',
           a2a: {
@@ -2085,6 +2115,7 @@ export class SalaamService {
     await attempt(() => this.external.close());
     await attempt(() => this.coding.close());
     await attempt(() => this.mcp?.close());
+    await attempt(() => this.toolkit?.close());
     await attempt(() => this.toolkitResources.close());
     await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());

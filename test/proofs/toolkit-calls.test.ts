@@ -153,6 +153,34 @@ async function fixture(read = false) {
   };
 }
 
+for (const read of [true, false])
+  test(
+    'native ' +
+      (read ? 'read' : 'reviewed write') +
+      ' checks fresh task grants after credential admission',
+    async () => {
+      const f = await fixture(read);
+      try {
+        const call = f.prepare();
+        if (call.operation_id) f.approve(call.id);
+        f.calls.deliver(call.id);
+        expect(f.calls.verify(f.spec.id, 'admit', f.request).decision).toBe('allowed');
+        f.store.taskGrantCheck = () => {
+          throw Error('Synthetic task grant ended after admit');
+        };
+        expect(() => f.calls.verify(f.spec.id, 'dispatch', f.request)).toThrow(/task grant ended/);
+        expect(f.calls.get(call.id).state).toBe('delivered');
+        if (call.operation_id)
+          expect(f.managed.operation(call.operation_id).state).toBe('prepared');
+        f.store.taskGrantCheck = () => {};
+        expect(f.calls.verify(f.spec.id, 'dispatch', f.request).decision).toBe('allowed');
+        expect(f.calls.verify(f.spec.id, 'dispatch', f.request).decision).toBe('denied');
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
 test('delivery and credential admission do not consume the exact human-bound native permission; dispatch consumes once', async () => {
   const f = await fixture();
   try {

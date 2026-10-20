@@ -41,6 +41,7 @@ export function workerCapabilities(
     ...(childTools?.includes('salaam_findings') ? ['structured-findings'] : []),
     ...(childTools?.includes('salaam_team') ? ['durable-team-messages'] : []),
     ...(childTools?.includes('salaam_mcp') ? ['managed-mcp-v1'] : []),
+    ...(childTools?.includes('salaam_toolkit') ? ['managed-toolkit-v1'] : []),
   ];
 }
 export function workerTools(
@@ -49,6 +50,7 @@ export function workerTools(
   coding?: CodingBinding,
   childTools?: readonly string[],
   mcp = false,
+  toolkit = false,
 ): string[] {
   return child
     ? [...(childTools ?? ['salaam_probe'])].sort()
@@ -58,6 +60,7 @@ export function workerTools(
         ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),
         ...(mcp ? ['salaam_mcp'] : []),
+        ...(toolkit ? ['salaam_toolkit'] : []),
       ].sort();
 }
 export interface ChildTask {

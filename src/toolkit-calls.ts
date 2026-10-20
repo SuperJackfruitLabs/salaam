@@ -180,6 +180,7 @@ export class ToolkitCalls {
     const request = this.request(call),
       resource = this.options.resources.get(call.resource_id);
     this.options.assertActive(call.session_id, call.worker_epoch, call.attempt_id);
+    this.store.taskGrantCheck?.(call.session_id);
     this.options.resources.assertLive(call.resource_id);
     if (
       resource.session_id !== call.session_id ||
@@ -296,6 +297,16 @@ export class ToolkitCalls {
         operation_id: call.operation_id,
         request_digest: call.request_digest,
       });
+      return this.get(id);
+    });
+  }
+  /** A local denial/expiry is definite only before any native dispatch marker. */
+  cancelUndispatched(id: string): ToolkitCall {
+    return this.store.transaction(() => {
+      const call = this.get(id);
+      if (!['prepared', 'pending'].includes(call.state)) blocked();
+      if (call.operation_id) this.managed.mcpNotSentInTransaction(call.operation_id);
+      this.change(call, 'cancelled');
       return this.get(id);
     });
   }

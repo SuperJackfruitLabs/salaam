@@ -36,6 +36,7 @@ interface WorkerConfig {
   coding?: CodingBinding;
   worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
   mcp?: import('./mcp-work.js').McpWorkerBinding;
+  toolkit?: import('./toolkit-work.js').ToolkitWorkerBinding;
 }
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
@@ -236,6 +237,72 @@ export default function house(pi: ExtensionAPI): void {
             state: result.call.state,
             operation_id: result.call.operation_id,
             result_artifact: result.call.result_artifact,
+            structured_content: result.result?.structured_content,
+          },
+          isError: result.call.state !== 'returned' || !!result.result?.is_error,
+        };
+      },
+    });
+  if (c.toolkit && !c.child)
+    pi.registerTool({
+      name: 'salaam_toolkit',
+      label: 'Salaam native tools',
+      description:
+        'Discover reviewed native Toolkit categories, then actions, then a named action schema. Call only that schema. Human decisions remain bound to the exact operation; a protocol response never verifies an external effect.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('catalog'), Type.Literal('call')]),
+        category: Type.Optional(Type.String({ maxLength: 128 })),
+        name: Type.Optional(Type.String({ maxLength: 128 })),
+        arguments: Type.Optional(Type.Record(Type.String(), Type.String())),
+      }),
+      async execute(toolCallId, params, signal, _update, ctx) {
+        if (params.action === 'catalog') {
+          const result = await bridge('toolkit.catalog', {
+            category: params.category,
+            action: params.name,
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+            details: { catalog: result },
+          };
+        }
+        type Result = {
+          call: import('./toolkit-calls.js').ToolkitCall;
+          operation?: Operation;
+          approval?: Approval;
+          result: import('./mcp-http.js').McpReturnedResult | null;
+        };
+        const created = await bridge<Result>('toolkit.prepare', {
+          tool_call_id: toolCallId,
+          args: {
+            category: params.category,
+            action: params.name,
+            arguments: params.arguments ?? {},
+          },
+        });
+        if (created.approval && created.operation && created.approval.state === 'pending')
+          await ctx.ui.confirm(
+            `salaam-approval:${created.approval.id}:${created.operation.operation_digest}`,
+            `${created.operation.target}\n${created.operation.value}\nBinding: ${created.operation.target_version}`,
+            { signal },
+          );
+        let result = await bridge<Result>('toolkit.run', { call_id: created.call.id });
+        while (['prepared', 'pending', 'delivered', 'dispatching'].includes(result.call.state)) {
+          if (signal?.aborted) throw new Error('Native Toolkit invocation cancelled');
+          await new Promise((resolve) => setTimeout(resolve, 75));
+          result = await bridge<Result>(
+            ['prepared', 'pending'].includes(result.call.state) ? 'toolkit.run' : 'toolkit.status',
+            { call_id: created.call.id },
+          );
+        }
+        return {
+          content: result.result?.content ?? [
+            { type: 'text', text: `Native Toolkit call ${result.call.state}` },
+          ],
+          details: {
+            call_id: result.call.id,
+            state: result.call.state,
+            operation_id: result.call.operation_id,
             structured_content: result.result?.structured_content,
           },
           isError: result.call.state !== 'returned' || !!result.result?.is_error,
@@ -629,6 +696,7 @@ export default function house(pi: ExtensionAPI): void {
         c.coding,
         c.worker_binding?.binding.tools,
         !!c.mcp && !c.child,
+        !!c.toolkit && !c.child,
       ),
       bridge,
       fail,
@@ -721,6 +789,7 @@ export default function house(pi: ExtensionAPI): void {
                     'salaam_files',
                     'salaam_command',
                     'salaam_mcp',
+                    'salaam_toolkit',
                   ].includes(x.toolName),
               );
             const source = context.messages[realUser];
@@ -741,6 +810,7 @@ export default function house(pi: ExtensionAPI): void {
             const managed = /^\[(review|effect)\]\s+(.+)$/.exec(input);
             const coding = /^\[(files|command)\]\s+(.+)$/.exec(input);
             const mcp = c.mcp && !c.child ? /^\[mcp\]\s+(.+)$/.exec(input) : null;
+            const toolkit = c.toolkit && !c.child ? /^\[toolkit\]\s+(.+)$/.exec(input) : null;
             const effectDisabled = managed?.[1] === 'effect' && !c.effects;
             if (!hasResult && !effectDisabled) {
               const nested =
@@ -748,56 +818,60 @@ export default function house(pi: ExtensionAPI): void {
               const toolCall: ToolCall = {
                 type: 'toolCall' as const,
                 id: `tool-${randomUUID()}`,
-                name: mcp
-                  ? 'salaam_mcp'
-                  : coding && c.coding && !c.child
-                    ? coding[1] === 'files'
-                      ? 'salaam_files'
-                      : 'salaam_command'
-                    : history && !c.child
-                      ? 'salaam_history'
-                      : children && !c.child
-                        ? 'spawn_child'
-                        : inbox && !c.child
-                          ? 'inspect_child'
-                          : consume && !c.child
-                            ? 'consume_child_result'
-                            : managed?.[1] === 'effect'
-                              ? 'salaam_effect'
-                              : managed
-                                ? 'salaam_review'
-                                : 'salaam_probe',
-                arguments: mcp
-                  ? JSON.parse(mcp[1]!)
-                  : coding && c.coding && !c.child
-                    ? JSON.parse(coding[2]!)
-                    : history && !c.child
-                      ? { artifact_id: history[1]! }
-                      : children && !c.child
-                        ? {
-                            tasks: children[1]!.split(',').map((step) => ({
-                              step_key: step.trim(),
-                              prompt: 'Read-only child: ' + step.trim(),
-                            })),
-                            budget: 2,
-                            wait: !input.startsWith('[children-nowait]'),
-                          }
-                        : inbox && !c.child
-                          ? {}
-                          : consume && !c.child
-                            ? {
-                                child_id: consume[1]!,
-                                result_id: consume[2]!,
-                                acknowledge: !!consume[3],
-                              }
-                            : managed
+                name: toolkit
+                  ? 'salaam_toolkit'
+                  : mcp
+                    ? 'salaam_mcp'
+                    : coding && c.coding && !c.child
+                      ? coding[1] === 'files'
+                        ? 'salaam_files'
+                        : 'salaam_command'
+                      : history && !c.child
+                        ? 'salaam_history'
+                        : children && !c.child
+                          ? 'spawn_child'
+                          : inbox && !c.child
+                            ? 'inspect_child'
+                            : consume && !c.child
+                              ? 'consume_child_result'
+                              : managed?.[1] === 'effect'
+                                ? 'salaam_effect'
+                                : managed
+                                  ? 'salaam_review'
+                                  : 'salaam_probe',
+                arguments: toolkit
+                  ? JSON.parse(toolkit[1]!)
+                  : mcp
+                    ? JSON.parse(mcp[1]!)
+                    : coding && c.coding && !c.child
+                      ? JSON.parse(coding[2]!)
+                      : history && !c.child
+                        ? { artifact_id: history[1]! }
+                        : children && !c.child
+                          ? {
+                              tasks: children[1]!.split(',').map((step) => ({
+                                step_key: step.trim(),
+                                prompt: 'Read-only child: ' + step.trim(),
+                              })),
+                              budget: 2,
+                              wait: !input.startsWith('[children-nowait]'),
+                            }
+                          : inbox && !c.child
+                            ? {}
+                            : consume && !c.child
                               ? {
-                                  targets: managed[2]!.split(',').map((target) => target.trim()),
-                                  value: 'offline fixture',
+                                  child_id: consume[1]!,
+                                  result_id: consume[2]!,
+                                  acknowledge: !!consume[3],
                                 }
-                              : nested
-                                ? { nested: true }
-                                : {},
+                              : managed
+                                ? {
+                                    targets: managed[2]!.split(',').map((target) => target.trim()),
+                                    value: 'offline fixture',
+                                  }
+                                : nested
+                                  ? { nested: true }
+                                  : {},
               };
               response.content.push(toolCall);
               response.stopReason = 'toolUse';
@@ -860,9 +934,12 @@ export default function house(pi: ExtensionAPI): void {
       pi_session_id: ctx.sessionManager.getSessionId(),
       capabilities: workerCapabilities(
         c.coding,
-        c.mcp ? ['salaam_mcp'] : c.worker_binding?.binding.tools,
+        c.child
+          ? c.worker_binding?.binding.tools
+          : [...(c.mcp ? ['salaam_mcp'] : []), ...(c.toolkit ? ['salaam_toolkit'] : [])],
       ),
       ...(c.mcp ? { mcp: c.mcp } : {}),
+      ...(c.toolkit ? { toolkit: c.toolkit } : {}),
       ...(c.coding ? { coding: c.coding } : {}),
       tools: pi
         .getAllTools()

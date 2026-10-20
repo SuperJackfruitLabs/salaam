@@ -22,6 +22,7 @@ import { PiProcess, PiCommandError } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import type { McpWork, McpWorkerBinding } from './mcp-work.js';
+import type { ToolkitWork, ToolkitWorkerBinding } from './toolkit-work.js';
 import type { ChildWork } from './children.js';
 import {
   OFFLINE_ROUTE,
@@ -70,6 +71,7 @@ export interface SupervisorOptions {
 }
 interface Worker {
   mcp?: McpWorkerBinding;
+  toolkit?: ToolkitWorkerBinding;
   secrets?: string[];
   route: ProviderRoute;
   providerOutputCap?: boolean;
@@ -154,6 +156,7 @@ export class Supervisor extends EventEmitter {
   private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
   mcp?: McpWork;
+  toolkit?: ToolkitWork;
   children?: ChildWork;
   coding?: CodingWork;
   repositories?: RepositorySnapshots;
@@ -200,6 +203,7 @@ export class Supervisor extends EventEmitter {
       this.codingBinding(id),
       undefined,
       !!this.mcp,
+      !!this.toolkit,
     );
   }
   private childBoundary(id: string, epoch: number) {
@@ -382,6 +386,7 @@ export class Supervisor extends EventEmitter {
     try {
       const child = this.children?.owned(id);
       if (this.mcp && !child) worker.mcp = await this.mcp.ready(id);
+      if (this.toolkit && !child) worker.toolkit = await this.toolkit.ready(id);
       this.store.execution.assert(id);
       if (worker.stopping || worker.invalid) throw new Error('Worker startup cancelled');
       if (child) this.store.workerBoundary.claim(child, epoch, route);
@@ -410,6 +415,7 @@ export class Supervisor extends EventEmitter {
         route: route,
         coding: this.codingBinding(id),
         ...(worker.mcp ? { mcp: worker.mcp } : {}),
+        ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
       };
       const args = [
         PI_CLI,
@@ -603,6 +609,10 @@ export class Supervisor extends EventEmitter {
     if (worker.pi) void this.stopWorker(worker).catch(() => {});
   }
   private cancelMcpWorker(worker: Worker): void {
+    if (this.toolkit && worker.attempt) {
+      this.store.transaction(() => this.toolkit!.cancelInTransaction(worker.attempt!));
+      this.toolkit.abortAttempt(worker.attempt);
+    }
     if (this.mcp && worker.attempt) {
       this.store.transaction(() =>
         this.mcp!.cancelInTransaction(worker.attempt!, 'worker_unavailable'),
@@ -650,6 +660,7 @@ export class Supervisor extends EventEmitter {
     try {
       this.store.execution.assert(id);
       if (w.mcp) this.mcp!.assertBinding(id, w.mcp);
+      if (w.toolkit) this.toolkit!.assertBinding(id, w.toolkit);
     } catch (error) {
       this.invalidate(w, 'Session execution authority revoked');
       throw error;
@@ -674,6 +685,7 @@ export class Supervisor extends EventEmitter {
           context_digest: textDigest(w.frame),
           ...(boundary ? { worker_binding: boundary } : {}),
           ...(w.mcp ? { mcp: w.mcp } : {}),
+          ...(w.toolkit ? { toolkit: w.toolkit } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))
@@ -778,6 +790,44 @@ export class Supervisor extends EventEmitter {
         const auth = prepared.auth;
         w.secrets = [...new Set([...(w.secrets ?? []), ...credentialStrings(auth)])];
         return auth;
+      }
+      if (method.startsWith('toolkit.')) {
+        if (!this.toolkit || !w.toolkit || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('toolkit_disabled', 'Worker has no native Toolkit authority', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        this.toolkit.assertBinding(id, w.toolkit);
+        this.store.taskGrantCheck?.(id);
+        if (method === 'toolkit.catalog')
+          return this.toolkit.catalog(
+            id,
+            w.toolkit,
+            body.category === undefined ? undefined : string(body.category, 'category', 128),
+            body.action === undefined ? undefined : string(body.action, 'action', 128),
+          );
+        if (!['toolkit.prepare', 'toolkit.run', 'toolkit.status'].includes(method))
+          throw new ServiceError('invalid_field', 'Unsupported native Toolkit action', 400);
+        const call =
+          method === 'toolkit.prepare'
+            ? this.toolkit.prepare(
+                id,
+                w.epoch,
+                w.attempt,
+                string(body.tool_call_id, 'tool_call_id', 512),
+                body.args,
+              )
+            : this.toolkit.calls.get(string(body.call_id, 'call_id', 128));
+        if (
+          call.session_id !== id ||
+          call.worker_epoch !== w.epoch ||
+          call.attempt_id !== w.attempt
+        )
+          throw new ServiceError(
+            'mcp_call_scope',
+            'Native Toolkit call belongs to another invocation',
+            403,
+          );
+        if (method === 'toolkit.run') this.toolkit.start(call.id, id, w.epoch, w.attempt);
+        return this.toolkit.view(call.id);
       }
       if (method.startsWith('mcp.')) {
         if (!this.mcp || !w.mcp || !w.attempt || this.children?.owned(id))
@@ -1039,7 +1089,7 @@ export class Supervisor extends EventEmitter {
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
       if (
-        method.startsWith('mcp.') &&
+        (method.startsWith('mcp.') || method.startsWith('toolkit.')) &&
         error instanceof ServiceError &&
         [
           'invalid_field',
@@ -1050,6 +1100,9 @@ export class Supervisor extends EventEmitter {
           'mcp_tool_unadmitted',
           'mcp_input_limit',
           'mcp_call_limit',
+          'invalid_toolkit_request',
+          'toolkit_busy',
+          'request_conflict',
         ].includes(error.code)
       )
         throw error;
