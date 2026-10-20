@@ -117,7 +117,8 @@ export function configurePermissions(
         throw new ServiceError('workspace_changed', 'Workspace root changed');
       const next = { ...policy, revision: expected + 1, root };
       // Old binaries reject schema 28 rather than silently ignoring a restrictive policy.
-      store.db.exec('PRAGMA user_version=28');
+      if (Number(store.db.prepare('PRAGMA user_version').get()!.user_version) < 28)
+        store.db.exec('PRAGMA user_version=28');
       store.event(session, 'permissions.configured', next, request);
       return next;
     },

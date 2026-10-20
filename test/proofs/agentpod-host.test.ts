@@ -46,7 +46,11 @@ test('concurrent private-runtime startup owns one daemon, restarts a killed chil
     expect(new Set(receipts.map((r) => r.manifest_digest)).size).toBe(1);
     expect(
       receipts.every(
-        (r) => r.ready && r.workspace === workspace && r.node === realpathSync(process.execPath),
+        (r) =>
+          r.ready &&
+          r.strict_work === null &&
+          r.workspace === workspace &&
+          r.node === realpathSync(process.execPath),
       ),
     ).toBe(true);
     supervisor = status().supervisor_pid;

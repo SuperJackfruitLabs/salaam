@@ -467,3 +467,173 @@ test('corrupted durable binding or digest denies readiness and fresh model grant
     await f.close();
   }
 });
+
+test('strict work is private-owner only and refuses missing protected verification backend', async () => {
+  const f = await setup();
+  try {
+    const input = { instructions: 'Inspect', references: [], incoming_handoff: null };
+    const plan = f.service.taskWork.parse({
+      objective: 'Inspect',
+      constraints: [],
+      steps: [
+        { key: 'inspect', title: 'Inspect', instruction: 'Inspect', depends_on: [], checks: [] },
+      ],
+      acceptance: [],
+      deliverables: [],
+    });
+    const payload = {
+      admission: {
+        version: 1,
+        request_id: randomUUID(),
+        binding: f.binding,
+        work: {
+          board_id: 'brd_Aa0Bb1',
+          card_id: 'card_Aa0Bb1',
+          stage_key: 'implement',
+          input_digest: digest(input),
+          plan_digest: digest(plan),
+        },
+      },
+      input,
+      plan,
+    };
+    expect(await call(f.service.socket, '/v1/agentpod/work-capability', {})).toEqual({
+      version: 1,
+      enabled: false,
+    });
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-capability', {}),
+    ).rejects.toThrow();
+    await expect(call(f.service.bridgeSocket, '/v1/agentpod/work-admit', payload)).rejects.toThrow(
+      'Bridge route not found',
+    );
+    await expect(call(f.service.socket, '/v1/agentpod/work-admit', payload)).rejects.toThrow(
+      'protected station',
+    );
+    const settlement = {
+      binding: f.binding,
+      request_id: randomUUID(),
+      work_request_id: randomUUID(),
+      producer_terminal_digest: 'a'.repeat(64),
+    };
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-settle', settlement),
+    ).rejects.toThrow('Bridge route not found');
+    await expect(call(f.service.socket, '/v1/agentpod/work-settle', settlement)).rejects.toThrow(
+      'not enabled',
+    );
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-expire', {
+        ...settlement,
+        decision_request_id: randomUUID(),
+      }),
+    ).rejects.toThrow('Bridge route not found');
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-fail', settlement),
+    ).rejects.toThrow('Bridge route not found');
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-abandon', settlement),
+    ).rejects.toThrow('Bridge route not found');
+    expect(f.service.store.db.prepare('SELECT count(*) AS n FROM durable_tasks').get()!.n).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+// Reviewed-backend presence is a controlled negotiation double here; actual
+// protected station progression is covered by the separate Linux acceptance.
+test('authenticated strict ACP cold-start releases only its bootstrap control and stays an observer', async () => {
+  const f = await setup();
+  Object.assign(f.service, { agentpodWorkProgression: true, agentpodWork: {} });
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      binding: f.binding,
+      request_id: 'strict-admit',
+    });
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      binding: f.binding,
+      request_id: 'strict-renew',
+      lease_sequence: 1,
+    });
+    const attached = await call<any>(f.service.socket, '/v1/agentpod/attach', {
+      admission_id: admitted.admission_id,
+      token: admitted.token,
+    });
+    expect(attached.work_control).toEqual({ version: 1, owner: 'superpipeline' });
+    a = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    await a.initialize();
+    await a.request('session/new', { cwd: f.dir, mcpServers: [] });
+    await ready(f.service, admitted.session_id);
+    const released = f.service.store.controlView(admitted.session_id);
+    expect(released.expires_at).toBe(0);
+    expect(released.client_id).toBe(null);
+    await expect(
+      a.request('session/prompt', {
+        sessionId: admitted.session_id,
+        prompt: [{ type: 'text', text: 'Bypass board owner' }],
+      }),
+    ).rejects.toThrow();
+    await expect(a.request('session/cancel', { sessionId: admitted.session_id })).rejects.toThrow();
+    // Cross the adapter's old renewal interval: no late renewal may resurrect its lease.
+    await new Promise((r) => setTimeout(r, 5200));
+    expect(f.service.store.controlView(admitted.session_id)).toEqual(released);
+    expect(f.service.store.snapshot(admitted.session_id).attempts).toHaveLength(0);
+    const other = f.service.store.control(
+      admitted.session_id,
+      'other-acquire',
+      'other-terminal',
+      'acquire',
+      released.epoch,
+    );
+    await a.close();
+    a = undefined;
+    expect(f.service.store.controlView(admitted.session_id).client_id).toBe(other.client_id);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+});
+test('strict ACP bootstrap cannot take over a competing controller', async () => {
+  const f = await setup();
+  Object.assign(f.service, { agentpodWorkProgression: true, agentpodWork: {} });
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      binding: f.binding,
+      request_id: 'strict-competing',
+    });
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      binding: f.binding,
+      request_id: 'strict-competing-renew',
+      lease_sequence: 1,
+    });
+    const lease = f.service.store.control(
+      admitted.session_id,
+      'competing-acquire',
+      'other-terminal',
+      'acquire',
+      0,
+    );
+    a = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    await a.initialize();
+    await expect(
+      a.request('session/new', {
+        cwd: f.dir,
+        mcpServers: [],
+        _meta: { 'salaam.dev/takeover': true },
+      }),
+    ).rejects.toThrow();
+    expect(f.service.store.controlView(admitted.session_id).client_id).toBe(lease.client_id);
+    expect(f.service.store.snapshot(admitted.session_id).attempts).toHaveLength(0);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+});

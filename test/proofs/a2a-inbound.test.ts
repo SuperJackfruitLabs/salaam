@@ -26,6 +26,27 @@ test('official SDK peer submits through an explicit grant; duplicate/restarted r
     expect(firstTask.id).toBeTruthy();
     const again = Task.toJSON((await client.sendMessage(message())) as Task) as any;
     expect(again.id).toBe(firstTask.id);
+    // Await the actual second Pi process result before checking parent settlement.
+    // Timeout diagnostics include the durable child state, not only the parent view.
+    await until(
+      () => {
+        const children = f.service.children.list(f.session.id);
+        const failed = children.find((child) =>
+          ['failed', 'interrupted', 'cancelled'].includes(child.state),
+        );
+        if (failed)
+          throw new Error(
+            'Specialist terminated before settlement: ' +
+              JSON.stringify({
+                state: failed.state,
+                result: failed.artifact_id ? f.service.artifacts.read(failed.artifact_id) : null,
+              }),
+          );
+        return children;
+      },
+      (children) => children.length === 1 && children[0]!.state === 'completed',
+      30000,
+    );
     await f.settled();
     const terminal = Task.toJSON(
       await client.getTask(GetTaskRequest.fromJSON({ id: firstTask.id, tenant: g.tenant })),
@@ -54,7 +75,7 @@ test('official SDK peer submits through an explicit grant; duplicate/restarted r
   } finally {
     await f.close();
   }
-});
+}, 45000);
 test('inbound caller cannot use ROLE_AGENT, local controls, follow-ups, approval APIs, another token or an unreviewed workspace', async () => {
   const { f, g, connect, message } = await inboundFixture();
   try {
@@ -138,13 +159,18 @@ test('SSE disconnect preserves work and SubscribeToTask reconnect returns a stab
 test('daemon loss during a peer-owned native turn preserves the same failed task and never accepts its message twice', async () => {
   const { f, g, connect, message } = await inboundFixture();
   try {
-    writeFileSync(join(f.source, 'hold-specialists'), 'hold');
+    writeFileSync(join(f.source, 'hold-specialist-turn'), 'hold');
     let { client } = await connect();
     const first = await client.sendMessage(message()),
       id = (first as Task).id;
     await until(() => f.service.children.list(f.session.id)[0], Boolean);
     const child = f.service.children.list(f.session.id)[0]!;
-    await until(() => existsSync(join(f.source, 'evidence-' + child.child_session)), Boolean);
+    await until(() => {
+      const current = f.service.children.inspect(f.session.id, child.id);
+      if (['failed', 'interrupted', 'completed', 'cancelled'].includes(current.state))
+        throw new Error('Specialist ended before crash barrier: ' + JSON.stringify(current));
+      return existsSync(join(f.source, 'specialist-turn-entered-' + child.child_session));
+    }, Boolean);
     await f.restart();
     ({ client } = await connect());
     const same = await client.sendMessage(message());

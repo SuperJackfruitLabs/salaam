@@ -183,7 +183,7 @@ export class AgentPodAuthority {
       throw new ServiceError('authority_binding', 'AgentPod authority binding changed');
     return admission;
   }
-  assert(row: Admission): void {
+  private leaseState(row: Admission): 'active' | 'awaiting-renewal' {
     if (this.store.execution.revocation(row.session_id))
       throw new ServiceError('session_revoked', 'Session execution authority revoked');
     const binding = this.checked(JSON.parse(row.binding));
@@ -207,11 +207,26 @@ export class AgentPodAuthority {
     if (
       row.pins_digest !== digest(this.pins) ||
       row.state !== 'active' ||
-      row.boot_id !== this.boot ||
       row.expires_at <= Date.now() ||
-      row.monotonic_deadline === null ||
-      row.monotonic_deadline <= performance.now()
+      (row.boot_id === this.boot &&
+        (row.monotonic_deadline === null || row.monotonic_deadline <= performance.now()))
     )
+      throw new ServiceError(
+        'authority_expired',
+        'AgentPod authority lease is not fresh for this daemon',
+      );
+    return row.boot_id === this.boot ? 'active' : 'awaiting-renewal';
+  }
+  /** Observation only: an intact previous-boot lease may await renewal but cannot grant work. */
+  awaitingRenewal(session: string): boolean {
+    try {
+      return this.leaseState(this.bySession(session)) === 'awaiting-renewal';
+    } catch {
+      return false;
+    }
+  }
+  assert(row: Admission): void {
+    if (this.leaseState(row) !== 'active')
       throw new ServiceError(
         'authority_expired',
         'AgentPod authority lease is not fresh for this daemon',

@@ -138,6 +138,50 @@ test('schema5 is explicit and closed; older host schemas cannot inherit station 
       }),
     );
     expect(() => readHost(file)).toThrow();
+    const strict = await planHost({ ...input, strict_work_version: 1 });
+    expect(strict).toMatchObject({
+      schema: 6,
+      strict_work: { version: 1 },
+      station_execution: (manifest as any).station_execution,
+    });
+    writeFileSync(file, JSON.stringify(strict));
+    expect(readHost(file)).toEqual(strict);
+    for (const strict_work of [
+      { version: 2 },
+      { version: '1' },
+      { version: 1, extra: true },
+      {},
+      null,
+    ]) {
+      writeFileSync(file, JSON.stringify({ ...strict, strict_work }));
+      expect(() => readHost(file)).toThrow();
+    }
+    for (const schema of [2, 3, 4, 5, 7]) {
+      writeFileSync(file, JSON.stringify({ ...strict, schema }));
+      expect(() => readHost(file)).toThrow();
+    }
+    const { strict_work: _, ...missing } = strict as any;
+    writeFileSync(file, JSON.stringify(missing));
+    expect(() => readHost(file)).toThrow();
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...strict,
+        station_execution: {
+          ...(strict as any).station_execution,
+          configuration_digest: 'f'.repeat(64),
+        },
+      }),
+    );
+    expect(() => readHost(file)).toThrow();
+    for (const strict_work_version of [0, 2, '1', null, true])
+      await expect(planHost({ ...input, strict_work_version })).rejects.toThrow('Strict work');
+    await expect(
+      planHost({ mode: 'agentpod', state: f.state, agentpod_config: pins, strict_work_version: 1 }),
+    ).rejects.toThrow('Strict work');
+    // Rollback is explicit: the old exact schema5 still validates and does not inherit opt-in.
+    writeFileSync(file, JSON.stringify(manifest));
+    expect(readHost(file)).not.toHaveProperty('strict_work');
     const leaked = join(f.workspace, 'station.json');
     writeFileSync(leaked, JSON.stringify(f.value), { mode: 0o600 });
     await expect(planHost({ ...input, station_config: leaked })).rejects.toThrow();
@@ -165,7 +209,7 @@ test('v25 migration preserves requests/events and creates empty station ownershi
     expect(store.db.prepare('SELECT count(*) AS n FROM station_calls').get()!.n).toBe(0);
     expect(store.events(session.id, 0)).toEqual(events);
     expect(store.db.prepare('SELECT * FROM requests').all()).toEqual(requests);
-    store.db.exec('PRAGMA user_version=29');
+    store.db.exec('PRAGMA user_version=31');
     store.close();
     expect(() => new Store(file)).toThrow('newer than this service');
   } finally {

@@ -31,6 +31,15 @@ export function installSpecialistFixture(pi) {
         }
         const result = await tool.execute(id, args, signal, update, ctx);
         if (tool.name === 'salaam_probe' && config.worker_binding?.binding.repository) {
+          // Crash proofs need an entered, held tool turn, not completed repository evidence.
+          // Keep this barrier separate so evidence-producing fixtures retain their semantics.
+          if (existsSync(join(process.cwd(), 'hold-specialist-turn'))) {
+            writeFileSync(join(process.cwd(), 'specialist-turn-entered-' + config.session), 'held');
+            while (!existsSync(join(process.cwd(), 'release-specialist-turn'))) {
+              if (signal?.aborted) throw new Error('Cancelled');
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          }
           const outcomes = [];
           for (const action of [
             { action: 'list' },

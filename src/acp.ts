@@ -56,8 +56,17 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         session_id: string;
         binding: import('./agentpod-protocol.js').AgentPodBinding;
         managed_mcp?: import('./mcp-work.js').McpWorkerBinding | null;
+        work_control?: { version: 1; owner: 'superpipeline' };
       }>(socket, '/v1/agentpod/attach', { admission_id: admission, token: admissionToken })
     : undefined;
+  const strictWork = bound?.work_control !== undefined;
+  if (
+    strictWork &&
+    (JSON.stringify(bound?.work_control) !==
+      JSON.stringify({ version: 1, owner: 'superpipeline' }) ||
+      bound?.binding.run.source !== 'superpipeline')
+  )
+    throw new Error('Unsupported authenticated work control handoff');
   let closed = false,
     initialized = false,
     wantsReceipts = false,
@@ -214,7 +223,12 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       offset = page.next_offset;
     }
   };
-  const controller = async (c: Connection, takeover = false) => {
+  const controller = async (c: Connection, takeover = false, bootstrap = false) => {
+    if (strictWork && (!bootstrap || takeover))
+      throw new ServiceError(
+        'work_control_owned',
+        'The authenticated work owner controls this session',
+      );
     if (!c.lease) {
       c.controlPending ??= acquireControl(socket, c.id, c.client, takeover)
         .then((lease) => {
@@ -244,6 +258,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     await cancellationReceipt(c, receipt);
   };
   const approvals = async (c: Connection, view: SessionSnapshot) => {
+    if (strictWork) return; // Exact work decisions belong to the durable producer handshake.
     for (const approval of view.approvals.filter((a) => a.state === 'pending')) {
       if (c.permissions.has(approval.id)) continue;
       const op = await call<Operation>(socket, `/v1/operations/${approval.operation_id}`);
@@ -461,6 +476,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         const actor = await controller(
           c,
           object(params._meta ?? {})['salaam.dev/takeover'] === true,
+          true,
         );
         await call(socket, `/v1/sessions/${id}/resume`, actor);
         const deadline = Date.now() + 15000;
@@ -472,6 +488,23 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
+      if (strictWork && c.lease) {
+        // Release only this adapter's exact bootstrap lease. Never steal or revoke
+        // another terminal's control to make a work grant succeed.
+        await call(socket, `/v1/sessions/${id}/control`, {
+          request_id: randomUUID(),
+          action: 'release',
+          client_id: c.client,
+          token: c.lease.token,
+          expected_epoch: c.lease.epoch,
+        });
+        delete c.lease;
+      }
+      if (strictWork && journal.pending(id).length)
+        throw new ServiceError(
+          'work_control_owned',
+          'Pending interactive prompts cannot enter strict work',
+        );
       await replay(c, replayHistory, replayHistory);
       if (journal.pending(id).length) {
         const actor = await controller(
@@ -725,7 +758,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
   cancellationPoll.unref();
   const renew = setInterval(() => {
     for (const c of sessions.values())
-      if (c.lease) {
+      if (c.lease && !strictWork) {
         void call<ControlLease>(socket, `/v1/sessions/${c.id}/control`, {
           request_id: randomUUID(),
           client_id: c.client,

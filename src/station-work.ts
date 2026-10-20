@@ -46,7 +46,8 @@ export interface StationCall {
   id: string;
   session_id: string;
   worker_epoch: number;
-  attempt_id: string;
+  attempt_id: string | null;
+  task_check_id?: string | null;
   tool_call_id: string;
   kind: 'patch' | 'check' | 'read';
   input_digest: string;
@@ -91,7 +92,9 @@ export class StationWork {
   private readonly directory: string;
   private readonly jobs = new Map<string, Promise<void>>();
   private readonly files = new Map<string, AbortController>();
+  private readonly unitStops = new Map<string, Promise<unknown>>();
   private readonly unregister: () => void;
+  taskCheckGuard?: (call: StationCall) => void;
   private closing = false;
   private proven = false;
   constructor(
@@ -159,11 +162,21 @@ export class StationWork {
     if (digest(JSON.parse(this.authority.bySession(c.session_id).binding)) !== c.root_digest)
       stationUnavailable();
   }
+  private assertOwner(c: StationCall): void {
+    if (c.task_check_id) {
+      if (c.attempt_id !== null || !this.taskCheckGuard || !['read', 'check'].includes(c.kind))
+        stationUnavailable();
+      this.taskCheckGuard!(c);
+    } else {
+      if (!c.attempt_id) stationUnavailable();
+      this.options.assertActive(c.session_id, c.worker_epoch, c.attempt_id!);
+    }
+  }
   private guard(c: StationCall): void {
     if (this.closing || !this.proven) stationUnavailable();
     this.historical(c);
     this.configCheck();
-    this.options.assertActive(c.session_id, c.worker_epoch, c.attempt_id);
+    this.assertOwner(c);
     this.store.taskGrantCheck?.(c.session_id);
     if (
       digest(this.authority.binding(c.session_id)) !== c.root_digest ||
@@ -235,7 +248,11 @@ export class StationWork {
         : {}),
     };
   }
-  private helper(request: Record<string, unknown>, id?: string): Promise<Record<string, any>> {
+  private helper(
+    request: Record<string, unknown>,
+    id?: string,
+    verificationGuard?: () => void,
+  ): Promise<Record<string, any>> {
     const controller = new AbortController();
     if (id) this.files.set(id, controller);
     if (id)
@@ -272,7 +289,8 @@ export class StationWork {
         try {
           if (id) {
             const c = this.get(id);
-            this.guard(c);
+            if (verificationGuard) verificationGuard();
+            else this.guard(c);
             if (c.state !== 'dispatching') stationUnavailable();
             const identity = processIdentity(child.pid!);
             if (!identity) stationUnavailable();
@@ -417,6 +435,100 @@ export class StationWork {
       stationUnavailable();
     }
   }
+  /** A task verifier has no active model attempt. Its read still owns a durable
+   * native helper and must revalidate its caller's task fence before/after I/O. */
+  async verificationTree(
+    sourceCall: string | { task_check_id: string },
+    validate: (inspection: string) => void,
+    request: Record<string, unknown> = { action: 'inspect' },
+  ): Promise<Record<string, any>> {
+    const check =
+      typeof sourceCall === 'string'
+        ? null
+        : this.store.db
+            .prepare(
+              'SELECT t.session_id FROM task_checks c JOIN durable_tasks t ON t.id=c.task_id WHERE c.id=?',
+            )
+            .get(sourceCall.task_check_id);
+    if (typeof sourceCall !== 'string' && !check) stationUnavailable();
+    const source =
+        typeof sourceCall === 'string'
+          ? this.get(sourceCall)
+          : {
+              session_id: String(check!.session_id),
+              worker_epoch: 0,
+              attempt_id: null,
+              task_check_id: sourceCall.task_check_id,
+            },
+      session = source.session_id;
+    const binding = this.ready(session);
+    if (!['inspect', 'read'].includes(String(request.action))) stationUnavailable();
+    const id = digest(['station-verification-read-v1', sourceCall, randomUUID()]);
+    let registered = false;
+    const guard = () => {
+      this.assertBinding(session, binding);
+      if (registered && this.get(id).state !== 'dispatching') stationUnavailable();
+      this.assertVerificationSettled(session, id);
+      validate(id);
+    };
+    guard();
+    this.store.transaction(() => {
+      guard();
+      this.store.db
+        .prepare(
+          "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state,task_check_id) VALUES(?,?,?,?,?,'read',?,?,?,?,'dispatching',?)",
+        )
+        .run(
+          id,
+          session,
+          source.worker_epoch,
+          source.attempt_id,
+          id,
+          digest(request),
+          binding.root_digest,
+          binding.configuration_digest,
+          canonical(request),
+          source.task_check_id ?? null,
+        );
+    });
+    registered = true;
+    try {
+      const result = await this.helper(request, id, guard);
+      guard();
+      this.store.transaction(() => {
+        guard();
+        this.change(this.get(id), 'returned');
+        this.store.event(session, 'station.verification_observed', {
+          source_call: sourceCall,
+          inspection_call: id,
+          tree_digest: result.tree_digest,
+        });
+      });
+      return result;
+    } catch (error) {
+      this.store.transaction(() => {
+        const current = this.get(id);
+        if (current.state === 'dispatching') this.change(current, 'failed');
+      });
+      throw error;
+    }
+  }
+  assertVerificationSettled(session: string, inspection?: string): void {
+    this.ready(session);
+    if (
+      this.store.hasUnknown(session) ||
+      this.store.db
+        .prepare(
+          "SELECT 1 FROM station_calls WHERE session_id=? AND NOT(id=? AND kind='read' AND tool_call_id=id AND json_extract(args_json,'$.action') IN ('inspect','read')) AND (state IN ('prepared','dispatching','outcome_unknown') OR helper_state NOT IN ('none','stopped'))",
+        )
+        .get(session, inspection ?? '') ||
+      this.store.db
+        .prepare("SELECT 1 FROM station_units WHERE session_id=? AND state!='stopped'")
+        .get(session)
+    )
+      stationUnavailable();
+  }
+
   async read(
     session: string,
     epoch: number,
@@ -512,6 +624,36 @@ export class StationWork {
     }
   }
 
+  prepareTaskCheck(check: string, command: string, tree: string): StationCall {
+    const r = this.store.db
+      .prepare(
+        'SELECT c.*,t.session_id FROM task_checks c JOIN durable_tasks t ON t.id=c.task_id WHERE c.id=?',
+      )
+      .get(check);
+    if (!r || r.state !== 'accepted') stationUnavailable();
+    const session = String(r.session_id),
+      binding = this.ready(session);
+    if (!hashes.test(tree)) stationUnavailable();
+    const id = digest(['station-task-check-v1', check]);
+    const args = { action: 'check', command, expected_tree: tree };
+    const prior = this.store.db.prepare('SELECT id FROM station_calls WHERE id=?').get(id);
+    if (prior) return this.get(id);
+    this.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state,task_check_id) VALUES(?,?,0,NULL,?,'check',?,?,?,?,'prepared',?)",
+      )
+      .run(
+        id,
+        session,
+        'task-check:' + check,
+        digest(args),
+        binding.root_digest,
+        binding.configuration_digest,
+        canonical(args),
+        check,
+      );
+    return this.get(id);
+  }
   prepare(
     session: string,
     epoch: number,
@@ -744,7 +886,7 @@ export class StationWork {
     const outcome = await this.executeUnit(unit, args.command, () => {
       const current = this.get(id);
       if (current.state !== 'dispatching' || this.closing) stationUnavailable();
-      this.options.assertActive(c.session_id, c.worker_epoch, c.attempt_id);
+      this.assertOwner(c);
       this.store.taskGrantCheck?.(c.session_id);
       this.assertResources(c.session_id);
     });
@@ -851,7 +993,21 @@ export class StationWork {
       throw error;
     }
   }
-  private async stopUnit(id: string): Promise<unknown> {
+  private stopUnit(id: string): Promise<unknown> {
+    const pending = this.unitStops.get(id);
+    if (pending) return pending;
+    // Revocation, attempt cancellation and the executor finalizer can converge.
+    // They must share one actual stop observation, not race stale row snapshots.
+    const work = this.stopUnitOnce(id);
+    this.unitStops.set(id, work);
+    void work
+      .finally(() => {
+        if (this.unitStops.get(id) === work) this.unitStops.delete(id);
+      })
+      .catch(() => {});
+    return work;
+  }
+  private async stopUnitOnce(id: string): Promise<unknown> {
     const row = this.unit(id);
     if (row.state === 'stopped') return JSON.parse(row.stop_json!);
     try {
@@ -966,13 +1122,36 @@ export class StationWork {
     if (results.some((r) => r.status === 'rejected')) stationUnavailable();
   }
   async stopSession(session: string): Promise<void> {
-    const attempts = this.store.db
-      .prepare('SELECT DISTINCT attempt_id FROM station_calls WHERE session_id=?')
-      .all(session);
-    for (const a of attempts) {
-      this.store.transaction(() => this.cancelInTransaction(String(a.attempt_id)));
-      await this.abortAttempt(String(a.attempt_id));
-    }
+    this.store.transaction(() => {
+      for (const row of this.store.db
+        .prepare(
+          "SELECT * FROM station_calls WHERE session_id=? AND state IN ('prepared','dispatching')",
+        )
+        .all(session) as unknown as StationCall[]) {
+        if (row.operation_id) {
+          if (row.state === 'prepared')
+            this.managed.workspaceNotSentInTransaction(row.operation_id);
+          else this.managed.workspaceUnknownInTransaction(row.operation_id);
+        }
+        this.change(
+          row,
+          row.kind === 'patch' && row.state === 'dispatching' ? 'outcome_unknown' : 'cancelled',
+        );
+      }
+    });
+    const results = await Promise.allSettled([
+      ...this.store.db
+        .prepare(
+          "SELECT id FROM station_calls WHERE session_id=? AND helper_state NOT IN ('none','stopped')",
+        )
+        .all(session)
+        .map((r) => this.stopHelper(String(r.id))),
+      ...this.store.db
+        .prepare("SELECT id FROM station_units WHERE session_id=? AND state!='stopped'")
+        .all(session)
+        .map((r) => this.stopUnit(String(r.id))),
+    ]);
+    if (results.some((r) => r.status === 'rejected')) stationUnavailable();
   }
   stopped(session: string): boolean {
     return !this.unconfirmed(session).length;

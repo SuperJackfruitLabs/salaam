@@ -132,7 +132,8 @@ export class TaskWork {
         throw new ServiceError('invalid_step', 'Step does not belong to this session');
     };
   }
-  private parse(input: unknown): TaskPlan {
+  /** Canonical admitted plan; shared by internal controllers before digest binding. */
+  parse(input: unknown): TaskPlan {
     const value = object(input);
     const policy = taskPolicy(value);
     const objective = string(value.objective, 'objective', 4096);

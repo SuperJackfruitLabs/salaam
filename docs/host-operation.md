@@ -49,3 +49,13 @@ before worker readiness. See [protected station execution](./contributor/station
 for file limits, exact human approvals, read-only command snapshots and resource
 stop receipts. A successful host plan is not a deployment or kernel acceptance
 result.
+
+Strict Superpipeline work is disabled by default. A reviewed protected station
+host can explicitly add `"strict_work_version": 1` to its host-plan input. This
+requires `station_config` and produces host manifest schema6, binding the strict
+protocol to the same pinned executable, source/build, private configuration and
+runtime. Review the generated manifest before deployment. Unknown versions or
+extra contract fields fail closed; reverting to the previous schema5 manifest
+keeps strict work disabled. The native node must support and verify the matching
+`strict_work` startup receipt. Deployment acceptance remains required before
+assigning real work; see [strict work admission](./contributor/agentpod-work-contract.md).

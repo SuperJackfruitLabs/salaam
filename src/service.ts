@@ -5,6 +5,9 @@ import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
+import { AgentPodWorkDecisions } from './agentpod-work-decisions.js';
+import { AgentPodWork } from './agentpod-work.js';
+import { agentpodWorkAdmission } from './agentpod-work-protocol.js';
 import { TaskVerification } from './task-verification.js';
 import { TaskCheckpoints } from './task-checkpoints.js';
 import { TaskDriver } from './task-driver.js';
@@ -60,6 +63,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Internal trusted host seam; never accepted from ACP or a worker. */
   managedToolkit?: ToolkitWorkConfig;
   managedToolkitConfig?: { config: string; configuration_digest: string };
+  /** Explicit acceptance opt-in; not advertised by default host manifests. */
+  agentpodWorkProgression?: boolean;
   stationConfig?: { config: string; configuration_digest: string };
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
@@ -82,6 +87,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly agentpodWork?: AgentPodWork;
   readonly toolkitResources: ToolkitResources;
   readonly toolkitOwners: ToolkitOwners;
   readonly toolkitResolutions: ToolkitResolutions;
@@ -128,7 +134,11 @@ export class SalaamService {
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
   private readonly hostManifestDigest: string | null;
+  private readonly agentpodWorkProgression: boolean;
   private constructor(options: ServiceOptions) {
+    this.agentpodWorkProgression = options.agentpodWorkProgression === true;
+    if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
+      throw Error('Strict work requires reviewed AgentPod protected station configuration');
     this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
@@ -428,6 +438,8 @@ export class SalaamService {
           );
           this.supervisor.toolkit = this.toolkit;
         }
+        this.taskDriver.awaitingAuthorityRenewal = (session) =>
+          this.agentpod?.awaitingRenewal(session) ?? false;
         if (options.stationConfig) {
           if (!this.agentpod) throw Error('Station execution requires AgentPod authority');
           this.station = new StationWork(
@@ -443,6 +455,13 @@ export class SalaamService {
             },
           );
           this.supervisor.station = this.station;
+          this.taskVerification.installStation(this.station);
+          this.agentpodWork = new AgentPodWork(
+            this.store,
+            this.agentpod,
+            this.taskWork,
+            this.taskVerification,
+          );
           const cancelOwned = this.store.cancelChildren;
           this.store.cancelChildren = (attempt) => {
             cancelOwned?.(attempt);
@@ -771,12 +790,237 @@ export class SalaamService {
           );
           this.send(res, 200, {
             ...attached,
+            ...(this.agentpodWorkProgression &&
+            this.agentpodWork &&
+            attached.binding.run.source === 'superpipeline'
+              ? { work_control: { version: 1, owner: 'superpipeline' } }
+              : {}),
             ...(this.mcp ? { managed_mcp: this.mcp.status(attached.session_id).assignment } : {}),
           });
           return;
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-capability') {
+          if (Object.keys(body).length)
+            throw new ServiceError('invalid_work_payload', 'Empty capability request required');
+          this.send(res, 200, {
+            version: 1,
+            enabled: !!this.agentpodWork && this.agentpodWorkProgression,
+          });
+          return;
+        }
+        if (parts[2] === 'work-status' || parts[2] === 'work-progress') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict progression is not enabled');
+          if (parts[2] === 'work-status') {
+            if (Object.keys(body).join(',') !== 'binding')
+              throw new ServiceError('invalid_work_payload', 'Closed status request required');
+            this.send(res, 200, await this.agentpodWork.status(body.binding, this.taskDriver));
+          } else {
+            if (
+              Object.keys(body).sort().join(',') !==
+                'binding,compact,max_steps,request_id,work_request_id' ||
+              body.compact !== false
+            )
+              throw new ServiceError(
+                'invalid_work_payload',
+                'Closed bounded progression request required',
+              );
+            this.send(
+              res,
+              200,
+              this.agentpodWork.progress(
+                body.binding,
+                string(body.request_id, 'request_id', 128),
+                string(body.work_request_id, 'work_request_id', 128),
+                integer(body.max_steps, 'max_steps'),
+                this.taskDriver,
+              ),
+            );
+          }
+          return;
+        }
+        if (parts[2] === 'work-abandon') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError(
+              'work_disabled',
+              'Strict work historical success retirement is not enabled',
+            );
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit failure request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.abandon(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'work-fail') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError(
+              'work_disabled',
+              'Strict work failure retirement is not enabled',
+            );
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit failure request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.fail(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+              this.taskDriver,
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'work-expire') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict work expiry is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,decision_request_id,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit expiry request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.expire(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.decision_request_id, 'decision_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+              this.taskDriver,
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'work-settle') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict work settlement is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit settlement request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.settle(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+              this.taskDriver,
+            ),
+          );
+          return;
+        }
+        if (parts[2] === 'work-completion') {
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station backend required',
+            );
+          if (Object.keys(body).join(',') !== 'binding')
+            throw new ServiceError('invalid_work_payload', 'Closed completion request required');
+          this.send(res, 200, await this.agentpodWork.completion(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-decisions' || parts[2] === 'work-decision') {
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station backend required',
+            );
+          const answering = parts[2] === 'work-decision';
+          if (Object.keys(body).sort().join(',') !== (answering ? 'answer,binding' : 'binding'))
+            throw new ServiceError('invalid_work_decision', 'Closed decision payload required');
+          const decisions = new AgentPodWorkDecisions(this.agentpodWork, this.managed);
+          this.send(
+            res,
+            200,
+            answering ? decisions.answer(body.binding, body.answer) : decisions.list(body.binding),
+          );
+          return;
+        }
+        if (parts[2] === 'work-admit') {
+          // This is the private owner socket, never the worker bridge. The native
+          // node authenticates its Hub reservation; board/card/stage are that
+          // trusted producer's assertion. Runtime pins and byte digests are local.
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station work backend required',
+            );
+          if (Object.keys(body).sort().join(',') !== 'admission,input,plan')
+            throw new ServiceError('invalid_work_payload', 'Closed work payload required');
+          const admission = agentpodWorkAdmission(body.admission),
+            input = object(body.input);
+          if (
+            Object.keys(input).sort().join(',') !== 'incoming_handoff,instructions,references' ||
+            typeof input.instructions !== 'string' ||
+            input.instructions.length < 1 ||
+            input.instructions.length > 65536 ||
+            !Array.isArray(input.references) ||
+            input.references.length > 64 ||
+            input.references.some(
+              (v) => typeof v !== 'string' || v.length < 1 || v.length > 4096,
+            ) ||
+            (input.incoming_handoff !== null &&
+              (typeof input.incoming_handoff !== 'string' || input.incoming_handoff.length > 65536))
+          )
+            throw new ServiceError('invalid_work_payload', 'Closed work input required');
+          if (canonical(this.taskWork.parse(body.plan)) !== canonical(body.plan))
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Fully expanded canonical task plan required',
+            );
+          const owner = this.agentpod.inspect(admission.binding);
+          this.send(
+            res,
+            200,
+            this.agentpodWork.admit(
+              owner.session_id,
+              admission,
+              {
+                board_id: admission.work.board_id,
+                card_id: admission.work.card_id,
+                stage_key: admission.work.stage_key,
+              },
+              input,
+              body.plan,
+            ),
+          );
           return;
         }
         if (parts[2] === 'mcp-assign') {
@@ -1190,7 +1434,7 @@ export class SalaamService {
           const session = string(url.searchParams.get('session_id'), 'session_id', 128);
           this.store.session(session);
           const current = this.taskWork.forSession(session);
-          this.send(res, 200, current ? this.taskDriver.view(current.id) : null);
+          this.send(res, 200, current ? await this.taskDriver.viewAsync(current.id) : null);
           return;
         }
         const taskId = parts[2];
@@ -1212,7 +1456,7 @@ export class SalaamService {
         }
 
         if (req.method === 'GET' && taskId && parts.length === 3) {
-          this.send(res, 200, this.taskDriver.view(taskId));
+          this.send(res, 200, await this.taskDriver.viewAsync(taskId));
           return;
         }
         if (req.method === 'GET' && taskId && parts.length === 4 && parts[3] === 'history') {
@@ -1242,7 +1486,7 @@ export class SalaamService {
               body.plan,
               controller,
             );
-            this.send(res, 201, this.taskDriver.view(task.id));
+            this.send(res, 201, await this.taskDriver.viewAsync(task.id));
             return;
           }
           if (
@@ -1264,7 +1508,7 @@ export class SalaamService {
               );
             else if (parts[3] === 'finish') {
               const exception = body.exception == null ? null : object(body.exception);
-              this.taskVerification.finish(
+              await this.taskVerification.finishAsync(
                 taskId,
                 request,
                 expected,
@@ -1280,7 +1524,7 @@ export class SalaamService {
                   : null,
                 authorize,
               );
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             } else if (parts[3] === 'checkpoint')
               result = this.taskCheckpoints.capture(taskId, request, expected, authorize);
             else if (parts[3] === 'restore')
@@ -1304,10 +1548,10 @@ export class SalaamService {
                 body.compact === true,
                 controller,
               );
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             } else {
               await this.taskDriver.cancel(taskId, request, expected, controller);
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             }
             this.send(res, 200, result);
             return;
@@ -1317,7 +1561,7 @@ export class SalaamService {
               res,
               200,
               (this.taskWork.revise(taskId, request, expected, body.plan, controller),
-              this.taskDriver.view(taskId)),
+              await this.taskDriver.viewAsync(taskId)),
             );
             return;
           }
@@ -1352,7 +1596,7 @@ export class SalaamService {
                   string(body.review, 'review', 4096),
                   controller,
                 ),
-                this.taskDriver.view(taskId)),
+                await this.taskDriver.viewAsync(taskId)),
               );
               return;
             }
@@ -1374,6 +1618,7 @@ export class SalaamService {
           managed_toolkit: this.toolkit
             ? { configuration_digest: this.toolkit.configurationDigest }
             : null,
+          strict_work: this.agentpodWorkProgression && this.agentpodWork ? { version: 1 } : null,
           station_execution: this.station
             ? { configuration_digest: this.station.configurationDigest }
             : null,
@@ -2218,7 +2463,7 @@ export class SalaamService {
             ...this.supervisor.inspect(id),
             job: this.jobs.forSession(id) ? this.jobs.view(this.jobs.forSession(id)!.id) : null,
             work_task: this.taskWork.forSession(id)
-              ? this.taskDriver.view(this.taskWork.forSession(id)!.id)
+              ? await this.taskDriver.viewAsync(this.taskWork.forSession(id)!.id)
               : null,
           });
           return;
@@ -2441,6 +2686,7 @@ export class SalaamService {
     await attempt(() => this.recurring.close());
     await attempt(() => this.jobs.close());
     await attempt(() => this.taskDriver.close());
+    this.taskVerification.station?.stop();
     await attempt(() => this.dispatcher.pause());
     await attempt(() => this.managed.pause());
     await attempt(() => this.children.pause());
@@ -2452,6 +2698,7 @@ export class SalaamService {
     await attempt(() => this.mcp?.close());
     await attempt(() => this.toolkit?.close());
     await attempt(() => this.station?.close());
+    await attempt(() => this.taskVerification.station?.drain());
     await attempt(() => this.toolkitResources.close());
     await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());
