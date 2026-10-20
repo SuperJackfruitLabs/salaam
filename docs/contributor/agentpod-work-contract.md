@@ -198,3 +198,14 @@ cancellation records the final nonsuccess disposition without fabricating a
 human answer or reviving the expired permission. The receipt identifies
 `expired_approval_unapplied`, retains every historical record and cannot authorize
 a new lease. Cached replay still checks exact root access and resource stop.
+
+The distinct operator-only `work-fail` retirement handles one budget-blocked
+model attempt after one known approved native patch. It preserves the interrupted
+model attempt and successful effect receipt; it neither resolves the model
+interruption nor claims successful task completion. Exact original producer
+terminal binding, revoked/stopped authority, a matching native result and
+approval, and absence of other operations/checks/children are required. Unknown
+effects or unconfirmed resources refuse retirement. The existing cancellation
+transaction records nonsuccess; `known_effects_preserved` plus an evidence digest
+joins the retained history. A successor requires a new lawful run and an explicit
+verification-only plan; it cannot replay the old patch or modify its budget.

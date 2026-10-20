@@ -281,6 +281,144 @@ export class AgentPodWork {
       },
     );
   }
+  fail(
+    binding: unknown,
+    request: string,
+    workRequest: string,
+    terminalDigest: string,
+    driver: TaskDriver,
+  ) {
+    const { root, row, task } = this.owned(binding);
+    if (workRequest !== row.request_id || !/^[a-f0-9]{64}$/.test(terminalDigest))
+      throw new ServiceError(
+        'work_settlement_conflict',
+        'Exact original work and terminal digest required',
+      );
+    const stopped = () => {
+      const current = this.authority.inspect(binding);
+      if (
+        !current.revoked ||
+        current.authorized ||
+        !current.owned_execution_stopped ||
+        current.unresolved_operations.length ||
+        current.active_attempts.length
+      )
+        throw new ServiceError(
+          'work_settlement_unsafe',
+          'Revoked stopped root with known effects required',
+        );
+    };
+    stopped();
+    return this.store.request(
+      'agentpod-work-failure',
+      workRequest,
+      {
+        binding: root.binding,
+        request_id: request,
+        work_request_id: workRequest,
+        producer_terminal_digest: terminalDigest,
+      },
+      () => {
+        stopped();
+        this.assertPlan(task, JSON.parse(String(row.admission_json)));
+        const runtime = this.store.db
+          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+          .get(task.id);
+        const attempts = this.store.db
+          .prepare('SELECT * FROM attempts WHERE session_id=?')
+          .all(root.session_id);
+        const ops = this.store.db
+          .prepare('SELECT * FROM operations WHERE session_id=?')
+          .all(root.session_id);
+        const calls = this.store.db
+          .prepare("SELECT * FROM station_calls WHERE session_id=? AND kind!='read'")
+          .all(root.session_id);
+        const op = ops[0],
+          attempt = attempts[0],
+          call = calls[0];
+        const approval = op
+          ? this.store.db.prepare('SELECT * FROM approvals WHERE operation_id=?').get(String(op.id))
+          : undefined;
+        const effect = op?.receipt ? JSON.parse(String(op.receipt)) : null;
+        const bound = 'Provider payload exceeds declared per-request token bounds';
+        if (
+          task.state !== 'blocked' ||
+          !runtime ||
+          runtime.blocked_reason !== bound ||
+          runtime.auto_enabled ||
+          runtime.reserved_requests ||
+          runtime.reserved_tokens ||
+          runtime.verification_runs ||
+          attempts.length !== 1 ||
+          attempt?.state !== 'interrupted' ||
+          attempt.resolved_by !== null ||
+          ops.length !== 1 ||
+          op?.kind !== 'workspace' ||
+          op.state !== 'succeeded' ||
+          op.attempt_id !== attempt.id ||
+          op.resolution !== 'workspace-content-receipt-v1' ||
+          calls.length !== 1 ||
+          call?.kind !== 'patch' ||
+          call.state !== 'returned' ||
+          call.helper_state !== 'stopped' ||
+          call.operation_id !== op.id ||
+          call.attempt_id !== attempt.id ||
+          !call.result_json ||
+          !approval ||
+          approval.state !== 'decided' ||
+          approval.decision !== 'approve' ||
+          approval.operation_digest !== op.operation_digest ||
+          !effect ||
+          effect.version !== 1 ||
+          effect.scope !== 'station-workspace' ||
+          effect.call_id !== call.id ||
+          effect.root_digest !== digest(root.binding) ||
+          effect.root_digest !== call.root_digest ||
+          effect.configuration_digest !== call.configuration_digest ||
+          effect.input_digest !== call.input_digest ||
+          canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
+          effect.result?.ok !== true ||
+          task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted')
+            .length !== 1 ||
+          task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||
+          this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
+          this.store.db
+            .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+            .get(root.session_id)
+        )
+          throw new ServiceError(
+            'work_settlement_unsafe',
+            'Only exact budget-blocked interrupted work with one known approved patch can retire',
+          );
+        const evidence_digest = digest({
+          binding: root.binding,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          blocked_reason: runtime.blocked_reason,
+          attempt,
+          operation: op,
+          approval,
+          call,
+        });
+        driver.cancelInTransaction(task.id, task.revision, stopped);
+        const receipt = {
+          version: 1 as const,
+          state: 'cancelled' as const,
+          effects: 'known_effects_preserved' as const,
+          request_id: request,
+          work_request_id: workRequest,
+          session_id: root.session_id,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          binding_digest: digest(root.binding),
+          producer_terminal_digest: terminalDigest,
+          evidence_digest,
+        };
+        this.store.event(root.session_id, 'agentpod.work_failed', receipt, request);
+        return receipt;
+      },
+    );
+  }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);
     const view = await driver.viewAsync(task.id);

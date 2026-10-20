@@ -695,3 +695,127 @@ test.each(['outcome_unknown', 'succeeded'])(
     }
   },
 );
+
+async function knownEffectFailureFixture() {
+  const x = await expiredWorkFixture(),
+    { f, admitted, offer } = x;
+  const op = f.store.db.prepare('SELECT * FROM operations WHERE id=?').get(offer.operation_id)!;
+  const callId = 'known-native-call',
+    result = { version: 1, ok: true, path: 'app.js', sha256: 'a'.repeat(64) };
+  const receipt = {
+    version: 1,
+    scope: 'station-workspace',
+    call_id: callId,
+    root_digest: digest(f.binding),
+    configuration_digest: 'b'.repeat(64),
+    input_digest: 'c'.repeat(64),
+    result,
+  };
+  f.store.db
+    .prepare(
+      "UPDATE operations SET kind='workspace',state='succeeded',receipt=?,resolution='workspace-content-receipt-v1' WHERE id=?",
+    )
+    .run(JSON.stringify(receipt), offer.operation_id);
+  f.store.db
+    .prepare("UPDATE approvals SET state='decided',decision='approve' WHERE id=?")
+    .run(offer.approval_id);
+  f.store.db
+    .prepare("UPDATE attempts SET state='interrupted',resolved_by=NULL WHERE id=?")
+    .run(String(op.attempt_id));
+  f.store.db
+    .prepare("UPDATE task_steps SET state='interrupted',attempt_id=? WHERE task_id=?")
+    .run(String(op.attempt_id), admitted.task_id);
+  f.store.db
+    .prepare(
+      "UPDATE task_runtime SET blocked_reason='Provider payload exceeds declared per-request token bounds' WHERE task_id=?",
+    )
+    .run(admitted.task_id);
+  f.store.db
+    .prepare(
+      "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,operation_id,state,result_json,helper_state) VALUES(?,?,1,?,?,'patch',?,?,?,'{}',?,'returned',?,'stopped')",
+    )
+    .run(
+      callId,
+      f.session,
+      String(op.attempt_id),
+      callId,
+      receipt.input_digest,
+      receipt.root_digest,
+      receipt.configuration_digest,
+      offer.operation_id,
+      JSON.stringify(result),
+    );
+  return x;
+}
+
+test('known-effect retirement preserves interrupted history and effect receipt without another grant', async () => {
+  const { f, admitted, offer } = await knownEffectFailureFixture();
+  try {
+    const request = randomUUID(),
+      run = () =>
+        f.work.fail(f.binding, request, admitted.request_id, 'a'.repeat(64), settlementDriver(f));
+    const effect = f.store.db
+      .prepare('SELECT receipt FROM operations WHERE id=?')
+      .get(offer.operation_id)!.receipt;
+    const receipt = run();
+    expect(receipt).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+    const wire = JSON.parse(
+      readFileSync(new URL('../fixtures/agentpod-work-failure-v1.json', import.meta.url), 'utf8'),
+    );
+    expect(receipt).toEqual({
+      ...wire.receipt,
+      request_id: request,
+      work_request_id: admitted.request_id,
+      task_id: admitted.task_id,
+      session_id: f.session,
+      binding_digest: digest(f.binding),
+      evidence_digest: receipt.evidence_digest,
+    });
+    expect(f.store.db.prepare('SELECT state,resolved_by FROM attempts').get()).toMatchObject({
+      state: 'interrupted',
+      resolved_by: null,
+    });
+    expect(
+      f.store.db.prepare('SELECT receipt FROM operations WHERE id=?').get(offer.operation_id)!
+        .receipt,
+    ).toBe(effect);
+    f.reopen();
+    expect(run()).toEqual(receipt);
+    expect(() =>
+      f.work.fail(f.binding, request, admitted.request_id, 'b'.repeat(64), settlementDriver(f)),
+    ).toThrow();
+  } finally {
+    f.close();
+  }
+});
+
+test.each(['unknown', 'receipt-drift', 'unconfirmed', 'wrong-budget'])(
+  'known-effect retirement rejects %s',
+  async (failure) => {
+    const { f, admitted, offer } = await knownEffectFailureFixture();
+    try {
+      if (failure === 'unknown')
+        f.store.db
+          .prepare("UPDATE operations SET state='outcome_unknown' WHERE id=?")
+          .run(offer.operation_id);
+      if (failure === 'receipt-drift')
+        f.store.db.prepare("UPDATE station_calls SET result_json='{}'").run();
+      if (failure === 'unconfirmed')
+        f.store.db.prepare("UPDATE station_calls SET helper_state='unconfirmed'").run();
+      if (failure === 'wrong-budget')
+        f.store.db.prepare("UPDATE task_runtime SET blocked_reason='different failure'").run();
+      expect(() =>
+        f.work.fail(
+          f.binding,
+          randomUUID(),
+          admitted.request_id,
+          'a'.repeat(64),
+          settlementDriver(f),
+        ),
+      ).toThrow();
+      expect(f.tasks.get(admitted.task_id).state).toBe('blocked');
+    } finally {
+      f.close();
+    }
+  },
+);
