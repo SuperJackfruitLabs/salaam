@@ -25,6 +25,18 @@ does not establish availability, pricing, or access for your account.
 | Regional and coding plans | `kimi-coding`, `minimax`, `minimax-cn`, `moonshotai`, `moonshotai-cn`, `opencode`, `opencode-go`, `qwen-token-plan`, `qwen-token-plan-cn`, `qwen-token-plan-individual`, `xiaomi`, `xiaomi-token-plan-ams`, `xiaomi-token-plan-cn`, `xiaomi-token-plan-sgp`, `zai`, `zai-coding-cn` |
 | Classifier only           | `typesafe`                                                                                                                                                                                                                                                                          |
 
+## Choose a model in the terminal
+
+Use `/model` in `sal` to choose a provider and a model from the pinned catalog, then create a local session. The selection is saved with that session. Changing it creates a new session and leaves existing sessions on their original routes; multiple local sessions can use different providers on one daemon. `/status` shows the current route. Credentials remain managed by `sal auth`.
+
+For a scriptable local session:
+
+```sh
+sal session create --local --cwd "$PWD" --provider anthropic --model claude-sonnet-5-5
+```
+
+The service must already be running. Managed sessions without `--local` retain the service-configured route.
+
 ## API keys
 
 Use the hidden prompt to keep a key out of shell history and process arguments:
@@ -102,7 +114,7 @@ never a currency spending cap. See [task limits](durable-tasks.md).
 
 Provider, model, output setting, workspace ID, and resolved non-secret endpoint
 configuration bind durably to each session. Restart with the same configuration
-to resume it. Create a new session to change providers or models. Changes to
+to resume it. Local sessions select their saved route automatically; managed sessions require the matching service configuration. Create a new session to change providers or models. Changes to
 Azure deployments, cloud project/region, gateway IDs, or OAuth endpoints cannot
 silently move an existing session to another route.
 
@@ -111,8 +123,7 @@ private bridge before a request. Keys and refresh tokens are absent from worker
 configuration JSON, arguments, journal events, and operator responses. Global Pi
 settings and unrelated credentials remain excluded. Updated credentials are
 resolved for subsequent requests; change credentials at an idle work boundary.
-Switching between capped and uncapped authentication requires a service restart so
-the visible capability warning cannot become stale. Logout removes stored credentials; external environment credentials remain active.
+Switching between capped and uncapped authentication requires a new local session, or a service restart for service-routed sessions, so the visible capability warning cannot become stale. Logout removes stored credentials; external environment credentials remain active.
 
 Salaam validates the serialized model, output controls, tool inventory and actual
 task-context frame before durable request admission and network dispatch. SDK

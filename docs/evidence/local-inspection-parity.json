@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "scope": "Synthetic local read-only research tasks, same model/provider, low reasoning, 4096 output tokens. Not a general coding benchmark.",
+  "fixture_digest": "3c3d44382129433a6d9de712a2a466148509320934971eb3f78a5ba4b9c52672",
+  "cases": [
+    {
+      "prompt": "What are we looking at?",
+      "expected": ["Peregrine", "Aurora"],
+      "read": true
+    },
+    {
+      "prompt": "I have updated notes/decision.md since your last answer. Look at the files and tell me the current exact review codename and evaluation date. Cite the file.",
+      "expected": ["ORBIT-9137", "17 November", "decision.md"],
+      "update": true,
+      "read": true
+    },
+    {
+      "prompt": "Does this project already approve construction? Base your answer on the files.",
+      "expected": ["no", "construction"],
+      "read": false
+    }
+  ],
+  "runtime_digest": "8ceecc5ab8135d7aeaaa244d87b99e3d00cb6b0f4b29e36378b2586fa8ac9f4e",
+  "route": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5",
+    "max_tokens": 4096
+  },
+  "trials": [
+    {
+      "mode": "salaam",
+      "trial": 0,
+      "requests": 7,
+      "cases": [
+        {
+          "prompt": "What are we looking at?",
+          "answer": "This folder is **Project Peregrine**, a comparison of coastal flood adaptation strategies. It has three small files:\n\n- **`research.md`** (lines 1\u20132) is the overview. It points readers to `notes/decision.md` and `summaries/options.md`.\n- **`summaries/options.md`** (line 2) lists two options:\n  - **Aurora** restores wetlands.\n  - **Basalt** raises barriers.\n  - Both need a separate ecological review, and neither is approved for construction.\n- **`notes/decision.md`** (line 2) records that Aurora is the selected pilot. Its review codename is CANARY-4826, and the evaluation is scheduled for 17 November.\n\nAurora is the chosen pilot, but that isn't construction approval. The ecological review is still required.\n\nI can only read, list and search files here. I can't edit them or run anything.",
+          "tools": ["salaam_workspace", "salaam_workspace", "salaam_workspace", "salaam_workspace"],
+          "checks": [
+            {
+              "text": "Peregrine",
+              "pass": true
+            },
+            {
+              "text": "Aurora",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 7896
+        },
+        {
+          "prompt": "I have updated notes/decision.md since your last answer. Look at the files and tell me the current exact review codename and evaluation date. Cite the file.",
+          "answer": "The current values in `notes/decision.md` (line 2) are:\n\n- **Review codename:** ORBIT-9137. It was CANARY-4826 earlier, so your update replaced it.\n- **Evaluation date:** 17 November, which is unchanged.\n\nI read the file again just now, so this reflects your latest edit.",
+          "tools": ["salaam_workspace"],
+          "checks": [
+            {
+              "text": "ORBIT-9137",
+              "pass": true
+            },
+            {
+              "text": "17 November",
+              "pass": true
+            },
+            {
+              "text": "decision.md",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 4446
+        },
+        {
+          "prompt": "Does this project already approve construction? Base your answer on the files.",
+          "answer": "No. The files say construction is not approved.\n\n- `summaries/options.md` (line 2) says: \"No option is approved for construction.\" It also says both options, Aurora (wetland restoration) and Basalt (raised barriers), need a separate ecological review.\n- `notes/decision.md` (line 2) names Aurora as the selected pilot, with review codename ORBIT-9137 and an evaluation on 17 November. It doesn't mention construction approval.\n- A search for \"approv\" across the project found only the line in `options.md`. No file grants approval.\n\nAurora has been selected as the pilot, but that is a separate step from construction approval. The files don't show that the ecological review has been completed.",
+          "tools": ["salaam_workspace", "salaam_workspace", "salaam_workspace"],
+          "checks": [
+            {
+              "text": "no",
+              "pass": true
+            },
+            {
+              "text": "construction",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 6831
+        }
+      ]
+    },
+    {
+      "mode": "pi",
+      "trial": 0,
+      "requests": 8,
+      "cases": [
+        {
+          "prompt": "What are we looking at?",
+          "answer": "This folder is **Project Peregrine**, a research project that compares coastal flood adaptation strategies.\n\n- **`research.md`**: the overview. It points you to the two files below.\n- **`notes/decision.md`**: the selected pilot is **Aurora**. Its review codename is CANARY-4826, and the evaluation is scheduled for 17 November.\n- **`summaries/options.md`**: the two options are Aurora, which restores wetlands, and Basalt, which raises barriers. Both need a separate ecological review. Neither is approved for construction.",
+          "tools": ["ls", "read", "ls", "ls", "read", "read"],
+          "checks": [
+            {
+              "text": "Peregrine",
+              "pass": true
+            },
+            {
+              "text": "Aurora",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 7756
+        },
+        {
+          "prompt": "I have updated notes/decision.md since your last answer. Look at the files and tell me the current exact review codename and evaluation date. Cite the file.",
+          "answer": "In `notes/decision.md`, the current review codename is **ORBIT-9137**. The evaluation date is still **17 November**.\n\nThe codename was CANARY-4826 when I first read the file. The pilot is still Aurora.",
+          "tools": ["read"],
+          "checks": [
+            {
+              "text": "ORBIT-9137",
+              "pass": true
+            },
+            {
+              "text": "17 November",
+              "pass": true
+            },
+            {
+              "text": "decision.md",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 3716
+        },
+        {
+          "prompt": "Does this project already approve construction? Base your answer on the files.",
+          "answer": "No. `summaries/options.md` says: \"No option is approved for construction.\" It also says both Aurora and Basalt need a separate ecological review.\n\n`notes/decision.md` says Aurora is the selected pilot, with an evaluation on 17 November. It doesn't mention construction approval. Being selected as the pilot isn't the same as being approved to build.",
+          "tools": ["read", "read"],
+          "checks": [
+            {
+              "text": "no",
+              "pass": true
+            },
+            {
+              "text": "construction",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 4884
+        }
+      ]
+    },
+    {
+      "mode": "salaam",
+      "trial": 1,
+      "requests": 7,
+      "cases": [
+        {
+          "prompt": "What are we looking at?",
+          "answer": "This folder is **Project Peregrine**, a comparison of coastal flood adaptation strategies. It has three small files.\n\n- **`research.md`** (lines 1\u20132) is the project overview. It says to start with `notes/decision.md` and `summaries/options.md`.\n- **`summaries/options.md`** (line 2) covers the two options:\n  - Aurora restores wetlands.\n  - Basalt raises barriers.\n  - Both need a separate ecological review.\n  - Neither is approved for construction.\n- **`notes/decision.md`** (line 2) records the decision:\n  - Aurora is the selected pilot.\n  - Its review codename is CANARY-4826.\n  - Its evaluation is scheduled for 17 November.\n\nAurora is only the chosen pilot. It still needs the ecological review and isn't approved for construction.\n\nI can read, list and search files here, but I can't edit them or run commands.",
+          "tools": ["salaam_workspace", "salaam_workspace", "salaam_workspace", "salaam_workspace"],
+          "checks": [
+            {
+              "text": "Peregrine",
+              "pass": true
+            },
+            {
+              "text": "Aurora",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 7270
+        },
+        {
+          "prompt": "I have updated notes/decision.md since your last answer. Look at the files and tell me the current exact review codename and evaluation date. Cite the file.",
+          "answer": "The current details are in `notes/decision.md`, line 2:\n\n- **Review codename:** ORBIT-9137. It was CANARY-4826 before your update.\n- **Evaluation date:** 17 November, which hasn't changed.\n\nThe selected pilot is still Aurora.",
+          "tools": ["salaam_workspace"],
+          "checks": [
+            {
+              "text": "ORBIT-9137",
+              "pass": true
+            },
+            {
+              "text": "17 November",
+              "pass": true
+            },
+            {
+              "text": "decision.md",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 4246
+        },
+        {
+          "prompt": "Does this project already approve construction? Base your answer on the files.",
+          "answer": "No. The project doesn't approve construction.\n\n- `summaries/options.md`, line 2, says: \"No option is approved for construction.\"\n- The same line says Aurora and Basalt both \"require a separate ecological review.\"\n- `notes/decision.md`, line 2, only selects Aurora as the pilot. It gives the review codename ORBIT-9137 and an evaluation date of 17 November. It doesn't mention construction approval.\n- A search for \"approv\" across the project found only the line in `options.md`.\n\nAurora being selected as the pilot isn't the same as approval to build.",
+          "tools": ["salaam_workspace", "salaam_workspace", "salaam_workspace"],
+          "checks": [
+            {
+              "text": "no",
+              "pass": true
+            },
+            {
+              "text": "construction",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 6921
+        }
+      ]
+    },
+    {
+      "mode": "pi",
+      "trial": 1,
+      "requests": 7,
+      "cases": [
+        {
+          "prompt": "What are we looking at?",
+          "answer": "This folder is **Project Peregrine**, a comparison of coastal flood adaptation strategies. It has three files:\n\n- **`research.md`** is the overview. It points to the other two files.\n- **`notes/decision.md`** says the selected pilot is **Aurora**, with review codename CANARY-4826. Its evaluation is scheduled for 17 November.\n- **`summaries/options.md`** describes the two options. Aurora restores wetlands and Basalt raises barriers. Both need a separate ecological review, and neither is approved for construction.",
+          "tools": ["ls", "read", "ls", "ls", "read", "read"],
+          "checks": [
+            {
+              "text": "Peregrine",
+              "pass": true
+            },
+            {
+              "text": "Aurora",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 8734
+        },
+        {
+          "prompt": "I have updated notes/decision.md since your last answer. Look at the files and tell me the current exact review codename and evaluation date. Cite the file.",
+          "answer": "According to `notes/decision.md`, the current review codename is **ORBIT-9137**. The evaluation date is still **17 November**. The selected pilot is still Aurora.\n\nThe codename was CANARY-4826 when I read the file earlier.",
+          "tools": ["read"],
+          "checks": [
+            {
+              "text": "ORBIT-9137",
+              "pass": true
+            },
+            {
+              "text": "17 November",
+              "pass": true
+            },
+            {
+              "text": "decision.md",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 3174
+        },
+        {
+          "prompt": "Does this project already approve construction? Base your answer on the files.",
+          "answer": "No. `summaries/options.md` says \"No option is approved for construction.\" It adds that both Aurora and Basalt need a separate ecological review first.\n\n`notes/decision.md` only says Aurora is the selected pilot, with an evaluation on 17 November. It doesn't mention construction approval. I read `options.md` earlier in this conversation and haven't re-read it since you updated `decision.md`, so it may have changed.",
+          "tools": [],
+          "checks": [
+            {
+              "text": "no",
+              "pass": true
+            },
+            {
+              "text": "construction",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 2005
+        }
+      ]
+    }
+  ],
+  "success": true
+}

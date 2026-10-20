@@ -284,6 +284,25 @@ export class ManagedWork {
     this.mcpController(op).assertSettled(op);
     this.transition(op, 'succeeded', null, JSON.stringify(receipt), 'workspace-content-receipt-v1');
   }
+  localExecutionResultInTransaction(id: string, success: boolean, receipt: unknown): void {
+    const op = this.operation(id);
+    if (
+      !this.store.db.isTransaction ||
+      op.kind !== 'workspace' ||
+      !['dispatching', 'outcome_unknown'].includes(op.state)
+    )
+      throw new ServiceError('operation_scope', 'Not a dispatched local execution');
+    this.mcpController(op).assertSettled(op);
+    this.transition(
+      op,
+      success ? 'succeeded' : 'failed_definite',
+      success
+        ? null
+        : 'Local command ended without success; recorded output and any workspace effects remain available',
+      JSON.stringify(receipt),
+      'local-command-exit-v1',
+    );
+  }
   workspaceUnknownInTransaction(id: string): void {
     const op = this.operation(id);
     if (!this.store.db.isTransaction || op.kind !== 'workspace')
@@ -478,11 +497,19 @@ export class ManagedWork {
     revision: number,
     binding: string,
     decision: 'approve' | 'deny',
+    scoped?: { receipt: Record<string, unknown>; authorize: () => void },
   ): Approval {
     return this.store.request(
       'local-operator',
       request,
-      { kind: 'approval-decision', id, revision, binding, decision },
+      {
+        kind: 'approval-decision',
+        id,
+        revision,
+        binding,
+        decision,
+        ...(scoped ? { scoped: scoped.receipt } : {}),
+      },
       () => {
         const approval = this.approval(id);
         const op = this.operation(approval.operation_id);
@@ -498,12 +525,26 @@ export class ManagedWork {
             'approval_mismatch',
             'Decision does not match the bound operation',
           );
+        if (scoped) {
+          if (decision !== 'approve' || op.kind !== 'workspace')
+            throw new ServiceError(
+              'invalid_permissions',
+              'Scoped approval only applies to local workspace edits',
+            );
+          scoped.authorize();
+          this.store.event(
+            op.session_id,
+            'permission.auto-approved',
+            { ...scoped.receipt, operation_id: op.id, operation_digest: op.operation_digest },
+            request,
+          );
+        }
         this.fresh(op);
         this.store.db
           .prepare(
-            "UPDATE approvals SET state='decided',decision=?,decided_by='local-operator',revision=revision+1 WHERE id=?",
+            "UPDATE approvals SET state='decided',decision=?,decided_by=?,revision=revision+1 WHERE id=?",
           )
-          .run(decision, id);
+          .run(decision, scoped ? 'scoped-policy' : 'local-operator', id);
         if (decision === 'deny')
           this.transition(op, 'cancelled_before_dispatch', 'Denied by operator');
         this.store.event(

@@ -101,6 +101,13 @@ export class UsageLedger {
         provider?: string;
         model?: string;
       };
+      // Inherited records are context, not a new provider charge for the branch.
+      const inherited = this.store.db
+        .prepare(
+          `SELECT p.payload FROM events f JOIN pi_entries p ON p.session_id=json_extract(f.payload,'$.parent') AND p.entry_id=? WHERE f.session_id=? AND f.kind='session.forked' AND p.rowid <= (SELECT rowid FROM pi_entries WHERE session_id=p.session_id AND entry_id=json_extract(f.payload,'$.cursor')) LIMIT 1`,
+        )
+        .get(entry.id, session) as { payload: string } | undefined;
+      if (inherited && digest(JSON.parse(inherited.payload)) === digest(entry)) continue;
       const m = entry.message;
       const checkpoint =
         entry.type === 'compaction' &&

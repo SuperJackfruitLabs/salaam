@@ -1660,6 +1660,23 @@ async function main(): Promise<void> {
           cwd,
           request_id: requestId,
           ...(args.includes('--coding') ? { coding: true } : {}),
+          ...(args.includes('--local') || args.includes('--local-coding')
+            ? {
+                local_workspace: true,
+                ...(args.includes('--local-coding') ? { local_coding: true } : {}),
+                ...(option('--provider')
+                  ? {
+                      route: {
+                        provider: option('--provider'),
+                        model: option('--model'),
+                        max_tokens: option('--max-output-tokens')
+                          ? Number(option('--max-output-tokens'))
+                          : undefined,
+                      },
+                    }
+                  : {}),
+              }
+            : {}),
         }),
         null,
         2,

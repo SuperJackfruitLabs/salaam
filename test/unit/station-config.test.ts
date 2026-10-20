@@ -156,14 +156,16 @@ test('v25 migration preserves requests/events and creates empty station ownershi
     const session = store.create(f.workspace, 'original'),
       events = store.events(session.id, 0),
       requests = store.db.prepare('SELECT * FROM requests').all();
-    store.db.exec('DROP TABLE station_units; DROP TABLE station_calls; PRAGMA user_version=25');
+    store.db.exec(
+      'DROP TABLE local_calls; DROP TABLE station_units; DROP TABLE station_calls; PRAGMA user_version=25',
+    );
     store.close();
     store = new Store(file);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(26);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(27);
     expect(store.db.prepare('SELECT count(*) AS n FROM station_calls').get()!.n).toBe(0);
     expect(store.events(session.id, 0)).toEqual(events);
     expect(store.db.prepare('SELECT * FROM requests').all()).toEqual(requests);
-    store.db.exec('PRAGMA user_version=27');
+    store.db.exec('PRAGMA user_version=29');
     store.close();
     expect(() => new Store(file)).toThrow('newer than this service');
   } finally {

@@ -218,7 +218,9 @@ Start with --foreground for process-supervisor use; otherwise the service detach
 An AgentPod daemon requires node-bound admissions and a fresh authority lease.
 Keep its private state outside the pinned workspace. Coding, external runtimes,
 effect connectors and managed MCP are unavailable in this profile.`,
-  session: `salaam session create [--cwd DIR] [--request-id ID] [--coding]
+  session: `salaam session create [--cwd DIR] [--request-id ID] [--coding | --local | --local-coding]
+  --local-coding allows reviewed edits and native commands (no OS sandbox)
+  --local allows bounded local file inspection; optionally select --provider ID --model ID
 salaam session list
 salaam session inspect SESSION_ID
 salaam session submit SESSION_ID --text TEXT

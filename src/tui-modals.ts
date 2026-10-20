@@ -336,6 +336,7 @@ export class TextModal implements Component, Focusable {
   focused = false;
   offset = 0;
   private total = 0;
+  private reviewed = false;
   private page = 1;
   constructor(
     readonly title: string,
@@ -345,6 +346,8 @@ export class TextModal implements Component, Focusable {
     readonly renderAgain: () => void,
     readonly close: () => void,
     readonly next?: () => void,
+    readonly confirmReview?: () => void,
+    readonly confirmReviewLabel = 'apply reviewed inverse',
   ) {}
   invalidate(): void {}
   render(width: number): string[] {
@@ -352,6 +355,7 @@ export class TextModal implements Component, Focusable {
     this.total = lines.length;
     this.page = Math.max(1, this.rows() - 9);
     this.offset = Math.max(0, Math.min(this.offset, Math.max(0, this.total - this.page)));
+    if (this.offset + this.page >= this.total) this.reviewed = true;
     return framed(
       this.theme,
       this.title,
@@ -362,6 +366,13 @@ export class TextModal implements Component, Focusable {
           `Lines ${this.offset + 1}–${Math.min(this.total, this.offset + this.page)} of ${this.total}`,
           'muted',
         ),
+        ...(this.confirmReview
+          ? [
+              this.reviewed
+                ? this.theme.key('enter', this.confirmReviewLabel)
+                : this.theme.ink('Read to the end before applying.', 'amber'),
+            ]
+          : []),
         this.theme.key('↑↓', 'scroll') +
           '   ' +
           (this.next ? this.theme.key('n', 'next page') + '   ' : '') +
@@ -378,6 +389,7 @@ export class TextModal implements Component, Focusable {
     else if (matchesKey(data, 'pageUp')) this.offset -= this.page;
     else if (matchesKey(data, 'home')) this.offset = 0;
     else if (matchesKey(data, 'end')) this.offset = this.total;
+    else if (matchesKey(data, 'enter') && this.reviewed) this.confirmReview?.();
     else if (data === 'n') this.next?.();
     this.renderAgain();
   }

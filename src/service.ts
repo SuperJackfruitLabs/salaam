@@ -1,6 +1,7 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
@@ -44,6 +45,11 @@ import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
+import { permissionPolicy, configurePermissions } from './autonomy.js';
+import { LocalCoding } from './local-coding.js';
+import { localDiff } from './local-diff.js';
+import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
+import { forkPiSession } from './pi-sessions.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
 
@@ -109,6 +115,7 @@ export class SalaamService {
   readonly workerWorkspaces: WorkerWorkspaces;
   readonly workspaces: Workspaces;
   readonly coding: CodingWork;
+  readonly localCoding: LocalCoding;
   readonly codingSocket: string | null;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
@@ -242,8 +249,11 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
-        this.taskWork.providerCheck = (limits) =>
-          this.supervisor.assertTaskProviderSupported(limits);
+        this.taskWork.providerCheck = (limits, session) =>
+          this.supervisor.assertTaskProviderSupported(
+            limits,
+            session ? this.store.localOutputCap(session) : undefined,
+          );
         this.supervisor.coding = this.coding;
         this.managed = new ManagedWork(this.store, {
           connector: options.effectConnector,
@@ -260,6 +270,10 @@ export class SalaamService {
               : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
+        this.localCoding = new LocalCoding(this.store, this.managed, (id, epoch, attempt) =>
+          this.supervisor.assertActive(id, epoch, attempt),
+        );
+        this.supervisor.localCoding = this.localCoding;
         this.agents = new AgentProfiles(
           this.store,
           this.supervisor.route,
@@ -1405,6 +1419,12 @@ export class SalaamService {
             checkpoints: true,
             deterministic_compaction: 'operator-bounded-idle-only',
           },
+          local_workspace: {
+            inspection: true,
+            session_routes: true,
+            coding: true,
+            reasoning: true,
+          },
           provider_route: this.supervisor.route,
           provider_capabilities: this.supervisor.providerCapabilities(),
           effect_connector: this.managed.options.connector?.id ?? null,
@@ -1464,10 +1484,98 @@ export class SalaamService {
           throw new ServiceError('invalid_field', 'coding must be a boolean', 400);
         if (body.coding && !this.workspaces.root)
           throw new ServiceError('coding_disabled', 'Start with an explicit --coding-root');
+        if (
+          body.local_coding !== undefined &&
+          (typeof body.local_coding !== 'boolean' || !body.local_workspace)
+        )
+          throw new ServiceError('invalid_field', 'local_coding requires a local workspace');
+        if (body.local_workspace !== undefined && typeof body.local_workspace !== 'boolean')
+          throw new ServiceError('invalid_field', 'local_workspace must be a boolean', 400);
+        if (body.local_workspace && body.coding)
+          throw new ServiceError(
+            'invalid_field',
+            'Choose local inspection or an owned coding workspace',
+            400,
+          );
+        if (body.route !== undefined && !body.local_workspace)
+          throw new ServiceError(
+            'invalid_field',
+            'Session route selection requires a local workspace',
+            400,
+          );
+        const selected =
+          body.route === undefined
+            ? this.supervisor.route
+            : (() => {
+                const input = object(body.route);
+                return providerRoute(
+                  string(input.provider, 'provider'),
+                  input.model === undefined ? undefined : string(input.model, 'model'),
+                  input.max_tokens === undefined
+                    ? undefined
+                    : integer(input.max_tokens, 'max_tokens'),
+                  undefined,
+                  undefined,
+                  input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
+                );
+              })();
+        if (body.local_workspace) {
+          const saved = this.store.cachedRequest<import('./protocol.js').Session>(
+            'local-operator',
+            string(body.request_id, 'request_id', 128),
+            {
+              kind: 'create',
+              cwd,
+              local: {
+                workspace: true,
+                route: selected,
+                ...(body.local_coding ? { coding: true } : {}),
+              },
+            },
+          );
+          if (saved) {
+            this.send(res, 201, saved);
+            return;
+          }
+          if (this.mcp || this.toolkit || this.station)
+            throw new ServiceError(
+              'admission_required',
+              'Local inspection cannot be combined with managed host capabilities',
+            );
+        }
+        const preparedLocal = body.local_workspace
+          ? await this.supervisor.prepareProviderRoute(selected).catch(() => {
+              throw new ServiceError(
+                'provider_auth_required',
+                `Provider authentication or routing configuration is unavailable. Configure ${selected.provider} with sal auth login ${selected.provider} or sal auth set ${selected.provider}, then retry.`,
+                400,
+              );
+            })
+          : undefined;
+        if (
+          preparedLocal?.output_cap === false &&
+          body.route !== undefined &&
+          object(body.route).max_tokens !== undefined
+        )
+          throw new ServiceError(
+            'provider_output_cap_unavailable',
+            'This authentication route cannot enforce an output token cap; omit max_tokens for an interactive session.',
+            400,
+          );
+        const local = body.local_workspace
+          ? {
+              workspace: true as const,
+              coding: body.local_coding === true,
+              requestedRoute: selected,
+              route: preparedLocal!.route,
+              outputCap: preparedLocal!.output_cap,
+            }
+          : undefined;
         const session = this.store.create(
           cwd,
           string(body.request_id, 'request_id', 128),
           body.coding === true,
+          local,
         );
         if (body.coding) this.workspaces.import(session.id, cwd);
         if (this.store.session(session.id).state === 'stopped')
@@ -1501,6 +1609,159 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts.length === 4 && parts[3] === 'permissions') {
+          if (req.method === 'GET') {
+            this.send(res, 200, {
+              policy: permissionPolicy(this.store, id),
+              configurable: this.store.localWorkspace(id),
+              coding: this.store.localCoding(id),
+              command_auto_approval: false,
+            });
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              configurePermissions(
+                this.store,
+                id,
+                string(body.request_id, 'request_id', 128),
+                integer(body.expected_revision, 'expected_revision'),
+                body.policy,
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+              ),
+            );
+            return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'local-diff' && req.method === 'GET') {
+          if (!this.store.localWorkspace(id))
+            throw new ServiceError('local_denied', 'Local workspace required');
+          this.send(res, 200, { text: await localDiff(this.store.session(id).cwd) });
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'steer' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            200,
+            await this.supervisor.steer(
+              id,
+              string(body.request_id, 'request_id', 128),
+              string(body.text, 'text', 65536),
+              {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              },
+            ),
+          );
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'undo-reconcile' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            200,
+            reconcileUndo(
+              this.store,
+              id,
+              {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              },
+              () => this.supervisor.assertIdle(id),
+            ),
+          );
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'undo') {
+          if (req.method === 'GET') {
+            this.send(res, 200, reviewUndo(this.store, id));
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              applyUndo(
+                this.store,
+                id,
+                string(body.request_id, 'request_id', 128),
+                string(body.review_digest, 'review_digest', 128),
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+                () => {
+                  this.supervisor.assertIdle(id);
+                  if (
+                    this.store.db
+                      .prepare(
+                        "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+                      )
+                      .get(id)
+                  )
+                    throw new ServiceError('session_busy', 'Wait for queued work before undo');
+                },
+              ),
+            );
+            return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'fork' && req.method === 'POST') {
+          if (this.agentpod)
+            throw new ServiceError(
+              'admission_required',
+              'Managed station sessions cannot be forked locally',
+            );
+          const body = object(await readJson(req));
+          const session = this.store.forkLocal(
+            id,
+            string(body.request_id, 'request_id', 128),
+            integer(body.expected_revision, 'expected_revision'),
+            {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            },
+            (source, target) => {
+              this.supervisor.assertIdle(id);
+              const dir = join(this.stateDir, 'workers', target, 'sessions');
+              mkdirSync(dir, { recursive: true, mode: 0o700 });
+              return forkPiSession(source.pi_session_file!, source.cwd, dir, target);
+            },
+          );
+          this.send(res, 201, session);
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'name') {
+          if (req.method === 'GET') {
+            this.send(res, 200, { name: this.store.sessionName(id) ?? null });
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              this.store.nameSession(
+                id,
+                string(body.request_id, 'request_id', 128),
+                string(body.name, 'name', 120),
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+              ),
+            );
+            return;
+          }
+        }
         if (parts.length === 4 && parts[3] === 'revocation' && req.method === 'GET') {
           this.send(res, 200, this.store.execution.revocation(id));
           return;
@@ -2031,7 +2292,7 @@ export class SalaamService {
           const session = this.supervisor.inspect(id);
           if (
             session.provider_route &&
-            canonical(session.provider_route) !== canonical(this.supervisor.route)
+            canonical(session.provider_route) !== canonical(this.supervisor.routeFor(id))
           )
             throw new ServiceError(
               'provider_route_changed',
@@ -2186,6 +2447,7 @@ export class SalaamService {
     await attempt(() => this.a2aInbound?.close());
     await Promise.all([...this.revocationStops].map((stop) => attempt(() => stop)));
     await attempt(() => this.external.close());
+    await attempt(() => this.localCoding.close());
     await attempt(() => this.coding.close());
     await attempt(() => this.mcp?.close());
     await attempt(() => this.toolkit?.close());

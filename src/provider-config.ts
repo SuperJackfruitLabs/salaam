@@ -30,7 +30,10 @@ export const ROUTING_FIELDS = [
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_GATEWAY_ID',
 ] as const;
+export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high'] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 export interface ProviderRoute {
+  reasoning?: ReasoningLevel;
   provider: string;
   model: string;
   max_tokens: number;
@@ -49,9 +52,10 @@ export function providerRoute(
   maxTokens?: number,
   workspace?: string,
   connection?: ProviderRoute['connection'],
+  reasoning?: ReasoningLevel,
 ): ProviderRoute {
   if (provider === 'offline') {
-    if (model || maxTokens !== undefined || workspace)
+    if (model || maxTokens !== undefined || workspace || reasoning !== undefined)
       throw new ServiceError('invalid_provider', 'Offline mode does not take provider options');
     return { ...OFFLINE_ROUTE };
   }
@@ -70,11 +74,24 @@ export function providerRoute(
       'invalid_model',
       'This route supports pinned Pi chat models; run salaam models list ' + provider,
     );
+  if (
+    reasoning !== undefined &&
+    (!REASONING_LEVELS.includes(reasoning) || (reasoning !== 'off' && !entry.reasoning))
+  )
+    throw new ServiceError(
+      'invalid_reasoning',
+      'Reasoning level is invalid or the selected model does not support reasoning',
+    );
   const cap = maxTokens ?? Math.min(4096, entry.maxTokens);
   if (!Number.isSafeInteger(cap) || cap < 128 || cap > Math.min(8192, entry.maxTokens))
     throw new ServiceError(
       'invalid_limit',
       'Max output tokens must be 128–' + Math.min(8192, entry.maxTokens),
+    );
+  if (reasoning && reasoning !== 'off' && cap < 2048)
+    throw new ServiceError(
+      'invalid_reasoning',
+      'Reasoning requires an output allowance of at least 2,048 tokens',
     );
   if (workspace && (provider !== 'anthropic' || !/^[a-zA-Z0-9_-]{1,128}$/.test(workspace)))
     throw new ServiceError('invalid_workspace', 'Invalid Anthropic workspace ID');
@@ -101,6 +118,7 @@ export function providerRoute(
   }
   return {
     provider,
+    ...(reasoning !== undefined ? { reasoning } : {}),
     model: id,
     max_tokens: cap,
     ...(workspace ? { workspace_id: workspace } : {}),

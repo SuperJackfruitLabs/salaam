@@ -89,7 +89,7 @@ export class TaskContext {
         binding,
         version: state.version,
         instructions:
-          'Use active facts. Superseded facts are historical. Do not repeat completed steps. Retrieve evidence with salaam_history.',
+          'Runtime bookkeeping, not a user message or a new task. Answer the latest actual user request. Empty facts mean no saved notes, not an empty workspace or missing objective. Inspect workspace tools for filesystem questions; history is only for prior conversation. Use active facts; superseded facts are historical. Do not repeat completed steps.',
         facts: state.facts,
         ...(admitted.length ? { admitted_agents: admitted } : {}),
         ...(this.work?.forSession(id) ? { work_task: this.work.frame(id) } : {}),

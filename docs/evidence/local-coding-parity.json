@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "scope": "Synthetic bug repair with actual file changes and tests. Same Claude model/provider, low reasoning and 4096 output cap. One sample per harness; not a general coding benchmark.",
+  "fixture_digest": "ec34e49804254c2e125ce04996e60a8eee19b8ba44acb5d9de6939c1f258a65f",
+  "cases": [
+    {
+      "prompt": "Fix the bug in calc.mjs and verify the result. Read both files first. Do not change test.mjs. Run the verification using exactly `node test.mjs`; no other shell command is needed or approved. Make the smallest correct change and report the test outcome.",
+      "expected": [],
+      "read": true
+    }
+  ],
+  "runtime_digest": "9007a0590782361af64eac99df205266550896016eb224f6a5b60c5e8822cf7a",
+  "route": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5",
+    "max_tokens": 4096
+  },
+  "trials": [
+    {
+      "mode": "salaam",
+      "trial": 0,
+      "requests": 4,
+      "cases": [
+        {
+          "prompt": "Fix the bug in calc.mjs and verify the result. Read both files first. Do not change test.mjs. Run the verification using exactly `node test.mjs`; no other shell command is needed or approved. Make the smallest correct change and report the test outcome.",
+          "answer": "I fixed the bug in `calc.mjs`, and `node test.mjs` now passes.\n\n**Bug:** In `calc.mjs`, line 1, `sum` called `reduce` with an initial value of `1`. That added 1 to every result, so `sum([2,3])` returned 6 and `sum([])` returned 1.\n\n**Fix:** I changed the initial value from `1` to `0`. Nothing else in the file changed, and I didn't touch `test.mjs`.\n\n**Test result:** `node test.mjs` exited with code 0 and printed `all tests passed`. That covers both assertions in the test: `sum([2,3])` equals 5 and `sum([])` equals 0.\n\nI ran no other commands. The command ran as the local user with no OS sandbox.",
+          "tools": ["salaam_workspace", "salaam_workspace", "salaam_local", "salaam_local"],
+          "checks": [
+            {
+              "text": "actual unchanged test suite passes against modified source",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 10628
+        }
+      ]
+    },
+    {
+      "mode": "pi",
+      "trial": 0,
+      "requests": 4,
+      "cases": [
+        {
+          "prompt": "Fix the bug in calc.mjs and verify the result. Read both files first. Do not change test.mjs. Run the verification using exactly `node test.mjs`; no other shell command is needed or approved. Make the smallest correct change and report the test outcome.",
+          "answer": "I fixed the bug in `calc.mjs`: `sum` started its `reduce` from 1, so every total was one too high. I changed the initial value to 0 and left `test.mjs` alone.\n\nI ran `node test.mjs` and it printed `all tests passed`.",
+          "tools": ["read", "read", "edit", "bash"],
+          "checks": [
+            {
+              "text": "actual unchanged test suite passes against modified source",
+              "pass": true
+            }
+          ],
+          "success": true,
+          "elapsed_ms": 9424
+        }
+      ]
+    }
+  ],
+  "success": true
+}

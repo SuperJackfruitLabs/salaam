@@ -65,7 +65,7 @@ export interface WorkTask extends TaskPolicy {
 
 /** Operator-driven task ledger. An attempt outcome never constitutes task success. */
 export class TaskWork {
-  providerCheck?: (limits: TaskPolicy['limits']) => void;
+  providerCheck?: (limits: TaskPolicy['limits'], session?: string) => void;
   assertLimits?: (session: string) => void;
   assertProgressionBinding?: (task: WorkTask, binding: string) => void;
   delegatedStep?: (task: string, step: string) => boolean;
@@ -322,7 +322,7 @@ export class TaskWork {
     if (!this.store.db.isTransaction) throw new Error('Task admission requires a transaction');
     const plan = this.parse(input);
     authorize();
-    this.providerCheck?.(plan.limits);
+    this.providerCheck?.(plan.limits, session);
     if (expected !== 0)
       throw new ServiceError('task_revision_conflict', 'New tasks require revision zero');
     this.idle(session);
@@ -387,7 +387,7 @@ export class TaskWork {
         const task = this.get(id);
         this.store.authorizeControl(task.session_id, controller);
         this.expect(task, expected);
-        this.providerCheck?.(plan.limits);
+        this.providerCheck?.(plan.limits, task.session_id);
         this.idle(task.session_id);
         const runtime = this.store.db
           .prepare('SELECT * FROM task_runtime WHERE task_id=?')
@@ -489,7 +489,7 @@ export class TaskWork {
         if (controller) this.store.authorizeControl(task.session_id, controller);
         else this.authorizeGrant(task, stepId, grantId);
         this.expect(task, expected);
-        this.providerCheck?.(task.limits);
+        this.providerCheck?.(task.limits, task.session_id);
         if (['cancelled', 'succeeded', 'succeeded_with_exception'].includes(task.state))
           throw new ServiceError('task_settled', 'Revise a settled task before another step');
         const step = task.steps.find((s) => s.id === stepId);

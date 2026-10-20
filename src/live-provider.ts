@@ -251,7 +251,7 @@ export function registerLiveProvider(
               headers,
               apiKey: auth.auth.apiKey,
               env: auth.env ?? {},
-              ...generationOptions(native, context, route.max_tokens),
+              ...generationOptions(native, context, route.max_tokens, route.reasoning),
               transport: 'sse',
               maxRetries: 0,
               timeoutMs: 120000,

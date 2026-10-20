@@ -26,11 +26,14 @@ export interface ViewModel {
   continuation?: string;
 }
 export function modelLabel(client: OperatorClient): string {
-  const route = client.health?.provider_route;
+  const route = client.snapshot?.provider_route ?? client.health?.provider_route;
   if (!route) return 'Connect your workspace';
   if (['offline', 'salaam-proof'].includes(route.provider)) return 'Offline demo';
   const warning =
-    client.health?.provider_capabilities?.output_token_cap === false ? ' · no output cap' : '';
+    (client.snapshot?.provider_capabilities ?? client.health?.provider_capabilities)
+      ?.output_token_cap === false
+      ? ' · no output cap'
+      : '';
   return (
     route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2') + warning
   );
@@ -178,7 +181,11 @@ export class DocumentView implements Component {
       t.fill('', width),
       ...this.text(
         c.snapshot
-          ? 'Build something thoughtful. Fix something stubborn. Explore an idea.'
+          ? c.snapshot.capabilities.includes('local-workspace-read')
+            ? c.snapshot.capabilities.includes('local-coding-reviewed')
+              ? 'Describe a change. Review edits and commands, then check the result.'
+              : 'Explore this project. Ask about its files, decisions, or code.'
+            : 'Build something thoughtful. Fix something stubborn. Explore an idea.'
           : 'A durable workspace that stays with you, in this terminal or over SSH.',
         width,
       ),
@@ -192,7 +199,11 @@ export class DocumentView implements Component {
               t.ink(
                 c.workspace
                   ? 'Owned coding workspace · guarded edits'
-                  : 'Conversation session · coding tools are off',
+                  : c.snapshot.capabilities.includes('local-workspace-read')
+                    ? c.snapshot.capabilities.includes('local-coding-reviewed')
+                      ? 'Local coding · reviewed edits · commands run as your user'
+                      : 'Local workspace · read, list and search · /coding for edits and commands'
+                    : 'Conversation session · coding tools are off',
                 'muted',
               ),
               width,
@@ -348,6 +359,46 @@ export class DocumentView implements Component {
         );
       for (const key of this.cache.keys())
         if (key !== 'live-preview' && !ids.has(key)) this.cache.delete(key);
+    } else if (
+      (tab === 'changes' || tab === 'commands') &&
+      c.snapshot.capabilities.includes('local-coding-reviewed')
+    ) {
+      const prefix = tab === 'changes' ? 'Local edit:' : 'Local command:';
+      const operations = c.snapshot.operations.filter(
+        (op) => op.kind === 'workspace' && op.target.startsWith(prefix),
+      );
+      lines.push(
+        ...this.title(tab === 'changes' ? 'REVIEWED LOCAL EDITS' : 'LOCAL COMMAND RESULTS', width),
+      );
+      if (!operations.length)
+        lines.push(
+          ...this.text(
+            tab === 'changes'
+              ? 'Proposed edits appear here with their approval and apply outcome.'
+              : 'Commands appear here with their recorded exit status and output. Commands run as your local user.',
+            width,
+          ),
+        );
+      for (const op of operations.slice().reverse()) {
+        lines.push(
+          t.rule(width),
+          ...this.title(
+            shortId(op.id) + ' · ' + op.state,
+            width,
+            op.state === 'succeeded' ? 'jade' : 'amber',
+          ),
+          ...this.text(op.value, width),
+        );
+        if (op.receipt)
+          lines.push(...this.title('RECORDED RESULT', width), ...this.text(op.receipt, width));
+        if (op.error) lines.push(...this.text(op.error, width));
+      }
+      lines.push(
+        ...this.text(
+          'Ctrl+O reviews pending approvals. Cancel current work from Ctrl+K stops the active foreground command. These are saved operation records, not a live Git diff.',
+          width,
+        ),
+      );
     } else if (tab === 'changes') {
       if (!c.workspace)
         return this.text(
@@ -840,9 +891,22 @@ export function sidebar(view: ViewModel, width: number): string[] {
       row(c.usage.unknown_observations + ' unknown entries', 'amber');
   }
   label('CODING TOOLS');
-  row(c.workspace ? 'Files · guarded' : 'Files · off', c.workspace ? 'jade' : 'muted');
   row(
-    c.workspace && c.health?.execution?.commands ? 'Commands · isolated' : 'Commands · off',
+    c.workspace
+      ? 'Files · guarded'
+      : c.snapshot?.capabilities.includes('local-workspace-read')
+        ? c.snapshot?.capabilities.includes('local-coding-reviewed')
+          ? 'Files · reviewed edits'
+          : 'Files · local read'
+        : 'Files · off',
+    c.workspace || c.snapshot?.capabilities.includes('local-workspace-read') ? 'jade' : 'muted',
+  );
+  row(
+    c.snapshot?.capabilities.includes('local-coding-reviewed')
+      ? 'Commands · local user'
+      : c.workspace && c.health?.execution?.commands
+        ? 'Commands · isolated'
+        : 'Commands · off',
     c.workspace && c.health?.execution?.commands ? 'jade' : 'muted',
   );
   row('');
