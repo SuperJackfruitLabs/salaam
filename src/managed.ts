@@ -18,6 +18,25 @@ import {
   type EffectReceipt,
 } from './effect-connector.js';
 
+export function operationBinding(op: Operation): string {
+  return digest({
+    id: op.id,
+    session: op.session_id,
+    attempt: op.attempt_id,
+    epoch: op.worker_epoch,
+    tool_call: op.tool_call_id,
+    kind: op.kind,
+    action_key: op.action_key,
+    argument_digest: op.argument_digest,
+    target: op.target,
+    value: op.value,
+    target_version: op.target_version,
+    policy: op.policy_digest,
+    connector: op.connector,
+    replay: op.replay,
+  });
+}
+
 export interface ManagedOptions {
   connector?: EffectConnector;
   approvalTtlMs?: number;
@@ -33,8 +52,23 @@ export interface McpPermissionController {
   assert(operation: Operation): void;
   assertSettled(operation: Operation): void;
 }
+export interface OperationResolution {
+  kind: 'operation-resolution';
+  id: string;
+  revision: number;
+  binding: string;
+  outcome: 'succeeded' | 'failed_definite';
+  evidence: string;
+}
+/** Historical operator settlement is separate from execution permission. It
+ * cannot be used by fresh() or takePermission(), including after a restart. */
+export interface McpResolutionController {
+  owns(operation: Operation): boolean;
+  assertResolution(operation: Operation, request: string, input: OperationResolution): void;
+}
 export class ManagedWork {
   private mcpControllers = new Map<string, Readonly<McpPermissionController>>();
+  private mcpResolvers = new Map<string, Readonly<McpResolutionController>>();
   private active = new Map<string, { controller: AbortController; done: Promise<void> }>();
   private reconciling = new Set<string>();
   private lookups = new Set<Promise<Operation>>();
@@ -88,6 +122,28 @@ export class ManagedWork {
       };
     throw new ServiceError('mcp_owner_unavailable', 'MCP permission has no unique execution owner');
   }
+  registerMcpResolutionController(name: string, controller: McpResolutionController): () => void {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(name) || this.mcpResolvers.has(name))
+      throw Error('MCP resolution controller already registered or invalid');
+    const registered = Object.freeze({ ...controller });
+    this.mcpResolvers.set(name, registered);
+    return () => {
+      if (this.mcpResolvers.get(name) === registered) this.mcpResolvers.delete(name);
+    };
+  }
+  private assertMcpResolution(op: Operation, request: string, input: OperationResolution): void {
+    const owners = [...this.mcpResolvers.values()].filter((owner) => owner.owns(op));
+    if (owners.length === 1) {
+      owners[0]!.assertResolution(op, request, input);
+      return;
+    }
+    if (owners.length)
+      throw new ServiceError(
+        'mcp_owner_unavailable',
+        'MCP resolution has no unique settlement owner',
+      );
+    this.mcpController(op).assertSettled(op);
+  }
   private changed = (event: DurableEvent) => {
     if (
       [
@@ -128,22 +184,7 @@ export class ManagedWork {
       .run(...Object.values(row));
   }
   private binding(op: Operation): string {
-    return digest({
-      id: op.id,
-      session: op.session_id,
-      attempt: op.attempt_id,
-      epoch: op.worker_epoch,
-      tool_call: op.tool_call_id,
-      kind: op.kind,
-      action_key: op.action_key,
-      argument_digest: op.argument_digest,
-      target: op.target,
-      value: op.value,
-      target_version: op.target_version,
-      policy: op.policy_digest,
-      connector: op.connector,
-      replay: op.replay,
-    });
+    return operationBinding(op);
   }
   private transition(
     op: Operation,
@@ -739,35 +780,38 @@ export class ManagedWork {
     outcome: 'succeeded' | 'failed_definite',
     evidence: string,
   ): Operation {
-    return this.store.request(
-      'local-operator',
-      request,
-      { kind: 'operation-resolution', id, revision, binding, outcome, evidence },
-      () => {
-        const op = this.operation(id);
-        if (
-          op.state !== 'outcome_unknown' ||
-          op.revision !== revision ||
-          this.active.has(id) ||
-          this.reconciling.has(id)
-        )
-          throw new ServiceError(
-            'resolution_stale',
-            'Operation is not unresolved at this revision or transport is active',
-          );
-        if (op.operation_digest !== binding || binding !== this.binding(op))
-          throw new ServiceError('binding_changed', 'Resolution binding mismatch');
-        if (op.kind === 'mcp') this.mcpController(op).assertSettled(op);
-        this.transition(
-          op,
-          outcome,
-          null,
-          null,
-          JSON.stringify({ source: 'operator-attestation', actor: 'local-operator', evidence }),
+    const input: OperationResolution = {
+      kind: 'operation-resolution',
+      id,
+      revision,
+      binding,
+      outcome,
+      evidence,
+    };
+    return this.store.request('local-operator', request, input, () => {
+      const op = this.operation(id);
+      if (
+        op.state !== 'outcome_unknown' ||
+        op.revision !== revision ||
+        this.active.has(id) ||
+        this.reconciling.has(id)
+      )
+        throw new ServiceError(
+          'resolution_stale',
+          'Operation is not unresolved at this revision or transport is active',
         );
-        return this.operation(id);
-      },
-    );
+      if (op.operation_digest !== binding || binding !== this.binding(op))
+        throw new ServiceError('binding_changed', 'Resolution binding mismatch');
+      if (op.kind === 'mcp') this.assertMcpResolution(op, request, input);
+      this.transition(
+        op,
+        outcome,
+        null,
+        null,
+        JSON.stringify({ source: 'operator-attestation', actor: 'local-operator', evidence }),
+      );
+      return this.operation(id);
+    });
   }
   cancelInTransaction(attempt: string, request: string, actor = 'local-operator') {
     if (!this.store.db.isTransaction) throw new Error('Cancellation requires a transaction');

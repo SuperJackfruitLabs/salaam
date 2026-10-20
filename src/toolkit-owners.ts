@@ -11,8 +11,8 @@ function denied(): never {
   throw new ServiceError('toolkit_owner_unavailable', 'Private Toolkit owner is unavailable', 403);
 }
 
-/** Private work callback role only. No registration endpoint, no cleanup-role
- * fallback and no adoption of a predecessor's key after daemon recovery. */
+/** Distinct private work and cleanup callback roles, with no public registration,
+ * role fallback or adoption of a predecessor's key after daemon recovery. */
 export class ToolkitOwners {
   private active = new Map<
     string,

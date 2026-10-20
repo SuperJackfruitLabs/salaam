@@ -10,6 +10,7 @@ import { ToolkitControlProcess } from './toolkit-control-process.js';
 import type { ToolkitCleanupAdmission } from './toolkit-admission.js';
 import { agentpodBinding } from './agentpod-protocol.js';
 import { toolkitControl, type ToolkitControl } from './toolkit-protocol.js';
+import { assertToolkitAcknowledgement, resolvedToolkitCallSql } from './toolkit-resolutions.js';
 
 export interface ToolkitResourceSpec {
   id: string;
@@ -135,7 +136,6 @@ export class ToolkitResources {
           profile_ref: { path: profile?.profile_path, sha256: profile?.profile_digest },
           control,
         }) ||
-      control.action === 'acknowledge' ||
       spec.session_id !== predecessor.session_id ||
       spec.root_digest !== predecessor.root_digest ||
       spec.root_digest !== digest(binding) ||
@@ -146,6 +146,13 @@ export class ToolkitResources {
       control.stop_proof_digest !== c.stop_proof_digest
     )
       unavailable();
+    if (control.action === 'acknowledge') {
+      try {
+        assertToolkitAcknowledgement(this.store, this, spec.id, control);
+      } catch {
+        unavailable();
+      }
+    }
     if (control.action !== 'revoke') {
       const call = this.store.db
         .prepare(
@@ -417,7 +424,7 @@ export class ToolkitResources {
       SELECT ? UNION SELECT c.parent_session FROM child_tasks c JOIN owners o ON c.child_session=o.id
         ) SELECT 1 FROM toolkit_calls c JOIN owners o ON o.id=c.session_id
           JOIN toolkit_resources r ON r.id=c.resource_id
-          WHERE c.state='outcome_unknown' OR (c.state IN ('delivered','dispatching') AND (r.state!='running' OR r.owner_boot!=?)) LIMIT 1`,
+          WHERE (c.state='outcome_unknown' AND NOT ${resolvedToolkitCallSql('c')}) OR (c.state IN ('delivered','dispatching') AND (r.state!='running' OR r.owner_boot!=?)) LIMIT 1`,
         )
         .get(session, this.boot)
     )

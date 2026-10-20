@@ -236,15 +236,15 @@ does not verify a product effect.
 Its fresh cleanup key, actual registered PID, exact durable control bytes, original
 root/profile and predecessor stop proof must all match. Execution keys cannot use
 this role, and cleanup keys cannot use the work callback. Native inspect, fence,
-cancel and root revoke are supported internally. Acknowledgement remains disabled
-until a durable, exact operator-decision bridge is connected. None of these commands
-clears the parent's uncertain call or grants new work.
+cancel and root revoke are supported internally. Acknowledgement additionally
+requires the exact durable human-resolution intent and its recorded control job.
+None of these commands alone clears the parent's uncertain call or grants new work.
 
 Both resource roles recover before the daemon listens. SIGKILL with a recorded
 cleanup PID stops the actual surviving group; a launch intent without its PID
 remains unconfirmed and retains the daemon lock after failed shutdown. The schema
 upgrade preserves historical owners without inventing missing cleanup delegation;
-old binaries reject schema 24. Actual compiled Toolkit rehearsals exercise the
+old binaries reject newer schemas. Actual compiled Toolkit rehearsals exercise the
 private cleanup callback after revoked-root daemon reopen and removal of synthetic
 credentials/workspace, including a lost synthetic API response with exactly one
 write. These are local conformance proofs, not live product or fleet acceptance.
@@ -291,6 +291,34 @@ Receipt/control failures also install an immediate resource fence if the journal
 cannot persist uncertainty. Stopped or replaced processes with unfinished delivery
 records cannot authorize a replacement merely because cleanup completed.
 
-Asynchronous native acknowledgement and durable operator resolution remain to be
-connected. No generic expired-authority bypass, direct edits to the Go journal,
-public native house tool or station coding capability is enabled here.
+### Explicit operator resolution
+
+Schema 25 records an immutable local human decision before native settlement. The
+intent binds the original principal/root, resource and observed stop proof, call
+revision/request/context, operation revision/digest, outcome, evidence and request
+ID. Concurrent clients coalesce the same decision; changed decisions conflict.
+Only the private operator socket can create or inspect these intents. Worker
+bridge credentials do not grant operator access.
+
+The existing `POST /v1/operations/:id/resolution` endpoint now performs asynchronous
+native settlement for native write operations. Uncertain native reads have private
+`GET /v1/toolkit/calls/:id` and `POST /v1/toolkit/calls/:id/resolution` endpoints;
+the latter requires `request_id`, `expected_revision`, `context_digest`, `outcome`
+and `evidence`. These are trusted operator APIs, not model tools.
+
+Every recorded old control must stop before a fresh inspection. Native in-flight
+records are fenced, undispatched records cancelled, and unknown outcomes receive
+an immutable **non-success** acknowledgement bound to that human intent. A native
+returned record needs inspection, not acknowledgement. After a lost acknowledgement
+receipt or daemon restart, retrying the original decision inspects the saved native
+state without repeating the acknowledgement or product effect.
+
+The parent remains fenced until the final SQLite transaction commits the local
+operator attestation, resolution marker, events and cached response together. An
+intermediate failure preserves uncertainty. Original call receipts remain unchanged;
+even a human `succeeded` verdict retains explicit operator-attestation provenance
+and is never inferred from a native acknowledgement or protocol return. Historical
+settlement uses a separate role that cannot grant execution permission, including
+after execution-owner disposal. This adds no expired-authority execution bypass
+and never edits a Go journal. Native model tools and station coding remain disabled
+until their separate admission boundaries are connected and proven.

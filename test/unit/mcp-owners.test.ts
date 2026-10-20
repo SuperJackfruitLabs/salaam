@@ -223,3 +223,70 @@ test('operator attestation waits for the actual owner settlement but grants no n
     await f.close();
   }
 });
+
+test('a historical settlement controller cannot grant execution permission', async () => {
+  const f = fixture();
+  try {
+    let settlements = 0;
+    f.managed.registerMcpResolutionController('historical', {
+      owns: () => true,
+      assertResolution: () => {
+        settlements++;
+      },
+    });
+    expect(() => f.prepare('toolkit')).toThrow(/execution controller is required/i);
+    const release = f.managed.registerMcpController('execution', f.controller('toolkit'));
+    const { operation } = f.prepare('toolkit');
+    release();
+    expect(() => f.approve(operation)).toThrow(/unique execution owner/i);
+    expect(() => f.managed.takePermission(operation.id)).toThrow(/unique execution owner/i);
+    expect(settlements).toBe(0);
+    expect(f.managed.operation(operation.id).state).toBe('prepared');
+  } finally {
+    await f.close();
+  }
+});
+
+test('historical settlement after execution-owner disposal requires exactly one resolution owner', async () => {
+  const f = fixture();
+  try {
+    const release = f.managed.registerMcpController('execution', f.controller('toolkit'));
+    const { operation } = f.prepare('toolkit');
+    f.approve(operation);
+    expect(f.managed.takePermission(operation.id)).toBe(true);
+    f.managed.permissionResult(operation.id, false, { protocol_result: 'unknown' });
+    const unknown = f.managed.operation(operation.id);
+    release();
+    let settlements = 0;
+    const controller = {
+      owns: (op: Operation) => op.id === unknown.id,
+      assertResolution: () => {
+        settlements++;
+      },
+    };
+    f.managed.registerMcpResolutionController('historical', controller);
+    const conflicting = f.managed.registerMcpResolutionController('conflicting', controller);
+    const resolve = () =>
+      f.managed.resolve(
+        unknown.id,
+        'historical-resolution',
+        unknown.revision,
+        unknown.operation_digest,
+        'succeeded',
+        'Explicit synthetic human verification',
+      );
+    expect(resolve).toThrow(/unique settlement owner/i);
+    expect(settlements).toBe(0);
+    expect(f.managed.operation(unknown.id).state).toBe('outcome_unknown');
+    conflicting();
+    f.active.value = false;
+    const result = resolve();
+    expect(result.state).toBe('succeeded');
+    expect(JSON.parse(result.resolution!)).toMatchObject({ source: 'operator-attestation' });
+    expect(resolve()).toEqual(result);
+    expect(settlements).toBe(1);
+    expect(f.managed.takePermission(result.id)).toBe(false);
+  } finally {
+    await f.close();
+  }
+});

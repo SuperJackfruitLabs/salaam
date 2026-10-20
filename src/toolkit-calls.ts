@@ -44,6 +44,31 @@ export interface ToolkitCallOptions {
    * never from a worker's annotations or request. Includes policy and native kind. */
   action(resource: string, service: string, action: string): ToolkitActionPin;
 }
+export function toolkitCallContext(
+  call: Pick<
+    ToolkitCall,
+    | 'id'
+    | 'session_id'
+    | 'worker_epoch'
+    | 'attempt_id'
+    | 'tool_call_id'
+    | 'resource_id'
+    | 'request_digest'
+    | 'action_pin'
+  >,
+): string {
+  return digest({
+    id: call.id,
+    session: call.session_id,
+    epoch: call.worker_epoch,
+    attempt: call.attempt_id,
+    tool_call: call.tool_call_id,
+    resource: call.resource_id,
+    request: call.request_digest,
+    action: call.action_pin,
+  });
+}
+
 type Phase = 'review' | 'admit' | 'dispatch';
 interface Reply {
   version: 1;
@@ -82,8 +107,8 @@ export class ToolkitCalls {
       assertSettled: (op) => {
         const call = this.operationCall(op);
         options.resources.stopProof(call.resource_id);
-        // An opaque native result needs an explicit owner acknowledgement before
-        // parent manual resolution. No such bridge is admitted by this core yet.
+        // Opaque native results settle only through the persistent, exact human
+        // resolution role. The execution controller alone cannot attest them.
         if (['delivered', 'dispatching', 'outcome_unknown'].includes(call.state)) blocked();
       },
     });
@@ -149,16 +174,7 @@ export class ToolkitCalls {
   private context(
     call: Omit<ToolkitCall, 'context_digest' | 'operation_id' | 'state' | 'revision'>,
   ): string {
-    return digest({
-      id: call.id,
-      session: call.session_id,
-      epoch: call.worker_epoch,
-      attempt: call.attempt_id,
-      tool_call: call.tool_call_id,
-      resource: call.resource_id,
-      request: call.request_digest,
-      action: call.action_pin,
-    });
+    return toolkitCallContext(call);
   }
   private bound(call: ToolkitCall): ToolkitRequest {
     const request = this.request(call),

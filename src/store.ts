@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
+import { resolvedToolkitCallSql } from './toolkit-resolutions.js';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
 import { WorkerBoundary } from './worker-boundary.js';
@@ -68,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 24) {
+    if (version > 25) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -307,6 +308,13 @@ export class Store {
         this.db.exec(`BEGIN IMMEDIATE;
           CREATE TABLE toolkit_cleanup_profiles(resource_id TEXT PRIMARY KEY NOT NULL REFERENCES toolkit_resources(id),profile_path TEXT NOT NULL,profile_digest TEXT NOT NULL CHECK(length(profile_digest)=64));
           PRAGMA user_version=24; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 25
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_resolutions(id TEXT PRIMARY KEY NOT NULL,request_id TEXT NOT NULL UNIQUE,call_id TEXT NOT NULL UNIQUE REFERENCES toolkit_calls(id),operation_id TEXT UNIQUE REFERENCES operations(id),call_revision INTEGER NOT NULL,request_digest TEXT NOT NULL,context_json TEXT NOT NULL,context_digest TEXT NOT NULL,input_json TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','native_settled','committed')),native_receipt_json TEXT,revision INTEGER NOT NULL DEFAULT 1);
+          CREATE TABLE toolkit_resolution_controls(id TEXT PRIMARY KEY NOT NULL,resolution_id TEXT NOT NULL REFERENCES toolkit_resolutions(id),resource_id TEXT NOT NULL UNIQUE REFERENCES toolkit_resources(id),control_json TEXT NOT NULL,result_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','returned','outcome_unknown')));
+          PRAGMA user_version=25; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -984,7 +992,7 @@ export class Store {
   hasUnknown(id: string): boolean {
     return !!this.db
       .prepare(
-        "SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' UNION ALL SELECT 1 FROM toolkit_calls WHERE session_id=? AND state='outcome_unknown' LIMIT 1",
+        `SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' UNION ALL SELECT 1 FROM toolkit_calls c WHERE session_id=? AND state='outcome_unknown' AND NOT ${resolvedToolkitCallSql('c')} LIMIT 1`,
       )
       .get(id, id);
   }

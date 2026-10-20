@@ -37,6 +37,7 @@ import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
 import { ToolkitResources } from './toolkit-resources.js';
 import { cancelToolkitCalls, recoverToolkitCalls } from './toolkit-calls.js';
 import { ToolkitOwners } from './toolkit-owners.js';
+import { ToolkitResolutions, resolvedToolkitCallSql } from './toolkit-resolutions.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
@@ -70,6 +71,7 @@ export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
   readonly toolkitResources: ToolkitResources;
   readonly toolkitOwners: ToolkitOwners;
+  readonly toolkitResolutions: ToolkitResolutions;
   readonly mcp?: McpWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
@@ -353,6 +355,12 @@ export class SalaamService {
           );
         this.toolkitResources = new ToolkitResources(this.store, this.agentpod);
         this.toolkitOwners = new ToolkitOwners(this.store, this.toolkitResources, this.socket);
+        this.toolkitResolutions = new ToolkitResolutions(
+          this.store,
+          this.managed,
+          this.toolkitResources,
+          this.toolkitOwners,
+        );
         this.store.nativeResourceCheck = (session) => this.toolkitResources.assertSession(session);
         if (options.managedMcp) {
           this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
@@ -407,7 +415,7 @@ export class SalaamService {
             : []),
           ...this.store.db
             .prepare(
-              "SELECT id FROM toolkit_calls WHERE attempt_id=? AND state IN ('delivered','dispatching','outcome_unknown')",
+              `SELECT id FROM toolkit_calls c WHERE attempt_id=? AND state IN ('delivered','dispatching','outcome_unknown') AND NOT ${resolvedToolkitCallSql('c')}`,
             )
             .all(attempt)
             .map((row) => 'toolkit-call:' + row.id),
@@ -1674,6 +1682,32 @@ export class SalaamService {
           return;
         }
       }
+      if (parts[0] === 'v1' && parts[1] === 'toolkit' && parts[2] === 'calls' && parts[3]) {
+        const id = parts[3];
+        if (parts.length === 4 && req.method === 'GET') {
+          this.send(res, 200, this.toolkitResolutions.inspect(id));
+          return;
+        }
+        if (parts.length === 5 && parts[4] === 'resolution' && req.method === 'POST') {
+          const body = object(await readJson(req)),
+            outcome = string(body.outcome, 'outcome');
+          if (outcome !== 'succeeded' && outcome !== 'failed_definite')
+            throw new ServiceError('invalid_field', 'Invalid resolution outcome', 400);
+          this.send(
+            res,
+            200,
+            await this.toolkitResolutions.resolveRead(
+              id,
+              string(body.request_id, 'request_id', 128),
+              integer(body.expected_revision, 'expected_revision'),
+              string(body.context_digest, 'context_digest', 128),
+              outcome,
+              string(body.evidence, 'evidence', 4096),
+            ),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'operations' && parts[2]) {
         const id = parts[2];
         if (parts.length === 3 && req.method === 'GET') {
@@ -1705,7 +1739,11 @@ export class SalaamService {
           this.send(
             res,
             200,
-            this.managed.resolve(
+            await (
+              this.toolkitResolutions.owns(id)
+                ? this.toolkitResolutions.resolveOperation.bind(this.toolkitResolutions)
+                : this.managed.resolve.bind(this.managed)
+            )(
               id,
               string(body.request_id, 'request_id', 128),
               integer(body.expected_revision, 'expected_revision'),
@@ -2025,6 +2063,7 @@ export class SalaamService {
       return;
     }
     this.stopping = true;
+    this.toolkitResolutions.stop();
     clearInterval(this.authorityTimer);
     const errors: unknown[] = [];
     const attempt = async (cleanup: () => unknown) => {
@@ -2047,6 +2086,7 @@ export class SalaamService {
     await attempt(() => this.coding.close());
     await attempt(() => this.mcp?.close());
     await attempt(() => this.toolkitResources.close());
+    await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());
     await attempt(() => this.supervisor.close());
     await attempt(() => this.dispatcher.drain());

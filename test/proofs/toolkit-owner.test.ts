@@ -59,7 +59,19 @@ if(process.argv[2]==='managed-control-v1'){
     const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{
      const reply=JSON.parse(Buffer.concat(chunks));if(res.statusCode!==200||reply.decision!=='allowed')return process.exit(7);
      const result={version:1,control_digest:createHash('sha256').update(body).digest('hex'),root_revoked:c.action==='revoke'};
-     if(c.action!=='revoke')result.receipt={id:createHash('sha256').update(JSON.stringify(['stk.managed-mcp.v1',c.root_digest,c.invocation_id])).digest('hex'),request_digest:c.request_digest,state:'outcome_unknown'};
+     if(c.action!=='revoke'){
+      // Synthetic native receipt fixture only; the compiled-Go rehearsal proves
+      // the real native journal. No code here edits a Toolkit Go journal.
+      const file=join(process.env.HOME,'fixture-native-receipts.json'),saved=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):{},key=c.root_digest+':'+c.invocation_id;
+      let r=saved[key]??{id:createHash('sha256').update(JSON.stringify(['stk.managed-mcp.v1',c.root_digest,c.invocation_id])).digest('hex'),request_digest:c.request_digest,state:'outcome_unknown'};
+      if(existsSync(join(process.env.HOME,'fixture-native-returned')))r={...r,state:'returned',result:'Synthetic protocol data, not verified work'};
+      if(c.action==='acknowledge'){
+       if(r.state==='outcome_acknowledged'&&(r.resolution_id!==c.decision_id||r.resolution_stop_digest!==c.stop_proof_digest))return process.exit(9);
+       if(r.state!=='outcome_unknown'&&r.state!=='outcome_acknowledged')return process.exit(10);
+       r={...r,state:'outcome_acknowledged',resolution_id:c.decision_id,resolution_stop_digest:c.stop_proof_digest};saved[key]=r;writeFileSync(file,JSON.stringify(saved),{mode:0o600});
+      }
+      result.receipt=r;
+     }
      process.stdout.write(JSON.stringify(result));
     });
    });req.on('error',()=>process.exit(8));req.end(body);
@@ -633,6 +645,320 @@ test('actual private control role binds one owned PID, exact saved call and stop
 function callControl(socket: string, body: unknown, key: string) {
   return call<any>(socket, '/managed-toolkit/v1/control', body, key);
 }
+
+async function unresolvedNative(read = false) {
+  const f = await fixture(read);
+  await f.client.connect(f.transport);
+  const prepared = f.prepare();
+  f.calls.deliver(prepared.id);
+  if (prepared.operation_id) {
+    const op = f.f.service.managed.operation(prepared.operation_id),
+      approval = f.f.service.managed.forOperation(op.id);
+    f.f.service.managed.decide(
+      approval.id,
+      randomUUID(),
+      approval.revision,
+      op.operation_digest,
+      'approve',
+    );
+  }
+  expect(await f.verify('dispatch')).toMatchObject({ decision: 'allowed' });
+  f.calls.unknown(prepared.id);
+  const row = f.calls.get(prepared.id),
+    request = randomUUID(),
+    op = row.operation_id ? f.f.service.managed.operation(row.operation_id) : null;
+  const body = {
+    request_id: request,
+    expected_revision: op?.revision ?? row.revision,
+    ...(op ? { operation_digest: op.operation_digest } : { context_digest: row.context_digest }),
+    outcome: 'failed_definite',
+    evidence: 'Human inspected this synthetic unresolved call; no product success is inferred',
+  };
+  const endpoint = op
+    ? `/v1/operations/${op.id}/resolution`
+    : `/v1/toolkit/calls/${row.id}/resolution`;
+  return {
+    f,
+    row,
+    body,
+    op,
+    endpoint,
+    resolve: () => call<any>(f.f.service.socket, endpoint, body),
+  };
+}
+
+test('one durable human decision binds concurrent native write settlement and replays after daemon recovery without another acknowledgement', async () => {
+  const u = await unresolvedNative();
+  const { f, row, body, op } = u;
+  try {
+    expect(() =>
+      f.f.service.managed.resolve(
+        op!.id,
+        body.request_id,
+        op!.revision,
+        op!.operation_digest,
+        'failed_definite',
+        body.evidence,
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'toolkit_resolution_blocked' }));
+    const [first, second] = await Promise.all([u.resolve(), u.resolve()]);
+    expect(second).toEqual(first);
+    expect(first.state).toBe('failed_definite');
+    expect(JSON.parse(first.resolution).source).toBe('operator-attestation');
+    expect(f.f.service.store.hasUnknown(f.session)).toBe(false);
+    expect(f.calls.get(row.id).state).toBe('outcome_unknown');
+    const intent = f.f.service.store.db
+      .prepare('SELECT * FROM toolkit_resolutions WHERE call_id=?')
+      .get(row.id)!;
+    expect(intent.state).toBe('committed');
+    expect(JSON.parse(String(intent.native_receipt_json)).state).toBe('outcome_acknowledged');
+    const jobs = f.f.service.store.db
+      .prepare('SELECT * FROM toolkit_resolution_controls WHERE resolution_id=?')
+      .all(String(intent.id));
+    expect(jobs.map((j) => JSON.parse(String(j.control_json)).action)).toEqual([
+      'inspect',
+      'acknowledge',
+    ]);
+    expect(
+      f.f.service.agentpod!.leaseWindow(f.session, f.request.root_digest, 90000),
+    ).toBeGreaterThan(0);
+    await expect(
+      call(f.f.service.socket, u.endpoint, { ...body, evidence: 'changed human evidence' }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'request_conflict' }));
+    await f.f.reopen();
+    expect(await u.resolve()).toEqual(first);
+    expect(
+      f.f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resolution_controls').get()!
+        .n,
+    ).toBe(2);
+  } finally {
+    await f.close();
+  }
+});
+
+test('uncertain native read uses exact local operator settlement while an already returned native result is never acknowledged again', async () => {
+  const u = await unresolvedNative(true),
+    { f, row } = u;
+  try {
+    writeFileSync(join(f.f.state, 'fixture-native-returned'), 'synthetic returned data', {
+      mode: 0o600,
+    });
+    const view = await call<any>(f.f.service.socket, `/v1/toolkit/calls/${row.id}`);
+    expect(view.call).toMatchObject({
+      revision: row.revision,
+      context_digest: row.context_digest,
+      state: 'outcome_unknown',
+    });
+    const result = await u.resolve();
+    expect(result).toMatchObject({
+      call_id: row.id,
+      state: 'operator_attested',
+      source: 'local-operator',
+      outcome: 'failed_definite',
+    });
+    expect(f.f.service.store.hasUnknown(f.session)).toBe(false);
+    expect(
+      f.f.service.store.db
+        .prepare('SELECT control_json FROM toolkit_resolution_controls')
+        .all()
+        .map((r) => JSON.parse(String(r.control_json)).action),
+    ).toEqual(['inspect']);
+    expect(f.calls.get(row.id).state).toBe('outcome_unknown');
+    expect(await u.resolve()).toEqual(result);
+  } finally {
+    await f.close();
+  }
+});
+
+for (const boundary of ['native-receipt', 'local-commit'] as const)
+  test(`${boundary} failure keeps the parent fenced and recovers the same durable native decision`, async () => {
+    const u = await unresolvedNative(),
+      { f, row } = u;
+    try {
+      if (boundary === 'native-receipt')
+        f.f.service.store.db.exec(
+          `CREATE TRIGGER fail_resolution BEFORE UPDATE ON toolkit_resolution_controls WHEN NEW.state='returned' AND json_extract(NEW.control_json,'$.action')='acknowledge' BEGIN SELECT RAISE(ABORT,'synthetic native receipt loss'); END`,
+        );
+      else
+        f.f.service.store.db.exec(
+          `CREATE TRIGGER fail_resolution BEFORE UPDATE ON operations WHEN OLD.state='outcome_unknown' AND NEW.state='failed_definite' BEGIN SELECT RAISE(ABORT,'synthetic final commit loss'); END`,
+        );
+      await expect(u.resolve()).rejects.toThrow();
+      const intent = f.f.service.store.db
+        .prepare('SELECT * FROM toolkit_resolutions WHERE call_id=?')
+        .get(row.id)!;
+      expect(intent.state).toBe(boundary === 'native-receipt' ? 'prepared' : 'native_settled');
+      expect(f.f.service.store.hasUnknown(f.session)).toBe(true);
+      expect(f.f.service.managed.operation(row.operation_id!).state).toBe('outcome_unknown');
+      const native = JSON.parse(
+        readFileSync(join(f.f.state, 'fixture-native-receipts.json'), 'utf8'),
+      )[f.request.root_digest + ':' + f.request.invocation_id];
+      expect(native).toMatchObject({ state: 'outcome_acknowledged', resolution_id: intent.id });
+      f.f.service.store.db.exec('DROP TRIGGER fail_resolution');
+      await f.f.reopen();
+      const result = await u.resolve();
+      expect(result.state).toBe('failed_definite');
+      expect(f.f.service.store.hasUnknown(f.session)).toBe(false);
+      const jobs = f.f.service.store.db
+        .prepare('SELECT control_json FROM toolkit_resolution_controls')
+        .all()
+        .map((r) => JSON.parse(String(r.control_json)).action);
+      expect(jobs.filter((a) => a === 'acknowledge')).toHaveLength(1);
+      expect(jobs.filter((a) => a === 'inspect')).toHaveLength(
+        boundary === 'native-receipt' ? 2 : 1,
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
+test('stale operator revision cannot stop the running native broker or create an acknowledgement intent', async () => {
+  const u = await unresolvedNative(),
+    { f, body, row } = u;
+  try {
+    await expect(
+      call(f.f.service.socket, u.endpoint, {
+        ...body,
+        expected_revision: body.expected_revision - 1,
+      }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'toolkit_resolution_blocked' }));
+    expect(f.resources.get(f.resourceId).state).toBe('running');
+    expect(
+      f.f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resolutions').get()!.n,
+    ).toBe(0);
+    expect(f.calls.get(row.id).state).toBe('outcome_unknown');
+  } finally {
+    await f.close();
+  }
+});
+
+test('competing human decisions cannot replace an in-flight native resolution', async () => {
+  const u = await unresolvedNative(),
+    { f, body, row } = u;
+  const hold = join(f.f.state, 'control-hold');
+  let pending: Promise<any> | undefined;
+  try {
+    writeFileSync(hold, 'synthetic hold', { mode: 0o600 });
+    pending = u.resolve();
+    void pending.catch(() => {});
+    await until(
+      () =>
+        f.f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resolution_controls').get()!
+          .n,
+      (n) => n === 1,
+    );
+    for (const change of [
+      { ...body, evidence: 'different human decision' },
+      { ...body, request_id: randomUUID() },
+    ])
+      await expect(call(f.f.service.socket, u.endpoint, change)).rejects.toThrowError(
+        expect.objectContaining({ code: 'request_conflict' }),
+      );
+    expect(f.f.service.store.hasUnknown(f.session)).toBe(true);
+    const intent = f.f.service.store.db
+      .prepare('SELECT input_json FROM toolkit_resolutions WHERE call_id=?')
+      .get(row.id)!;
+    expect(JSON.parse(String(intent.input_json)).evidence).toBe(body.evidence);
+    rmSync(hold);
+    expect((await pending).state).toBe('failed_definite');
+    expect(
+      f.f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resolutions').get()!.n,
+    ).toBe(1);
+  } finally {
+    if (existsSync(hold)) rmSync(hold);
+    await pending?.catch(() => {});
+    await f.close();
+  }
+});
+
+test('a changed operation revision between intent and acknowledgement cannot cross the native callback', async () => {
+  const u = await unresolvedNative(),
+    { f, op } = u;
+  try {
+    f.f.service.store.db.exec(
+      `CREATE TRIGGER stale_native_ack BEFORE INSERT ON toolkit_resolution_controls WHEN json_extract(NEW.control_json,'$.action')='acknowledge' BEGIN UPDATE operations SET revision=revision+1 WHERE id='${op!.id}'; END`,
+    );
+    await expect(u.resolve()).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_control_unconfirmed' }),
+    );
+    expect(existsSync(join(f.f.state, 'fixture-native-receipts.json'))).toBe(false);
+    expect(f.f.service.store.hasUnknown(f.session)).toBe(true);
+    const job = f.f.service.store.db
+      .prepare(
+        "SELECT resource_id FROM toolkit_resolution_controls WHERE json_extract(control_json,'$.action')='acknowledge'",
+      )
+      .get()!;
+    expect(f.resources.stopProof(String(job.resource_id)).method).toBe('not_started');
+    f.f.service.store.db.exec('DROP TRIGGER stale_native_ack');
+  } finally {
+    await f.close();
+  }
+});
+
+test('an uncertain native read can be explicitly attested after a non-success acknowledgement without rewriting its original receipt', async () => {
+  const u = await unresolvedNative(true),
+    { f, row, body } = u;
+  try {
+    const result = await u.resolve();
+    expect(result).toMatchObject({ state: 'operator_attested', outcome: 'failed_definite' });
+    const intent = f.f.service.store.db
+      .prepare('SELECT native_receipt_json FROM toolkit_resolutions WHERE call_id=?')
+      .get(row.id)!;
+    expect(JSON.parse(String(intent.native_receipt_json)).state).toBe('outcome_acknowledged');
+    expect(f.calls.get(row.id)).toMatchObject({ state: 'outcome_unknown', receipt_json: null });
+    expect(f.f.service.store.hasUnknown(f.session)).toBe(false);
+    await expect(
+      call(f.f.service.socket, u.endpoint, { ...body, context_digest: 'e'.repeat(64) }),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'request_conflict' }));
+  } finally {
+    await f.close();
+  }
+});
+
+test('worker sockets cannot inspect or create native operator decisions', async () => {
+  const u = await unresolvedNative();
+  try {
+    for (const [endpoint, body] of [
+      [u.endpoint, u.body],
+      [`/v1/toolkit/calls/${u.row.id}`, undefined],
+      [`/v1/toolkit/calls/${u.row.id}/resolution`, u.body],
+    ] as const)
+      await expect(call(u.f.f.service.bridgeSocket, endpoint, body)).rejects.toThrowError(
+        expect.objectContaining({ code: 'not_found' }),
+      );
+    expect(
+      u.f.f.service.store.db.prepare('SELECT count(*) AS n FROM toolkit_resolutions').get()!.n,
+    ).toBe(0);
+    expect(u.f.resources.get(u.row.resource_id).state).toBe('running');
+    expect(u.f.f.service.store.hasUnknown(u.f.session)).toBe(true);
+  } finally {
+    await u.f.close();
+  }
+});
+
+test('a native non-success acknowledgement never supplies the evidence for an explicit human success verdict', async () => {
+  const u = await unresolvedNative();
+  try {
+    const result = await call<any>(u.f.f.service.socket, u.endpoint, {
+      ...u.body,
+      outcome: 'succeeded',
+      evidence: 'Human independently inspected the synthetic outcome',
+    });
+    expect(result.state).toBe('succeeded');
+    expect(JSON.parse(result.resolution)).toMatchObject({
+      source: 'operator-attestation',
+      evidence: 'Human independently inspected the synthetic outcome',
+    });
+    const intent = u.f.f.service.store.db
+      .prepare('SELECT native_receipt_json FROM toolkit_resolutions WHERE call_id=?')
+      .get(u.row.id)!;
+    expect(JSON.parse(String(intent.native_receipt_json)).state).toBe('outcome_acknowledged');
+    expect(u.f.calls.get(u.row.id).state).toBe('outcome_unknown');
+    expect(u.f.f.service.store.hasUnknown(u.f.session)).toBe(false);
+  } finally {
+    await u.f.close();
+  }
+});
 
 test('damaged durable cleanup delegation denies native grants and fences renewal before any effect dispatch', async () => {
   const f = await fixture(true);
