@@ -843,6 +843,32 @@ export class SalaamService {
           }
           return;
         }
+        if (parts[2] === 'work-abandon') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError(
+              'work_disabled',
+              'Strict work historical success retirement is not enabled',
+            );
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit failure request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.abandon(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+            ),
+          );
+          return;
+        }
         if (parts[2] === 'work-fail') {
           if (!this.agentpodWork || !this.agentpodWorkProgression)
             throw new ServiceError(

@@ -209,3 +209,21 @@ effects or unconfirmed resources refuse retirement. The existing cancellation
 transaction records nonsuccess; `known_effects_preserved` plus an evidence digest
 joins the retained history. A successor requires a new lawful run and an explicit
 verification-only plan; it cannot replay the old patch or modify its budget.
+
+### Retiring unreported local success
+
+`POST /v1/agentpod/work-abandon` is a private, explicit operator recovery action.
+It accepts the original binding, request and work request IDs, and the digest of
+the original producer's unsuccessful terminal result. AgentPod must persist that
+result and prove no completion report intent exists before invoking this route.
+Salaam requires a revoked, stopped root with no interrupted or uncertain work,
+a succeeded task, one completed attempt and approved native patch, and the bound
+historical native checks and completion artifact. It rejects exceptions or drift
+between these receipts. This narrow recovery does not renew authority, observe a
+fresh workspace, cancel the successful local task, or report producer success.
+
+The immutable version 1 receipt has `state: retired` and
+`outcome: unreported_local_success`, with an evidence digest and original identity
+joins. The task, checks, effect and completion remain intact as historical local
+evidence. Exact replay rechecks stopped authority; conflicting terminal results
+are rejected. A new run requires normal producer claiming and fresh admission.

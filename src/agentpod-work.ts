@@ -432,6 +432,206 @@ export class AgentPodWork {
       },
     );
   }
+  abandon(binding: unknown, request: string, workRequest: string, terminalDigest: string) {
+    const { root, row, task } = this.owned(binding);
+    if (workRequest !== row.request_id || !/^[a-f0-9]{64}$/.test(terminalDigest))
+      throw new ServiceError(
+        'work_settlement_conflict',
+        'Exact original work and terminal digest required',
+      );
+    const stopped = () => {
+      const current = this.authority.inspect(binding);
+      if (
+        !current.revoked ||
+        current.authorized ||
+        !current.owned_execution_stopped ||
+        current.unresolved_operations.length ||
+        current.active_attempts.length ||
+        current.interrupted_attempts.length
+      )
+        throw new ServiceError('work_settlement_unsafe', 'Revoked stopped completed root required');
+    };
+    stopped();
+    return this.store.request(
+      'agentpod-work-abandonment',
+      workRequest,
+      {
+        binding: root.binding,
+        request_id: request,
+        work_request_id: workRequest,
+        producer_terminal_digest: terminalDigest,
+      },
+      () => {
+        stopped();
+        this.assertPlan(task, JSON.parse(String(row.admission_json)));
+        this.verification.assertIdle(task);
+        const runtime = this.store.db
+          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+          .get(task.id);
+        const completion = this.store.db
+          .prepare('SELECT * FROM task_completions WHERE task_id=?')
+          .get(task.id);
+        const attempts = this.store.db
+          .prepare('SELECT * FROM attempts WHERE session_id=?')
+          .all(root.session_id);
+        const operations = this.store.db
+          .prepare('SELECT * FROM operations WHERE session_id=?')
+          .all(root.session_id);
+        const checks = this.store.db
+          .prepare('SELECT * FROM task_checks WHERE task_id=?')
+          .all(task.id);
+        const calls = this.store.db
+          .prepare('SELECT * FROM station_calls WHERE session_id=?')
+          .all(root.session_id);
+        const fail = (): never => {
+          throw new ServiceError(
+            'work_settlement_unsafe',
+            'Only historically verified local success with known approved effects may retire',
+          );
+        };
+        if (
+          task.state !== 'succeeded' ||
+          !runtime ||
+          runtime.auto_enabled ||
+          runtime.reserved_requests ||
+          runtime.reserved_tokens ||
+          !completion ||
+          completion.state !== 'succeeded' ||
+          completion.exception !== null ||
+          completion.plan_revision !== task.plan_revision ||
+          attempts.length !== 1 ||
+          attempts[0]!.state !== 'completed' ||
+          operations.length !== 1 ||
+          !checks.length ||
+          task.steps.some((s) => s.state !== 'completed') ||
+          this.store.db
+            .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+            .get(root.session_id)
+        )
+          fail();
+        const evidence = JSON.parse(
+          this.verification.artifacts.read(String(completion!.artifact_id)),
+        );
+        const rootDigest = digest(root.binding);
+        if (
+          evidence.task_id !== task.id ||
+          evidence.plan_revision !== task.plan_revision ||
+          evidence.verified !== true ||
+          evidence.exception !== null ||
+          evidence.missing_requirements?.length !== 0 ||
+          evidence.diff?.backend !== 'linux-systemd-station-v1' ||
+          evidence.diff.root_digest !== rootDigest ||
+          evidence.workspace?.id !== 'station:' + rootDigest ||
+          evidence.workspace.digest !== completion!.workspace_digest ||
+          evidence.diff.workspace_digest !== completion!.workspace_digest ||
+          !Array.isArray(evidence.checks)
+        )
+          fail();
+        const op = operations[0]!;
+        const approval = this.store.db
+          .prepare('SELECT * FROM approvals WHERE operation_id=?')
+          .get(String(op.id));
+        const effect = op.receipt ? JSON.parse(String(op.receipt)) : null;
+        const call = calls.find((c) => c.id === effect?.call_id);
+        if (
+          op.kind !== 'workspace' ||
+          op.state !== 'succeeded' ||
+          op.attempt_id !== attempts[0]!.id ||
+          op.resolution !== 'workspace-content-receipt-v1' ||
+          !approval ||
+          approval.state !== 'decided' ||
+          approval.decision !== 'approve' ||
+          approval.operation_digest !== op.operation_digest ||
+          !effect ||
+          effect.version !== 1 ||
+          effect.scope !== 'station-workspace' ||
+          !call ||
+          call.kind !== 'patch' ||
+          call.operation_id !== op.id ||
+          call.attempt_id !== op.attempt_id ||
+          effect.root_digest !== rootDigest ||
+          call.root_digest !== rootDigest ||
+          effect.configuration_digest !== evidence.diff.configuration_digest ||
+          effect.configuration_digest !== call.configuration_digest ||
+          effect.input_digest !== call.input_digest ||
+          !call.result_json ||
+          canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
+          effect.result?.ok !== true ||
+          calls.some(
+            (c) =>
+              c.state !== 'returned' ||
+              c.helper_state !== 'stopped' ||
+              !['read', 'patch', 'check'].includes(String(c.kind)),
+          ) ||
+          calls.filter((c) => c.kind === 'patch').length !== 1
+        )
+          fail();
+        const checkEvidence = checks.map((check) => {
+          if (
+            check.state !== 'passed' ||
+            check.plan_revision !== task.plan_revision ||
+            check.engine_id !== 'linux-systemd-station-v1' ||
+            check.workspace_digest !== completion!.workspace_digest ||
+            !check.artifact_id
+          )
+            fail();
+          const e = JSON.parse(this.verification.artifacts.read(String(check.artifact_id)));
+          const c = calls.find((c) => c.id === e.call_id);
+          if (
+            e.version !== 1 ||
+            e.backend !== 'linux-systemd-station-v1' ||
+            e.check_id !== check.id ||
+            e.plan_revision !== task.plan_revision ||
+            e.root_digest !== rootDigest ||
+            e.tree_digest !== completion!.workspace_digest ||
+            e.configuration_digest !== evidence.diff.configuration_digest ||
+            !c ||
+            c.kind !== 'check' ||
+            c.root_digest !== rootDigest ||
+            c.configuration_digest !== e.configuration_digest ||
+            !c.result_json ||
+            digest(JSON.parse(String(c.result_json))) !== e.result_digest
+          )
+            fail();
+          return e;
+        });
+        if (
+          evidence.checks.some((id: unknown) => !checks.some((c) => c.id === id)) ||
+          task.acceptance.some(
+            (a) => !checks.some((c) => c.step_id === null && c.check_key === a.key),
+          ) ||
+          calls.some((c) => c.kind === 'check' && !checkEvidence.some((e) => e.call_id === c.id))
+        )
+          fail();
+        // Historical evidence only: do not observe a fresh tree, renew authority,
+        // cancel successful local work, or turn this receipt into producer success.
+        const receipt = {
+          version: 1 as const,
+          state: 'retired' as const,
+          outcome: 'unreported_local_success' as const,
+          request_id: request,
+          work_request_id: workRequest,
+          session_id: root.session_id,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          binding_digest: rootDigest,
+          producer_terminal_digest: terminalDigest,
+          evidence_digest: digest({
+            completion,
+            evidence,
+            attempts,
+            operations,
+            approval,
+            checks,
+            checkEvidence,
+            calls,
+          }),
+        };
+        this.store.event(root.session_id, 'agentpod.work_abandoned', receipt, request);
+        return receipt;
+      },
+    );
+  }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);
     const view = await driver.viewAsync(task.id);
