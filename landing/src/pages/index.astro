@@ -125,7 +125,7 @@ const steps = [
                 <p class="terminal-who">
                   YOU <span>09:41</span>
                 </p>
-                <p class="prompt">Fix the parser and prove the edge cases.</p>
+                <p class="prompt"><span class="typed">Fix the parser and prove the edge cases.</span></p>
                 <p class="terminal-who accent">
                   SALAAM <span>09:42</span>
                 </p>
@@ -327,6 +327,34 @@ const steps = [
           localStorage.setItem('salaam-theme', next);
         } catch {}
       });
+      // Hero moment: plays once, animating INTO the static demo. Reduced motion: never.
+      const demo = document.querySelector<HTMLElement>('.terminal');
+      const typed = demo?.querySelector<HTMLElement>('.typed');
+      if (demo && typed && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const text = typed.textContent ?? '';
+        const play = () => {
+          const shown = document.createElement('span');
+          const rest = document.createElement('span');
+          rest.style.visibility = 'hidden';
+          typed.replaceChildren(shown, rest);
+          let i = 0;
+          const step = () => {
+            shown.textContent = text.slice(0, i);
+            rest.textContent = text.slice(i);
+            if (i++ < text.length) setTimeout(step, 25);
+            else typed.textContent = text;
+          };
+          step();
+          demo.classList.add('playing');
+          setTimeout(() => demo.classList.remove('playing'), 3200);
+        };
+        new IntersectionObserver((entries, io) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            io.disconnect();
+            setTimeout(play, 600);
+          }
+        }).observe(demo);
+      }
       document.querySelector('#copy')?.addEventListener('click', async () => {
         const status = document.querySelector('#copy-status');
         try {

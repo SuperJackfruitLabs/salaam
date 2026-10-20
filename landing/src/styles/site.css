@@ -848,6 +848,51 @@ footer nav {
   }
 }
 
+/* Hero moment (.terminal.playing): the prompt types out (script), then the reply and the
+   checklist arrive. Resting state is the static demo; nothing here applies without .playing. */
+@keyframes demo-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes demo-tick {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+.terminal.playing .terminal-who.accent,
+.terminal.playing .terminal-who.accent + p,
+.terminal.playing .task-line,
+.terminal.playing .checkpoint {
+  animation: demo-in 320ms ease-out both;
+}
+.terminal.playing .terminal-who.accent {
+  animation-delay: 1150ms;
+}
+.terminal.playing .terminal-who.accent + p {
+  animation-delay: 1350ms;
+}
+.terminal.playing .task-line {
+  animation-name: demo-tick;
+  animation-delay: 1700ms;
+}
+.terminal.playing .task-line + .task-line {
+  animation-delay: 1950ms;
+}
+.terminal.playing .task-line + .task-line + .task-line {
+  animation-delay: 2200ms;
+}
+.terminal.playing .checkpoint {
+  animation-delay: 2450ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal.playing * {
+    animation: none !important;
+  }
+}
+
 /* The landing page has no page-wide wrapper: every section brings its own .container, and
    the masthead and footer share the same 1080px column so every left edge lines up. */
 .page > .masthead,
