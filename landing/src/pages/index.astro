@@ -1,6 +1,8 @@
 ---
 import { site, docs, repo, description } from '../../../site.config.mjs';
 import '../styles/site.css';
+import SuiteHead from '@superjackfruit/frontdoor/components/SuiteHead.astro';
+import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
 // Latest published release. Update this one constant when a new release ships.
 const release = '0.0.2';
 const installer = new URL('/install.sh', site).href;
@@ -47,42 +49,13 @@ const steps = [
     <meta property="og:url" content={site} />
     <meta property="og:image" content={`${site}/social.svg`} />
     <meta name="twitter:card" content="summary" />
-    <script is:inline>
-      try {
-        const theme = localStorage.getItem('salaam-theme');
-        if (theme === 'paper' || theme === 'night') document.documentElement.dataset.theme = theme;
-      } catch {}
-    </script>
+    <SuiteHead product="salaam" />
   </head>
   <body>
     <a class="skip" href="#main">
       Skip to content
     </a>
-    <div class="page">
-      <header class="masthead">
-        <a href="/" class="brand" aria-label="Salaam home">
-          <img src="/mark.svg" width="34" height="34" alt="" />
-          <span>
-            salaam<span class="brand-dot">.</span>
-          </span>
-        </a>
-        <nav aria-label="Main navigation">
-          <a href={docs}>
-            Docs <span aria-hidden="true">↗</span>
-          </a>
-          <a href={repo}>
-            Source <span aria-hidden="true">↗</span>
-          </a>
-          <button
-            id="theme"
-            class="theme"
-            aria-label="Switch Night and Paper theme"
-            title="Switch theme"
-          >
-            <span aria-hidden="true">◐</span>
-          </button>
-        </nav>
-      </header>
+    <Frame product="salaam" cta={{ label: 'Get started', href: `${docs}/quickstart/` }}>
       <main id="main">
         <section class="hero" aria-labelledby="title">
           <div class="hero-inner">
@@ -319,30 +292,8 @@ const steps = [
           </div>
         </section>
       </main>
-      <footer>
-        <a class="brand" href="/">
-          <img src="/mark.svg" width="25" height="25" alt="" />
-          <span>salaam.</span>
-        </a>
-        <nav aria-label="Footer">
-          <a href={docs}>Docs</a>
-          <a href={repo}>Source</a>
-          <a href="https://superjackfruit.com">Super Jackfruit Labs ↗</a>
-        </nav>
-      </footer>
-    </div>
+    </Frame>
     <script>
-      const theme = document.querySelector<HTMLButtonElement>('#theme');
-      theme?.addEventListener('click', () => {
-        const current =
-          document.documentElement.dataset.theme ??
-          (matchMedia('(prefers-color-scheme: light)').matches ? 'paper' : 'night');
-        const next = current === 'night' ? 'paper' : 'night';
-        document.documentElement.dataset.theme = next;
-        try {
-          localStorage.setItem('salaam-theme', next);
-        } catch {}
-      });
       // Hero moment: plays once, animating INTO the static demo. Reduced motion: never.
       const demo = document.querySelector<HTMLElement>('.terminal');
       const typed = demo?.querySelector<HTMLElement>('.typed');
