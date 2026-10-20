@@ -101,6 +101,18 @@ test('a denied pre-send grant never hands a tool call to the child', async () =>
   expect(f.transport.toolCallsSent).toBe(0);
 });
 
+test('an asynchronous guard cannot admit tool delivery before its authority check settles', async () => {
+  const f = fixture('normal', async () => {});
+  await f.connect();
+  await expect(
+    f.client.request(
+      { method: 'tools/call', params: { name: 'fixture', arguments: {} } },
+      CallToolResultSchema,
+    ),
+  ).rejects.toThrow();
+  expect(f.transport.toolCallsSent).toBe(0);
+});
+
 for (const mode of ['overflow', 'stderr', 'version', 'timeout'])
   test(`stdio ${mode} fails closed with fixed diagnostics and observed cleanup`, async () => {
     const f = fixture(mode);

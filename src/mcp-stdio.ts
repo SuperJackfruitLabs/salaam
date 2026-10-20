@@ -19,6 +19,14 @@ export interface StdioLaunch {
     timeout_ms: number;
   };
 }
+export interface StdioLifecycle {
+  /** Synchronous durable intent before OS spawn; a Promise cannot admit startup. */
+  starting(): void;
+  /** Synchronous actual PID persistence before SDK initialization/tool delivery. */
+  spawned(pid: number): void;
+  /** Immediate control fence, including when persisting a failure is impossible. */
+  failed?(): void;
+}
 
 const allowedEnvironment = new Set([
   'HOME',
@@ -31,6 +39,13 @@ const allowedEnvironment = new Set([
   'SSL_CERT_DIR',
 ]);
 const failed = () => new Error('Managed MCP stdio control failed');
+function synchronous(effect: () => unknown): void {
+  const value = effect();
+  if (value !== undefined) {
+    if (value instanceof Promise) void value.catch(() => {});
+    throw failed();
+  }
+}
 const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 function groupExists(pid: number): boolean {
   try {
@@ -72,6 +87,7 @@ export class ManagedStdioTransport implements Transport {
   constructor(
     launch: StdioLaunch,
     private readonly beforeToolCall: () => void,
+    private readonly lifecycle?: StdioLifecycle,
   ) {
     this.launch = Object.freeze({
       ...launch,
@@ -143,6 +159,12 @@ export class ManagedStdioTransport implements Transport {
   async start(): Promise<void> {
     if (this.child || this.closing || this.faulted) throw failed();
     this.verify();
+    try {
+      synchronous(() => this.lifecycle?.starting());
+    } catch {
+      this.fail();
+      throw failed();
+    }
     const p = this.launch;
     const child = spawn(p.command, [...p.args], {
       cwd: p.cwd,
@@ -168,10 +190,24 @@ export class ManagedStdioTransport implements Transport {
     child.once('exit', () => {
       if (!this.closing) this.fail();
     });
-    await new Promise<void>((done, reject) => {
-      child.once('spawn', done);
-      child.once('error', () => reject(failed()));
-    });
+    try {
+      await new Promise<void>((done, reject) => {
+        child.once('spawn', () => {
+          try {
+            if (!child.pid) throw failed();
+            synchronous(() => this.lifecycle?.spawned(child.pid!));
+            done();
+          } catch {
+            reject(failed());
+          }
+        });
+        child.once('error', () => reject(failed()));
+      });
+    } catch {
+      this.fail();
+      await this.close();
+      throw failed();
+    }
   }
   setProtocolVersion(version: string): void {
     if (version !== this.launch.protocol_version) {
@@ -182,7 +218,12 @@ export class ManagedStdioTransport implements Transport {
   private fail(): void {
     if (this.faulted || this.closing) return;
     this.faulted = true;
-    this.onerror?.(failed());
+    try {
+      synchronous(() => this.lifecycle?.failed?.());
+    } catch {}
+    try {
+      this.onerror?.(failed());
+    } catch {}
     void this.close().catch(() => {});
   }
   private receive(chunk: Buffer): void {
@@ -225,8 +266,9 @@ export class ManagedStdioTransport implements Transport {
         // The owner records invocation delivery here, synchronously. Native Toolkit
         // dispatch consumes its effect grant through the separate fresh owner callback.
         try {
-          this.beforeToolCall();
+          synchronous(this.beforeToolCall);
         } catch {
+          this.fail();
           throw failed();
         }
         this.handedOff++;

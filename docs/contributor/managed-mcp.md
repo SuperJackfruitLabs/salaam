@@ -131,3 +131,44 @@ Its process proofs use a disposable fixture, not Toolkit. This primitive does no
 admit configuration or grant authority, and no public ACP stdio capability or
 Toolkit execution tool is enabled by its presence. Pending broker decisions still
 require owner binding, revocation and recovery conformance before integration.
+
+Journal schema 22 adds a durable Toolkit process registry alongside the existing
+HTTP call records. Each private resource binds its session/root, reviewed profile,
+manifest and complete launch fingerprints, canonical private state directory,
+controller boot, actual PID and process start identity. Launch intent is committed
+before OS spawn. The synchronous PID callback commits ownership before SDK
+initialization or tool delivery; asynchronous guards cannot admit a call.
+Resource events and state changes share one journal transaction. The migration
+preserves existing requests, receipts and events without manufacturing native
+process ownership. Older services reject the new schema instead of adopting it.
+
+The daemon recovers these resources before exposing operator sockets. It stops
+only an exactly identified predecessor; a missing, changed or unreadable live
+identity cannot authorize signalling another process. An interrupted launch with
+no recorded PID remains `unconfirmed`, blocking replacement, execution, authority
+renewal and an authorized status. A free broker lock or an empty in-memory map
+cannot clear that fence. A failed cleanup immediately blocks grants even if its
+failure marker cannot be written; a different controller boot cannot adopt an
+old running row. Root revocation and daemon shutdown account for these resources.
+Unconfirmed shutdown retains the daemon state lock until its process exits.
+
+Stopped resources have immutable receipts scoped to `local_process_group`, bound
+to the exact recorded resource and input. These receipts establish local process
+cleanup only. They neither verify an external product effect nor resolve an
+uncertain native call. The broker's separate `managed-control-v1` contract has a
+19-case canonical corpus mirrored here, and requires a private owner check for
+the actual stop proof and exact resolution decision. An acknowledgement remains
+a terminal non-success outcome. A saved call and an owned process are separate
+records; neither one is a substitute for the other.
+
+The registry proofs use real SDK/SQLite/OS processes under synthetic station
+authority, including SIGKILL of the actual Salaam daemon with a surviving fixture
+peer and before PID persistence. They check stop-before-renewal and uncertainty
+surviving a new daemon, including retained ownership after failed shutdown.
+Those peers are disposable Node protocol fixtures, not a compiled Toolkit
+effect executor. Separate local producer interoperability proofs use the actual
+compiled Toolkit and the pinned SDK with synthetic private owner callbacks.
+The actual private effect-owner endpoint, protected Toolkit profile/credential
+delegation, durable call/permission controller, turn/attempt mapping and model
+tool integration are still required. No native Toolkit station capability or
+real provider/Library acceptance is claimed by the resource registry.

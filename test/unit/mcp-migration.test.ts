@@ -18,10 +18,12 @@ test('v20 migration preserves receipts and history without inventing MCP assignm
     const requests = store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all();
     const events = store.db.prepare('SELECT * FROM events ORDER BY session_id,seq').all();
     // Represent an actual old database: it cannot contain tables introduced later.
-    store.db.exec('DROP TABLE mcp_calls; DROP TABLE mcp_assignments; PRAGMA user_version=20;');
+    store.db.exec(
+      'DROP TABLE toolkit_resources; DROP TABLE mcp_calls; DROP TABLE mcp_assignments; PRAGMA user_version=20;',
+    );
     store.close();
     store = new Store(path);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(21);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(22);
     expect(store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all()).toEqual(requests);
     expect(store.db.prepare('SELECT * FROM events ORDER BY session_id,seq').all()).toEqual(events);
     expect(store.db.prepare('SELECT count(*) AS n FROM mcp_calls').get()!.n).toBe(0);

@@ -32,6 +32,7 @@ export class Store {
   readonly workerBoundary = new WorkerBoundary(this);
   readonly execution = new ExecutionAuthority(this);
   agentpodAuthorityCheck?: (session: string) => void;
+  nativeResourceCheck?: (session: string) => void;
   requireAgentPodAuthority = false;
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
@@ -67,7 +68,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 21) {
+    if (version > 22) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -283,6 +284,14 @@ export class Store {
           CREATE TABLE mcp_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,input_digest TEXT NOT NULL,binding_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,assignment_digest TEXT NOT NULL,credential_generation INTEGER NOT NULL,server_name TEXT NOT NULL,tool_name TEXT NOT NULL,policy TEXT NOT NULL,arguments_json TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL,result_artifact TEXT REFERENCES artifacts(id),error TEXT,revision INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL,UNIQUE(session_id,worker_epoch,tool_call_id));
           CREATE INDEX mcp_calls_attempt ON mcp_calls(session_id,attempt_id);
           PRAGMA user_version=21; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 22
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_resources(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),root_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,state_dir TEXT NOT NULL,input_digest TEXT NOT NULL,spec TEXT NOT NULL,owner_boot TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','launching','running','unconfirmed','stopped')),pid INTEGER CHECK(pid IS NULL OR pid>0),identity TEXT,stop_digest TEXT,stop_receipt TEXT,revision INTEGER NOT NULL DEFAULT 0,CHECK(state!='running' OR (pid IS NOT NULL AND identity IS NOT NULL)),CHECK((state='stopped')=(stop_digest IS NOT NULL AND stop_receipt IS NOT NULL)));
+          CREATE UNIQUE INDEX toolkit_resources_root_owner ON toolkit_resources(root_digest) WHERE state!='stopped';
+          CREATE UNIQUE INDEX toolkit_resources_state_owner ON toolkit_resources(state_dir) WHERE state!='stopped';
+          PRAGMA user_version=22; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();

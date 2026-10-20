@@ -216,6 +216,7 @@ export class AgentPodAuthority {
         'authority_expired',
         'AgentPod authority lease is not fresh for this daemon',
       );
+    this.store.nativeResourceCheck?.(row.session_id);
   }
   token(id: string): string {
     return createHmac('sha256', this.key)
@@ -345,6 +346,7 @@ export class AgentPodAuthority {
             'authority_expired',
             'Expired or revoked authority cannot be renewed',
           );
+        this.store.nativeResourceCheck?.(row.session_id);
         if (sequence <= row.lease_sequence)
           throw new ServiceError('stale_authority', 'Authority lease sequence is stale');
         this.store.db

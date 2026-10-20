@@ -34,6 +34,7 @@ import type { ExternalBackend } from './external-runtime.js';
 import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
 import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
+import { ToolkitResources } from './toolkit-resources.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
@@ -65,6 +66,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly toolkitResources: ToolkitResources;
   readonly mcp?: McpWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
@@ -342,8 +344,11 @@ export class SalaamService {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
               this.mcp?.cancelInTransaction(attempt, 'agentpod-revocation');
             },
-            (session) => this.mcp?.stopped(session) ?? true,
+            (session) =>
+              (this.mcp?.stopped(session) ?? true) && this.toolkitResources.stopped(session),
           );
+        this.toolkitResources = new ToolkitResources(this.store, this.agentpod);
+        this.store.nativeResourceCheck = (session) => this.toolkitResources.assertSession(session);
         if (options.managedMcp) {
           this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
             admission: mcpAdmission!,
@@ -426,6 +431,7 @@ export class SalaamService {
         throw new Error('Host executor does not match reviewed manifest');
       await service.supervisor.providerAuth();
       await service.external.backend?.prepare?.();
+      await service.toolkitResources.recover();
       await service.supervisor.recover();
       service.cancellations.recover();
       await service.external.recover();
@@ -494,6 +500,7 @@ export class SalaamService {
       this.mcp?.abortAttempt(attempt);
     });
     for (const session of receipt.session_ids) {
+      jobs.push(this.toolkitResources.stopSession(session));
       if (this.mcp) jobs.push(this.mcp.stopSession(session));
       jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
       jobs.push(
@@ -1997,6 +2004,7 @@ export class SalaamService {
     await attempt(() => this.external.close());
     await attempt(() => this.coding.close());
     await attempt(() => this.mcp?.close());
+    await attempt(() => this.toolkitResources.close());
     await attempt(() => this.children.close());
     await attempt(() => this.supervisor.close());
     await attempt(() => this.dispatcher.drain());
