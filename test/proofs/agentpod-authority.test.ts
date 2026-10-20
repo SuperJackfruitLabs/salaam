@@ -467,3 +467,44 @@ test('corrupted durable binding or digest denies readiness and fresh model grant
     await f.close();
   }
 });
+
+test('strict work is private-owner only and refuses missing protected verification backend', async () => {
+  const f = await setup();
+  try {
+    const input = { instructions: 'Inspect', references: [], incoming_handoff: null };
+    const plan = f.service.taskWork.parse({
+      objective: 'Inspect',
+      constraints: [],
+      steps: [
+        { key: 'inspect', title: 'Inspect', instruction: 'Inspect', depends_on: [], checks: [] },
+      ],
+      acceptance: [],
+      deliverables: [],
+    });
+    const payload = {
+      admission: {
+        version: 1,
+        request_id: randomUUID(),
+        binding: f.binding,
+        work: {
+          board_id: 'brd_Aa0Bb1',
+          card_id: 'card_Aa0Bb1',
+          stage_key: 'implement',
+          input_digest: digest(input),
+          plan_digest: digest(plan),
+        },
+      },
+      input,
+      plan,
+    };
+    await expect(call(f.service.bridgeSocket, '/v1/agentpod/work-admit', payload)).rejects.toThrow(
+      'Bridge route not found',
+    );
+    await expect(call(f.service.socket, '/v1/agentpod/work-admit', payload)).rejects.toThrow(
+      'protected station',
+    );
+    expect(f.service.store.db.prepare('SELECT count(*) AS n FROM durable_tasks').get()!.n).toBe(0);
+  } finally {
+    await f.close();
+  }
+});

@@ -95,8 +95,8 @@ export class AgentPodWork {
           this.store.execution.assert(session),
         );
         this.verification.assertIdle(task);
-        // The current protected station cannot satisfy the coding-workspace verifier.
-        // That must roll back the ENTIRE admission until its actual verifier exists.
+        // Admission requires the configured verifier to prove its actual execution
+        // binding. A missing or unready backend rolls the entire task back.
         const verification = this.verification.binding(task);
         // Filesystem/profile verification can consume the remaining lease window.
         this.store.execution.assert(session);
@@ -104,7 +104,9 @@ export class AgentPodWork {
           run_key TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),
           task_id TEXT NOT NULL UNIQUE REFERENCES durable_tasks(id),request_id TEXT NOT NULL UNIQUE,
           admission_json TEXT NOT NULL,verification_json TEXT NOT NULL);
-          PRAGMA user_version=29;`);
+          `);
+        if (Number(this.store.db.prepare('PRAGMA user_version').get()!.user_version) < 29)
+          this.store.db.exec('PRAGMA user_version=29');
         this.store.db
           .prepare('INSERT INTO agentpod_work VALUES (?,?,?,?,?,?)')
           .run(

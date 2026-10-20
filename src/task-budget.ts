@@ -51,6 +51,7 @@ export class TaskBudget {
       .prepare(
         `WITH tree(id) AS (SELECT ? UNION ALL SELECT child_session FROM child_tasks WHERE parent_session=?) SELECT
       (SELECT count(*) FROM attempts WHERE session_id IN (SELECT id FROM tree) AND state IN ('accepted','dispatching','running')) +
+      (SELECT count(*) FROM station_calls WHERE session_id IN (SELECT id FROM tree) AND kind='check' AND attempt_id IS NULL AND state IN ('prepared','dispatching')) +
       (SELECT count(*) FROM command_runs WHERE session_id IN (SELECT id FROM tree) AND state NOT IN ('succeeded','failed','cancelled','timed_out','output_limited','interrupted')) +
       (SELECT count(*) FROM external_runs e JOIN child_tasks c ON c.id=e.child_id JOIN attempts a ON a.id=c.child_attempt WHERE c.parent_session=? AND e.stopped=0 AND a.state NOT IN ('accepted','dispatching','running')) AS n`,
       )

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../../src/store.js';
@@ -108,7 +108,7 @@ function fixture() {
     if (!allowed) throw Error('authority revoked or expired');
   };
   const station = {
-    authority: { bySession: guard },
+    authority: { bySession: () => {} },
     config,
     ready: () => {
       guard();
@@ -433,5 +433,181 @@ test('check binding survives journal reopen but cannot reuse a pre-restart fresh
       reopened.close();
       rmSync(f.dir, { recursive: true, force: true });
     } else f.close();
+  }
+});
+
+test.each([false, true])(
+  'installed controller enforces native evidence and missing deliverable=%s (synthetic station)',
+  async (missing) => {
+    const f = fixture();
+    try {
+      // This is the real task controller and SQLite ledger with a synthetic native
+      // runner. Actual systemd/primitive acceptance remains a separate Linux proof.
+      f.store.db.prepare('DELETE FROM station_calls WHERE id=?').run(f.call);
+      f.store.db.prepare('DELETE FROM task_checks WHERE id=?').run(f.check);
+      f.verification.station = f.adapter;
+      const config = { workspace_identity: 'd'.repeat(64) };
+      Object.assign(f.station, {
+        store: f.store,
+        prepareTaskCheck: StationWork.prototype.prepareTaskCheck,
+        run: (id: string) => {
+          const call = f.station.get(id);
+          f.station.taskCheckGuard!(call);
+          const cleanup = { version: 1, method: 'synthetic_stopped' };
+          const args = JSON.parse(call.args_json);
+          f.store.db
+            .prepare("UPDATE station_calls SET state='returned',result_json=? WHERE id=?")
+            .run(
+              canonical({
+                exit_code: 0,
+                verified_check: true,
+                expected_tree: args.expected_tree,
+                observed_tree: args.expected_tree,
+                network: 'none',
+                workspace: 'read-only-reviewed-snapshot',
+                cleanup,
+              }),
+              id,
+            );
+          f.store.db.prepare('INSERT INTO station_units VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+            'unit:' + id,
+            f.session.id,
+            id,
+            digest({
+              id,
+              root: call.root_digest,
+              configuration: call.configuration_digest,
+              input: call.input_digest,
+            }),
+            canonical(config),
+            'unused',
+            'unused',
+            '{"invocation":"synthetic"}',
+            'stopped',
+            canonical(cleanup),
+          );
+        },
+      });
+      const observe = f.station.verificationTree;
+      f.station.verificationTree = async (source, validate, request) => {
+        const result = await observe(source, validate);
+        if (missing && request?.action === 'read') throw Error('deliverable missing');
+        return request?.action === 'read'
+          ? { ...result, path: request.path, sha256: 'f'.repeat(64) }
+          : result;
+      };
+      const task = f.tasks.get(f.task.id);
+      const receipt = f.verification.start(
+        task.id,
+        'tests',
+        null,
+        'verify-request',
+        task.revision,
+        () => {},
+      );
+      await f.adapter.drain();
+      await f.verification.reconcileAsync();
+      const checked = f.verification.get(receipt.id);
+      expect(
+        checked.state,
+        checked.artifact_id
+          ? readFileSync(join(f.dir, 'artifacts', checked.artifact_id), 'utf8')
+          : 'no artifact',
+      ).toBe('passed');
+      const native = f.store.db
+        .prepare('SELECT * FROM station_calls WHERE task_check_id=?')
+        .get(receipt.id);
+      expect(native).toMatchObject({
+        attempt_id: null,
+        task_check_id: receipt.id,
+        kind: 'check',
+        state: 'returned',
+      });
+      expect(
+        f.verification.start(task.id, 'tests', null, 'verify-request', task.revision, () => {
+          throw Error('must replay');
+        }).id,
+      ).toBe(receipt.id);
+      expect(
+        f.store.db
+          .prepare('SELECT verification_runs FROM task_runtime WHERE task_id=?')
+          .get(task.id)!.verification_runs,
+      ).toBe(1);
+      f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE task_id=?").run(task.id);
+      const expected = f.tasks.get(task.id).revision;
+      if (missing) {
+        await expect(
+          f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {}),
+        ).rejects.toThrow('deliverable missing');
+        expect(f.tasks.get(task.id).state).not.toBe('succeeded');
+        expect(
+          f.store.db.prepare('SELECT 1 FROM task_completions WHERE task_id=?').get(task.id),
+        ).toBeUndefined();
+        return;
+      }
+      const completed = await f.verification.finishAsync(
+        task.id,
+        'finish-request',
+        expected,
+        null,
+        () => {},
+      );
+      expect(completed.state).toBe('succeeded');
+      expect(await f.verification.viewAsync(completed)).toMatchObject({
+        completion: { fresh: true, state: 'succeeded' },
+      });
+      f.changeTree();
+      expect(await f.verification.viewAsync(completed)).toMatchObject({
+        completion: { fresh: false },
+      });
+      f.revoke();
+      // Immutable original completion receipt recovery grants no new check.
+      await expect(
+        f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {
+          throw Error('must replay');
+        }),
+      ).resolves.toMatchObject({ state: 'succeeded' });
+    } finally {
+      f.close();
+    }
+  },
+);
+
+test('station ownership migration preserves historical calls and refuses forged model/task dual authority', () => {
+  const f = fixture();
+  try {
+    expect(f.store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(30);
+    expect(f.station.get(f.call).attempt_id).not.toBeNull();
+    expect(() =>
+      f.store.db
+        .prepare('UPDATE station_calls SET task_check_id=? WHERE id=?')
+        .run(f.check, f.call),
+    ).toThrow();
+    expect(() =>
+      f.store.db.prepare('UPDATE station_calls SET attempt_id=NULL WHERE id=?').run(f.call),
+    ).toThrow();
+    expect(f.store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(f.store.db.prepare('PRAGMA foreign_keys').get()!.foreign_keys).toBe(1);
+  } finally {
+    f.close();
+  }
+});
+
+test('partial station ownership upgrade rolls back and restores foreign-key enforcement', () => {
+  const dir = mkdtempSync('/tmp/sal-task-schema-'),
+    store = new Store(join(dir, 'journal.sqlite'));
+  try {
+    const before = store.db.prepare('PRAGMA user_version').get()!.user_version;
+    store.db.exec('CREATE TABLE station_calls_next(unrelated TEXT)');
+    expect(() => store.enableStationTaskChecks()).toThrow();
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(before);
+    expect(store.db.prepare('PRAGMA foreign_keys').get()!.foreign_keys).toBe(1);
+    expect(store.db.prepare('SELECT count(*) AS n FROM station_calls').get()!.n).toBe(0);
+    store.db.exec('DROP TABLE station_calls_next');
+    store.enableStationTaskChecks();
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(30);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

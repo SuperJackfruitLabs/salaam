@@ -5,6 +5,8 @@ import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
+import { AgentPodWork } from './agentpod-work.js';
+import { agentpodWorkAdmission } from './agentpod-work-protocol.js';
 import { TaskVerification } from './task-verification.js';
 import { TaskCheckpoints } from './task-checkpoints.js';
 import { TaskDriver } from './task-driver.js';
@@ -82,6 +84,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly agentpodWork?: AgentPodWork;
   readonly toolkitResources: ToolkitResources;
   readonly toolkitOwners: ToolkitOwners;
   readonly toolkitResolutions: ToolkitResolutions;
@@ -443,6 +446,13 @@ export class SalaamService {
             },
           );
           this.supervisor.station = this.station;
+          this.taskVerification.installStation(this.station);
+          this.agentpodWork = new AgentPodWork(
+            this.store,
+            this.agentpod,
+            this.taskWork,
+            this.taskVerification,
+          );
           const cancelOwned = this.store.cancelChildren;
           this.store.cancelChildren = (attempt) => {
             cancelOwned?.(attempt);
@@ -777,6 +787,56 @@ export class SalaamService {
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-admit') {
+          // This is the private owner socket, never the worker bridge. The native
+          // node authenticates its Hub reservation; board/card/stage are that
+          // trusted producer's assertion. Runtime pins and byte digests are local.
+          if (!this.agentpodWork)
+            throw new ServiceError(
+              'verification_unavailable',
+              'Reviewed protected station work backend required',
+            );
+          if (Object.keys(body).sort().join(',') !== 'admission,input,plan')
+            throw new ServiceError('invalid_work_payload', 'Closed work payload required');
+          const admission = agentpodWorkAdmission(body.admission),
+            input = object(body.input);
+          if (
+            Object.keys(input).sort().join(',') !== 'incoming_handoff,instructions,references' ||
+            typeof input.instructions !== 'string' ||
+            input.instructions.length < 1 ||
+            input.instructions.length > 65536 ||
+            !Array.isArray(input.references) ||
+            input.references.length > 64 ||
+            input.references.some(
+              (v) => typeof v !== 'string' || v.length < 1 || v.length > 4096,
+            ) ||
+            (input.incoming_handoff !== null &&
+              (typeof input.incoming_handoff !== 'string' || input.incoming_handoff.length > 65536))
+          )
+            throw new ServiceError('invalid_work_payload', 'Closed work input required');
+          if (canonical(this.taskWork.parse(body.plan)) !== canonical(body.plan))
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Fully expanded canonical task plan required',
+            );
+          const owner = this.agentpod.inspect(admission.binding);
+          this.send(
+            res,
+            200,
+            this.agentpodWork.admit(
+              owner.session_id,
+              admission,
+              {
+                board_id: admission.work.board_id,
+                card_id: admission.work.card_id,
+                stage_key: admission.work.stage_key,
+              },
+              input,
+              body.plan,
+            ),
+          );
           return;
         }
         if (parts[2] === 'mcp-assign') {
@@ -1190,7 +1250,7 @@ export class SalaamService {
           const session = string(url.searchParams.get('session_id'), 'session_id', 128);
           this.store.session(session);
           const current = this.taskWork.forSession(session);
-          this.send(res, 200, current ? this.taskDriver.view(current.id) : null);
+          this.send(res, 200, current ? await this.taskDriver.viewAsync(current.id) : null);
           return;
         }
         const taskId = parts[2];
@@ -1212,7 +1272,7 @@ export class SalaamService {
         }
 
         if (req.method === 'GET' && taskId && parts.length === 3) {
-          this.send(res, 200, this.taskDriver.view(taskId));
+          this.send(res, 200, await this.taskDriver.viewAsync(taskId));
           return;
         }
         if (req.method === 'GET' && taskId && parts.length === 4 && parts[3] === 'history') {
@@ -1242,7 +1302,7 @@ export class SalaamService {
               body.plan,
               controller,
             );
-            this.send(res, 201, this.taskDriver.view(task.id));
+            this.send(res, 201, await this.taskDriver.viewAsync(task.id));
             return;
           }
           if (
@@ -1264,7 +1324,7 @@ export class SalaamService {
               );
             else if (parts[3] === 'finish') {
               const exception = body.exception == null ? null : object(body.exception);
-              this.taskVerification.finish(
+              await this.taskVerification.finishAsync(
                 taskId,
                 request,
                 expected,
@@ -1280,7 +1340,7 @@ export class SalaamService {
                   : null,
                 authorize,
               );
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             } else if (parts[3] === 'checkpoint')
               result = this.taskCheckpoints.capture(taskId, request, expected, authorize);
             else if (parts[3] === 'restore')
@@ -1304,10 +1364,10 @@ export class SalaamService {
                 body.compact === true,
                 controller,
               );
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             } else {
               await this.taskDriver.cancel(taskId, request, expected, controller);
-              result = this.taskDriver.view(taskId);
+              result = await this.taskDriver.viewAsync(taskId);
             }
             this.send(res, 200, result);
             return;
@@ -1317,7 +1377,7 @@ export class SalaamService {
               res,
               200,
               (this.taskWork.revise(taskId, request, expected, body.plan, controller),
-              this.taskDriver.view(taskId)),
+              await this.taskDriver.viewAsync(taskId)),
             );
             return;
           }
@@ -1352,7 +1412,7 @@ export class SalaamService {
                   string(body.review, 'review', 4096),
                   controller,
                 ),
-                this.taskDriver.view(taskId)),
+                await this.taskDriver.viewAsync(taskId)),
               );
               return;
             }
@@ -2218,7 +2278,7 @@ export class SalaamService {
             ...this.supervisor.inspect(id),
             job: this.jobs.forSession(id) ? this.jobs.view(this.jobs.forSession(id)!.id) : null,
             work_task: this.taskWork.forSession(id)
-              ? this.taskDriver.view(this.taskWork.forSession(id)!.id)
+              ? await this.taskDriver.viewAsync(this.taskWork.forSession(id)!.id)
               : null,
           });
           return;
@@ -2441,6 +2501,7 @@ export class SalaamService {
     await attempt(() => this.recurring.close());
     await attempt(() => this.jobs.close());
     await attempt(() => this.taskDriver.close());
+    this.taskVerification.station?.stop();
     await attempt(() => this.dispatcher.pause());
     await attempt(() => this.managed.pause());
     await attempt(() => this.children.pause());
@@ -2452,6 +2513,7 @@ export class SalaamService {
     await attempt(() => this.mcp?.close());
     await attempt(() => this.toolkit?.close());
     await attempt(() => this.station?.close());
+    await attempt(() => this.taskVerification.station?.drain());
     await attempt(() => this.toolkitResources.close());
     await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());

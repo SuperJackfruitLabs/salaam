@@ -181,6 +181,7 @@ export class TaskDriver {
       await this.supervisor.cancelAttempt(attempt.id);
     }
     await this.children.external?.cancelRoot(task.session_id);
+    await this.verification.station?.station.stopSession(task.session_id);
     const compactions = this.store.db
       .prepare("SELECT id FROM compactions WHERE session_id=? AND state='running'")
       .all(task.session_id) as { id: string }[];
@@ -339,7 +340,7 @@ export class TaskDriver {
       this.stop(task, 'Managed compaction ' + work.state + '; inspect before continuing');
     return false;
   }
-  private check(task: WorkTask, key: string, step: string | null): boolean {
+  private async check(task: WorkTask, key: string, step: string | null): Promise<boolean> {
     const receipt = this.verification.latest(task, key, step);
     if (!receipt) {
       this.verification.start(
@@ -358,7 +359,7 @@ export class TaskDriver {
       return false;
     }
     if (receipt.state === 'accepted' || receipt.state === 'running') return false;
-    if (!this.verification.fresh(receipt)) {
+    if (!(await this.verification.freshAsync(receipt))) {
       this.stop(task, 'Verification failed or became stale: ' + key);
       return false;
     }
@@ -405,8 +406,8 @@ export class TaskDriver {
         this.stop(task, 'Step requires operator review');
         return;
       }
-      for (const key of reviewing.checks) if (!this.check(task, key, reviewing.id)) return;
-      this.verification.verifiedStep(task, reviewing.id);
+      for (const key of reviewing.checks) if (!(await this.check(task, key, reviewing.id))) return;
+      await this.verification.verifiedStepAsync(task, reviewing.id);
       return;
     }
     if (task.steps.every((s) => s.state === 'completed')) {
@@ -414,8 +415,8 @@ export class TaskDriver {
         this.stop(task, 'Configure acceptance checks and deliverable evidence before completion');
         return;
       }
-      for (const check of task.acceptance) if (!this.check(task, check.key, null)) return;
-      this.verification.finish(
+      for (const check of task.acceptance) if (!(await this.check(task, check.key, null))) return;
+      await this.verification.finishAsync(
         task.id,
         'auto-finish:' + task.id + ':' + task.plan_revision,
         task.revision,
@@ -485,7 +486,7 @@ export class TaskDriver {
     this.tasks.advance(grant.id);
   }
   private async tick(): Promise<void> {
-    this.verification.reconcile();
+    await this.verification.reconcileAsync();
     for (const row of this.store.db
       .prepare('SELECT id FROM durable_tasks ORDER BY rowid')
       .all() as { id: string }[]) {
@@ -539,6 +540,22 @@ export class TaskDriver {
         this.stop(this.tasks.get(task.id), (error as Error).message);
       }
     }
+  }
+  async viewAsync(
+    id: string,
+  ): Promise<WorkTask & { runtime: Record<string, any>; verification: any }> {
+    const result = this.view(id);
+    if (!this.verification.station) return result;
+    result.verification = await this.verification.viewAsync(this.tasks.get(id));
+    const current = this.tasks.get(id);
+    if (
+      result.verification.completion?.fresh &&
+      ['succeeded', 'succeeded_with_exception'].includes(current.state)
+    ) {
+      result.state = current.state;
+      result.reason = current.reason;
+    }
+    return result;
   }
   view(id: string): WorkTask & { runtime: Record<string, any>; verification: any } {
     const task = this.tasks.get(id),

@@ -69,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 29) {
+    if (version > 30) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -328,8 +328,9 @@ export class Store {
         this.db.exec(`BEGIN IMMEDIATE;
           CREATE TABLE local_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),attempt_id TEXT NOT NULL REFERENCES attempts(id),epoch INTEGER NOT NULL,tool_call TEXT NOT NULL,input_digest TEXT NOT NULL,root TEXT NOT NULL,args TEXT NOT NULL,operation_id TEXT NOT NULL UNIQUE REFERENCES operations(id),state TEXT NOT NULL,result TEXT,pid INTEGER,identity TEXT,UNIQUE(session_id,epoch,tool_call));
           PRAGMA user_version=27; COMMIT;`);
+      if (version === 30) this.db.prepare('SELECT task_check_id FROM station_calls LIMIT 0').all();
       // Strict work is a lazy migration: a schema29 database must retain its mapping.
-      if (version === 29)
+      if (version >= 29)
         this.db
           .prepare(
             'SELECT run_key,session_id,task_id,request_id,admission_json,verification_json FROM agentpod_work LIMIT 0',
@@ -339,6 +340,45 @@ export class Store {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
       throw error;
+    }
+  }
+  /** Startup-only migration: verification has task ownership, never a fabricated
+   * model attempt. Rebuild with FK checks before commit; rollback retains v29. */
+  enableStationTaskChecks(): void {
+    if (this.db.isTransaction) throw Error('Station schema migration requires an idle journal');
+    const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
+    if (version >= 30) {
+      this.db.prepare('SELECT task_check_id FROM station_calls LIMIT 0').all();
+      return;
+    }
+    const original = String(
+      this.db.prepare("SELECT sql FROM sqlite_master WHERE name='station_calls'").get()!.sql,
+    );
+    const next = original
+      .replace('CREATE TABLE station_calls', 'CREATE TABLE station_calls_next')
+      .replace(
+        'attempt_id TEXT NOT NULL REFERENCES attempts(id)',
+        'attempt_id TEXT REFERENCES attempts(id)',
+      )
+      .replace(
+        'UNIQUE(session_id,worker_epoch,tool_call_id)',
+        "task_check_id TEXT REFERENCES task_checks(id),CHECK((attempt_id IS NOT NULL AND task_check_id IS NULL) OR (attempt_id IS NULL AND task_check_id IS NOT NULL AND kind IN ('check','read'))),UNIQUE(session_id,worker_epoch,tool_call_id)",
+      );
+    this.db.exec('PRAGMA foreign_keys=OFF');
+    try {
+      this.db.exec('BEGIN IMMEDIATE');
+      this.db.exec(next);
+      this.db.exec(`INSERT INTO station_calls_next SELECT *,NULL FROM station_calls;
+        DROP TABLE station_calls; ALTER TABLE station_calls_next RENAME TO station_calls;
+        CREATE TABLE IF NOT EXISTS agentpod_work(run_key TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id),task_id TEXT NOT NULL UNIQUE REFERENCES durable_tasks(id),request_id TEXT NOT NULL UNIQUE,admission_json TEXT NOT NULL,verification_json TEXT NOT NULL);`);
+      if (this.db.prepare('PRAGMA foreign_key_check').all().length)
+        throw Error('Station ownership migration violates foreign keys');
+      this.db.exec('PRAGMA user_version=30; COMMIT');
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw error;
+    } finally {
+      this.db.exec('PRAGMA foreign_keys=ON');
     }
   }
   private migrateChildren(): void {
@@ -383,25 +423,7 @@ export class Store {
   }
   request<T>(actor: string, id: string, input: unknown, fn: () => T): T {
     try {
-      return this.transaction(() => {
-        const hash = digest(input);
-        const prior = this.db
-          .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
-          .get(actor, id) as { hash: string; response: string } | undefined;
-        if (prior) {
-          if (prior.hash !== hash)
-            throw new ServiceError(
-              'request_conflict',
-              'Request ID was already used with different input',
-            );
-          return JSON.parse(prior.response) as T;
-        }
-        const response = fn();
-        this.db
-          .prepare('INSERT INTO requests VALUES (?,?,?,?)')
-          .run(actor, id, hash, JSON.stringify(response));
-        return response;
-      });
+      return this.transaction(() => this.requestInTransaction(actor, id, input, fn));
     } catch (error) {
       if (error instanceof ServiceError && error.code === 'task_budget_exhausted') {
         const session = (error as ServiceError & { session_id?: unknown }).session_id;
@@ -409,6 +431,27 @@ export class Store {
       }
       throw error;
     }
+  }
+  requestInTransaction<T>(actor: string, id: string, input: unknown, fn: () => T): T {
+    if (!this.committed || !this.db.isTransaction)
+      throw Error('Request admission requires an active journal transaction');
+    const hash = digest(input);
+    const prior = this.db
+      .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
+      .get(actor, id) as { hash: string; response: string } | undefined;
+    if (prior) {
+      if (prior.hash !== hash)
+        throw new ServiceError(
+          'request_conflict',
+          'Request ID was already used with different input',
+        );
+      return JSON.parse(prior.response) as T;
+    }
+    const response = fn();
+    this.db
+      .prepare('INSERT INTO requests VALUES (?,?,?,?)')
+      .run(actor, id, hash, JSON.stringify(response));
+    return response;
   }
   cachedRequest<T>(actor: string, id: string, input: unknown): T | undefined {
     const prior = this.db

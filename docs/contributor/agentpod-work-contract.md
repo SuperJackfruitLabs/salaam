@@ -1,9 +1,9 @@
 # Internal work admission boundary
 
-This is an unfinished, disabled integration foundation. No feature is advertised,
-no HTTP/ACP route instantiates `AgentPodWork`, and no task progression is enabled.
-The actual protected station verifier remains required before this capability can
-be exposed. Admission is not task completion.
+This is an unfinished integration, with no advertised strict-work capability.
+A reviewed protected-station daemon installs `AgentPodWork` on its private owner
+socket; worker-bridge calls cannot reach it. No bridge auto-selection or implicit
+progression is enabled by admission. Admission is not task completion.
 
 The canonical owner is AgentPod `packages/contract/src/salaam-work.ts` at
 `0dfda813` (private v1 contract). Salaam mirrors its closed shape and compares the
@@ -11,8 +11,10 @@ same 63 JSON cases from `salaam-work-v1.json`, copied byte-for-byte to
 `test/fixtures/agentpod-work-v1.json`. Shape acceptance does not verify credentials
 or grant authority. Runtime identity remains the existing AgentPod admission.
 
-`AgentPodWork.admit` is an internal controller method. Its future authenticated
-adapter must independently supply the selected session, board, card and stage.
+`AgentPodWork.admit` is a controller method used by private
+`POST /v1/agentpod/work-admit`. The native node authenticates its Hub reservation;
+board/card/stage are that trusted producer assertion, not model metadata. The
+daemon derives the selected session from its existing pinned authority.
 It compares the request to that identity and the original admission. It computes
 `input_digest` with Salaam's canonical JSON digest of the exact input and
 `plan_digest` from `TaskWork.parse`'s normalized plan, including effective limits,
@@ -35,14 +37,13 @@ request result, event and schema fence. Its run key includes organization, sourc
 and run ID; a second request cannot replace the task even with a new epoch. The
 mapping also uniquely binds session, task and original request. An existing task
 or missing/corrupt mapping is never silently adopted. Default task progression
-stays off. First successful admission sets schema29; earlier binaries must reject
-it. Permission configuration never lowers that fence. Schema29 without its work
+stays off. First standalone work admission sets schema29; protected task verification
+requires schema30. Earlier binaries must reject newer schemas. Permission configuration never lowers that fence. Schema29 without its work
 mapping table fails to open.
 
-The current `TaskVerification.binding` requires a coding workspace and executor.
-The protected station's actual root/check implementation is different. Until the
-backend is wired into task admission and asynchronous completion, that admission fails and rolls the entire task creation
-back. Tests using `TaskFixtureBackend` prove local journal/ownership behavior only;
+Without a reviewed protected station, the existing coding-workspace binding
+remains required. A protected station selects its proven native backend; an
+unavailable verifier rolls the complete task admission back. Tests using `TaskFixtureBackend` prove local journal/ownership behavior only;
 that backend is explicitly simulated and executes no host command. Separate tests
 prove unavailable verifier/workspace rejection. These tests are not protected
 station, live Superpipeline or fleet acceptance.
@@ -55,7 +56,7 @@ substitute for fresh required task checks. See AgentPod's
 `docs/implementation/salaam-durable-work.md` for the cross-product assessment and
 source/decision status.
 
-## Protected verification backend (not enabled)
+## Protected verification backend
 
 `StationTaskVerification` consumes existing task-check IDs. Before native command
 execution, it persists a binding artifact joining the exact task plan/check,
@@ -78,11 +79,29 @@ There is no reusable `fresh: true` flag, automatic task success, or alternate
 completion ledger. Every consumption re-observes the tree. TaskVerification's
 ordinary idle check now also fences unsettled station calls and resources.
 
-The backend is not installed in the service. Remaining integration must select it
-when creating task checks, await it at completion/report boundaries, inspect actual
-deliverables, preserve task budget/step semantics, and keep completion freshness
-honest after later workspace changes. Current tests prove journal/receipt joins,
-late revocation, drift and transactional rollback with a synthetic station double.
-One component test runs an actual child helper and observes durable process-group
-cleanup, while its filesystem receipt is explicitly synthetic. This does not prove
-systemd isolation, the production file primitive, or a live station task completion.
+The service installs the backend only with its reviewed protected station. The
+existing task controller accepts checks, charges the verification budget once,
+dispatches through the native runner, awaits evidence at step/final completion,
+and re-observes it for asynchronous views. Synchronous freshness never asserts a
+station check is fresh. Completion uses the existing task completion ledger and
+requires every configured deliverable to be read through the protected file
+primitive at the same tree digest. Files exceeding that primitive's current
+256 KiB read bound fail closed. Strict station completion does not accept an
+operator exception in place of verified checks.
+
+Schema30 gives station calls either model-attempt ownership or explicit task-check
+ownership. Task checks have no fabricated model attempt; database constraints
+forbid dual or missing ownership. Startup migration preserves historical calls,
+rebuilds the table in one transaction with foreign-key validation, and leaves
+foreign-key enforcement enabled. Interruptions before native dispatch can repeat
+only the read observation. A persisted prepared/running command is cancelled or
+failed by native recovery, never silently executed again. Task cancellation and
+root revocation stop task-owned helpers and units as well as model-owned work.
+
+Tests prove controller budget/replay/completion behavior, actual SQLite reopen,
+late revocation, missing deliverables, drift and transactional rollback using a
+synthetic station runner. A component test runs an actual helper process and
+observes durable process-group cleanup/cancellation, but its filesystem receipt
+is synthetic. Real protected Linux/systemd acceptance, live Superpipeline flow,
+human-decision binding and scoped product canary remain required before M21 is
+complete or the capability is advertised.

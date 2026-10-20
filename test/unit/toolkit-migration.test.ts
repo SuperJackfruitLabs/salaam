@@ -30,7 +30,7 @@ test('v21 upgrade preserves all saved receipts and events without inventing nati
   }
 });
 test('partial native ownership upgrade and unknown future schema fail closed', () => {
-  for (const version of [21, 23, 24, 30]) {
+  for (const version of [21, 23, 24, 31]) {
     const dir = mkdtempSync('/tmp/stkm-bad-'),
       path = join(dir, 'journal.sqlite');
     const store = new Store(path);
@@ -38,7 +38,7 @@ test('partial native ownership upgrade and unknown future schema fail closed', (
     store.close();
     try {
       expect(() => new Store(path)).toThrow(
-        version === 30 ? 'newer than this service' : 'already exists',
+        version === 31 ? 'newer than this service' : 'already exists',
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

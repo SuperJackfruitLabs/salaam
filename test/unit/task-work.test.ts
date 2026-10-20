@@ -236,7 +236,7 @@ test('v7 migration and repeated v8 opens preserve the ledger; newer schemas fail
     store.close();
     store = new Store(path);
     expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 27 });
-    store.db.exec('PRAGMA user_version=30');
+    store.db.exec('PRAGMA user_version=31');
     store.close();
     expect(() => new Store(path)).toThrow('newer');
   } finally {

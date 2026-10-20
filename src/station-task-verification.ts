@@ -29,18 +29,174 @@ export interface StationCheckEvidence {
   tree_digest: string;
   result_digest: string;
 }
-/** Backend adapter for task_checks, deliberately not installed in the daemon.
+/** Protected station backend for the existing task_checks/completion controller.
  * It never changes task success. The controller must await withFresh and commit
  * its check/completion state in the synchronous transaction callback, not cache
  * an asynchronous boolean. Durable binding predates native command dispatch. */
 export class StationTaskVerification {
+  private jobs = new Map<string, Promise<void>>();
+  private stopping = false;
+  stop(): void {
+    this.stopping = true;
+  }
+  async drain(): Promise<void> {
+    await Promise.all([...this.jobs.values()]);
+  }
   constructor(
     readonly store: Store,
     readonly tasks: TaskWork,
     readonly verification: TaskVerification,
     readonly station: StationWork,
     readonly artifacts: Artifacts,
-  ) {}
+  ) {
+    store.enableStationTaskChecks();
+    station.taskCheckGuard = (call) => this.guardOwned(call);
+  }
+  owns(check: CheckReceipt): boolean {
+    return check.engine_id === 'linux-systemd-station-v1';
+  }
+  binding(task: WorkTask): StationBinding {
+    return this.station.ready(task.session_id);
+  }
+  private guardOwned(call: StationCall): void {
+    const check = this.verification.get(call.task_check_id!);
+    const task = this.tasks.get(check.task_id);
+    if (
+      !this.owns(check) ||
+      task.session_id !== call.session_id ||
+      task.state === 'cancelled' ||
+      check.plan_revision !== task.plan_revision ||
+      !['accepted', 'running', 'passed'].includes(check.state)
+    )
+      this.fail();
+    if (call.kind === 'check') {
+      this.matches(check, task, call);
+      if (
+        call.id !== digest(['station-task-check-v1', check.id]) ||
+        !this.store.db
+          .prepare("SELECT 1 FROM requests WHERE actor='station-task-check' AND id=?")
+          .get(check.id)
+      )
+        this.fail();
+      this.verification.budget.check(task.session_id);
+    }
+  }
+  private failed(id: string, error: unknown): void {
+    const check = this.verification.get(id),
+      task = this.tasks.get(check.task_id);
+    this.store.taskBudgetDenied?.(task.session_id, error);
+    const artifact = this.artifacts.prepare(
+      task.session_id,
+      canonical({ check_id: id, verified: false, error: (error as Error).message }),
+    );
+    this.store.transaction(() => {
+      artifact.commit();
+      this.store.db
+        .prepare("UPDATE task_checks SET state='failed',artifact_id=? WHERE id=?")
+        .run(artifact.id, id);
+      this.store.event(task.session_id, 'work_task.check_failed', {
+        task_id: task.id,
+        check_id: id,
+        artifact_id: artifact.id,
+      });
+    });
+  }
+  dispatch(id: string): void {
+    if (this.stopping || this.jobs.has(id) || this.verification.get(id).state !== 'accepted')
+      return;
+    const job = this.dispatchOwned(id)
+      .catch((e) => this.failed(id, e))
+      .finally(() => this.jobs.delete(id));
+    this.jobs.set(id, job);
+  }
+  private async dispatchOwned(id: string): Promise<void> {
+    const receipt = this.verification.get(id),
+      task = this.tasks.get(receipt.task_id);
+    const configured = task.acceptance.find((c) => c.key === receipt.check_key);
+    if (!configured || configured.cwd !== '.') this.fail();
+    const binding = this.station.ready(task.session_id);
+    const validate = (inspection?: string) => {
+      const current = this.tasks.get(task.id),
+        check = this.verification.get(id);
+      this.verification.budget.check(current.session_id);
+      this.station.assertBinding(current.session_id, binding);
+      this.verification.assertIdle(current, inspection);
+      if (
+        check.state !== 'accepted' ||
+        current.state === 'cancelled' ||
+        current.plan_revision !== receipt.plan_revision ||
+        this.plan(current) !== this.plan(task)
+      )
+        this.fail();
+    };
+    validate();
+    const observed = await this.station.verificationTree({ task_check_id: id }, validate);
+    let call: string = '';
+    this.store.transaction(() => {
+      validate();
+      this.store.db
+        .prepare('UPDATE task_checks SET workspace_digest=? WHERE id=?')
+        .run(observed.tree_digest, id);
+      const prepared = this.station.prepareTaskCheck(
+        id,
+        configured!.command,
+        String(observed.tree_digest),
+      );
+      this.bind(id, prepared.id);
+      call = prepared.id;
+      this.store.db.prepare("UPDATE task_checks SET state='running' WHERE id=?").run(id);
+      this.store.event(task.session_id, 'work_task.check_dispatched', {
+        task_id: task.id,
+        check_id: id,
+        station_call_id: call,
+      });
+    });
+    this.station.run(call);
+  }
+  async reconcile(): Promise<void> {
+    for (const r of this.store.db
+      .prepare(
+        "SELECT id FROM task_checks WHERE engine_id='linux-systemd-station-v1' AND state IN ('accepted','running')",
+      )
+      .all()) {
+      const id = String(r.id),
+        check = this.verification.get(id);
+      if (check.state === 'accepted') {
+        this.dispatch(id);
+        continue;
+      }
+      if (this.jobs.has(id)) continue;
+      const saved = this.store.db
+        .prepare("SELECT response FROM requests WHERE actor='station-task-check' AND id=?")
+        .get(id);
+      try {
+        if (!saved) this.fail();
+        const binding = JSON.parse(
+          this.artifacts.read(JSON.parse(String(saved.response))),
+        ) as BoundCheck;
+        const call = this.station.get(binding.call_id);
+        if (['prepared', 'dispatching'].includes(call.state)) continue;
+        if (call.state !== 'returned') this.fail();
+        await this.withFresh(id, (evidence) => {
+          const artifact = this.artifacts.prepare(call.session_id, canonical(evidence));
+          artifact.commit();
+          this.store.db
+            .prepare(
+              "UPDATE task_checks SET state='passed',artifact_id=? WHERE id=? AND state='running'",
+            )
+            .run(artifact.id, id);
+          this.store.event(call.session_id, 'work_task.check_passed', {
+            task_id: check.task_id,
+            check_id: id,
+            artifact_id: artifact.id,
+          });
+        });
+      } catch (error) {
+        this.failed(id, error);
+      }
+    }
+  }
+
   private fail(): never {
     throw new ServiceError(
       'verification_required',
@@ -113,7 +269,10 @@ export class StationTaskVerification {
       task = this.tasks.get(check.task_id);
     // Even saved binding access stays rooted in this authority; no grant on replay.
     this.station.authority.bySession(task.session_id);
-    return this.store.request('station-task-check', checkID, { checkID, callID }, () => {
+    const request = this.store.db.isTransaction
+      ? this.store.requestInTransaction.bind(this.store)
+      : this.store.request.bind(this.store);
+    return request<string>('station-task-check', checkID, { checkID, callID }, () => {
       const current = this.verification.get(checkID),
         latest = this.tasks.get(current.task_id);
       const call = this.station.get(callID),
@@ -149,7 +308,7 @@ export class StationTaskVerification {
       return artifact.id;
     });
   }
-  async withFresh<T>(checkID: string, consume: (evidence: StationCheckEvidence) => T): Promise<T> {
+  private prepared(checkID: string) {
     const original = this.verification.get(checkID),
       task = this.tasks.get(original.task_id);
     this.station.authority.bySession(task.session_id);
@@ -209,6 +368,10 @@ export class StationTaskVerification {
         this.fail();
       return { current, call, result };
     };
+    return { bound, artifact, validate };
+  }
+  async withFresh<T>(checkID: string, consume: (evidence: StationCheckEvidence) => T): Promise<T> {
+    const { bound, artifact, validate } = this.prepared(checkID);
     const before = validate();
     const revision = before.current.revision;
     const resultDigest = digest(before.result);
@@ -234,12 +397,75 @@ export class StationTaskVerification {
         tree_digest: observed.tree_digest,
         result_digest: digest(result),
       });
+      this.station.assertBinding(this.tasks.get(bound.task_id).session_id, bound.station);
       if (value && typeof (value as { then?: unknown }).then === 'function')
         throw new ServiceError(
           'verification_required',
           'Verification consumer must commit synchronously',
         );
       return value;
+    });
+  }
+  async withFreshMany<T>(
+    ids: string[],
+    paths: string[],
+    consume: (evidence: StationCheckEvidence[], deliverables: unknown[]) => T,
+  ): Promise<T> {
+    if (!ids.length) this.fail();
+    const prepared = ids.map((id) => this.prepared(id));
+    const evidence: StationCheckEvidence[] = [];
+    for (const id of ids) evidence.push(await this.withFresh(id, (e) => e));
+    const tree = evidence[0]!.tree_digest,
+      root = evidence[0]!.root_digest,
+      config = evidence[0]!.configuration_digest;
+    if (
+      evidence.some(
+        (e) =>
+          e.tree_digest !== tree || e.root_digest !== root || e.configuration_digest !== config,
+      )
+    )
+      this.fail();
+    const revision = prepared[0]!.validate().current.revision;
+    const validate = (inspection?: string) => {
+      for (let n = 0; n < prepared.length; n++) {
+        const state = prepared[n]!.validate(inspection);
+        if (
+          state.current.revision !== revision ||
+          digest(state.result) !== evidence[n]!.result_digest
+        )
+          this.fail();
+      }
+    };
+    const deliverables: unknown[] = [];
+    for (const path of paths) {
+      const result = await this.station.verificationTree(evidence[0]!.call_id, validate, {
+        action: 'read',
+        path,
+      });
+      validate();
+      if (
+        result.path !== path ||
+        result.tree_digest !== tree ||
+        result.root_identity !== this.station.config.workspace_identity
+      )
+        this.fail();
+      deliverables.push({ path, sha256: result.sha256 });
+    }
+    const final = await this.station.verificationTree(evidence[0]!.call_id, validate);
+    return this.store.transaction(() => {
+      validate();
+      if (
+        final.tree_digest !== tree ||
+        final.root_identity !== this.station.config.workspace_identity
+      )
+        this.fail();
+      const result = consume(evidence, deliverables);
+      this.station.assertBinding(
+        prepared[0]!.validate().current.session_id,
+        prepared[0]!.bound.station,
+      );
+      if (result && typeof (result as { then?: unknown }).then === 'function') this.fail();
+      return result;
     });
   }
 }
