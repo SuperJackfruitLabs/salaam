@@ -27,6 +27,9 @@ function exists(pid: number): boolean {
     return true;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    // kill(0) EPERM proves presence, never absence or authority to signal.
+    // Keep observing within the stop deadline (including an exiting macOS group).
+    if ((e as NodeJS.ErrnoException).code === 'EPERM') return true;
     failed();
   }
 }

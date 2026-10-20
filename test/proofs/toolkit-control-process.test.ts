@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -182,6 +182,37 @@ test('changed executable is refused before durable intent and no ambient provide
     expect(intents).toBe(0);
     expect(existsSync(f.received)).toBe(false);
   } finally {
+    f.close();
+  }
+});
+
+test('EPERM during stop observation retains presence until ESRCH without delivering guarded bytes', async () => {
+  const f = fixture();
+  const originalKill = process.kill.bind(process);
+  let owned: number | undefined,
+    observed = 0;
+  const kill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+    if (pid === -Number(owned) && signal === 0 && observed++ === 0)
+      throw Object.assign(new Error('Process group remains present'), { code: 'EPERM' });
+    return originalKill(pid, signal);
+  });
+  const child = new ToolkitControlProcess(f.launch, f.control, () => {}, {
+    starting: () => {},
+    spawned: ((pid: number) => {
+      owned = pid;
+      return Promise.resolve();
+    }) as (pid: number) => void,
+  });
+  try {
+    await expect(child.run()).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_control_unconfirmed' }),
+    );
+    expect(observed).toBeGreaterThan(1);
+    expect(child.stopped).toBe(true);
+    expect(existsSync(f.received)).toBe(false);
+  } finally {
+    kill.mockRestore();
+    await child.close();
     f.close();
   }
 });

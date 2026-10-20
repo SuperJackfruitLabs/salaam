@@ -26,6 +26,13 @@ test('official SDK peer submits through an explicit grant; duplicate/restarted r
     expect(firstTask.id).toBeTruthy();
     const again = Task.toJSON((await client.sendMessage(message())) as Task) as any;
     expect(again.id).toBe(firstTask.id);
+    // Await the actual second Pi process result before checking parent settlement.
+    // Timeout diagnostics include the durable child state, not only the parent view.
+    await until(
+      () => f.service.children.list(f.session.id),
+      (children) => children.length === 1 && children[0]!.state === 'completed',
+      30000,
+    );
     await f.settled();
     const terminal = Task.toJSON(
       await client.getTask(GetTaskRequest.fromJSON({ id: firstTask.id, tenant: g.tenant })),
@@ -54,7 +61,7 @@ test('official SDK peer submits through an explicit grant; duplicate/restarted r
   } finally {
     await f.close();
   }
-});
+}, 45000);
 test('inbound caller cannot use ROLE_AGENT, local controls, follow-ups, approval APIs, another token or an unreviewed workspace', async () => {
   const { f, g, connect, message } = await inboundFixture();
   try {
