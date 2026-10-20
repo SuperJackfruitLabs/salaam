@@ -170,126 +170,138 @@ const steps = [
           </div>
           </div>
         </section>
-        <section id="how" class="section journey" aria-labelledby="how-title">
-          <div class="section-heading">
-            <p class="eyebrow">HOW IT WORKS</p>
-            <h2 id="how-title">
-              One service.
-              <br />
-              <em>Any terminal.</em>
-            </h2>
-            <p>The terminal, SSH and your editor are clients. The service keeps the record.</p>
-          </div>
-          <div class="journey-list">
-            {steps.map((item) => (
-              <article>
-                <span class="number">{item.number}</span>
-                <div>
+        <section id="how" class="section" aria-labelledby="how-title">
+          <div class="container">
+            <h2 id="how-title">How it works</h2>
+            <p class="intro">
+              One service, any terminal. The terminal, SSH and your editor are clients; the
+              service keeps the record.
+            </p>
+            <ol class="steps">
+              {steps.map((item) => (
+                <li>
+                  <span class="number">{item.number}</span>
                   <h3>{item.title}</h3>
                   <p>{item.text}</p>
                   <a class="text-link" href={`${docs}${item.link}`}>
                     {item.label} <span aria-hidden="true">↗</span>
                   </a>
-                </div>
-              </article>
-            ))}
+                </li>
+              ))}
+            </ol>
           </div>
         </section>
-        <section class="section modes" aria-labelledby="use-title">
-          <div class="mode-copy">
-            <p class="eyebrow">WHAT IT'S LIKE TO USE</p>
-            <h2 id="use-title">
-              Say you ask it to
-              <br />
-              <em>fix a parser.</em>
-            </h2>
-            <p>
-              With coding switched on, Salaam's Pi worker edits a copy of your project in a
-              workspace the service owns, not your checkout. Before the patch is applied, the
-              operation waits in your approval inbox, and your approval covers exactly the
-              arguments and target you reviewed. If you made it a checked task, the model saying
-              "done" is not enough: the checks have to pass first. You can detach at any point and
-              reattach later to the same state.
-            </p>
-            <p>
-              You can also hand a step to a specialist (an explorer, builder, reviewer or tester)
-              whose draft stays private until you integrate it, or to a Claude, Codex or Gemini
-              harness route. Today all three harness routes run on your host's Claude API key and
-              Sonnet 4.6; Codex and Gemini are translated to that backend, not run against OpenAI
-              or Google models. They need Docker and a prepared runtime bundle.
-            </p>
-            <p>
-              Salaam can also ask another agent on the network for an opinion over A2A (the
-              Agent2Agent protocol), including documented Hermes and OpenClaw routes. Those peers
-              return analysis, never patches. For unattended work there are jobs and recurring
-              schedules; each run gets a fresh workspace and explicit overlap rules. It is not an
-              open-ended background cron.
-            </p>
-            <a class="text-link" href={`${docs}/coding/`}>
-              Read about coding <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-          <figure class="real-tui">
-            <img
-              src="/tui-night.png"
-              alt="Salaam Night terminal from an offline example session, showing a guarded diff and the workspace rail."
-              loading="lazy"
-              width="1536"
-              height="960"
-            />
-            <figcaption>Offline example · a test session, not a real coding run</figcaption>
-          </figure>
-        </section>
-        <section class="section start" aria-labelledby="start-title">
-          <div>
-            <p class="eyebrow">RUN IT YOURSELF</p>
-            <h2 id="start-title">
-              Install <em>v{release}.</em>
-            </h2>
-            <p>
-              Needs Node 26.7.0 and npm 11.19.0, both exactly. macOS and Linux; Windows is
-              untested. Coding commands need Docker. The installer checks the release's SHA-256
-              before installing. Then start a service and your first session:
-            </p>
-            <div class="copy-command">
-              <code>sal service start --state /tmp/salaam-try<br />sal session create --cwd "$PWD" --state /tmp/salaam-try<br />sal attach SESSION_ID --state /tmp/salaam-try</code>
+        <section class="section" aria-labelledby="use-title">
+          <div class="container">
+            <h2 id="use-title">What it's like to use</h2>
+            <p class="intro">Say you ask it to fix a parser.</p>
+            <div class="prose">
+              <p>
+                With coding switched on, Salaam's Pi worker edits a copy of your project in a
+                workspace the service owns, not your checkout. Before the patch is applied, the
+                operation waits in your approval inbox, and your approval covers exactly the
+                arguments and target you reviewed. If you made it a checked task, the model saying
+                "done" is not enough: the checks have to pass first. You can detach at any point and
+                reattach later to the same state.
+              </p>
+              <p>
+                You can also hand a step to a specialist (an explorer, builder, reviewer or tester)
+                whose draft stays private until you integrate it, or to a Claude, Codex or Gemini
+                harness route. Today all three harness routes run on your host's Claude API key and
+                Sonnet 4.6; Codex and Gemini are translated to that backend, not run against OpenAI
+                or Google models. They need Docker and a prepared runtime bundle.
+              </p>
+              <p>
+                Salaam can also ask another agent on the network for an opinion over A2A (the
+                Agent2Agent protocol), including documented Hermes and OpenClaw routes. Those peers
+                return analysis, never patches. For unattended work there are jobs and recurring
+                schedules; each run gets a fresh workspace and explicit overlap rules. It is not an
+                open-ended background cron.
+              </p>
+              <a class="text-link" href={`${docs}/coding/`}>
+                Read about coding <span aria-hidden="true">↗</span>
+              </a>
             </div>
-            <p>
-              Replace SESSION_ID with the ID the second command prints. It runs on your own machine,
-              under your own OS account.
-            </p>
+            <figure class="real-tui">
+              <img
+                src="/tui-night.png"
+                alt="Salaam Night terminal from an offline example session, showing a guarded diff and the workspace rail."
+                loading="lazy"
+                width="1536"
+                height="960"
+              />
+              <figcaption>Offline example · a test session, not a real coding run</figcaption>
+            </figure>
           </div>
-          <div class="install-card">
-            <p class="eyebrow">INSTALL v{release}</p>
+        </section>
+        <section class="section" aria-labelledby="start-title">
+          <div class="container">
+            <h2 id="start-title">Run it yourself</h2>
+            <p class="intro">Install v{release}.</p>
+            <div class="prose">
+              <p>
+                Needs Node 26.7.0 and npm 11.19.0, both exactly. macOS and Linux; Windows is
+                untested. Coding commands need Docker. The installer checks the release's SHA-256
+                before installing.
+              </p>
+            </div>
             <div class="copy-command">
               <code id="install-command">{install}</code>
               <button id="copy" aria-label="Copy install command">
                 Copy
               </button>
             </div>
-            <p id="copy-status" aria-live="polite">
-              <a href={installer}>Read the installer</a> or see the{' '}
-              <a href={`${docs}/install/`}>installation guide</a>.
-            </p>
+            <div class="prose">
+              <p id="copy-status" aria-live="polite">
+                <a href={installer}>Read the installer</a> or see the{' '}
+                <a href={`${docs}/install/`}>installation guide</a>.
+              </p>
+              <p>Then start a service and your first session:</p>
+            </div>
+            <div class="copy-command">
+              <code>sal service start --state /tmp/salaam-try<br />sal session create --cwd "$PWD" --state /tmp/salaam-try<br />sal attach SESSION_ID --state /tmp/salaam-try</code>
+            </div>
+            <div class="prose">
+              <p>
+                Replace SESSION_ID with the ID the second command prints. It runs on your own
+                machine, under your own OS account.
+              </p>
+            </div>
           </div>
         </section>
-        <aside class="limits">
-          <span class="eyebrow">WHERE IT RUNS TODAY</span>
-          <p>
-            Salaam is early software. It is for one trusted OS account on one machine; there is no
-            multi-tenant API. If the service or worker dies, work in flight is interrupted and you
-            continue it explicitly; nothing is replayed for you. SSH needs a host you can already
-            reach and Salaam installed there; it provisions no servers and copies no credentials.
-            Saved provider keys are stored as permission-protected plaintext, and live provider
-            requests, including Claude, may be billable. Harness routes all run on Claude and
-            Sonnet 4.6. The approval-binding checks were verified in the project's own local run
-            (2026-10-17, macOS arm64), not independently. Some features on main, such as running
-            coding without Docker and MCP tool admission, are not in v{release}.
-          </p>
-          <a class="text-link" href={`${docs}/limitations/`}>
-            Read the limitations <span aria-hidden="true">↗</span>
-          </a>
-        </aside>
+        <section class="section" aria-labelledby="limits-title">
+          <div class="container">
+            <h2 id="limits-title">Where it runs today</h2>
+            <p class="intro">Salaam is early software.</p>
+            <ul class="limits">
+              <li>It is for one trusted OS account on one machine; there is no multi-tenant API.</li>
+              <li>
+                If the service or worker dies, work in flight is interrupted and you continue it
+                explicitly; nothing is replayed for you.
+              </li>
+              <li>
+                SSH needs a host you can already reach and Salaam installed there; it provisions no
+                servers and copies no credentials.
+              </li>
+              <li>
+                Saved provider keys are stored as permission-protected plaintext, and live provider
+                requests, including Claude, may be billable.
+              </li>
+              <li>Harness routes all run on Claude and Sonnet 4.6.</li>
+              <li>
+                The approval-binding checks were verified in the project's own local run
+                (2026-10-17, macOS arm64), not independently.
+              </li>
+              <li>
+                Some features on main, such as running coding without Docker and MCP tool admission,
+                are not in v{release}.
+              </li>
+            </ul>
+            <a class="text-link" href={`${docs}/limitations/`}>
+              Read the limitations <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </section>
       </main>
       <footer>
         <a class="brand" href="/">
