@@ -209,6 +209,24 @@ sandbox isolation, or enable a station capability. The real effect controller mu
 also check admission and actual resources at fresh native grants, combine them
 with durable call/permission ownership, and validate actual broker capabilities.
 
+The internal cleanup admission is a distinct role. While the execution profile
+and actual resource owner are valid, `ToolkitAdmission.cleanup` can capture a
+credential-free snapshot bound to that exact resource input, executable and
+original full principal/root binding. Its private path and checksum must be
+persisted by the future control supervisor before execution. It contains no
+policy, store, passphrase or execution callback key. Generating a control manifest
+requires the resource registry's immutable stop proof; an active broker, a free
+native lock or an unrecorded process cannot satisfy it.
+
+Cleanup reads the original persisted binding without granting a new lease. It
+can therefore prepare `managed-control-v1` after revocation, credential rotation,
+workspace removal and daemon recovery, while keeping the original executable,
+private state/socket and snapshot pins. It cannot launch `managed-mcp-v1` or
+authenticate the execution callback. A changed root, input, executable or stop
+receipt fails closed. This is admission preparation only: owned control-process
+persistence, the private control verifier and asynchronous native acknowledgement
+plus durable operator resolution still must be connected before cleanup is usable.
+
 ### Native call ownership and callback role
 
 Schema 23 keeps `toolkit_calls` and per-process `toolkit_owners` in the service

@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
 import { ready, control, until } from '../helpers.js';
-import { ToolkitAdmission } from '../../src/toolkit-admission.js';
+import { ToolkitAdmission, ToolkitCleanupAdmission } from '../../src/toolkit-admission.js';
 import { ToolkitCalls } from '../../src/toolkit-calls.js';
 import { digest } from '../../src/protocol.js';
 import { call } from '../../src/transport.js';
@@ -374,3 +374,135 @@ test('actual service admits a fresh broker key after observed stop without rewri
     await f.close();
   }
 });
+
+test('separate cleanup admission needs the actual predecessor stop and survives revoked execution, credential removal and daemon recovery', async () => {
+  const f = await fixture(true);
+  try {
+    const snapshot = f.admission.cleanup(f.resources, f.resourceId),
+      reference = snapshot.reference;
+    expect(() => snapshot.materialize(f.resources)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_profile_changed' }),
+    );
+    await f.client.connect(f.transport);
+    expect(() => snapshot.materialize(f.resources)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_profile_changed' }),
+    );
+    await f.client.close();
+    await f.resources.stop(f.resourceId);
+    const binding = f.f.service.agentpod!.binding(f.session);
+    f.f.service.agentpod!.revoke(binding, randomUUID(), 'cleanup-role proof');
+    await f.f.service.supervisor.stopSession(f.session);
+    await f.f.reopen();
+    // Simulate rotation/removal after the original private cleanup snapshot.
+    for (const name of [
+      'native-policy',
+      'native-pass',
+      'native-store',
+      'native-manifest.json',
+      'native-profile.json',
+    ])
+      rmSync(join(f.f.state, name), { recursive: true });
+    rmSync(f.f.workspace, { recursive: true });
+    const resources = f.f.service.toolkitResources,
+      restored = new ToolkitCleanupAdmission(reference.path, reference.sha256),
+      first = restored.materialize(resources),
+      second = restored.materialize(resources),
+      admitted = first.launch(resources),
+      manifest = JSON.parse(readFileSync(admitted.launch.args[2]!, 'utf8'));
+    expect(() => f.f.service.agentpod!.binding(f.session)).toThrowError(
+      expect.objectContaining({ code: 'session_revoked' }),
+    );
+    expect(admitted).toMatchObject({
+      predecessor_id: f.resourceId,
+      stop_proof_digest: digest(resources.stopProof(f.resourceId)),
+      owner_key_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(admitted.launch.args[0]).toBe('managed-control-v1');
+    expect(admitted.launch.cwd).toBe(f.f.state);
+    expect(admitted.launch.env).toEqual({ HOME: f.f.state });
+    expect(Object.keys(manifest).sort()).toEqual(
+      [
+        'version',
+        'root_digest',
+        'profile_digest',
+        'workspace',
+        'state_dir',
+        'owner_socket',
+        'owner_key',
+      ].sort(),
+    );
+    expect(manifest.owner_key).not.toBe(f.key);
+    await expect(f.verify('admit', f.request, manifest.owner_key)).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+    );
+    expect(admitted.owner_key_digest).not.toBe(second.launch(resources).owner_key_digest);
+    expect(JSON.stringify(admitted)).not.toContain(manifest.owner_key);
+    expect(() => first.materialize(resources)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_profile_changed' }),
+    );
+    expect(f.f.sent).toHaveLength(0);
+  } finally {
+    await f.close();
+  }
+});
+
+for (const kind of [
+  'snapshot',
+  'executable',
+  'state-mode',
+  'socket-mode',
+  'child-manifest',
+  'binding',
+  'resource',
+  'stop-proof',
+] as const)
+  test(`cleanup admission rejects changed ${kind} instead of inventing stop or root authority`, async () => {
+    const f = await fixture(true);
+    try {
+      const snapshot = f.admission.cleanup(f.resources, f.resourceId);
+      // This resource has a durable not-started proof, not an inferred free lock.
+      await f.resources.stop(f.resourceId);
+      const originalRow = f.resources.get(f.resourceId),
+        originalBinding = f.f.service.agentpod!.bySession(f.session).binding,
+        child = snapshot.materialize(f.resources),
+        admitted = child.launch(f.resources);
+      if (kind === 'snapshot')
+        writeFileSync(snapshot.reference.path, readFileSync(snapshot.reference.path, 'utf8') + ' ');
+      if (kind === 'executable')
+        writeFileSync(admitted.launch.command, readFileSync(admitted.launch.command, 'utf8') + ' ');
+      if (kind === 'state-mode') chmodSync(join(f.f.state, 'native-state'), 0o755);
+      if (kind === 'socket-mode') chmodSync(f.f.service.socket, 0o666);
+      if (kind === 'child-manifest')
+        writeFileSync(
+          admitted.launch.args[2]!,
+          readFileSync(admitted.launch.args[2]!, 'utf8') + ' ',
+        );
+      if (kind === 'binding') {
+        const binding = JSON.parse(f.f.service.agentpod!.bySession(f.session).binding);
+        binding.principal_id = 'prn_00000000000000000003';
+        f.f.service.store.db
+          .prepare('UPDATE agentpod_admissions SET binding=? WHERE session_id=?')
+          .run(JSON.stringify(binding), f.session);
+      }
+      if (kind === 'resource')
+        f.f.service.store.db
+          .prepare('UPDATE toolkit_resources SET spec=? WHERE id=?')
+          .run('{}', f.resourceId);
+      if (kind === 'stop-proof')
+        f.f.service.store.db
+          .prepare("UPDATE toolkit_resources SET stop_receipt='{}' WHERE id=?")
+          .run(f.resourceId);
+      expect(() => child.launch(f.resources)).toThrowError(
+        expect.objectContaining({ code: 'toolkit_profile_changed' }),
+      );
+      // Restore the original persisted fixture bytes, never synthesize a stop.
+      f.f.service.store.db
+        .prepare('UPDATE toolkit_resources SET stop_receipt=?,spec=? WHERE id=?')
+        .run(originalRow.stop_receipt, originalRow.spec, f.resourceId);
+      f.f.service.store.db
+        .prepare('UPDATE agentpod_admissions SET binding=? WHERE session_id=?')
+        .run(originalBinding, f.session);
+    } finally {
+      await f.close();
+    }
+  });

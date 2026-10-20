@@ -15,7 +15,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { agentpodBinding, type AgentPodBinding } from './agentpod-protocol.js';
 import type { StdioLaunch } from './mcp-stdio.js';
 import type { ToolkitResources } from './toolkit-resources.js';
-import { digest, object, ServiceError } from './protocol.js';
+import { canonical, digest, object, ServiceError } from './protocol.js';
 
 const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
@@ -95,6 +95,32 @@ function privateFile(value: unknown, root: string, limit: number, executable = f
   }
 }
 
+function syncedBundle(root: string, prefix: string, files: Record<string, Buffer>): string {
+  const directory = privateDirectory(mkdtempSync(join(root, prefix)));
+  for (const [name, bytes] of Object.entries(files)) {
+    const fd = openSync(
+      join(directory, name),
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+    );
+    try {
+      writeFileSync(fd, bytes);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  }
+  for (const dir of [directory, root]) {
+    const fd = openSync(dir, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  }
+  return directory;
+}
+
 /** Host-private launch admission only. It grants neither effect permission nor
  * sandbox isolation. The controller must also check current authority, actual
  * process ownership and the exact worker/attempt/call at each native grant.
@@ -105,6 +131,79 @@ export class ToolkitAdmission {
     private readonly profilePath: string,
     private readonly expectedDigest: string,
   ) {}
+
+  /** Capture a distinct credential-free cleanup delegation while the actual
+   * resource and work profile are admitted. Later cleanup must not depend on a
+   * valid execution lease, credentials, policy or an existing workspace. This
+   * snapshot grants no control action; a supervisor must pin it durably before
+   * use and bind a real owned control process plus exact native control input. */
+  cleanup(resources: ToolkitResources, resourceId: string): ToolkitCleanupAdmission {
+    try {
+      const row = resources.get(resourceId);
+      if (!resources.authority || row.owner_boot !== resources.boot) refused();
+      const binding = resources.authority.binding(row.session_id),
+        admitted = this.launch(binding),
+        spec = JSON.parse(row.spec),
+        manifest = object(
+          JSON.parse(
+            privateFile(admitted.launch.args[2]!, admitted.launch.env.HOME!, 65536).toString(
+              'utf8',
+            ),
+          ),
+        ),
+        keyDigest = this.ownerKeyDigest(binding, manifest.owner_socket as string),
+        owner = resources.store.db
+          .prepare('SELECT key_digest FROM toolkit_owners WHERE resource_id=?')
+          .get(resourceId);
+      if (
+        row.root_digest !== digest(binding) ||
+        row.profile_digest !== admitted.profile_digest ||
+        row.state_dir !== admitted.state_dir ||
+        row.input_digest !== digest(spec) ||
+        spec.launch_digest !== digest(admitted.launch) ||
+        spec.manifest_digest !== admitted.manifest_digest ||
+        owner?.key_digest !== keyDigest
+      )
+        refused();
+      // Refuse a work snapshot that cannot be represented by the producer's
+      // bounded cleanup contract, before any future supervisor starts work.
+      if (
+        Buffer.byteLength(
+          canonical({
+            version: 1,
+            root_digest: row.root_digest,
+            profile_digest: row.profile_digest,
+            workspace: binding.workspace,
+            state_dir: row.state_dir,
+            owner_socket: manifest.owner_socket,
+            owner_key: '0'.repeat(64),
+          }),
+        ) > 4096
+      )
+        refused();
+      const bytes = Buffer.from(
+        canonical({
+          version: 1,
+          kind: 'stk-native-cleanup-v1',
+          private_dir: admitted.launch.env.HOME!,
+          binding,
+          resource_id: resourceId,
+          session_id: row.session_id,
+          resource_input_digest: row.input_digest,
+          profile_digest: row.profile_digest,
+          state_dir: row.state_dir,
+          executable: { path: admitted.launch.command, sha256: admitted.launch.executable_digest },
+          owner_socket: manifest.owner_socket,
+        }),
+      );
+      const directory = syncedBundle(admitted.launch.env.HOME!, 'cleanup-', {
+        'profile.json': bytes,
+      });
+      return new ToolkitCleanupAdmission(join(directory, 'profile.json'), sha(bytes));
+    } catch {
+      refused();
+    }
+  }
 
   /** Materialize an execution-only child from the immutable reviewed template.
    * Only the callback key and private manifest/profile locations change. The
@@ -332,6 +431,162 @@ export class ToolkitAdmission {
         profile_digest: m.profile_digest as string,
         manifest_digest: manifest.sha256,
         state_dir: m.state_dir as string,
+      };
+    } catch {
+      refused();
+    }
+  }
+}
+
+/** Internal cleanup-role admission only. It never opens credentials, inherits a
+ * work key, grants execution or treats a free native lock as a process stop.
+ * The future owned-control supervisor must persist this reference and a launch
+ * intent/PID identity before authenticating its separate private callback. */
+export class ToolkitCleanupAdmission {
+  private manifest?: { path: string; sha256: string };
+  constructor(
+    private readonly profilePath: string,
+    private readonly expectedDigest: string,
+  ) {}
+
+  get reference(): Readonly<{ path: string; sha256: string }> {
+    return Object.freeze({ path: this.profilePath, sha256: this.expectedDigest });
+  }
+
+  private pins(resources: ToolkitResources) {
+    if (!hash(this.expectedDigest)) refused();
+    const profilePath = path(this.profilePath),
+      bytes = privateFile(profilePath, dirname(profilePath), 65536);
+    if (sha(bytes) !== this.expectedDigest) refused();
+    const p = object(JSON.parse(bytes.toString('utf8')));
+    exact(
+      p,
+      'version,kind,private_dir,binding,resource_id,session_id,resource_input_digest,profile_digest,state_dir,executable,owner_socket',
+    );
+    if (p.version !== 1 || p.kind !== 'stk-native-cleanup-v1' || typeof p.resource_id !== 'string')
+      refused();
+    const root = privateDirectory(p.private_dir),
+      binding = agentpodBinding(p.binding),
+      row = resources.get(p.resource_id),
+      savedBinding = agentpodBinding(
+        JSON.parse(resources.authority!.bySession(row.session_id).binding),
+      ),
+      executable = object(p.executable);
+    exact(executable, 'path,sha256');
+    if (
+      !outside(binding.workspace, root) ||
+      !outside(root, binding.workspace) ||
+      !isAbsolute(binding.workspace) ||
+      resolve(binding.workspace) !== binding.workspace ||
+      outside(root, profilePath) ||
+      p.session_id !== row.session_id ||
+      canonical(savedBinding) !== canonical(binding) ||
+      row.root_digest !== digest(binding) ||
+      !hash(p.resource_input_digest) ||
+      p.resource_input_digest !== row.input_digest ||
+      row.input_digest !== digest(JSON.parse(row.spec)) ||
+      p.profile_digest !== row.profile_digest ||
+      !hash(p.profile_digest) ||
+      p.state_dir !== row.state_dir ||
+      outside(root, privateDirectory(p.state_dir)) ||
+      p.state_dir === root ||
+      !hash(executable.sha256) ||
+      sha(privateFile(executable.path, root, 256 * 1024 * 1024, true)) !== executable.sha256
+    )
+      refused();
+    const socket = path(p.owner_socket),
+      info = lstatSync(socket);
+    if (
+      outside(root, socket) ||
+      !info.isSocket() ||
+      info.uid !== process.getuid?.() ||
+      info.mode & 0o077
+    )
+      refused();
+    privateDirectory(dirname(socket));
+    // This check deliberately uses the persisted original binding above, not
+    // authority.binding(), which correctly requires a fresh execution lease.
+    const proof = resources.stopProof(row.id);
+    return { p, root, binding, row, executable, stopDigest: digest(proof), socket };
+  }
+
+  materialize(resources: ToolkitResources): ToolkitCleanupAdmission {
+    try {
+      if (this.manifest) refused();
+      const { p, root, binding, row, socket } = this.pins(resources),
+        bytes = Buffer.from(
+          canonical({
+            version: 1,
+            root_digest: row.root_digest,
+            profile_digest: p.profile_digest,
+            workspace: binding.workspace,
+            state_dir: p.state_dir,
+            owner_socket: socket,
+            owner_key: randomBytes(32).toString('hex'),
+          }),
+        );
+      if (bytes.length > 4096) refused();
+      const directory = syncedBundle(root, 'control-', { 'manifest.json': bytes }),
+        child = new ToolkitCleanupAdmission(this.profilePath, this.expectedDigest);
+      child.manifest = { path: join(directory, 'manifest.json'), sha256: sha(bytes) };
+      child.launch(resources);
+      return child;
+    } catch {
+      refused();
+    }
+  }
+
+  launch(resources: ToolkitResources): {
+    launch: Omit<StdioLaunch, 'protocol_version'>;
+    predecessor_id: string;
+    stop_proof_digest: string;
+    manifest_digest: string;
+    owner_key_digest: string;
+  } {
+    try {
+      const { p, root, binding, row, executable, stopDigest, socket } = this.pins(resources);
+      if (!this.manifest) refused();
+      const bytes = privateFile(this.manifest.path, root, 4096);
+      if (sha(bytes) !== this.manifest.sha256) refused();
+      const m = object(JSON.parse(bytes.toString('utf8')));
+      if (
+        !hash(m.owner_key) ||
+        canonical(m) !==
+          canonical({
+            version: 1,
+            root_digest: row.root_digest,
+            profile_digest: p.profile_digest,
+            workspace: binding.workspace,
+            state_dir: row.state_dir,
+            owner_socket: socket,
+            owner_key: m.owner_key,
+          })
+      )
+        refused();
+      return {
+        launch: {
+          command: executable.path as string,
+          executable_digest: executable.sha256 as string,
+          args: [
+            'managed-control-v1',
+            '--manifest',
+            this.manifest.path,
+            '--sha256',
+            this.manifest.sha256,
+          ],
+          cwd: root,
+          env: { HOME: root },
+          limits: {
+            request_bytes: 4096,
+            response_bytes: 2 * 1024 * 1024,
+            stderr_bytes: 4096,
+            timeout_ms: 10000,
+          },
+        },
+        predecessor_id: row.id,
+        stop_proof_digest: stopDigest,
+        manifest_digest: this.manifest.sha256,
+        owner_key_digest: sha(Buffer.from(m.owner_key)),
       };
     } catch {
       refused();
