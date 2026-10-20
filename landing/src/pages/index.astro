@@ -37,7 +37,7 @@ const steps = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#0c1618" />
+    <meta name="theme-color" content="#151113" />
     <title>Salaam — agent coding sessions that outlast your terminal</title>
     <link rel="canonical" href={site} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -85,34 +85,22 @@ const steps = [
       </header>
       <main id="main">
         <section class="hero" aria-labelledby="title">
+          <div class="hero-inner">
           <div class="hero-copy">
-            <p class="eyebrow">
-              <span class="live-dot" aria-hidden="true"></span> SALAAM
-            </p>
             <h1 id="title">
-              Agent coding sessions
-              <br />
-              <em>that outlast your terminal.</em>
+              Agent coding sessions <em>that outlast your terminal.</em>
             </h1>
-            <p class="hero-description">
+            <p class="hero-lede">
               Salaam is a persistent session service for terminal coding and unattended agent work,
-              built on Pi. A service on your machine keeps each session, its approvals and its
-              results, so you can close the terminal and pick the work up again later.
+              built on Pi. Each session, with its approvals and results, lives on your machine, so
+              you can close the terminal and pick it up later.
             </p>
             <div class="hero-actions">
-              <a class="button primary" href={`${docs}/quickstart/`}>
-                Get started <span aria-hidden="true">↗</span>
-              </a>
-              <a class="text-link" href={docs}>
-                Docs <span aria-hidden="true">↗</span>
-              </a>
+              <a class="button primary" href={`${docs}/quickstart/`}>Get started</a>
+              <a class="button secondary" href={docs}>Docs</a>
             </div>
           </div>
           <div class="session-scene">
-            <div class="scene-label">
-              <span>THE TERMINAL IS A WINDOW.</span>
-              <span>THE SESSION IS HOME.</span>
-            </div>
             <div
               class="terminal"
               role="img"
@@ -138,7 +126,7 @@ const steps = [
                   YOU <span>09:41</span>
                 </p>
                 <p class="prompt">Fix the parser and prove the edge cases.</p>
-                <p class="terminal-who jade">
+                <p class="terminal-who accent">
                   SALAAM <span>09:42</span>
                 </p>
                 <p>
@@ -147,7 +135,7 @@ const steps = [
                   The next operation is ready for your review.
                 </p>
                 <div class="task-line">
-                  <span class="jade">✓</span>
+                  <span class="accent">✓</span>
                   <span>Inspect parser behavior</span>
                   <span class="pill">verified</span>
                 </div>
@@ -162,33 +150,24 @@ const steps = [
                   <span>pending</span>
                 </div>
                 <div class="checkpoint">
-                  <span class="jade">↳</span> checkpoint saved <span>·</span> waiting for you
+                  <span class="accent">↳</span> checkpoint saved <span>·</span> waiting for you
                 </div>
               </div>
               <div class="composer">
-                <span class="jade">›</span>
+                <span class="accent">›</span>
                 <span>Send an instruction…</span>
                 <span class="key">↵</span>
               </div>
               <div class="terminal-foot">
                 <span>Ctrl K actions &nbsp; Ctrl O approvals</span>
-                <span class="jade">● session persisted</span>
+                <span class="accent">● session persisted</span>
               </div>
             </div>
-            <div class="reconnect">
-              <span class="reconnect-icon" aria-hidden="true">
-                ↳
-              </span>
-              <div>
-                <code>sal remote my-vps --remote-bin /absolute/path/to/sal --session SESSION_ID</code>
-                <span>Another terminal, over SSH. The same session.</span>
-              </div>
-              <span class="status-dot" aria-hidden="true"></span>
-            </div>
-            <p class="illustration">
-              Illustrative mock-up, not a real run · actual controls documented in the{' '}
+            <p class="hero-caption">
+              Example session, an illustrative mock-up · controls in the{' '}
               <a href={`${docs}/tui/`}>terminal guide</a>
             </p>
+          </div>
           </div>
         </section>
         <section id="how" class="section journey" aria-labelledby="how-title">
