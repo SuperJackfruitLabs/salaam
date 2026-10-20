@@ -86,96 +86,104 @@ const steps = [
       <main id="main">
         <section class="hero" aria-labelledby="title">
           <div class="hero-inner">
-          <div class="hero-copy">
-            <h1 id="title">
-              Agent coding sessions <em>that outlast your terminal.</em>
-            </h1>
-            <p class="hero-lede">
-              Salaam is a persistent session service for terminal coding and unattended agent work,
-              built on Pi. Each session, with its approvals and results, lives on your machine, so
-              you can close the terminal and pick it up later.
-            </p>
-            <div class="hero-actions">
-              <a class="button primary" href={`${docs}/quickstart/`}>Get started</a>
-              <a class="button secondary" href={docs}>Docs</a>
-            </div>
-          </div>
-          <div class="session-scene">
-            <div
-              class="terminal"
-              role="img"
-              aria-label="Illustrative Salaam session. A coding task has one verified step, one approval awaiting review, and a saved checkpoint. An SSH reconnection opens the same session."
-            >
-              <div class="terminal-top">
-                <span class="terminal-brand">◒ &nbsp; salaam</span>
-                <span class="terminal-meta"><span class="mode-name"></span> · connected</span>
-              </div>
-              <div class="terminal-tabs">
-                <span class="active">Conversation</span>
-                <span>
-                  Changes <b>2</b>
-                </span>
-                <span>Commands</span>
-                <span>Context</span>
-              </div>
-              <div class="terminal-body">
-                <div class="terminal-path">
-                  ~/projects/a-little-better <span>main</span>
-                </div>
-                <p class="terminal-who">
-                  YOU <span>09:41</span>
-                </p>
-                <p class="prompt"><span class="typed">Fix the parser and prove the edge cases.</span></p>
-                <p class="terminal-who accent">
-                  SALAAM <span>09:42</span>
-                </p>
-                <p>
-                  I’ve prepared the patch in the owned workspace.
-                  <br />
-                  The next operation is ready for your review.
-                </p>
-                <div class="task-line">
-                  <span class="accent">✓</span>
-                  <span>Inspect parser behavior</span>
-                  <span class="pill">verified</span>
-                </div>
-                <div class="task-line">
-                  <span class="amber">◇</span>
-                  <span>Apply reviewed patch</span>
-                  <span class="pill amber">approval</span>
-                </div>
-                <div class="task-line muted">
-                  <span>○</span>
-                  <span>Run acceptance checks</span>
-                  <span>pending</span>
-                </div>
-                <div class="checkpoint">
-                  <span class="accent">↳</span> checkpoint saved <span>·</span> waiting for you
-                </div>
-              </div>
-              <div class="composer">
-                <span class="accent">›</span>
-                <span>Send an instruction…</span>
-                <span class="key">↵</span>
-              </div>
-              <div class="terminal-foot">
-                <span>Ctrl K actions &nbsp; Ctrl O approvals</span>
-                <span class="accent">● session persisted</span>
+            <div class="hero-copy">
+              <h1 id="title">
+                Agent coding sessions <em>that outlast your terminal.</em>
+              </h1>
+              <p class="hero-lede">
+                Salaam is a persistent session service for terminal coding and unattended agent
+                work, built on Pi. Each session, with its approvals and results, lives on your
+                machine, so you can close the terminal and pick it up later.
+              </p>
+              <div class="hero-actions">
+                <a class="button primary" href={`${docs}/quickstart/`}>
+                  Get started
+                </a>
+                <a class="button secondary" href={docs}>
+                  Docs
+                </a>
               </div>
             </div>
-            <p class="hero-caption">
-              Example session, an illustrative mock-up · controls in the{' '}
-              <a href={`${docs}/tui/`}>terminal guide</a>
-            </p>
-          </div>
+            <div class="session-scene">
+              <div
+                class="terminal"
+                role="img"
+                aria-label="Illustrative Salaam session. A coding task has one verified step, one approval awaiting review, and a saved checkpoint. An SSH reconnection opens the same session."
+              >
+                <div class="terminal-top">
+                  <span class="terminal-brand">◒ &nbsp; salaam</span>
+                  <span class="terminal-meta">
+                    <span class="mode-name"></span> · connected
+                  </span>
+                </div>
+                <div class="terminal-tabs">
+                  <span class="active">Conversation</span>
+                  <span>
+                    Changes <b>2</b>
+                  </span>
+                  <span>Commands</span>
+                  <span>Context</span>
+                </div>
+                <div class="terminal-body">
+                  <div class="terminal-path">
+                    ~/projects/a-little-better <span>main</span>
+                  </div>
+                  <p class="terminal-who">
+                    YOU <span>09:41</span>
+                  </p>
+                  <p class="prompt">
+                    <span class="typed">Fix the parser and prove the edge cases.</span>
+                  </p>
+                  <p class="terminal-who accent">
+                    SALAAM <span>09:42</span>
+                  </p>
+                  <p>
+                    I’ve prepared the patch in the owned workspace.
+                    <br />
+                    The next operation is ready for your review.
+                  </p>
+                  <div class="task-line">
+                    <span class="accent">✓</span>
+                    <span>Inspect parser behavior</span>
+                    <span class="pill">verified</span>
+                  </div>
+                  <div class="task-line">
+                    <span class="amber">◇</span>
+                    <span>Apply reviewed patch</span>
+                    <span class="pill amber">approval</span>
+                  </div>
+                  <div class="task-line muted">
+                    <span>○</span>
+                    <span>Run acceptance checks</span>
+                    <span>pending</span>
+                  </div>
+                  <div class="checkpoint">
+                    <span class="accent">↳</span> checkpoint saved <span>·</span> waiting for you
+                  </div>
+                </div>
+                <div class="composer">
+                  <span class="accent">›</span>
+                  <span>Send an instruction…</span>
+                  <span class="key">↵</span>
+                </div>
+                <div class="terminal-foot">
+                  <span>Ctrl K actions &nbsp; Ctrl O approvals</span>
+                  <span class="accent">● session persisted</span>
+                </div>
+              </div>
+              <p class="hero-caption">
+                Example session, an illustrative mock-up · controls in the{' '}
+                <a href={`${docs}/tui/`}>terminal guide</a>
+              </p>
+            </div>
           </div>
         </section>
         <section id="how" class="section" aria-labelledby="how-title">
           <div class="container">
             <h2 id="how-title">How it works</h2>
             <p class="intro">
-              One service, any terminal. The terminal, SSH and your editor are clients; the
-              service keeps the record.
+              One service, any terminal. The terminal, SSH and your editor are clients; the service
+              keeps the record.
             </p>
             <ol class="steps">
               {steps.map((item) => (
@@ -259,7 +267,13 @@ const steps = [
               <p>Then start a service and your first session:</p>
             </div>
             <div class="copy-command">
-              <code>sal service start --state /tmp/salaam-try<br />sal session create --cwd "$PWD" --state /tmp/salaam-try<br />sal attach SESSION_ID --state /tmp/salaam-try</code>
+              <code>
+                sal service start --state /tmp/salaam-try
+                <br />
+                sal session create --cwd "$PWD" --state /tmp/salaam-try
+                <br />
+                sal attach SESSION_ID --state /tmp/salaam-try
+              </code>
             </div>
             <div class="prose">
               <p>
@@ -274,7 +288,9 @@ const steps = [
             <h2 id="limits-title">Where it runs today</h2>
             <p class="intro">Salaam is early software.</p>
             <ul class="limits">
-              <li>It is for one trusted OS account on one machine; there is no multi-tenant API.</li>
+              <li>
+                It is for one trusted OS account on one machine; there is no multi-tenant API.
+              </li>
               <li>
                 If the service or worker dies, work in flight is interrupted and you continue it
                 explicitly; nothing is replayed for you.

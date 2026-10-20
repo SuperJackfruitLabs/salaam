@@ -907,6 +907,14 @@ footer nav {
 }
 
 /* The demo's status line names the theme it is drawn in. */
-.terminal-meta .mode-name::before { content: 'night'; }
-:root[data-theme='paper'] .terminal-meta .mode-name::before { content: 'paper'; }
-@media (prefers-color-scheme: light) { :root:not([data-theme='night']) .terminal-meta .mode-name::before { content: 'paper'; } }
+.terminal-meta .mode-name::before {
+  content: 'night';
+}
+:root[data-theme='paper'] .terminal-meta .mode-name::before {
+  content: 'paper';
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='night']) .terminal-meta .mode-name::before {
+    content: 'paper';
+  }
+}
