@@ -790,6 +790,11 @@ export class SalaamService {
           );
           this.send(res, 200, {
             ...attached,
+            ...(this.agentpodWorkProgression &&
+            this.agentpodWork &&
+            attached.binding.run.source === 'superpipeline'
+              ? { work_control: { version: 1, owner: 'superpipeline' } }
+              : {}),
             ...(this.mcp ? { managed_mcp: this.mcp.status(attached.session_id).assignment } : {}),
           });
           return;

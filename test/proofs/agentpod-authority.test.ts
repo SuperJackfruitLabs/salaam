@@ -515,3 +515,101 @@ test('strict work is private-owner only and refuses missing protected verificati
     await f.close();
   }
 });
+
+// Reviewed-backend presence is a controlled negotiation double here; actual
+// protected station progression is covered by the separate Linux acceptance.
+test('authenticated strict ACP cold-start releases only its bootstrap control and stays an observer', async () => {
+  const f = await setup();
+  Object.assign(f.service, { agentpodWorkProgression: true, agentpodWork: {} });
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      binding: f.binding,
+      request_id: 'strict-admit',
+    });
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      binding: f.binding,
+      request_id: 'strict-renew',
+      lease_sequence: 1,
+    });
+    const attached = await call<any>(f.service.socket, '/v1/agentpod/attach', {
+      admission_id: admitted.admission_id,
+      token: admitted.token,
+    });
+    expect(attached.work_control).toEqual({ version: 1, owner: 'superpipeline' });
+    a = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    await a.initialize();
+    await a.request('session/new', { cwd: f.dir, mcpServers: [] });
+    await ready(f.service, admitted.session_id);
+    const released = f.service.store.controlView(admitted.session_id);
+    expect(released.expires_at).toBe(0);
+    expect(released.client_id).toBe(null);
+    await expect(
+      a.request('session/prompt', {
+        sessionId: admitted.session_id,
+        prompt: [{ type: 'text', text: 'Bypass board owner' }],
+      }),
+    ).rejects.toThrow();
+    await expect(a.request('session/cancel', { sessionId: admitted.session_id })).rejects.toThrow();
+    // Cross the adapter's old renewal interval: no late renewal may resurrect its lease.
+    await new Promise((r) => setTimeout(r, 5200));
+    expect(f.service.store.controlView(admitted.session_id)).toEqual(released);
+    expect(f.service.store.snapshot(admitted.session_id).attempts).toHaveLength(0);
+    const other = f.service.store.control(
+      admitted.session_id,
+      'other-acquire',
+      'other-terminal',
+      'acquire',
+      released.epoch,
+    );
+    await a.close();
+    a = undefined;
+    expect(f.service.store.controlView(admitted.session_id).client_id).toBe(other.client_id);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+});
+test('strict ACP bootstrap cannot take over a competing controller', async () => {
+  const f = await setup();
+  Object.assign(f.service, { agentpodWorkProgression: true, agentpodWork: {} });
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      binding: f.binding,
+      request_id: 'strict-competing',
+    });
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      binding: f.binding,
+      request_id: 'strict-competing-renew',
+      lease_sequence: 1,
+    });
+    const lease = f.service.store.control(
+      admitted.session_id,
+      'competing-acquire',
+      'other-terminal',
+      'acquire',
+      0,
+    );
+    a = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    await a.initialize();
+    await expect(
+      a.request('session/new', {
+        cwd: f.dir,
+        mcpServers: [],
+        _meta: { 'salaam.dev/takeover': true },
+      }),
+    ).rejects.toThrow();
+    expect(f.service.store.controlView(admitted.session_id).client_id).toBe(lease.client_id);
+    expect(f.service.store.snapshot(admitted.session_id).attempts).toHaveLength(0);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+});
