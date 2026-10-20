@@ -1,8 +1,10 @@
 /** Explicit isolated Linux acceptance: real Pi offline provider + systemd + stationfs.
  * Synthetic private owner, not a deployed Hub/Superpipeline/fleet canary.
- * No credential transfer, network effect, source mutation outside owned scratch.
+ * Controlled loopback-only MCP/provider endpoints in opaque mode; no real credentials.
+ * No source mutation outside owned scratch.
  */
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID, createHash } from 'node:crypto';
@@ -24,6 +26,9 @@ import {
   stationWorkspaceIdentity,
   readStationConfig,
 } from '../../dist/src/station-config.js';
+import { providerRoute } from '../../dist/src/provider-config.js';
+import { mcpCatalogDigest, mcpToolDigest } from '../../dist/src/mcp-http.js';
+import corpus from './agentpod-mcp-v1.json' with { type: 'json' };
 import { digest } from '../../dist/src/protocol.js';
 import { call as transportCall } from '../../dist/src/transport.js';
 // Actual 50k-file verification performs bounded native observations; this is not a cached status read.
@@ -41,6 +46,14 @@ if (process.argv[2] === '--child') {
       configuration_digest: config.configuration_digest,
     },
     agentpodWorkProgression: true,
+    ...(config.managedMcp
+      ? {
+          managedMcp: config.managedMcp,
+          providerRoute: providerRoute('anthropic', undefined, 1024),
+          anthropicApiKey: 'fixture-anthropic-key',
+          extensionPath: fileURLToPath(new URL('./claude-extension.mjs', import.meta.url)),
+        }
+      : {}),
   });
   if (existsSync(join(dir, 'hold-progression'))) await service.taskDriver.close();
   process.stdout.write('ready\n');
@@ -82,7 +95,7 @@ if (process.argv[2] === '--child') {
   assert(
     cases.length > 0 &&
       new Set(cases).size === cases.length &&
-      cases.every((c) => ['success', 'crash', 'revoke', 'expiry'].includes(c)),
+      cases.every((c) => ['success', 'crash', 'revoke', 'expiry', 'opaque'].includes(c)),
   );
   for (const mode of cases) {
     console.error(JSON.stringify({ scenario: mode, phase: 'starting', scratch: root }));
@@ -128,7 +141,91 @@ if (process.argv[2] === '--child') {
     };
     writeFileSync(join(dir, 'station.json'), JSON.stringify(config), { mode: 0o600 });
     const configuration_digest = digest(readStationConfig(join(dir, 'station.json'), workspace));
-    writeFileSync(join(dir, 'fixture.json'), JSON.stringify({ configuration_digest }), {
+    let mcpServer, provider, assignment, managedMcp;
+    const effects = [],
+      endpointErrors = [];
+    if (mode === 'opaque') {
+      const tools = [
+        {
+          name: 'fixture_mutate',
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+            additionalProperties: false,
+          },
+        },
+      ];
+      const key = corpus.assignments[0].value.servers[0].headers[0].value;
+      const endpoint = `/stations/${binding.station_id}/mcp-managed-v1/${digest(binding)}/superlibrary`;
+      mcpServer = createServer(
+        (req, res) =>
+          void (async () => {
+            if (req.method === 'DELETE') {
+              res.writeHead(405);
+              res.end();
+              return;
+            }
+            assert.equal(req.url, endpoint);
+            assert.equal(req.headers['x-agentpod-proxy-key'], key);
+            let raw = '';
+            for await (const chunk of req) raw += chunk;
+            const rpc = JSON.parse(raw);
+            const reply = (result) => {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result }));
+            };
+            if (rpc.method === 'initialize')
+              reply({
+                protocolVersion: '2025-11-25',
+                capabilities: { tools: {} },
+                serverInfo: { name: 'controlled-opaque-endpoint', version: '1' },
+              });
+            else if (rpc.method === 'tools/list') reply({ tools });
+            else if (rpc.method === 'tools/call') {
+              effects.push(rpc.params);
+              res.writeHead(200, { 'content-type': 'text/event-stream' });
+              res.write(': effect accepted; result withheld\n\n');
+            } else {
+              res.writeHead(202);
+              res.end();
+            }
+          })().catch((e) => {
+            endpointErrors.push(String(e));
+            res.destroy();
+          }),
+      );
+      mcpServer.listen(0, '127.0.0.1');
+      await once(mcpServer, 'listening');
+      const profile = structuredClone(corpus.profiles[0].value);
+      profile.proxy_origin = `http://127.0.0.1:${mcpServer.address().port}`;
+      profile.servers[0].catalog_digest = mcpCatalogDigest(tools);
+      profile.servers[0].tools = tools.map((t) => ({
+        name: t.name,
+        schema_digest: mcpToolDigest(t),
+        policy: 'approval',
+      }));
+      const pins = JSON.parse(readFileSync(join(dir, 'pins.json'), 'utf8'));
+      managedMcp = {
+        config: join(dir, 'mcp.json'),
+        profile_digest: digest({ profile, pins_digest: digest(pins) }),
+      };
+      writeFileSync(managedMcp.config, JSON.stringify(profile), { mode: 0o600 });
+      assignment = {
+        ...structuredClone(corpus.assignments[0].value),
+        binding,
+        profile_digest: managedMcp.profile_digest,
+      };
+      assignment.servers[0].url = profile.proxy_origin + endpoint;
+      writeFileSync(join(workspace, 'claude-mode'), 'mcp-mutate');
+      provider = spawn(
+        process.execPath,
+        [fileURLToPath(new URL('./mock-claude.mjs', import.meta.url)), workspace],
+        { stdio: ['ignore', 'pipe', 'inherit'] },
+      );
+      await once(provider.stdout, 'data');
+    }
+    writeFileSync(join(dir, 'fixture.json'), JSON.stringify({ configuration_digest, managedMcp }), {
       mode: 0o600,
     });
     if (mode === 'success')
@@ -190,6 +287,7 @@ if (process.argv[2] === '--child') {
         request_id: randomUUID(),
       });
       await renew();
+      if (assignment) await call(socket, '/v1/agentpod/mcp-assign', { binding, assignment });
       if (mode !== 'expiry')
         renewTimer = setInterval(
           () =>
@@ -262,7 +360,70 @@ if (process.argv[2] === '--child') {
         call(socket, '/v1/agentpod/work-progress', { ...progression, request_id: randomUUID() }),
       );
       const status = () => call(socket, '/v1/agentpod/work-status', { binding });
-      if (mode === 'success') {
+      if (mode === 'opaque') {
+        const offer = await until(
+          () => call(socket, '/v1/agentpod/work-decisions', { binding }),
+          (x) => x.decisions.length === 1,
+        );
+        const decision = offer.decisions[0];
+        assert.equal(effects.length, 0);
+        const answer = {
+          version: 1,
+          request_id: randomUUID(),
+          decision,
+          decision_digest: digest(decision),
+          elicitation_id: 'elc_fixtureopaque',
+          option_id: 'approve',
+          answered_by: 'synthetic-private-owner',
+          answered_at: new Date().toISOString(),
+        };
+        await call(socket, '/v1/agentpod/work-decision', { binding, answer });
+        await until(
+          async () => effects.length,
+          (n) => n === 1,
+        );
+        await stop('SIGKILL');
+        await boot();
+        await until(
+          async () => rows('SELECT * FROM mcp_calls'),
+          (calls) => calls.length === 1 && calls[0].state === 'outcome_unknown',
+        );
+        await assert.rejects(call(socket, '/v1/agentpod/work-completion', { binding }));
+        assert.deepEqual(await call(socket, '/v1/agentpod/work-admit', payload), receipt);
+        await renew();
+        assert.deepEqual(await call(socket, '/v1/agentpod/work-progress', progression), grant);
+        await assert.rejects(
+          call(socket, '/v1/agentpod/work-progress', { ...progression, request_id: randomUUID() }),
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+        assert.equal(effects.length, 1);
+        assert.equal(rows('SELECT * FROM mcp_calls').length, 1);
+        assert.equal(rows('SELECT * FROM mcp_calls')[0].state, 'outcome_unknown');
+        await assert.rejects(call(socket, '/v1/agentpod/work-completion', { binding }));
+        const unknown = rows("SELECT id FROM operations WHERE state='outcome_unknown'");
+        assert.equal(unknown.length, 1);
+        const attempts = rows('SELECT id FROM attempts');
+        await stop();
+        await boot();
+        await renew();
+        await assert.rejects(call(socket, '/v1/agentpod/work-completion', { binding }));
+        assert.deepEqual(await call(socket, '/v1/agentpod/work-progress', progression), grant);
+        await new Promise((r) => setTimeout(r, 1000));
+        assert.deepEqual(rows("SELECT id FROM operations WHERE state='outcome_unknown'"), unknown);
+        assert.deepEqual(rows('SELECT id FROM attempts'), attempts);
+        assert.equal(effects.length, 1);
+        assert.deepEqual(endpointErrors, []);
+        reports.push({
+          mode,
+          session_id: admitted.session_id,
+          task_id: receipt.task_id,
+          effects: 1,
+          call_state: 'outcome_unknown',
+          completion_rejected: true,
+          replacement_grants: 0,
+          scope: 'real daemon/Pi/HTTP/ledger; controlled synthetic external endpoint and provider',
+        });
+      } else if (mode === 'success') {
         assert.equal(rows('SELECT COUNT(*) AS n FROM attempts')[0].n, 0);
         await stop('SIGKILL');
         unlinkSync(join(dir, 'hold-progression'));
@@ -381,13 +542,22 @@ if (process.argv[2] === '--child') {
       if (renewError && mode === 'success') throw renewError;
     } finally {
       await stop();
+      if (provider && provider.exitCode === null) {
+        const done = once(provider, 'exit');
+        provider.kill('SIGKILL');
+        await done;
+      }
+      if (mcpServer) {
+        mcpServer.closeAllConnections();
+        await new Promise((r) => mcpServer.close(r));
+      }
     }
   }
   const evidence = {
     version: 1,
     success: true,
     scope:
-      'isolated Linux real systemd/stationfs/Pi offline provider; synthetic private authority, not live product acceptance',
+      'isolated Linux real daemon/Pi/systemd/stationfs; controlled fixture provider and private authority, not live product acceptance',
     scratch: root,
     runtime_image_digest: image,
     reports,

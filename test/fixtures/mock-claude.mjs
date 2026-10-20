@@ -72,17 +72,22 @@ const server = createServer(async (req, res) => {
     !hasResult &&
     (mode === 'tool' ||
       mode === 'mcp' ||
+      mode === 'mcp-mutate' ||
       (mode === 'children' && body.tools.some((tool) => tool.name === 'spawn_child')))
   ) {
     const spawnChild = mode === 'children';
-    const name = spawnChild ? 'spawn_child' : mode === 'mcp' ? 'salaam_mcp' : 'salaam_probe';
+    const name = spawnChild
+      ? 'spawn_child'
+      : mode === 'mcp' || mode === 'mcp-mutate'
+        ? 'salaam_mcp'
+        : 'salaam_probe';
     const args = spawnChild
       ? { step_key: 'child-step', prompt: 'Child greeting', budget: 2, wait: true }
-      : mode === 'mcp'
+      : mode === 'mcp' || mode === 'mcp-mutate'
         ? {
             action: 'call',
             server: 'superlibrary',
-            tool: 'library_search',
+            tool: mode === 'mcp-mutate' ? 'fixture_mutate' : 'library_search',
             arguments: { query: 'offline provider tool inventory proof' },
           }
         : {};
@@ -108,6 +113,7 @@ const server = createServer(async (req, res) => {
         !hasResult &&
         (mode === 'tool' ||
           mode === 'mcp' ||
+          mode === 'mcp-mutate' ||
           (mode === 'children' && body.tools.some((tool) => tool.name === 'spawn_child')))
           ? 'tool_use'
           : 'end_turn',

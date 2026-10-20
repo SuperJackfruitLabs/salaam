@@ -163,3 +163,5 @@ reviewed deployment. Older/disabled daemons must be rejected by strict bridge
 selection before a run claim, without falling back to unverified ACP completion.
 The direct-service Linux fixture and source conformance tests alone are not
 proof of the deployed native host startup path.
+
+The Linux fixture also accepts `SALAAM_M21_CASES=opaque`. It runs a real daemon, Pi, HTTP MCP transport and durable journals against controlled provider and MCP endpoints. The synthetic mutation withholds its result after accepting exactly one effect. SIGKILL recovery records `outcome_unknown`; fresh completion is rejected, replay preserves the original progression grant, another request cannot mint a grant, and a second daemon restart preserves the unresolved operation without another attempt or effect. This is process/recovery conformance, not a live external product or deployed fleet claim.
