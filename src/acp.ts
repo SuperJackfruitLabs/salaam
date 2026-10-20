@@ -8,6 +8,7 @@ import { AcpJournal } from './acp-journal.js';
 import { VERSION } from './config.js';
 import { acpFailure, AcpFailureError, toolMetadata } from './acp-outcome.js';
 import type { CancellationReceipt } from './turn-cancellations.js';
+import { validateManagedMcpDeclarations } from './mcp-acp.js';
 import {
   object,
   string,
@@ -51,11 +52,11 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
   if (!!admission !== !!admissionToken)
     throw Error('AgentPod admission requires both credential fields');
   const bound = admission
-    ? await call<{ session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding }>(
-        socket,
-        '/v1/agentpod/attach',
-        { admission_id: admission, token: admissionToken },
-      )
+    ? await call<{
+        session_id: string;
+        binding: import('./agentpod-protocol.js').AgentPodBinding;
+        managed_mcp?: import('./mcp-work.js').McpWorkerBinding | null;
+      }>(socket, '/v1/agentpod/attach', { admission_id: admission, token: admissionToken })
     : undefined;
   let closed = false,
     initialized = false,
@@ -524,6 +525,14 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         execution !== null && typeof execution === 'object' && object(execution).failures === 1;
       return {
         _meta: {
+          ...(bound?.managed_mcp
+            ? {
+                'salaam.dev/managedMcp': {
+                  version: 1,
+                  servers: bound.managed_mcp.servers.map((s) => s.name),
+                },
+              }
+            : {}),
           'salaam.dev/features': { promptReceipts: 1, updateIds: 1 },
           'salaam.dev/executionFeatures': {
             failures: 1,
@@ -536,7 +545,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           loadSession: true,
           sessionCapabilities: { resume: {} },
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
-          mcpCapabilities: { http: false, sse: false },
+          mcpCapabilities: { http: !!bound?.managed_mcp, sse: false },
         },
         agentInfo: { name: 'salaam', title: 'Salaam', version: VERSION },
         authMethods: [],
@@ -558,13 +567,12 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     }
     if (['session/new', 'session/load', 'session/resume'].includes(method)) {
       const cwd = string(params.cwd, 'cwd');
+      validateManagedMcpDeclarations(params.mcpServers, bound?.managed_mcp);
       if (
         !isAbsolute(cwd) ||
-        !Array.isArray(params.mcpServers) ||
-        params.mcpServers.length ||
         (Array.isArray(params.additionalDirectories) && params.additionalDirectories.length)
       )
-        throw new Error('Use an absolute cwd and no extra MCP servers/directories');
+        throw new Error('Use an absolute cwd and no extra directories');
       if (method === 'session/new') {
         if (bound) {
           if (options.coding || object(params._meta ?? {})['salaam.dev/coding'])

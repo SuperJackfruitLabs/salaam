@@ -40,6 +40,197 @@ function setup(connector?: EffectConnector) {
     },
   };
 }
+
+test('managed MCP permissions bind the reviewed call context and require the owning controller', async () => {
+  const f = setup();
+  const context = 'a'.repeat(64);
+  try {
+    await expect(
+      f.managed.prepareMcp(
+        f.session.id,
+        f.epoch,
+        f.submission.attempt_id,
+        'mcp-call',
+        'superlibrary/fixture-write',
+        '{}',
+        context,
+      ),
+    ).rejects.toThrow('MCP');
+    let current = context;
+    f.managed.options.assertMcpOperation = (op) => {
+      if (op.target_version !== current) throw Error('MCP assignment changed');
+    };
+    const { operation, approval } = await f.managed.prepareMcp(
+      f.session.id,
+      f.epoch,
+      f.submission.attempt_id,
+      'mcp-call',
+      'superlibrary/fixture-write',
+      '{}',
+      context,
+    );
+    expect(operation).toMatchObject({ kind: 'mcp', replay: 'opaque', target_version: context });
+    expect(f.managed.takePermission(operation.id)).toBe(false);
+    expect(() =>
+      f.managed.start(operation.id, f.session.id, f.epoch, f.submission.attempt_id),
+    ).toThrow('owned');
+    f.managed.decide(
+      approval.id,
+      'allow',
+      approval.revision,
+      operation.operation_digest,
+      'approve',
+    );
+    const next = await f.managed.prepareMcp(
+      f.session.id,
+      f.epoch,
+      f.submission.attempt_id,
+      'preapproved-next',
+      'superlibrary/other-fixture-write',
+      '{}',
+      context,
+    );
+    f.managed.decide(
+      next.approval.id,
+      'allow-next',
+      next.approval.revision,
+      next.operation.operation_digest,
+      'approve',
+    );
+    current = 'b'.repeat(64);
+    expect(() => f.managed.takePermission(operation.id)).toThrow('changed');
+    expect(f.managed.operation(operation.id).state).toBe('prepared');
+    await expect(
+      f.managed.prepareMcp(
+        f.session.id,
+        f.epoch,
+        f.submission.attempt_id,
+        'mcp-call',
+        operation.target,
+        '{}',
+        current,
+      ),
+    ).rejects.toThrow('different');
+    current = context;
+    expect(f.managed.takePermission(operation.id)).toBe(true);
+    expect(f.managed.takePermission(operation.id)).toBe(false);
+    expect(() =>
+      f.managed.recordReceipt(operation.id, {
+        id: 'unrelated-fixture-receipt',
+        accepted: true,
+        payload: {
+          target: operation.target,
+          value: operation.value,
+          target_version: operation.target_version,
+          argument_digest: operation.argument_digest,
+        },
+      }),
+    ).toThrow('owned');
+    f.managed.permissionResult(operation.id, false, {
+      protocol_result: 'unknown',
+      external_effect: 'unverified',
+    });
+    expect(f.managed.operation(operation.id).state).toBe('outcome_unknown');
+    expect(f.store.hasUnknown(f.session.id)).toBe(true);
+    expect(() => f.managed.takePermission(next.operation.id)).toThrow('Unresolved');
+    expect(f.managed.operation(next.operation.id).state).toBe('prepared');
+    await expect(
+      f.managed.prepareMcp(
+        f.session.id,
+        f.epoch,
+        f.submission.attempt_id,
+        'another-call',
+        operation.target,
+        '{}',
+        context,
+      ),
+    ).rejects.toThrow('Unresolved');
+  } finally {
+    await f.close();
+  }
+});
+
+test('a permission with no transport handoff settles only that MCP call and invalidates its approval', async () => {
+  const f = setup();
+  try {
+    f.managed.options.assertMcpOperation = () => {};
+    const { operation, approval } = await f.managed.prepareMcp(
+      f.session.id,
+      f.epoch,
+      f.submission.attempt_id,
+      'not-sent',
+      'superlibrary/fixture-write',
+      '{}',
+      'a'.repeat(64),
+    );
+    f.managed.mcpNotSent(operation.id);
+    expect(f.managed.operation(operation.id).state).toBe('failed_definite');
+    expect(f.managed.approval(approval.id).state).toBe('invalidated');
+    expect(f.store.hasUnknown(f.session.id)).toBe(false);
+  } finally {
+    await f.close();
+  }
+});
+
+test('MCP call acceptance and its permission can roll back together without publishing authority', async () => {
+  const f = setup();
+  try {
+    f.managed.options.assertMcpOperation = () => {};
+    const published: unknown[] = [];
+    f.store.changes.on('event', (event) => published.push(event));
+    expect(() =>
+      f.store.transaction(() => {
+        f.managed.prepareMcpInTransaction(
+          f.session.id,
+          f.epoch,
+          f.submission.attempt_id,
+          'atomic-mcp',
+          'superlibrary/fixture-write',
+          '{}',
+          'a'.repeat(64),
+        );
+        throw Error('Injected call acceptance failure');
+      }),
+    ).toThrow('acceptance failure');
+    expect(f.store.operations(f.session.id)).toEqual([]);
+    expect(f.store.approvals(f.session.id)).toEqual([]);
+    expect(published).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a generic MCP protocol reply cannot verify an external mutation', async () => {
+  const f = setup();
+  try {
+    f.managed.options.assertMcpOperation = () => {};
+    const { operation, approval } = await f.managed.prepareMcp(
+      f.session.id,
+      f.epoch,
+      f.submission.attempt_id,
+      'opaque-mcp',
+      'agentpod/fixture-write',
+      '{}',
+      'a'.repeat(64),
+    );
+    f.managed.decide(
+      approval.id,
+      'allow-opaque',
+      approval.revision,
+      operation.operation_digest,
+      'approve',
+    );
+    expect(f.managed.takePermission(operation.id)).toBe(true);
+    f.managed.permissionResult(operation.id, true, {
+      protocol_result: 'returned',
+      external_effect: 'unverified',
+    });
+    expect(f.managed.operation(operation.id).state).toBe('outcome_unknown');
+    expect(f.store.hasUnknown(f.session.id)).toBe(true);
+  } finally {
+    await f.close();
+  }
+});
 test('before intent commit a storage failure cannot publish an approval or dispatch an effect', async () => {
   const f = setup();
   try {
@@ -231,7 +422,7 @@ test('schema v2 upgrades without changing accepted request replies or completed 
     store.claim(session.id, epoch);
     store.finish(accepted.attempt_id, 'completed', 'M3 result', null);
     store.db.exec(
-      'DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations;DROP TABLE approval_dialogs;DROP TABLE approvals;DROP TABLE operations;PRAGMA user_version=2;',
+      'DROP TABLE station_units; DROP TABLE station_calls; DROP TABLE toolkit_resolution_controls; DROP TABLE toolkit_resolutions; DROP TABLE toolkit_cleanup_profiles; DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; DROP TABLE toolkit_resources; DROP TABLE mcp_calls; DROP TABLE mcp_assignments; DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions; DROP TABLE task_grants; DROP TABLE task_restores; DROP TABLE task_mutations; DROP TABLE task_checkpoints; DROP TABLE task_completions; DROP TABLE task_checks; DROP TABLE task_reservations; DROP TABLE task_runtime; DROP TABLE task_step_attempts; DROP TABLE task_steps; DROP TABLE task_plans; DROP TABLE durable_tasks; DROP TABLE compaction_cancellations; DROP TABLE compactions; DROP TABLE task_facts; DROP TABLE task_heads; DROP TABLE session_routes; DROP TABLE usage_observations; DROP TABLE attempt_budgets; DROP TABLE child_tasks; DROP TABLE cancellations;DROP TABLE approval_dialogs;DROP TABLE approvals;DROP TABLE operations;PRAGMA user_version=2;',
     );
     store.close();
     store = new Store(path);
@@ -241,7 +432,7 @@ test('schema v2 upgrades without changing accepted request replies or completed 
     });
     expect(store.accept(session.id, 'submit', session.revision, 'M3 input')).toEqual(accepted);
     expect(store.approvals(session.id)).toEqual([]);
-    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 20 });
+    expect(store.db.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 26 });
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

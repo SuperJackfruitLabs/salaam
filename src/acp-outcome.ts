@@ -324,20 +324,20 @@ export function toolMetadata(
   } catch {}
   const action = String(args.action ?? '');
   const kind =
-    name === 'salaam_command'
-      ? ['start', 'cancel'].includes(action)
+    name === 'salaam_command' || (name === 'salaam_station' && action === 'check')
+      ? ['start', 'cancel', 'check'].includes(action)
         ? 'execute'
         : ['status', 'logs'].includes(action)
           ? 'read'
           : 'other'
-      : name === 'salaam_files' && action === 'patch'
+      : ['salaam_files', 'salaam_station'].includes(name) && action === 'patch'
         ? args.content === null
           ? 'delete'
           : 'edit'
-        : ['salaam_files', 'salaam_repository'].includes(name) &&
+        : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
             ['search', 'list'].includes(action)
           ? 'search'
-          : ['salaam_files', 'salaam_repository'].includes(name) &&
+          : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
               ['read', 'inspect', ...(name === 'salaam_repository' ? ['diff'] : [])].includes(
                 action,
               )
@@ -347,7 +347,7 @@ export function toolMetadata(
               : 'other';
   const locations: { path: string; line?: number }[] = [];
   if (
-    name === 'salaam_files' &&
+    ['salaam_files', 'salaam_station'].includes(name) &&
     root &&
     isAbsolute(root) &&
     typeof args.path === 'string' &&

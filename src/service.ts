@@ -33,14 +33,28 @@ import { ExternalWork } from './external-work.js';
 import type { ExternalBackend } from './external-runtime.js';
 import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
-import { AgentPodAuthority } from './agentpod-authority.js';
+import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
+import { ToolkitResources } from './toolkit-resources.js';
+import { cancelToolkitCalls, recoverToolkitCalls } from './toolkit-calls.js';
+import { ToolkitOwners } from './toolkit-owners.js';
+import { ToolkitResolutions, resolvedToolkitCallSql } from './toolkit-resolutions.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
+import { McpAdmission } from './mcp-admission.js';
+import { McpWork } from './mcp-work.js';
+import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
+import { StationWork } from './station-work.js';
+import { readToolkitConfig } from './toolkit-config.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
   agentpodConfig?: string;
+  managedMcp?: { config: string; profile_digest: string };
+  /** Internal trusted host seam; never accepted from ACP or a worker. */
+  managedToolkit?: ToolkitWorkConfig;
+  managedToolkitConfig?: { config: string; configuration_digest: string };
+  stationConfig?: { config: string; configuration_digest: string };
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
   a2aConfig?: string;
@@ -62,6 +76,12 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 }
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
+  readonly toolkitResources: ToolkitResources;
+  readonly toolkitOwners: ToolkitOwners;
+  readonly toolkitResolutions: ToolkitResolutions;
+  readonly mcp?: McpWork;
+  readonly toolkit?: ToolkitWork;
+  readonly station?: StationWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
   a2aInbound?: A2AInbound;
@@ -96,6 +116,7 @@ export class SalaamService {
   private bridgeServer: Server;
   private release: () => void;
   private stopping = false;
+  private shutdownFailure?: AggregateError;
   private handlers = new Set<Promise<void>>();
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
@@ -104,6 +125,14 @@ export class SalaamService {
     this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
+    if (options.managedMcp && !options.agentpodConfig)
+      throw Error('Managed MCP requires reviewed AgentPod authority pins');
+    if ((options.managedToolkit || options.managedToolkitConfig) && !options.agentpodConfig)
+      throw Error('Native Toolkit requires reviewed AgentPod authority pins');
+    if (options.stationConfig && !options.agentpodConfig)
+      throw Error('Station execution requires reviewed AgentPod authority');
+    if (options.managedToolkit && options.managedToolkitConfig)
+      throw Error('Use one reviewed native Toolkit assignment');
     if (
       options.agentpodConfig &&
       (options.codingRoot ||
@@ -116,11 +145,18 @@ export class SalaamService {
         options.a2aListenConfig)
     )
       throw new Error(
-        'AgentPod authority profile does not enable station writes, effects, external runtimes or MCP yet',
+        'AgentPod authority profile does not enable station writes, fixture effects or external runtimes',
       );
     this.codingSocket = options.codingSocket ? resolve(options.codingSocket) : null;
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.stateDir = realpathSync(this.stateDir);
+    const mcpAdmission = options.managedMcp
+      ? new McpAdmission(
+          options.managedMcp.config,
+          readAgentPodPins(resolve(options.agentpodConfig!), this.stateDir),
+          options.managedMcp.profile_digest,
+        )
+      : undefined;
     this.socket = join(this.stateDir, 'operator.sock');
     this.bridgeSocket = join(this.stateDir, 'bridge.sock');
     if (Buffer.byteLength(this.bridgeSocket) > 100)
@@ -326,24 +362,142 @@ export class SalaamService {
             resolve(options.agentpodConfig),
             (attempt) => {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
+              this.mcp?.cancelInTransaction(attempt, 'agentpod-revocation');
+              this.station?.cancelInTransaction(attempt);
+              cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
+            },
+            (session) =>
+              (this.mcp?.stopped(session) ?? true) &&
+              this.toolkitResources.stopped(session) &&
+              (this.station?.stopped(session) ?? true),
+          );
+        this.toolkitResources = new ToolkitResources(this.store, this.agentpod);
+        this.toolkitOwners = new ToolkitOwners(this.store, this.toolkitResources, this.socket);
+        this.toolkitResolutions = new ToolkitResolutions(
+          this.store,
+          this.managed,
+          this.toolkitResources,
+          this.toolkitOwners,
+        );
+        this.store.nativeResourceCheck = (session) => {
+          this.toolkitResources.assertSession(session);
+          this.station?.assertResources(session);
+        };
+        if (options.managedToolkit || options.managedToolkitConfig) {
+          if (!this.agentpod)
+            throw new Error('Native Toolkit requires AgentPod execution authority');
+          this.toolkit = new ToolkitWork(
+            this.store,
+            this.managed,
+            this.agentpod,
+            this.toolkitResources,
+            this.toolkitOwners,
+            options.managedToolkit ??
+              readToolkitConfig(
+                options.managedToolkitConfig!.config,
+                options.managedToolkitConfig!.configuration_digest,
+                this.agentpod.pins.workspace,
+              ),
+            {
+              configurationCheck: () => {
+                if (options.managedToolkitConfig)
+                  readToolkitConfig(
+                    options.managedToolkitConfig.config,
+                    options.managedToolkitConfig.configuration_digest,
+                    this.agentpod!.pins.workspace,
+                  );
+              },
+              assertActive: (session, epoch, attempt) =>
+                this.supervisor.assertActive(session, epoch, attempt),
+              failed: (session, error) => this.supervisor.failControl(session, error),
             },
           );
+          this.supervisor.toolkit = this.toolkit;
+        }
+        if (options.stationConfig) {
+          if (!this.agentpod) throw Error('Station execution requires AgentPod authority');
+          this.station = new StationWork(
+            this.store,
+            this.managed,
+            this.agentpod,
+            options.stationConfig,
+            this.stateDir,
+            {
+              assertActive: (session, epoch, attempt) =>
+                this.supervisor.assertActive(session, epoch, attempt),
+              failed: (session, error) => this.supervisor.failControl(session, error),
+            },
+          );
+          this.supervisor.station = this.station;
+          const cancelOwned = this.store.cancelChildren;
+          this.store.cancelChildren = (attempt) => {
+            cancelOwned?.(attempt);
+            this.station!.cancelInTransaction(attempt);
+          };
+        }
+        if (options.managedMcp) {
+          this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
+            admission: mcpAdmission!,
+            current: (session) => this.agentpod!.binding(session),
+            assertActive: (session, epoch, attempt) =>
+              this.supervisor.assertActive(session, epoch, attempt),
+            failed: (session, error) => this.supervisor.failControl(session, error),
+          });
+          this.supervisor.mcp = this.mcp;
+        }
         this.cancellations = new TurnCancellations(
           this.store,
           this.managed,
           (id) => this.supervisor.attemptActive(id),
           async (attempt) => {
             this.managed.abortCancelled(attempt);
-            this.coding.cancelAttempt(attempt);
-            const owned = this.children.owned(this.store.attempt(attempt).session_id);
-            if (owned && this.store.workerBoundary.view(owned.id).binding.external)
-              await this.external.cancel(owned);
-            else {
-              await this.children.cancelOwned(attempt);
-              await this.supervisor.cancelAttempt(attempt);
-            }
+            this.mcp?.abortAttempt(attempt);
+            this.toolkit?.abortAttempt(attempt);
+
+            const stopped = await Promise.allSettled([
+              this.station?.abortAttempt(attempt),
+              this.toolkitResources.stopAttempt(attempt),
+              (async () => {
+                this.coding.cancelAttempt(attempt);
+                const owned = this.children.owned(this.store.attempt(attempt).session_id);
+                if (owned && this.store.workerBoundary.view(owned.id).binding.external)
+                  await this.external.cancel(owned);
+                else {
+                  await this.children.cancelOwned(attempt);
+                  await this.supervisor.cancelAttempt(attempt);
+                }
+              })(),
+            ]);
+            const failures = stopped.filter((r) => r.status === 'rejected');
+            if (failures.length)
+              throw new AggregateError(
+                failures.map((r) => r.reason),
+                'Turn resource stop is unconfirmed',
+              );
           },
         );
+        this.cancellations.cancelAdditional = (attempt) => {
+          this.mcp?.cancelInTransaction(attempt);
+          this.station?.cancelInTransaction(attempt);
+          cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
+        };
+        this.cancellations.additionalResources = (session, attempt) => [
+          ...(this.station?.unconfirmed(session, attempt) ?? []),
+          ...(this.mcp && !this.mcp.stopped(session) ? ['managed-mcp:' + session] : []),
+          ...(this.store.db
+            .prepare(
+              "SELECT 1 FROM toolkit_resources r JOIN toolkit_calls c ON c.resource_id=r.id WHERE c.attempt_id=? AND c.cancel_requested=1 AND r.state!='stopped' LIMIT 1",
+            )
+            .get(attempt)
+            ? ['managed-toolkit:' + session]
+            : []),
+          ...this.store.db
+            .prepare(
+              `SELECT id FROM toolkit_calls c WHERE attempt_id=? AND state IN ('delivered','dispatching','outcome_unknown') AND NOT ${resolvedToolkitCallSql('c')}`,
+            )
+            .all(attempt)
+            .map((row) => 'toolkit-call:' + row.id),
+        ];
       } catch (error) {
         this.store.close();
         throw error;
@@ -396,6 +550,9 @@ export class SalaamService {
         throw new Error('Host executor does not match reviewed manifest');
       await service.supervisor.providerAuth();
       await service.external.backend?.prepare?.();
+      await service.toolkitResources.recover();
+      await service.station?.initialize();
+      recoverToolkitCalls(service.store, service.managed);
       await service.supervisor.recover();
       service.cancellations.recover();
       await service.external.recover();
@@ -407,6 +564,7 @@ export class SalaamService {
       service.children.recover();
       service.workerWorkspaces.recover();
       service.managed.recover();
+      service.mcp?.recover();
       await service.managed.reconcileAll();
       service.taskCheckpoints.recover();
       await service.jobs.recover();
@@ -460,8 +618,15 @@ export class SalaamService {
   ): Promise<void> {
     const jobs: Promise<unknown>[] = receipt.attempt_ids.map(async (attempt) => {
       this.managed.abortCancelled(attempt);
+      this.mcp?.abortAttempt(attempt);
+      this.toolkit?.abortAttempt(attempt);
+      await this.station?.abortAttempt(attempt);
     });
     for (const session of receipt.session_ids) {
+      jobs.push(this.toolkitResources.stopSession(session));
+      if (this.mcp) jobs.push(this.mcp.stopSession(session));
+      if (this.toolkit) jobs.push(this.toolkit.stopSession(session));
+      if (this.station) jobs.push(this.station.stopSession(session));
       jobs.push(Promise.resolve().then(() => this.supervisor.stopSession(session)));
       jobs.push(
         Promise.resolve().then(async () => {
@@ -504,6 +669,14 @@ export class SalaamService {
       if (this.stopping) throw new ServiceError('stopping', 'Service is stopping', 503);
       const url = new URL(req.url ?? '/', 'http://local');
       const parts = url.pathname.split('/').filter(Boolean);
+      if (!bridge && req.method === 'POST' && req.url === '/managed-toolkit/v1/verify') {
+        this.send(res, 200, await this.toolkitOwners.verify(req));
+        return;
+      }
+      if (!bridge && req.method === 'POST' && req.url === '/managed-toolkit/v1/control') {
+        this.send(res, 200, await this.toolkitOwners.control(req));
+        return;
+      }
       if (
         !bridge &&
         req.method === 'GET' &&
@@ -578,18 +751,37 @@ export class SalaamService {
           );
         const body = object(await readJson(req));
         if (parts[2] === 'attach') {
-          this.send(
-            res,
-            200,
-            this.agentpod.authenticate(
-              string(body.admission_id, 'admission_id', 128),
-              string(body.token, 'token', 128),
-            ),
+          const attached = this.agentpod.authenticate(
+            string(body.admission_id, 'admission_id', 128),
+            string(body.token, 'token', 128),
           );
+          this.send(res, 200, {
+            ...attached,
+            ...(this.mcp ? { managed_mcp: this.mcp.status(attached.session_id).assignment } : {}),
+          });
           return;
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'mcp-assign') {
+          if (!this.mcp)
+            throw new ServiceError('mcp_disabled', 'No reviewed managed MCP host profile', 403);
+          const current = this.agentpod.inspect(body.binding);
+          const old = this.mcp.status(current.session_id).assignment;
+          const assigned = this.mcp.assign(current.session_id, body.assignment);
+          if (old && old.assignment_digest !== assigned.assignment_digest) {
+            this.supervisor.failControl(
+              current.session_id,
+              new Error('MCP assignment changed; restart required'),
+            );
+            await Promise.all([
+              this.supervisor.stopSession(current.session_id),
+              this.mcp.stopSession(current.session_id),
+            ]);
+          }
+          this.send(res, 200, await this.mcp.ready(current.session_id));
           return;
         }
         const request = string(body.request_id, 'request_id', 128);
@@ -1162,6 +1354,15 @@ export class SalaamService {
           service_version: VERSION,
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
+          managed_mcp: this.mcp
+            ? { profile_digest: this.mcp.options.admission.profileDigest }
+            : null,
+          managed_toolkit: this.toolkit
+            ? { configuration_digest: this.toolkit.configurationDigest }
+            : null,
+          station_execution: this.station
+            ? { configuration_digest: this.station.configurationDigest }
+            : null,
           service: 'healthy',
           a2a: {
             inbound_enabled: !!this.a2aInbound,
@@ -1318,6 +1519,8 @@ export class SalaamService {
             },
             (attempt) => {
               this.managed.cancelInTransaction(attempt, request, 'session-revocation');
+              this.mcp?.cancelInTransaction(attempt, 'session-revocation');
+              this.station?.cancelInTransaction(attempt);
             },
           );
           // The receipt commits before any asynchronous process/executor cleanup.
@@ -1569,6 +1772,32 @@ export class SalaamService {
           return;
         }
       }
+      if (parts[0] === 'v1' && parts[1] === 'toolkit' && parts[2] === 'calls' && parts[3]) {
+        const id = parts[3];
+        if (parts.length === 4 && req.method === 'GET') {
+          this.send(res, 200, this.toolkitResolutions.inspect(id));
+          return;
+        }
+        if (parts.length === 5 && parts[4] === 'resolution' && req.method === 'POST') {
+          const body = object(await readJson(req)),
+            outcome = string(body.outcome, 'outcome');
+          if (outcome !== 'succeeded' && outcome !== 'failed_definite')
+            throw new ServiceError('invalid_field', 'Invalid resolution outcome', 400);
+          this.send(
+            res,
+            200,
+            await this.toolkitResolutions.resolveRead(
+              id,
+              string(body.request_id, 'request_id', 128),
+              integer(body.expected_revision, 'expected_revision'),
+              string(body.context_digest, 'context_digest', 128),
+              outcome,
+              string(body.evidence, 'evidence', 4096),
+            ),
+          );
+          return;
+        }
+      }
       if (parts[0] === 'v1' && parts[1] === 'operations' && parts[2]) {
         const id = parts[2];
         if (parts.length === 3 && req.method === 'GET') {
@@ -1600,7 +1829,11 @@ export class SalaamService {
           this.send(
             res,
             200,
-            this.managed.resolve(
+            await (
+              this.toolkitResolutions.owns(id)
+                ? this.toolkitResolutions.resolveOperation.bind(this.toolkitResolutions)
+                : this.managed.resolve.bind(this.managed)
+            )(
               id,
               string(body.request_id, 'request_id', 128),
               integer(body.expected_revision, 'expected_revision'),
@@ -1611,6 +1844,19 @@ export class SalaamService {
           );
           return;
         }
+      }
+      if (
+        parts[0] === 'v1' &&
+        parts[1] === 'station' &&
+        parts[2] === 'calls' &&
+        parts[3] &&
+        parts.length === 4 &&
+        req.method === 'GET'
+      ) {
+        if (!this.station)
+          throw new ServiceError('station_disabled', 'Station execution is unavailable');
+        this.send(res, 200, this.station.view(parts[3]));
+        return;
       }
       if (
         parts[0] === 'v1' &&
@@ -1916,55 +2162,66 @@ export class SalaamService {
   async close(): Promise<void> {
     if (this.stopping) {
       await this.closed;
+      if (this.shutdownFailure) throw this.shutdownFailure;
       return;
     }
     this.stopping = true;
+    this.toolkitResolutions.stop();
     clearInterval(this.authorityTimer);
-    this.inbox.close();
-    this.recurring.close();
-    this.jobs.close();
-    await this.taskDriver.close();
-    this.dispatcher.pause();
-    this.managed.pause();
-    this.children.pause();
     const errors: unknown[] = [];
-    try {
-      await this.a2aInbound?.close();
-      await Promise.allSettled(this.revocationStops);
-      await this.external.close();
-      await this.coding.close();
+    const attempt = async (cleanup: () => unknown) => {
       try {
-        await this.children.close();
-        await this.supervisor.close();
+        await cleanup();
       } catch (error) {
         errors.push(error);
       }
-      await this.dispatcher.drain();
-      await this.managed.close();
-      await Promise.all(
+    };
+    await attempt(() => this.inbox.close());
+    await attempt(() => this.recurring.close());
+    await attempt(() => this.jobs.close());
+    await attempt(() => this.taskDriver.close());
+    await attempt(() => this.dispatcher.pause());
+    await attempt(() => this.managed.pause());
+    await attempt(() => this.children.pause());
+    await attempt(() => this.a2aInbound?.close());
+    await Promise.all([...this.revocationStops].map((stop) => attempt(() => stop)));
+    await attempt(() => this.external.close());
+    await attempt(() => this.coding.close());
+    await attempt(() => this.mcp?.close());
+    await attempt(() => this.toolkit?.close());
+    await attempt(() => this.station?.close());
+    await attempt(() => this.toolkitResources.close());
+    await attempt(() => this.toolkitResolutions.close());
+    await attempt(() => this.children.close());
+    await attempt(() => this.supervisor.close());
+    await attempt(() => this.dispatcher.drain());
+    await attempt(() => this.managed.close());
+    await attempt(() =>
+      Promise.all(
         [this.operator, this.bridgeServer].map(
           (server) =>
-            new Promise<void>((resolve) => {
+            new Promise<void>((resolve, reject) => {
               if (!server.listening) {
                 resolve();
                 return;
               }
-              server.close(() => resolve());
+              server.close((error) => (error ? reject(error) : resolve()));
               server.closeAllConnections();
             }),
         ),
-      );
-      await Promise.all(this.handlers);
-      try {
-        this.store.close();
-      } catch (error) {
-        errors.push(error);
-      }
-    } finally {
-      this.release();
-      this.resolveClosed();
-    }
+      ),
+    );
+    await Promise.all([...this.handlers].map((handler) => attempt(() => handler)));
+    await attempt(() => this.store.close());
+    // A replacement must not mistake an empty resource map for proof that this
+    // process stopped all of its workers. OS death releases a retained lock.
+    if (!errors.length) await attempt(() => this.release());
     if (errors.length)
-      throw new AggregateError(errors, 'Service shutdown could not persist all final states');
+      this.shutdownFailure = new AggregateError(
+        errors,
+        'Service shutdown could not confirm all resources and final states; state ownership retained until process exit',
+      );
+    this.resolveClosed();
+    if (this.shutdownFailure) throw this.shutdownFailure;
   }
 }

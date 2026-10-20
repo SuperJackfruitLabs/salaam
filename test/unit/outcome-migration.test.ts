@@ -27,11 +27,11 @@ test('v19 upgrade preserves immutable receipts and history without inventing ver
     const requests = store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all();
     const events = store.db.prepare('SELECT * FROM events ORDER BY session_id,seq').all();
     store.db.exec(
-      'DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; PRAGMA user_version=19;',
+      'DROP TABLE station_units; DROP TABLE station_calls; DROP TABLE toolkit_resolution_controls; DROP TABLE toolkit_resolutions; DROP TABLE toolkit_cleanup_profiles; DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; DROP TABLE toolkit_resources; DROP TABLE mcp_calls; DROP TABLE mcp_assignments; DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; PRAGMA user_version=19;',
     );
     store.close();
     store = new Store(path);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(20);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(26);
     expect(store.attempt(accepted.attempt_id)).toMatchObject({
       state: 'completed',
       result: 'Legacy reply',

@@ -1,0 +1,426 @@
+# Managed MCP execution contract
+
+Managed MCP is an explicit, reviewed AgentPod host profile. Schema-2 hosts retain
+their existing behavior. Schema-3 hosts bind `mcp_config` and its authority-bound
+profile digest; they require a private node assignment and actual protocol/catalog
+readiness before starting a worker. Complete node delivery and station acceptance
+remain required before claiming a usable fleet integration.
+
+AgentPod owns the canonical profile and private assignment schemas in
+`packages/contract/src/salaam-mcp.ts`. Its `salaam-mcp-v1.json` corpus is mirrored
+as `test/fixtures/agentpod-mcp-v1.json`. Both implementations consume its accepted
+and rejected cases. Keep these bytes synchronized when changing the contract.
+
+The reviewed profile pins a literal loopback proxy origin, named servers, complete
+catalog and tool-definition digests, explicit `read` or `approval` policies, and
+request, response, deadline and call-count limits. Server annotations supply no
+authority. The separate private assignment carries the existing full AgentPod
+principal, occupancy and run binding, profile digest, credential generation and
+station-specific proxy headers. Send that assignment only over node-to-daemon
+control. Public views contain fingerprints and tool policies, without endpoint
+URLs or header credentials.
+
+`McpAdmission` verifies private profile integrity and the assignment's data binding.
+Its caller must separately enforce a fresh execution lease. The transport requires
+a synchronous callback immediately before its single `tools/call` handoff; the
+service must recheck authority and commit the durable dispatch marker there.
+Historical request lookup precedes any new grant. A generation number in a parsed
+assignment alone does not prove freshness.
+
+MCP mutation permissions use the existing durable approval ledger with a distinct
+operation kind and immutable call-context digest. Their preparation, one-time
+consumption and result recording can share the caller's transaction. Only the
+registered execution controller can consume a permission. A generic protocol
+reply leaves an opaque external mutation unresolved; a human reconciliation or a
+separately conformant owner receipt is required to settle its effect. An unknown
+effect blocks consumption of other permissions, including already approved ones.
+
+The exact MCP SDK version is locked and bundled with the CLI. The managed HTTP
+profile negotiates the reviewed protocol version, uses POST responses containing
+JSON or SSE, refreshes the catalog before each call, and exposes no sampling,
+roots, elicitation or task handoff capability. It opens no unsolicited GET stream.
+Only admitted schemas are compiled for argument and structured-result validation.
+Missing external schema references fail without fetching them.
+Schemas default to the MCP-defined 2020-12 dialect; an explicit supported draft-07
+schema uses a separate validator. This matters for constraints such as
+`unevaluatedProperties`, which a draft-07 validator does not enforce. See the
+[MCP schema rules](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and [Ajv schema versions](https://ajv.js.org/json-schema.html#json-schema-versions).
+The initial result profile accepts text and structured data. Media, task handoffs
+and empty success acknowledgements fail explicitly rather than losing their
+meaning during conversion.
+
+Transport limits include the complete streamed response and a fixed total call
+deadline. Redirects, OAuth flows, upscoping and automatic call replay are disabled.
+A call marked `sent` may have reached the remote server even if it returns an
+error, exceeds a limit or loses its response. Preserve that uncertainty for writes.
+The returned value says `protocol_result: returned`; it does not establish a
+verified product change. Known proxy credential strings and their common encodings
+are redacted from returned data and transport errors use fixed public messages.
+
+The offline proofs exercise the actual pinned SDK and real disposable loopback
+HTTP sockets. They cover station/authority/header shape rejection, profile drift,
+schema drift, argument/result validation, bounded streaming, redirect refusal,
+credential redaction, one send and observed local cancellation. They do not call
+the deployed Library, exercise real Accounts grants, or confirm that remote work
+stops when a local HTTP response closes.
+
+Journal schema 21 stores immutable call identities, context fingerprints and
+sanitized result artifact references. Private assignment headers remain in the
+controller's memory. Repeating an identical assignment during reconnect leaves
+in-flight work alone; a changed generation invalidates its old calls and decisions.
+A saved call is looked up before another grant or quota reservation. SQLite commits
+the dispatch marker and consumed permission together, immediately before the
+transport handoff.
+
+The controller process proofs use real HTTP and SQLite with synthetic authority.
+SIGKILL before dispatch leaves an unsent call; after acceptance it leaves a fenced
+unknown mutation; after result storage it preserves the original receipt. Durable
+cancellation closes the observed local response while retaining an accepted
+mutation as unknown. An empty active-call list is not a remote effect or process
+stop receipt; host stop confirmation must account for its actual owned resources.
+
+The daemon owns credentials and HTTP transport. Worker configuration and readiness
+contain only safe assignment fingerprints and reviewed policies. The progressive
+`salaam_mcp` tool discovers servers, lists admitted tools and retrieves one schema
+before making a call. Children receive no MCP authority. Each bridge and pre-send
+grant checks the current root lease, worker/attempt and assignment. Reinstalling
+the same assignment preserves a running call; rotation invalidates the worker's
+readiness and old decisions. Ordinary invalid tool arguments send nothing and do
+not invalidate the control plane. Profile, protocol or catalog failures do.
+
+Root revocation and turn cancellation commit MCP tombstones with their existing
+permission cancellation transaction before aborting transport. AgentPod stop and
+turn-cancellation receipts account for active MCP resources and failed cleanup;
+an empty active list cannot clear a transport-close failure. HTTP cleanup confirms
+only local resources, while unknown external mutations remain separate. The real
+pinned Pi/ACP proofs exercise readiness refusal, reconnect, daemon reopen with a
+fresh authority renewal, catalog drift, ordinary argument rejection, turn
+cancellation and root revocation against disposable HTTP servers. Their station
+and product data are synthetic, and their provider is offline.
+
+ACP accepts only declarations matching the private assignment's endpoint fingerprints, with
+empty headers. It advertises HTTP and `salaam.dev/managedMcp` only for that bound assignment.
+The separate node control response includes a protocol/catalog readiness receipt; merely
+parsing or storing an assignment is insufficient. The same receipt rejection corpus is
+consumed by the canonical contract, daemon and Go node.
+
+The authenticated cross-product rehearsal runs the actual Hub, Go node, persisted proxy,
+daemon and pinned Pi with synthetic signed Accounts and MCP product data. It covers Hub
+restart, proxy rotation, node restart, occupant A→B→A, and daemon death after approved
+HTTP acceptance. The proxy persists a binding fingerprint and principal/occupancy identity,
+rotates its credential on handoff, invalidates the old station-token cache, and checks token
+identity and its own generation again after minting. Upstreams retain their existing signature,
+issuer, audience and entitlement checks. These proofs do not establish live Library or fleet
+acceptance. A separate Anthropic-adapter proof uses a local mock API to verify that the actual
+model tool inventory includes `salaam_mcp` and receives its result without the proxy key.
+
+Managed assignments use a separate `/stations/<id>/mcp-managed-v1/<binding-digest>/<server>`
+namespace. The daemon and node verify the digest against the fresh root binding; the
+proxy verifies its persisted identity before minting or forwarding. A bound credential
+cannot use the older transparent route. The actual M19 proxy artifact rejects the new
+namespace before token minting, so rolling back the proxy fails closed for an existing
+managed assignment. Shape validation alone cannot establish that the digest is current.
+
+The internal stdio transport is preparation for the separate Toolkit integration.
+It uses an exact executable checksum, explicit environment, pinned negotiation,
+request/response/stderr bounds and a total response deadline. A synchronous owner
+guard runs before each tool-call handoff. Closing it signals the owned process
+group and confirms that the group disappeared; failed cleanup remains unconfirmed.
+Its process proofs use a disposable fixture, not Toolkit. This primitive does not
+admit configuration or grant authority, and no public ACP stdio capability or
+Toolkit execution tool is enabled by its presence. Pending broker decisions still
+require owner binding, revocation and recovery conformance before integration.
+
+Journal schema 22 adds a durable Toolkit process registry alongside the existing
+HTTP call records. Each private resource binds its session/root, reviewed profile,
+manifest and complete launch fingerprints, canonical private state directory,
+controller boot, actual PID and process start identity. Launch intent is committed
+before OS spawn. The synchronous PID callback commits ownership before SDK
+initialization or tool delivery; asynchronous guards cannot admit a call.
+Resource events and state changes share one journal transaction. The migration
+preserves existing requests, receipts and events without manufacturing native
+process ownership. Older services reject the new schema instead of adopting it.
+
+The daemon recovers these resources before exposing operator sockets. It stops
+only an exactly identified predecessor; a missing, changed or unreadable live
+identity cannot authorize signalling another process. An interrupted launch with
+no recorded PID remains `unconfirmed`, blocking replacement, execution, authority
+renewal and an authorized status. A free broker lock or an empty in-memory map
+cannot clear that fence. A failed cleanup immediately blocks grants even if its
+failure marker cannot be written; a different controller boot cannot adopt an
+old running row. Root revocation and daemon shutdown account for these resources.
+Unconfirmed shutdown retains the daemon state lock until its process exits.
+
+Stopped resources have immutable receipts scoped to `local_process_group`, bound
+to the exact recorded resource and input. These receipts establish local process
+cleanup only. They neither verify an external product effect nor resolve an
+uncertain native call. The broker's separate `managed-control-v1` contract has a
+19-case canonical corpus mirrored here, and requires a private owner check for
+the actual stop proof and exact resolution decision. An acknowledgement remains
+a terminal non-success outcome. A saved call and an owned process are separate
+records; neither one is a substitute for the other.
+
+The registry proofs use real SDK/SQLite/OS processes under synthetic station
+authority, including SIGKILL of the actual Salaam daemon with a surviving fixture
+peer and before PID persistence. They check stop-before-renewal and uncertainty
+surviving a new daemon, including retained ownership after failed shutdown.
+Those peers are disposable Node protocol fixtures, not a compiled Toolkit
+effect executor. Separate local producer interoperability proofs use the actual
+compiled Toolkit and the pinned SDK with synthetic private owner callbacks.
+The separate private admission and call-controller proofs below cover the actual
+effect-owner endpoint, credential delegation, call permissions and turn mapping.
+Model tool and station integration remain required. No native Toolkit station
+capability or real provider/Library acceptance is claimed by these local proofs.
+
+### Private native launch admission
+
+`ToolkitAdmission` is an internal host admission primitive. Its pinned private
+profile delegates one credential store to the exact organization, principal and
+full AgentPod binding (including occupant and run epochs). A new binding requires
+a new reviewed profile; an existing store is never implicitly inherited.
+
+The profile pins the executable, manifest and passphrase bytes. The manifest pins
+the policy and Toolkit-owned protocol/profile fingerprint. All files, directories
+and the owner socket must be canonical, owner-only and outside the workspace;
+files cannot have additional hardlinks, and writable ancestors are rejected except
+root-owned sticky temporary directories. Launch uses only `managed-mcp-v1`, an
+explicit manifest/hash and a closed environment.
+
+`ToolkitAdmission.transport` applies the admission through the resource controller
+at preparation, before spawn, before PID registration and before SDK tool delivery.
+An asynchronous check cannot admit a launch or delivery. Drift after startup closes
+the transport before any tool bytes are sent.
+
+`ToolkitAdmission.materialize` generates a private, synced manifest/profile pair
+for one process with a fresh callback key. It preserves every reviewed execution
+field, including the original root/principal delegation, policy, credential store,
+passphrase, executable, state directory and socket. The original template stays
+unchanged and is checked again on every child admission and callback; generated
+hashes do not replace review. Generated children cannot generate further children.
+The resource and key registries must still commit before process startup. Merely
+materializing files does not stop or replace a broker, adopt a predecessor, clear
+an uncertain effect or grant execution. Interrupted materialization can leave inert
+owner-only files; they are not authority and are never discovered for adoption.
+
+This checks configuration integrity and delegation. It does not verify that a
+binary implements the required broker protocol, grant a native effect, establish
+sandbox isolation, or enable a station capability. The real effect controller must
+also check admission and actual resources at fresh native grants, combine them
+with durable call/permission ownership, and validate actual broker capabilities.
+
+The internal cleanup admission is a distinct role. While the execution profile
+and actual resource owner are valid, `ToolkitAdmission.cleanup` can capture a
+credential-free snapshot bound to that exact resource input, executable and
+original full principal/root binding. Schema 24 commits its private path and checksum
+with the execution owner's registration, before process launch or native grants.
+Work callbacks recheck that snapshot; damaged recovery control fences new grants.
+The snapshot contains no
+policy, store, passphrase or execution callback key. Generating a control manifest
+requires the resource registry's immutable stop proof; an active broker, a free
+native lock or an unrecorded process cannot satisfy it.
+
+Cleanup reads the original persisted binding without granting a new lease. It
+can therefore prepare `managed-control-v1` after revocation, credential rotation,
+workspace removal and daemon recovery, while keeping the original executable,
+private state/socket and snapshot pins. It cannot launch `managed-mcp-v1` or
+authenticate the execution callback. A changed root, input, executable or stop
+receipt fails closed. Cleanup commands use a distinct one-shot process role in the
+same durable PID/start-identity registry. Launch intent precedes spawn, and PID
+ownership precedes control stdin. The bounded process uses a fixed total deadline,
+rejects nonzero/malformed/oversized outcomes, does not retry and observes the local
+group stopped before handing a result to its controller. Command output alone
+does not verify a product effect.
+
+`/managed-toolkit/v1/control` is available only on the private operator socket.
+Its fresh cleanup key, actual registered PID, exact durable control bytes, original
+root/profile and predecessor stop proof must all match. Execution keys cannot use
+this role, and cleanup keys cannot use the work callback. Native inspect, fence,
+cancel and root revoke are supported internally. Acknowledgement additionally
+requires the exact durable human-resolution intent and its recorded control job.
+None of these commands alone clears the parent's uncertain call or grants new work.
+
+Both resource roles recover before the daemon listens. SIGKILL with a recorded
+cleanup PID stops the actual surviving group; a launch intent without its PID
+remains unconfirmed and retains the daemon lock after failed shutdown. The schema
+upgrade preserves historical owners without inventing missing cleanup delegation;
+old binaries reject newer schemas. Actual compiled Toolkit rehearsals exercise the
+private cleanup callback after revoked-root daemon reopen and removal of synthetic
+credentials/workspace, including a lost synthetic API response with exactly one
+write. These are local conformance proofs, not live product or fleet acceptance.
+
+### Native call ownership and callback role
+
+Schema 23 keeps `toolkit_calls` and per-process `toolkit_owners` in the service
+journal. Preparing a call binds the full request, immutable invocation deadline,
+actual resource, worker epoch, attempt, tool call and admitted native action pin.
+Saved calls are checked before new authority. Historical data access remains
+bound to the original principal/root; it does not grant fresh execution.
+
+The private operator socket handles `/managed-toolkit/v1/verify`. Registration
+is an internal trusted-controller operation, with no public registration route.
+It checks private admission and the resource's exact launch pins before recording
+an owner-key hash. Callback authentication requires that registered process key,
+the current daemon's in-memory owner, actual persisted PID identity, unchanged
+private configuration and fresh root/worker/attempt authority. Old keys cannot be
+registered for another process or silently adopted after daemon recovery. A stopped
+process can be replaced with freshly materialized private owner data under the
+original host pins. An unconfirmed process or effect still blocks new grants.
+The service proof performs an actual observed stop, rejects the old callback key
+on the replacement and rejects original-profile drift even with its fresh key.
+
+MCP delivery records intent without consuming an effect permission. `review`
+answers the exact durable human decision. `admit` bounds credential acquisition
+without spending the effect grant. Only `dispatch`, after the broker prepares
+credentials, atomically consumes the permission and records its dispatch marker.
+Native reads also have a durable one-time dispatch marker. Automatic native writes
+are currently unsupported; a write's native kind is independent of its approval
+policy and cannot be treated as a read.
+The initial broker admits one unfinished native invocation, including a pending
+human decision. Turn cancellation stops only a broker whose active invocation
+belongs to that turn; cancelling an older completed instruction cannot stop a
+later worker or its broker. Root revocation still stops all root resources.
+
+A pending receipt preserves the original invocation and deadline. A denial before
+dispatch is definite. A result after a spent permission grant remains uncertain until
+independent inspection/resolution; a protocol return never verifies product work.
+Uncertain reads also fence root renewal and new work. Turn cancellation reports
+their call IDs as unconfirmed resources after local process stop and daemon reopen.
+All local cleanup paths still attempt worker cancellation when native cleanup fails.
+Receipt/control failures also install an immediate resource fence if the journal
+cannot persist uncertainty. Stopped or replaced processes with unfinished delivery
+records cannot authorize a replacement merely because cleanup completed.
+
+### Explicit operator resolution
+
+Schema 25 records an immutable local human decision before native settlement. The
+intent binds the original principal/root, resource and observed stop proof, call
+revision/request/context, operation revision/digest, outcome, evidence and request
+ID. Concurrent clients coalesce the same decision; changed decisions conflict.
+Only the private operator socket can create or inspect these intents. Worker
+bridge credentials do not grant operator access.
+
+The existing `POST /v1/operations/:id/resolution` endpoint now performs asynchronous
+native settlement for native write operations. Uncertain native reads have private
+`GET /v1/toolkit/calls/:id` and `POST /v1/toolkit/calls/:id/resolution` endpoints;
+the latter requires `request_id`, `expected_revision`, `context_digest`, `outcome`
+and `evidence`. These are trusted operator APIs, not model tools.
+
+Every recorded old control must stop before a fresh inspection. Native in-flight
+records are fenced, undispatched records cancelled, and unknown outcomes receive
+an immutable **non-success** acknowledgement bound to that human intent. A native
+returned record needs inspection, not acknowledgement. After a lost acknowledgement
+receipt or daemon restart, retrying the original decision inspects the saved native
+state without repeating the acknowledgement or product effect.
+
+The parent remains fenced until the final SQLite transaction commits the local
+operator attestation, resolution marker, events and cached response together. An
+intermediate failure preserves uncertainty. Original call receipts remain unchanged;
+even a human `succeeded` verdict retains explicit operator-attestation provenance
+and is never inferred from a native acknowledgement or protocol return. Historical
+settlement uses a separate role that cannot grant execution permission, including
+after execution-owner disposal. This adds no expired-authority execution bypass
+and never edits a Go journal. Native model tools require the explicit trusted
+service assignment described below. Station coding has its own pending boundary.
+
+### Native SDK catalogue consumer
+
+`ToolkitMcp` consumes an already admitted and owned transport. Its review pins the
+complete four-meta-tool catalogue plus each allowed action's definition, native
+kind and policy. Readiness checks the actual managed producer's bounded-grant,
+native-kind and lifecycle-control capabilities, rejects legacy/paginated/drifting
+catalogues, and compiles argument schemas from the pinned native parameter detail.
+Only reviewed definitions enter progressive context; discovery does not grant
+execution. Client arguments are validated before native delivery.
+
+Invocation metadata comes from the immutable owner request. Replies must match
+its native invocation ID and request digest. The consumer validates the nested
+HTTP status/error/body and the outer MCP error flag together: a received response,
+pending human decision, denial or unknown outcome cannot masquerade as verified
+work. Required protocol failures close the owned transport and notify the parent
+to invalidate readiness.
+
+### Native daemon and model integration
+
+The internal `ServiceOptions.managedToolkit` assignment installs `ToolkitWork`.
+It materializes a fresh private process manifest, durably registers its owner and
+cleanup delegation, and checks the actual catalogue before Pi launches. Concurrent
+readiness requests share that owned process. The worker receives only root,
+profile, configuration and catalogue fingerprints. Private paths, passphrases,
+credential stores and callback keys remain in the daemon/broker boundary.
+
+Only a configured root worker gets `salaam_toolkit` and the observed
+`managed-toolkit-v1` readiness capability. Discovery is progressive; call arguments
+cannot supply a root, invocation ID, deadline or callback credential. Each model
+tool call binds its worker epoch and attempt to one durable native invocation.
+Saved calls are checked before fresh authority; an uncertain call cannot dispatch
+again after reconnect or daemon recovery. The original invocation deadline is
+clamped to the authority lease, and later lease renewal cannot extend it.
+
+The exact human approval precedes delivery for writes. Delivery spends no effect
+permission; only the native broker's authenticated post-credential callback spends
+one grant. The callback rechecks task/job controls after credential admission;
+an earlier grant cannot authorize dispatch after those controls end. Local denial
+or expiry before dispatch is definite and produces a tool
+failure. HTTP failures retain their nested error status. Protocol drift invalidates
+worker readiness and preserves uncertainty after dispatch. Even a write's 2xx
+response remains an opaque product outcome requiring independent reconciliation
+or explicit operator attestation.
+
+These paths have actual offline Pi and compiled native-broker conformance proofs.
+The assignment can also be delivered through the private host manifest described
+below. Protected station workspace execution and the real scoped Library/Claude
+canary remain required before native station capability rollout.
+
+### Private native host configuration
+
+A reviewed AgentPod host-plan input can supply `toolkit_config`, an absolute path
+to an owner-only native assignment. This produces host schema 4, with the canonical
+configuration digest in `managed_toolkit`. An optional `mcp_config` retains the
+existing HTTP assignment alongside native tools. Schema 2 remains plain AgentPod;
+schema 3 remains HTTP-only. Adding native fields to an older schema is rejected.
+The node startup receipt remains version 1 and binds the entire host manifest.
+
+The private assignment has this closed envelope:
+
+```json
+{
+  "version": 1,
+  "profile_path": "/absolute/private/toolkit-profile.json",
+  "profile_sha256": "<SHA-256 of the exact reviewed profile file>",
+  "catalog": {
+    "catalog_digest": "<reviewed complete meta-tool catalogue digest>",
+    "actions": [
+      {
+        "category": "github",
+        "action": "get_user",
+        "kind": "read",
+        "policy": "agent",
+        "digest": "<reviewed native action-detail digest>"
+      }
+    ]
+  }
+}
+```
+
+These are reviewed pins, not values accepted from a model or automatically trusted
+because a server advertised them. Config and profile paths must be canonical,
+regular owner-only files outside the station workspace. Symlinks, hardlinks,
+unsupported versions, extra fields and partial profile upgrades are rejected.
+Planning verifies the private references without opening credential stores or
+materializing a callback key. Actual executable, root, process and protocol
+admission still precede worker readiness.
+
+`host start --manifest /absolute/private/host.json` coalesces concurrent cold starts
+through the existing supervisor and requires the matching native digest in daemon
+health. The daemon reads the pinned assignment itself, and rechecks it before fresh
+native grants; a changed file cannot use the interval before the supervisor's next
+poll to dispatch an approved action. Drift invalidates readiness. Restoring the
+reviewed files and manifest permits normal startup again. Historical cleanup and
+operator reconciliation retain their separate, recorded authority.
+
+Native process recovery requires an operating-system init or equivalent child
+reaper. A bare Node process as container PID 1 does not reap orphaned brokers after
+daemon death. An unreaped resource remains `unconfirmed`, blocks replacements and
+prevents native settlement controls; it is not a stop receipt. Container runners
+must provide and verify an init/reaper before claiming crash-recovery support.

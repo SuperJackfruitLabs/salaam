@@ -52,6 +52,7 @@ export class ExecutionAuthority {
         'admission_required',
         'This daemon requires a trusted AgentPod admission before execution',
       );
+    this.store.nativeResourceCheck?.(session);
   }
 
   revoke(

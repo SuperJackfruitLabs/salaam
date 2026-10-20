@@ -21,6 +21,9 @@ import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.j
 import { PiProcess, PiCommandError } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
+import type { McpWork, McpWorkerBinding } from './mcp-work.js';
+import type { StationWork, StationBinding } from './station-work.js';
+import type { ToolkitWork, ToolkitWorkerBinding } from './toolkit-work.js';
 import type { ChildWork } from './children.js';
 import {
   OFFLINE_ROUTE,
@@ -68,6 +71,9 @@ export interface SupervisorOptions {
   providerEnvironment?: NodeJS.ProcessEnv;
 }
 interface Worker {
+  mcp?: McpWorkerBinding;
+  toolkit?: ToolkitWorkerBinding;
+  station?: StationBinding;
   secrets?: string[];
   route: ProviderRoute;
   providerOutputCap?: boolean;
@@ -151,6 +157,9 @@ export class Supervisor extends EventEmitter {
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
+  mcp?: McpWork;
+  toolkit?: ToolkitWork;
+  station?: StationWork;
   children?: ChildWork;
   coding?: CodingWork;
   repositories?: RepositorySnapshots;
@@ -195,6 +204,10 @@ export class Supervisor extends EventEmitter {
       !!this.options.effectsEnabled,
       !!this.children?.owned(id),
       this.codingBinding(id),
+      undefined,
+      !!this.mcp,
+      !!this.toolkit,
+      !!this.station,
     );
   }
   private childBoundary(id: string, epoch: number) {
@@ -376,6 +389,11 @@ export class Supervisor extends EventEmitter {
     let timer: NodeJS.Timeout | undefined;
     try {
       const child = this.children?.owned(id);
+      if (this.mcp && !child) worker.mcp = await this.mcp.ready(id);
+      if (this.toolkit && !child) worker.toolkit = await this.toolkit.ready(id);
+      if (this.station && !child) worker.station = this.station.ready(id);
+      this.store.execution.assert(id);
+      if (worker.stopping || worker.invalid) throw new Error('Worker startup cancelled');
       if (child) this.store.workerBoundary.claim(child, epoch, route);
       const workerDir = join(this.options.stateDir, 'workers', id);
       mkdirSync(join(workerDir, 'agent'), { recursive: true, mode: 0o700 });
@@ -401,6 +419,9 @@ export class Supervisor extends EventEmitter {
         worker_binding: this.childBoundary(id, epoch),
         route: route,
         coding: this.codingBinding(id),
+        ...(worker.mcp ? { mcp: worker.mcp } : {}),
+        ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
+        ...(worker.station ? { station: worker.station } : {}),
       };
       const args = [
         PI_CLI,
@@ -474,7 +495,9 @@ export class Supervisor extends EventEmitter {
                   ? toolMetadata(
                       observation.tool,
                       observation.input,
-                      this.coding?.workspaces.find(id)?.root,
+                      observation.tool === 'salaam_station'
+                        ? this.station?.config.workspace
+                        : this.coding?.workspaces.find(id)?.root,
                     )
                   : {}),
               });
@@ -581,6 +604,7 @@ export class Supervisor extends EventEmitter {
     worker.reject(new Error(reason));
     try {
       this.managed?.invalidateWorker(worker.id, worker.epoch);
+      this.cancelMcpWorker(worker);
       this.children?.workerLost(worker.id, reason);
     } catch {
       /* in-memory readiness denial fences new dispatch */
@@ -591,6 +615,24 @@ export class Supervisor extends EventEmitter {
       /* in-memory denial remains authoritative if persistence fails */
     }
     if (worker.pi) void this.stopWorker(worker).catch(() => {});
+  }
+  private cancelMcpWorker(worker: Worker): void {
+    if (this.station && worker.attempt) {
+      this.store.transaction(() => this.station!.cancelInTransaction(worker.attempt!));
+      void this.station.abortAttempt(worker.attempt).catch(() => {
+        worker.invalid = 'Station stop is unconfirmed';
+      });
+    }
+    if (this.toolkit && worker.attempt) {
+      this.store.transaction(() => this.toolkit!.cancelInTransaction(worker.attempt!));
+      this.toolkit.abortAttempt(worker.attempt);
+    }
+    if (this.mcp && worker.attempt) {
+      this.store.transaction(() =>
+        this.mcp!.cancelInTransaction(worker.attempt!, 'worker_unavailable'),
+      );
+      this.mcp.abortAttempt(worker.attempt);
+    }
   }
   private authenticate(
     id: string,
@@ -631,6 +673,9 @@ export class Supervisor extends EventEmitter {
       throw new ServiceError('worker_unavailable', 'Worker is not available', 403);
     try {
       this.store.execution.assert(id);
+      if (w.mcp) this.mcp!.assertBinding(id, w.mcp);
+      if (w.toolkit) this.toolkit!.assertBinding(id, w.toolkit);
+      if (w.station) this.station!.assertBinding(id, w.station);
     } catch (error) {
       this.invalidate(w, 'Session execution authority revoked');
       throw error;
@@ -654,6 +699,9 @@ export class Supervisor extends EventEmitter {
           route: route,
           context_digest: textDigest(w.frame),
           ...(boundary ? { worker_binding: boundary } : {}),
+          ...(w.mcp ? { mcp: w.mcp } : {}),
+          ...(w.toolkit ? { toolkit: w.toolkit } : {}),
+          ...(w.station ? { station: w.station } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))
@@ -758,6 +806,122 @@ export class Supervisor extends EventEmitter {
         const auth = prepared.auth;
         w.secrets = [...new Set([...(w.secrets ?? []), ...credentialStrings(auth)])];
         return auth;
+      }
+      if (method.startsWith('toolkit.')) {
+        if (!this.toolkit || !w.toolkit || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('toolkit_disabled', 'Worker has no native Toolkit authority', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        this.toolkit.assertBinding(id, w.toolkit);
+        this.store.taskGrantCheck?.(id);
+        if (method === 'toolkit.catalog')
+          return this.toolkit.catalog(
+            id,
+            w.toolkit,
+            body.category === undefined ? undefined : string(body.category, 'category', 128),
+            body.action === undefined ? undefined : string(body.action, 'action', 128),
+          );
+        if (!['toolkit.prepare', 'toolkit.run', 'toolkit.status'].includes(method))
+          throw new ServiceError('invalid_field', 'Unsupported native Toolkit action', 400);
+        const call =
+          method === 'toolkit.prepare'
+            ? this.toolkit.prepare(
+                id,
+                w.epoch,
+                w.attempt,
+                string(body.tool_call_id, 'tool_call_id', 512),
+                body.args,
+              )
+            : this.toolkit.calls.get(string(body.call_id, 'call_id', 128));
+        if (
+          call.session_id !== id ||
+          call.worker_epoch !== w.epoch ||
+          call.attempt_id !== w.attempt
+        )
+          throw new ServiceError(
+            'mcp_call_scope',
+            'Native Toolkit call belongs to another invocation',
+            403,
+          );
+        if (method === 'toolkit.run') this.toolkit.start(call.id, id, w.epoch, w.attempt);
+        return this.toolkit.view(call.id);
+      }
+      if (method.startsWith('mcp.')) {
+        if (!this.mcp || !w.mcp || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('mcp_disabled', 'Worker has no managed MCP authority', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        this.mcp.assertBinding(id, w.mcp);
+        this.store.taskGrantCheck?.(id);
+        if (method === 'mcp.catalog')
+          return this.mcp.describe(
+            id,
+            w.mcp,
+            body.server === undefined ? undefined : string(body.server, 'server', 128),
+            body.tool === undefined ? undefined : string(body.tool, 'tool', 128),
+          );
+        const call =
+          method === 'mcp.prepare'
+            ? this.mcp.prepare(
+                id,
+                w.epoch,
+                w.attempt,
+                string(body.tool_call_id, 'tool_call_id', 512),
+                body.args,
+              )
+            : this.mcp.get(string(body.call_id, 'call_id', 128));
+        if (
+          call.session_id !== id ||
+          call.worker_epoch !== w.epoch ||
+          call.attempt_id !== w.attempt
+        )
+          throw new ServiceError('mcp_call_scope', 'MCP call belongs to another invocation', 403);
+        if (!['mcp.prepare', 'mcp.run', 'mcp.status'].includes(method))
+          throw new ServiceError('invalid_field', 'Unsupported MCP action', 400);
+        const current =
+          method === 'mcp.run' ? this.mcp.start(call.id, id, w.epoch, w.attempt) : call;
+        return {
+          call: current,
+          result: current.result_artifact
+            ? JSON.parse(this.mcp.artifacts.read(current.result_artifact))
+            : null,
+          ...(current.operation_id && this.managed
+            ? {
+                operation: this.managed.operation(current.operation_id),
+                approval: this.managed.forOperation(current.operation_id),
+              }
+            : {}),
+        };
+      }
+      if (method.startsWith('station.')) {
+        if (!this.station || !w.station || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('station_disabled', 'Station execution is unavailable');
+        this.assertActive(id, w.epoch, w.attempt);
+        this.store.taskGrantCheck?.(id);
+        if (method === 'station.read')
+          return this.station.read(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            object(body.args),
+          );
+        if (method === 'station.prepare')
+          return this.station.prepare(
+            id,
+            w.epoch,
+            w.attempt,
+            string(body.tool_call_id, 'tool_call_id', 512),
+            object(body.args),
+          );
+        const c = this.station.get(string(body.call_id, 'call_id', 128));
+        if (c.session_id !== id || c.worker_epoch !== w.epoch || c.attempt_id !== w.attempt)
+          throw new ServiceError(
+            'station_scope',
+            'Station call belongs to another invocation',
+            403,
+          );
+        if (method === 'station.run') return this.station.run(c.id);
+        if (method === 'station.status') return this.station.view(c.id);
+        throw new ServiceError('invalid_field', 'Unsupported station method');
       }
       if (method === 'coding.files' || method === 'coding.command') {
         if (!this.coding || !this.codingBinding(id) || !w.attempt)
@@ -972,6 +1136,38 @@ export class Supervisor extends EventEmitter {
       return { ok: true };
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
+      if (
+        method.startsWith('station.') &&
+        error instanceof ServiceError &&
+        [
+          'invalid_field',
+          'request_conflict',
+          'station_files_changed',
+          'station_scope',
+          'station_call_limit',
+          'station_busy',
+          'not_found',
+        ].includes(error.code)
+      )
+        throw error;
+      if (
+        (method.startsWith('mcp.') || method.startsWith('toolkit.')) &&
+        error instanceof ServiceError &&
+        [
+          'invalid_field',
+          'invalid_mcp_call',
+          'invalid_mcp_arguments',
+          'invalid_mcp_server',
+          'invalid_mcp_tool',
+          'mcp_tool_unadmitted',
+          'mcp_input_limit',
+          'mcp_call_limit',
+          'invalid_toolkit_request',
+          'toolkit_busy',
+          'request_conflict',
+        ].includes(error.code)
+      )
+        throw error;
       if (
         method.startsWith('specialist.') &&
         error instanceof ServiceError &&
@@ -1350,6 +1546,7 @@ export class Supervisor extends EventEmitter {
     w.ready = false;
     try {
       this.managed?.invalidateWorker(w.id, w.epoch);
+      this.cancelMcpWorker(w);
       this.children?.workerLost(w.id, 'Worker stopped before child dispatch');
     } catch {
       /* shutdown still owns and stops the worker */

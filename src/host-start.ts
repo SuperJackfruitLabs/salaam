@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { constants, openSync, closeSync, fstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { readHost } from './host.js';
+import { readHost, hostMcp, hostToolkit } from './host.js';
 import { readAgentPodPins } from './agentpod-authority.js';
 import { acquireStateLock } from './state-lock.js';
 import { canonical, digest, ServiceError } from './protocol.js';
@@ -10,10 +10,12 @@ import { call } from './transport.js';
 /** This is node-owned startup, not a station lifecycle grant or a work admission. */
 export async function startHost(path: string) {
   let m = readHost(path);
-  if (m.schema !== 2) throw Error('Automatic host startup requires a reviewed AgentPod manifest');
+  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+    throw Error('Automatic host startup requires a reviewed AgentPod manifest');
   mkdirSync(m.state, { recursive: true, mode: 0o700 });
   m = readHost(path);
-  if (m.schema !== 2) throw Error('AgentPod manifest changed');
+  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+    throw Error('AgentPod manifest changed');
   const expected = digest(m),
     deadline = Date.now() + 20000;
   let release: (() => void) | undefined;
@@ -39,7 +41,19 @@ export async function startHost(path: string) {
       if (
         h.host_manifest_digest !== expected ||
         h.runtime_node !== m.node ||
-        h.agentpod_pins_digest !== (m.schema === 2 ? m.pins_digest : null) ||
+        h.agentpod_pins_digest !== m.pins_digest ||
+        canonical(h.managed_mcp ?? null) !==
+          canonical(hostMcp(m) ? { profile_digest: hostMcp(m)!.profile_digest } : null) ||
+        canonical(h.managed_toolkit ?? null) !==
+          canonical(
+            hostToolkit(m) ? { configuration_digest: hostToolkit(m)!.configuration_digest } : null,
+          ) ||
+        canonical(h.station_execution ?? null) !==
+          canonical(
+            m.schema === 5
+              ? { configuration_digest: m.station_execution.configuration_digest }
+              : null,
+          ) ||
         canonical(h.provider_route) !== canonical(m.provider)
       )
         throw new ServiceError(
@@ -96,7 +110,8 @@ export async function startHost(path: string) {
         closeSync(log);
       }
     }
-    if (m.schema !== 2) throw Error('AgentPod manifest changed');
+    if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+      throw Error('AgentPod manifest changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
     return {
       version: 1,

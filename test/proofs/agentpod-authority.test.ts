@@ -6,6 +6,7 @@ import { SalaamService } from '../../src/service.js';
 import { call } from '../../src/transport.js';
 import { client } from '../acp-helpers.js';
 import { ready, until } from '../helpers.js';
+import { digest } from '../../src/protocol.js';
 
 async function setup() {
   const base = realpathSync(mkdtempSync('/tmp/sal-ap-authority-'));
@@ -50,6 +51,86 @@ async function setup() {
     },
   };
 }
+
+test('native grant windows use fresh exact-root wall and monotonic admission limits without extending review expiry', async () => {
+  const f = await setup();
+  try {
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      request_id: 'grant-window-admit',
+      binding: f.binding,
+    });
+    const authority = f.service.agentpod!;
+    const root = digest(f.binding);
+    expect(() => authority.leaseWindow(admitted.session_id, root, 5000)).toThrowError(
+      expect.objectContaining({ code: 'authority_expired' }),
+    );
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      request_id: 'grant-window-renew',
+      binding: f.binding,
+      lease_sequence: 1,
+    });
+    expect(authority.leaseWindow(admitted.session_id, root, 3000)).toBeLessThanOrEqual(3000);
+    const update = f.service.store.db.prepare(
+      'UPDATE agentpod_admissions SET expires_at=?,monotonic_deadline=? WHERE id=?',
+    );
+    // A wall-clock rollback must not extend work beyond the monotonic lease.
+    update.run(Date.now() + 600000, performance.now() + 12000, admitted.admission_id);
+    const monotonic = authority.leaseWindow(admitted.session_id, root, 90000);
+    expect(monotonic).toBeGreaterThan(0);
+    expect(monotonic).toBeLessThanOrEqual(12000);
+    // Every read uses the actual current row, rather than a cached previous grant.
+    update.run(Date.now() + 7000, performance.now() + 60000, admitted.admission_id);
+    expect(authority.leaseWindow(admitted.session_id, root, 90000)).toBeLessThanOrEqual(7000);
+    expect(() => authority.leaseWindow(admitted.session_id, 'f'.repeat(64), 5000)).toThrowError(
+      expect.objectContaining({ code: 'authority_binding' }),
+    );
+    for (const invalid of [0, -1, 1.5, 90001, NaN, Infinity])
+      expect(() => authority.leaseWindow(admitted.session_id, root, invalid)).toThrowError(
+        expect.objectContaining({ code: 'invalid_authority_window' }),
+      );
+    f.service.store.db
+      .prepare(
+        'UPDATE agentpod_station_epochs SET occupancy_epoch=occupancy_epoch+1 WHERE station_id=?',
+      )
+      .run(f.binding.station_id);
+    expect(() => authority.leaseWindow(admitted.session_id, root, 5000)).toThrowError(
+      expect.objectContaining({ code: 'authority_binding' }),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('native grant windows reject expired, revoked and previous-daemon admissions', async () => {
+  for (const fault of ['monotonic', 'wall', 'boot', 'revoked']) {
+    const f = await setup();
+    try {
+      const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+        request_id: 'admit',
+        binding: f.binding,
+      });
+      await call(f.service.socket, '/v1/agentpod/renew', {
+        request_id: 'renew',
+        binding: f.binding,
+        lease_sequence: 1,
+      });
+      const updates = {
+        monotonic: 'monotonic_deadline=0',
+        wall: 'expires_at=0',
+        boot: "boot_id='old-daemon'",
+        revoked: "state='revoked'",
+      };
+      f.service.store.db.exec(
+        `UPDATE agentpod_admissions SET ${updates[fault as keyof typeof updates]}`,
+      );
+      expect(() =>
+        f.service.agentpod!.leaseWindow(admitted.session_id, digest(f.binding), 5000),
+      ).toThrowError(expect.objectContaining({ code: 'authority_expired' }));
+    } finally {
+      await f.close();
+    }
+  }
+});
 
 test('only a node-admitted, fresh bound ACP client can execute; detach and restart retain one session and prompt', async () => {
   const f = await setup();

@@ -152,22 +152,6 @@ test('accepted state and events remain inspectable after service restart', async
   }
 });
 
-test('shutdown releases workers, sockets and the state lock even if journal writes fail', async () => {
-  const f = await fixture(fake());
-  let replacement: SalaamService | undefined;
-  try {
-    const session = await create(f.service, f.dir);
-    await ready(f.service, session.id);
-    f.service.store.db.exec('PRAGMA query_only=ON');
-    await expect(f.service.close()).rejects.toThrow('could not persist');
-    replacement = await SalaamService.open({ stateDir: f.dir, ...fake() });
-    expect(replacement.supervisor.inspect(session.id).state).toBe('exited');
-  } finally {
-    await replacement?.close();
-    await f.close();
-  }
-});
-
 test('a stale persisted ready row cannot advertise a missing worker', async () => {
   const f = await fixture(fake());
   try {

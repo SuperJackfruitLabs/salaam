@@ -89,6 +89,7 @@ export class AgentPodAuthority {
     state: string,
     readonly configPath: string,
     readonly cancel: (attempt: string) => void,
+    readonly ownedResourcesStopped: (session: string) => boolean = () => true,
   ) {
     this.pins = readAgentPodPins(configPath, state);
     const keyPath = join(state, 'agentpod-control-key');
@@ -127,6 +128,35 @@ export class AgentPodAuthority {
       .get(session) as unknown as Admission | undefined;
     if (!row) throw new ServiceError('admission_not_found', 'Session has no AgentPod admission');
     return row;
+  }
+  binding(session: string): AgentPodBinding {
+    const row = this.bySession(session);
+    this.assert(row);
+    return JSON.parse(row.binding) as AgentPodBinding;
+  }
+  /** Fresh admission lease data for a separately owned native operation. This
+   * consumes no effect permission. The caller must also bind its actual worker,
+   * attempt, process resource and exact operation before granting dispatch.
+   * Keep the immutable invocation/review deadline separate from this duration. */
+  leaseWindow(session: string, expectedBindingDigest: string, maximumMs: number): number {
+    if (!Number.isSafeInteger(maximumMs) || maximumMs < 1 || maximumMs > AGENTPOD_LEASE_MS)
+      throw new ServiceError('invalid_authority_window', 'Invalid native authority duration', 400);
+    const row = this.bySession(session);
+    this.assert(row);
+    if (row.digest !== expectedBindingDigest)
+      throw new ServiceError(
+        'authority_binding',
+        'Native operation belongs to a different execution root',
+      );
+    const remaining = Math.floor(
+      Math.min(maximumMs, row.expires_at - Date.now(), row.monotonic_deadline! - performance.now()),
+    );
+    if (!Number.isFinite(remaining) || remaining < 1)
+      throw new ServiceError(
+        'authority_expired',
+        'AgentPod authority lease has no remaining native grant window',
+      );
+    return remaining;
   }
   private checked(input: unknown): AgentPodBinding {
     const b = agentpodBinding(input);
@@ -186,6 +216,7 @@ export class AgentPodAuthority {
         'authority_expired',
         'AgentPod authority lease is not fresh for this daemon',
       );
+    this.store.nativeResourceCheck?.(row.session_id);
   }
   token(id: string): string {
     return createHmac('sha256', this.key)
@@ -315,6 +346,7 @@ export class AgentPodAuthority {
             'authority_expired',
             'Expired or revoked authority cannot be renewed',
           );
+        this.store.nativeResourceCheck?.(row.session_id);
         if (sequence <= row.lease_sequence)
           throw new ServiceError('stale_authority', 'Authority lease sequence is stale');
         this.store.db
@@ -415,6 +447,7 @@ export class AgentPodAuthority {
     );
     const stopped = ids.every(
       (id) =>
+        this.ownedResourcesStopped(id) &&
         !this.store.db
           .prepare("SELECT 1 FROM workers WHERE session_id=? AND state!='exited'")
           .get(id) &&

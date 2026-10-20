@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
+import { resolvedToolkitCallSql } from './toolkit-resolutions.js';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
 import { WorkerBoundary } from './worker-boundary.js';
@@ -32,6 +33,7 @@ export class Store {
   readonly workerBoundary = new WorkerBoundary(this);
   readonly execution = new ExecutionAuthority(this);
   agentpodAuthorityCheck?: (session: string) => void;
+  nativeResourceCheck?: (session: string) => void;
   requireAgentPodAuthority = false;
   reconcileCompactions?: (id: string) => void;
   finishChild?: (attempt: Attempt) => void;
@@ -67,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 20) {
+    if (version > 26) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -275,6 +277,51 @@ export class Store {
           CREATE TABLE turn_cancellations(request_id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),target_request_id TEXT,attempt_ids TEXT NOT NULL,receipt TEXT NOT NULL,requested_at INTEGER NOT NULL);
           CREATE INDEX turn_cancellations_target ON turn_cancellations(session_id,target_request_id);
           PRAGMA user_version=20; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 21
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE mcp_assignments(session_id TEXT PRIMARY KEY REFERENCES sessions(id),credential_generation INTEGER NOT NULL,assignment_digest TEXT NOT NULL,view TEXT NOT NULL);
+          CREATE TABLE mcp_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,input_digest TEXT NOT NULL,binding_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,assignment_digest TEXT NOT NULL,credential_generation INTEGER NOT NULL,server_name TEXT NOT NULL,tool_name TEXT NOT NULL,policy TEXT NOT NULL,arguments_json TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL,result_artifact TEXT REFERENCES artifacts(id),error TEXT,revision INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE INDEX mcp_calls_attempt ON mcp_calls(session_id,attempt_id);
+          PRAGMA user_version=21; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 22
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_resources(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),root_digest TEXT NOT NULL,profile_digest TEXT NOT NULL,state_dir TEXT NOT NULL,input_digest TEXT NOT NULL,spec TEXT NOT NULL,owner_boot TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','launching','running','unconfirmed','stopped')),pid INTEGER CHECK(pid IS NULL OR pid>0),identity TEXT,stop_digest TEXT,stop_receipt TEXT,revision INTEGER NOT NULL DEFAULT 0,CHECK(state!='running' OR (pid IS NOT NULL AND identity IS NOT NULL)),CHECK((state='stopped')=(stop_digest IS NOT NULL AND stop_receipt IS NOT NULL)));
+          CREATE UNIQUE INDEX toolkit_resources_root_owner ON toolkit_resources(root_digest) WHERE state!='stopped';
+          CREATE UNIQUE INDEX toolkit_resources_state_owner ON toolkit_resources(state_dir) WHERE state!='stopped';
+          PRAGMA user_version=22; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 23
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_owners(resource_id TEXT PRIMARY KEY NOT NULL REFERENCES toolkit_resources(id),key_digest TEXT NOT NULL UNIQUE CHECK(length(key_digest)=64));
+          CREATE TABLE toolkit_calls(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,resource_id TEXT NOT NULL REFERENCES toolkit_resources(id),request_json TEXT NOT NULL,request_digest TEXT NOT NULL,context_digest TEXT NOT NULL,action_pin TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL CHECK(state IN ('prepared','delivered','dispatching','pending','denied','returned','outcome_unknown','cancelled')),receipt_json TEXT,cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE INDEX toolkit_calls_resource ON toolkit_calls(resource_id,state);
+          CREATE UNIQUE INDEX toolkit_calls_active_resource ON toolkit_calls(resource_id) WHERE state IN ('prepared','delivered','dispatching','pending','outcome_unknown');
+          PRAGMA user_version=23; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 24
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_cleanup_profiles(resource_id TEXT PRIMARY KEY NOT NULL REFERENCES toolkit_resources(id),profile_path TEXT NOT NULL,profile_digest TEXT NOT NULL CHECK(length(profile_digest)=64));
+          PRAGMA user_version=24; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 25
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_resolutions(id TEXT PRIMARY KEY NOT NULL,request_id TEXT NOT NULL UNIQUE,call_id TEXT NOT NULL UNIQUE REFERENCES toolkit_calls(id),operation_id TEXT UNIQUE REFERENCES operations(id),call_revision INTEGER NOT NULL,request_digest TEXT NOT NULL,context_json TEXT NOT NULL,context_digest TEXT NOT NULL,input_json TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('prepared','native_settled','committed')),native_receipt_json TEXT,revision INTEGER NOT NULL DEFAULT 1);
+          CREATE TABLE toolkit_resolution_controls(id TEXT PRIMARY KEY NOT NULL,resolution_id TEXT NOT NULL REFERENCES toolkit_resolutions(id),resource_id TEXT NOT NULL UNIQUE REFERENCES toolkit_resources(id),control_json TEXT NOT NULL,result_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','returned','outcome_unknown')));
+          PRAGMA user_version=25; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 26
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE station_calls(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('patch','check','read')),input_digest TEXT NOT NULL,root_digest TEXT NOT NULL,configuration_digest TEXT NOT NULL,args_json TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','returned','failed','outcome_unknown','cancelled')),revision INTEGER NOT NULL DEFAULT 1,result_json TEXT,helper_pid INTEGER,helper_identity TEXT,helper_state TEXT NOT NULL DEFAULT 'none',helper_stop_json TEXT,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE TABLE station_units(id TEXT PRIMARY KEY NOT NULL,session_id TEXT REFERENCES sessions(id),call_id TEXT UNIQUE REFERENCES station_calls(id),context_digest TEXT NOT NULL,config_json TEXT NOT NULL,snapshot_path TEXT NOT NULL,output_path TEXT NOT NULL,unit_json TEXT,state TEXT NOT NULL CHECK(state IN ('prepared','launching','running','unconfirmed','stopped')),stop_json TEXT);
+          PRAGMA user_version=26; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -951,8 +998,10 @@ export class Store {
   }
   hasUnknown(id: string): boolean {
     return !!this.db
-      .prepare("SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' LIMIT 1")
-      .get(id);
+      .prepare(
+        `SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' UNION ALL SELECT 1 FROM toolkit_calls c WHERE session_id=? AND state='outcome_unknown' AND NOT ${resolvedToolkitCallSql('c')} LIMIT 1`,
+      )
+      .get(id, id);
   }
   approvals(id: string): Approval[] {
     this.session(id);

@@ -137,7 +137,7 @@ test('ACP v1 negotiates only supported features, shares CLI sessions and dedupli
     });
     await expect(
       a.request('session/new', { cwd: f.dir, mcpServers: [{ name: 'unsafe' }] }),
-    ).rejects.toThrow('no extra MCP');
+    ).rejects.toThrow('must match the private node assignment');
     const { sessionId } = await a.request('session/new', { cwd: f.dir, mcpServers: [] });
     await ready(f.service, sessionId);
     const logical = randomUUID();

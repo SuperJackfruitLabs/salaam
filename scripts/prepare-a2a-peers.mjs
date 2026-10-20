@@ -1,8 +1,8 @@
 import { mkdirSync, cpSync, readFileSync, writeFileSync, symlinkSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { downloadPinnedSource } from './download-pinned-source.mjs';
 
 // Explicit contributor/operator preparation, never imported by a model worker.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
@@ -57,15 +57,10 @@ run('npm', [
   '--registry=https://registry.npmjs.org/',
 ]);
 for (const entry of pins.openclaw.sources) {
-  const response = await fetch(
+  const bytes = await downloadPinnedSource(
     `https://raw.githubusercontent.com/openclaw/openclaw/${pins.openclaw.commit}/${entry.path}`,
-    { redirect: 'error', signal: AbortSignal.timeout(30000) },
+    { maxBytes: 131072, integrity: { kind: 'git-blob-sha1', value: entry.git_blob } },
   );
-  if (!response.ok) throw Error(`Pinned OpenClaw source unavailable (HTTP ${response.status})`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > 131072) throw Error('Pinned plugin source exceeds bound');
-  const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
-  if (blob !== entry.git_blob) throw Error('Pinned Git blob changed');
   writeFileSync(join(source, entry.path.split('/').at(-1)), bytes);
 }
 writeFileSync(join(source, 'package.json'), JSON.stringify({ type: 'module' }));
@@ -88,17 +83,12 @@ run(join(root, 'node_modules/.bin/tsc'), [
   ...['http.ts', 'task-store.ts', 'outbound.ts'].map((name) => join(source, name)),
 ]);
 const archive = join(target, 'hermes.tgz'),
-  response = await fetch(pins.hermes.archive, {
+  bytes = await downloadPinnedSource(pins.hermes.archive, {
     redirect: 'follow',
-    signal: AbortSignal.timeout(60000),
+    timeoutMs: 60000,
+    maxBytes: 128 * 1024 * 1024,
+    integrity: { kind: 'sha256', value: pins.hermes.archive_sha256 },
   });
-if (!response.ok) throw Error(`Pinned Hermes source unavailable (HTTP ${response.status})`);
-const bytes = Buffer.from(await response.arrayBuffer());
-if (
-  bytes.length > 128 * 1024 * 1024 ||
-  createHash('sha256').update(bytes).digest('hex') !== pins.hermes.archive_sha256
-)
-  throw Error('Pinned Hermes archive changed');
 writeFileSync(archive, bytes);
 run(py, [
   '-c',

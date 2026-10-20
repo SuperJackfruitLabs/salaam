@@ -40,6 +40,9 @@ export function workerCapabilities(
     ...(childTools?.includes('salaam_repository') ? ['repository-snapshot-read'] : []),
     ...(childTools?.includes('salaam_findings') ? ['structured-findings'] : []),
     ...(childTools?.includes('salaam_team') ? ['durable-team-messages'] : []),
+    ...(childTools?.includes('salaam_mcp') ? ['managed-mcp-v1'] : []),
+    ...(childTools?.includes('salaam_toolkit') ? ['managed-toolkit-v1'] : []),
+    ...(childTools?.includes('salaam_station') ? ['protected-station-v1'] : []),
   ];
 }
 export function workerTools(
@@ -47,6 +50,9 @@ export function workerTools(
   child = false,
   coding?: CodingBinding,
   childTools?: readonly string[],
+  mcp = false,
+  toolkit = false,
+  station = false,
 ): string[] {
   return child
     ? [...(childTools ?? ['salaam_probe'])].sort()
@@ -55,6 +61,9 @@ export function workerTools(
         ...(effects ? ['salaam_effect'] : []),
         ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),
+        ...(mcp ? ['salaam_mcp'] : []),
+        ...(toolkit ? ['salaam_toolkit'] : []),
+        ...(station ? ['salaam_station'] : []),
       ].sort();
 }
 export interface ChildTask {
@@ -179,7 +188,7 @@ export interface Operation {
   attempt_id: string;
   worker_epoch: number;
   tool_call_id: string;
-  kind: 'review' | 'effect' | 'harness';
+  kind: 'review' | 'effect' | 'harness' | 'mcp' | 'workspace';
   action_key: string;
   argument_digest: string;
   operation_digest: string;
