@@ -35,6 +35,8 @@ import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
 import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
 import { ToolkitResources } from './toolkit-resources.js';
+import { cancelToolkitCalls, recoverToolkitCalls } from './toolkit-calls.js';
+import { ToolkitOwners } from './toolkit-owners.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
@@ -67,6 +69,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
 export class SalaamService {
   readonly agentpod?: AgentPodAuthority;
   readonly toolkitResources: ToolkitResources;
+  readonly toolkitOwners: ToolkitOwners;
   readonly mcp?: McpWork;
   readonly cancellations: TurnCancellations;
   readonly external: ExternalWork;
@@ -343,11 +346,13 @@ export class SalaamService {
             (attempt) => {
               this.managed.cancelInTransaction(attempt, 'agentpod-revocation', 'agentpod-node');
               this.mcp?.cancelInTransaction(attempt, 'agentpod-revocation');
+              cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
             },
             (session) =>
               (this.mcp?.stopped(session) ?? true) && this.toolkitResources.stopped(session),
           );
         this.toolkitResources = new ToolkitResources(this.store, this.agentpod);
+        this.toolkitOwners = new ToolkitOwners(this.store, this.toolkitResources, this.socket);
         this.store.nativeResourceCheck = (session) => this.toolkitResources.assertSession(session);
         if (options.managedMcp) {
           this.mcp = new McpWork(this.store, this.managed, this.artifacts, {
@@ -366,19 +371,47 @@ export class SalaamService {
           async (attempt) => {
             this.managed.abortCancelled(attempt);
             this.mcp?.abortAttempt(attempt);
-            this.coding.cancelAttempt(attempt);
-            const owned = this.children.owned(this.store.attempt(attempt).session_id);
-            if (owned && this.store.workerBoundary.view(owned.id).binding.external)
-              await this.external.cancel(owned);
-            else {
-              await this.children.cancelOwned(attempt);
-              await this.supervisor.cancelAttempt(attempt);
-            }
+            const stopped = await Promise.allSettled([
+              this.toolkitResources.stopAttempt(attempt),
+              (async () => {
+                this.coding.cancelAttempt(attempt);
+                const owned = this.children.owned(this.store.attempt(attempt).session_id);
+                if (owned && this.store.workerBoundary.view(owned.id).binding.external)
+                  await this.external.cancel(owned);
+                else {
+                  await this.children.cancelOwned(attempt);
+                  await this.supervisor.cancelAttempt(attempt);
+                }
+              })(),
+            ]);
+            const failures = stopped.filter((r) => r.status === 'rejected');
+            if (failures.length)
+              throw new AggregateError(
+                failures.map((r) => r.reason),
+                'Turn resource stop is unconfirmed',
+              );
           },
         );
-        this.cancellations.cancelAdditional = (attempt) => this.mcp?.cancelInTransaction(attempt);
-        this.cancellations.additionalResources = (session) =>
-          this.mcp && !this.mcp.stopped(session) ? ['managed-mcp:' + session] : [];
+        this.cancellations.cancelAdditional = (attempt) => {
+          this.mcp?.cancelInTransaction(attempt);
+          cancelToolkitCalls(this.store, this.managed, attempt, this.toolkitResources);
+        };
+        this.cancellations.additionalResources = (session, attempt) => [
+          ...(this.mcp && !this.mcp.stopped(session) ? ['managed-mcp:' + session] : []),
+          ...(this.store.db
+            .prepare(
+              "SELECT 1 FROM toolkit_resources r JOIN toolkit_calls c ON c.resource_id=r.id WHERE c.attempt_id=? AND c.cancel_requested=1 AND r.state!='stopped' LIMIT 1",
+            )
+            .get(attempt)
+            ? ['managed-toolkit:' + session]
+            : []),
+          ...this.store.db
+            .prepare(
+              "SELECT id FROM toolkit_calls WHERE attempt_id=? AND state IN ('delivered','dispatching','outcome_unknown')",
+            )
+            .all(attempt)
+            .map((row) => 'toolkit-call:' + row.id),
+        ];
       } catch (error) {
         this.store.close();
         throw error;
@@ -432,6 +465,7 @@ export class SalaamService {
       await service.supervisor.providerAuth();
       await service.external.backend?.prepare?.();
       await service.toolkitResources.recover();
+      recoverToolkitCalls(service.store, service.managed);
       await service.supervisor.recover();
       service.cancellations.recover();
       await service.external.recover();
@@ -544,6 +578,10 @@ export class SalaamService {
       if (this.stopping) throw new ServiceError('stopping', 'Service is stopping', 503);
       const url = new URL(req.url ?? '/', 'http://local');
       const parts = url.pathname.split('/').filter(Boolean);
+      if (!bridge && req.method === 'POST' && req.url === '/managed-toolkit/v1/verify') {
+        this.send(res, 200, await this.toolkitOwners.verify(req));
+        return;
+      }
       if (
         !bridge &&
         req.method === 'GET' &&

@@ -102,6 +102,22 @@ export class ToolkitAdmission {
     private readonly expectedDigest: string,
   ) {}
 
+  /** Only a hash leaves admission; the actual owner key stays in the private
+   * manifest read by the pinned broker. This grants no callback permission. */
+  ownerKeyDigest(binding: AgentPodBinding, socketPath: string): string {
+    try {
+      const admitted = this.launch(binding),
+        manifestPath = admitted.launch.args[2]!;
+      const bytes = privateFile(manifestPath, dirname(manifestPath), 65536);
+      if (sha(bytes) !== admitted.manifest_digest) refused();
+      const manifest = object(JSON.parse(bytes.toString('utf8')));
+      if (manifest.owner_socket !== socketPath || !hash(manifest.owner_key)) refused();
+      return sha(Buffer.from(manifest.owner_key));
+    } catch {
+      refused();
+    }
+  }
+
   /** Trusted parent seam: checks private admission at prepare, OS launch, PID
    * persistence and every SDK delivery. Native effect callbacks must ALSO check
    * assertLive and their own exact durable call/permission before issuing grants. */

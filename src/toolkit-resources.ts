@@ -84,6 +84,11 @@ export class ToolkitResources {
     if (!row) throw new ServiceError('not_found', 'Toolkit resource not found', 404);
     return row;
   }
+  /** Immediate required-control failure fence, even if the journal cannot write. */
+  fence(id: string): void {
+    this.get(id);
+    this.blocked.add(id);
+  }
   private event(row: ToolkitResource, state: ToolkitResource['state']): void {
     this.store.event(row.session_id, 'toolkit.resource.' + state, {
       resource_id: row.id,
@@ -272,6 +277,18 @@ export class ToolkitResources {
       )
     )
       unavailable();
+    if (
+      this.store.db
+        .prepare(
+          `WITH RECURSIVE owners(id) AS (
+      SELECT ? UNION SELECT c.parent_session FROM child_tasks c JOIN owners o ON c.child_session=o.id
+        ) SELECT 1 FROM toolkit_calls c JOIN owners o ON o.id=c.session_id
+          JOIN toolkit_resources r ON r.id=c.resource_id
+          WHERE c.state='outcome_unknown' OR (c.state IN ('delivered','dispatching') AND (r.state!='running' OR r.owner_boot!=?)) LIMIT 1`,
+        )
+        .get(session, this.boot)
+    )
+      unavailable();
   }
   stopped(session: string): boolean {
     return !this.store.db
@@ -286,6 +303,17 @@ export class ToolkitResources {
         .map((r) => this.stop(String(r.id))),
     );
     if (results.some((r) => r.status === 'rejected')) unavailable();
+  }
+  /** A turn stop owns only resources whose active call was actually cancelled.
+   * Cancelling an older completed instruction must not kill a later turn's broker. */
+  async stopAttempt(attempt: string): Promise<void> {
+    const ids = this.store.db
+      .prepare(
+        "SELECT DISTINCT r.id FROM toolkit_resources r JOIN toolkit_calls c ON c.resource_id=r.id WHERE c.attempt_id=? AND c.cancel_requested=1 AND r.state!='stopped'",
+      )
+      .all(attempt);
+    const stopped = await Promise.allSettled(ids.map((row) => this.stop(String(row.id))));
+    if (stopped.some((result) => result.status === 'rejected')) unavailable();
   }
   stopProof(id: string): StopProof {
     const row = this.get(id);

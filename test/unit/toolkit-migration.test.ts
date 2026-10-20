@@ -12,10 +12,12 @@ test('v21 upgrade preserves all saved receipts and events without inventing nati
     const accepted = store.accept(session.id, 'prompt', session.revision, 'Original instruction');
     const saved = store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all();
     const events = store.events(session.id, 0);
-    store.db.exec('DROP TABLE toolkit_resources; PRAGMA user_version=21;');
+    store.db.exec(
+      'DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; DROP TABLE toolkit_resources; PRAGMA user_version=21;',
+    );
     store.close();
     store = new Store(path);
-    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(22);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(23);
     expect(store.db.prepare('SELECT count(*) AS n FROM toolkit_resources').get()!.n).toBe(0);
     expect(store.db.prepare('SELECT * FROM requests ORDER BY actor,id').all()).toEqual(saved);
     expect(store.events(session.id, 0)).toEqual(events);
@@ -28,7 +30,7 @@ test('v21 upgrade preserves all saved receipts and events without inventing nati
   }
 });
 test('partial native ownership upgrade and unknown future schema fail closed', () => {
-  for (const version of [21, 23]) {
+  for (const version of [21, 24]) {
     const dir = mkdtempSync('/tmp/stkm-bad-'),
       path = join(dir, 'journal.sqlite');
     const store = new Store(path);
@@ -41,5 +43,24 @@ test('partial native ownership upgrade and unknown future schema fail closed', (
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+test('v22 call-owner migration preserves existing resource ownership and session ledger', () => {
+  const dir = mkdtempSync('/tmp/stkm-calls-'),
+    path = join(dir, 'journal.sqlite');
+  let store = new Store(path);
+  try {
+    const session = store.create(dir, 'original'),
+      saved = store.events(session.id, 0);
+    store.db.exec('DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; PRAGMA user_version=22;');
+    store.close();
+    store = new Store(path);
+    expect(store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(23);
+    expect(store.db.prepare('SELECT count(*) AS n FROM toolkit_calls').get()!.n).toBe(0);
+    expect(store.events(session.id, 0)).toEqual(saved);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

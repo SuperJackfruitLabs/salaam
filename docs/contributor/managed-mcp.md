@@ -197,3 +197,48 @@ binary implements the required broker protocol, grant a native effect, establish
 sandbox isolation, or enable a station capability. The real effect controller must
 also check admission and actual resources at fresh native grants, combine them
 with durable call/permission ownership, and validate actual broker capabilities.
+
+### Native call ownership and callback role
+
+Schema 23 keeps `toolkit_calls` and per-process `toolkit_owners` in the service
+journal. Preparing a call binds the full request, immutable invocation deadline,
+actual resource, worker epoch, attempt, tool call and admitted native action pin.
+Saved calls are checked before new authority. Historical data access remains
+bound to the original principal/root; it does not grant fresh execution.
+
+The private operator socket handles `/managed-toolkit/v1/verify`. Registration
+is an internal trusted-controller operation, with no public registration route.
+It checks private admission and the resource's exact launch pins before recording
+an owner-key hash. Callback authentication requires that registered process key,
+the current daemon's in-memory owner, actual persisted PID identity, unchanged
+private configuration and fresh root/worker/attempt authority. Old keys cannot be
+registered for another process or silently adopted after daemon recovery. Pending
+replacement currently requires fresh private owner material; automatic per-process
+manifest materialization is still required before exposing this as a station tool.
+
+MCP delivery records intent without consuming an effect permission. `review`
+answers the exact durable human decision. `admit` bounds credential acquisition
+without spending the effect grant. Only `dispatch`, after the broker prepares
+credentials, atomically consumes the permission and records its dispatch marker.
+Native reads also have a durable one-time dispatch marker. Automatic native writes
+are currently unsupported; a write's native kind is independent of its approval
+policy and cannot be treated as a read.
+The initial broker admits one unfinished native invocation, including a pending
+human decision. Turn cancellation stops only a broker whose active invocation
+belongs to that turn; cancelling an older completed instruction cannot stop a
+later worker or its broker. Root revocation still stops all root resources.
+
+A pending receipt preserves the original invocation and deadline. A denial before
+dispatch is definite. A result after a spent write grant remains uncertain until
+independent inspection/resolution; a protocol return never verifies product work.
+Uncertain reads also fence root renewal and new work. Turn cancellation reports
+their call IDs as unconfirmed resources after local process stop and daemon reopen.
+All local cleanup paths still attempt worker cancellation when native cleanup fails.
+Receipt/control failures also install an immediate resource fence if the journal
+cannot persist uncertainty. Stopped or replaced processes with unfinished delivery
+records cannot authorize a replacement merely because cleanup completed.
+
+The callback implements only the work role. Credential-free cleanup controls and
+asynchronous native acknowledgement/local operator resolution need a separate
+stop-proof-bound role. No generic expired-authority bypass, direct edits to the Go
+journal, public native house tool, or station coding capability is enabled here.

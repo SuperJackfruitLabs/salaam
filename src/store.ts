@@ -68,7 +68,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 22) {
+    if (version > 23) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -292,6 +292,15 @@ export class Store {
           CREATE UNIQUE INDEX toolkit_resources_root_owner ON toolkit_resources(root_digest) WHERE state!='stopped';
           CREATE UNIQUE INDEX toolkit_resources_state_owner ON toolkit_resources(state_dir) WHERE state!='stopped';
           PRAGMA user_version=22; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 23
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_owners(resource_id TEXT PRIMARY KEY NOT NULL REFERENCES toolkit_resources(id),key_digest TEXT NOT NULL UNIQUE CHECK(length(key_digest)=64));
+          CREATE TABLE toolkit_calls(id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id),worker_epoch INTEGER NOT NULL,attempt_id TEXT NOT NULL REFERENCES attempts(id),tool_call_id TEXT NOT NULL,resource_id TEXT NOT NULL REFERENCES toolkit_resources(id),request_json TEXT NOT NULL,request_digest TEXT NOT NULL,context_digest TEXT NOT NULL,action_pin TEXT NOT NULL,operation_id TEXT UNIQUE REFERENCES operations(id),state TEXT NOT NULL CHECK(state IN ('prepared','delivered','dispatching','pending','denied','returned','outcome_unknown','cancelled')),receipt_json TEXT,cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(session_id,worker_epoch,tool_call_id));
+          CREATE INDEX toolkit_calls_resource ON toolkit_calls(resource_id,state);
+          CREATE UNIQUE INDEX toolkit_calls_active_resource ON toolkit_calls(resource_id) WHERE state IN ('prepared','delivered','dispatching','pending','outcome_unknown');
+          PRAGMA user_version=23; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
@@ -968,8 +977,10 @@ export class Store {
   }
   hasUnknown(id: string): boolean {
     return !!this.db
-      .prepare("SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' LIMIT 1")
-      .get(id);
+      .prepare(
+        "SELECT 1 FROM operations WHERE session_id=? AND state='outcome_unknown' UNION ALL SELECT 1 FROM toolkit_calls WHERE session_id=? AND state='outcome_unknown' LIMIT 1",
+      )
+      .get(id, id);
   }
   approvals(id: string): Approval[] {
     this.session(id);
