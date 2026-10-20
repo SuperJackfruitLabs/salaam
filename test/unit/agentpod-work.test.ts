@@ -993,3 +993,37 @@ test.each(['interrupted', 'unknown', 'check-drift', 'exception', 'unconfirmed', 
     }
   },
 );
+
+test.each(['stopped-inspection', 'unconfirmed', 'mutation', 'unknown'])(
+  'historical success retirement treats cancelled read as %s',
+  async (variant) => {
+    const { f, admitted } = await unreportedSuccessFixture();
+    try {
+      f.store.db
+        .prepare(
+          "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state,helper_state) VALUES('cancelled-inspection',?,1,(SELECT id FROM attempts LIMIT 1),'cancelled-inspection','read',?,?,?,?,'cancelled',?)",
+        )
+        .run(
+          f.session,
+          'c'.repeat(64),
+          digest(f.binding),
+          'b'.repeat(64),
+          JSON.stringify({ action: variant === 'mutation' ? 'patch' : 'inspect' }),
+          variant === 'unconfirmed' ? 'unconfirmed' : 'stopped',
+        );
+      if (variant === 'unknown')
+        f.store.db
+          .prepare(
+            "UPDATE station_calls SET state='outcome_unknown' WHERE id='cancelled-inspection'",
+          )
+          .run();
+      const run = () =>
+        f.work.abandon(f.binding, randomUUID(), admitted.request_id, 'a'.repeat(64));
+      if (variant === 'stopped-inspection') expect(run().state).toBe('retired');
+      else expect(run).toThrow();
+      expect(f.tasks.get(admitted.task_id).state).toBe('succeeded');
+    } finally {
+      f.close();
+    }
+  },
+);

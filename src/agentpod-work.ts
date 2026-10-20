@@ -559,7 +559,14 @@ export class AgentPodWork {
           effect.result?.ok !== true ||
           calls.some(
             (c) =>
-              c.state !== 'returned' ||
+              (c.state !== 'returned' &&
+                !(
+                  c.kind === 'read' &&
+                  c.state === 'cancelled' &&
+                  c.tool_call_id === c.id &&
+                  c.result_json === null &&
+                  ['inspect', 'read'].includes(JSON.parse(String(c.args_json)).action)
+                )) ||
               c.helper_state !== 'stopped' ||
               !['read', 'patch', 'check'].includes(String(c.kind)),
           ) ||
