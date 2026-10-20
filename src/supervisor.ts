@@ -262,6 +262,7 @@ export class Supervisor extends EventEmitter {
       this.route.provider !== 'salaam-proof' ? this.route.max_tokens : undefined,
       this.route.workspace_id,
       this.route.connection,
+      this.route.reasoning,
     );
     if (canonical(checked) !== canonical(this.route)) throw new Error('Invalid provider route');
     if (options.anthropicApiKey) this.apiKey = validateApiKey(options.anthropicApiKey);
@@ -1355,6 +1356,61 @@ export class Supervisor extends EventEmitter {
   failControl(id: string, error: Error): void {
     const w = this.workers.get(id);
     if (w) this.invalidate(w, 'Managed control failed: ' + error.message);
+  }
+  async steer(
+    id: string,
+    request: string,
+    text: string,
+    controller: import('./protocol.js').Controller,
+  ) {
+    const input = { kind: 'steer', id, text };
+    const saved = this.store.cachedRequest<{ state: string }>('local-operator', request, input);
+    if (saved) return saved;
+    const worker = this.workers.get(id);
+    const intent = this.store.request('local-operator', request, input, () => {
+      this.store.authorizeControl(id, controller);
+      this.store.execution.assert(id);
+      if (
+        !this.store.localWorkspace(id) ||
+        !worker?.ready ||
+        worker.invalid ||
+        worker.stopping ||
+        !worker.pi ||
+        !worker.busy ||
+        !worker.attempt
+      )
+        throw new ServiceError(
+          'steer_unavailable',
+          'Steering requires an active local model turn; use /queue for the next turn',
+        );
+      if (this.store.hasUnknown(id))
+        throw new ServiceError('outcome_unknown', 'Resolve uncertain work before steering');
+      if (this.store.attempt(worker.attempt).state !== 'running')
+        throw new ServiceError('steer_unavailable', 'The active attempt is no longer running');
+      const receipt = { state: 'delivery_unknown', attempt: worker.attempt, epoch: worker.epoch };
+      this.store.event(id, 'steering.saved', { ...receipt, text }, request);
+      return receipt;
+    });
+    try {
+      await worker!.pi!.command('steer', { message: text });
+      return this.store.transaction(() => {
+        const receipt = { ...intent, state: 'received' };
+        this.store.event(id, 'steering.received', receipt, request);
+        this.store.db
+          .prepare('UPDATE requests SET response=? WHERE actor=? AND id=?')
+          .run(JSON.stringify(receipt), 'local-operator', request);
+        return receipt;
+      });
+    } catch (error) {
+      // The worker may have received it. Never retry this message across reconnect/restart.
+      this.store.transaction(() =>
+        this.store.event(id, 'steering.delivery_unknown', intent, request),
+      );
+      throw new ServiceError(
+        'steer_delivery_unknown',
+        'Steering receipt was lost. Inspect history; this steering request will not be replayed.',
+      );
+    }
   }
   async cancelAttempt(attempt: string): Promise<void> {
     const work = this.store.attempt(attempt);

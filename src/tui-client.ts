@@ -23,7 +23,12 @@ export interface OperatorHealth {
     durable_tasks: boolean;
     warning: string | null;
   };
-  local_workspace?: { inspection: boolean; session_routes: boolean; coding?: boolean };
+  local_workspace?: {
+    inspection: boolean;
+    session_routes: boolean;
+    coding?: boolean;
+    reasoning?: boolean;
+  };
   coding_root?: string | null;
   execution?: { commands?: boolean; available: boolean; backend?: Record<string, unknown> };
 }
@@ -65,6 +70,7 @@ export class OperatorClient extends EventEmitter {
   readonly clientId = randomUUID();
   health?: OperatorHealth;
   sessions: Session[] = [];
+  names: Record<string, string> = {};
   snapshot?: SessionSnapshot;
   workspace?: WorkspaceView;
   commands: CommandRun[] = [];
@@ -112,12 +118,113 @@ export class OperatorClient extends EventEmitter {
       ]);
       this.health = health;
       this.sessions = sessions;
+      const names = await Promise.all(
+        sessions.map(async (session) => {
+          const result = await call<{ name: string | null }>(
+            this.socket,
+            `/v1/sessions/${session.id}/name`,
+          ).catch(() => ({ name: null }));
+          return [session.id, result.name] as const;
+        }),
+      );
+      this.names = Object.fromEntries(
+        names.filter((pair): pair is readonly [string, string] => pair[1] !== null),
+      );
       this.connection = 'connected';
     } catch (error) {
       this.connection = 'offline';
       this.report(error);
     }
     this.changed();
+  }
+  async permissions(): Promise<{
+    policy: import('./autonomy.js').PermissionPolicy;
+    configurable: boolean;
+    coding: boolean;
+    command_auto_approval: false;
+  }> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/permissions`);
+  }
+  async setPermissions(
+    session: string,
+    expected: number,
+    policy: { mode: import('./autonomy.js').PermissionMode; paths: string[] },
+  ): Promise<void> {
+    if (this.snapshot?.id !== session)
+      throw new Error('Session changed; review permissions again.');
+    await call(this.socket, `/v1/sessions/${session}/permissions`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      expected_revision: expected,
+      policy,
+    });
+    this.report(
+      'Permissions updated. Progression is unchanged; already-running commands are not stopped by this setting.',
+    );
+    await this.refresh();
+  }
+  async steer(text: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const result = await call<{ state: string }>(
+      this.socket,
+      `/v1/sessions/${this.snapshot.id}/steer`,
+      { ...this.actor(), request_id: randomUUID(), text },
+    );
+    this.report(
+      result.state === 'received'
+        ? 'Worker received steering. This is not a completed-work receipt.'
+        : 'Steering delivery is uncertain; inspect history before sending it again.',
+    );
+  }
+  async reconcileUndo(): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const result = await call<{ state: string }>(
+      this.socket,
+      `/v1/sessions/${this.snapshot.id}/undo-reconcile`,
+      this.actor(),
+    );
+    this.report(
+      result.state === 'completed'
+        ? 'Restored files verified; undo reconciliation completed.'
+        : 'No undo needs reconciliation.',
+    );
+    await this.refresh();
+  }
+  async undoReview(): Promise<import('./local-undo.js').UndoReview> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/undo`);
+  }
+  async undo(review: import('./local-undo.js').UndoReview): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const result = await call<{ state: string }>(
+      this.socket,
+      `/v1/sessions/${this.snapshot.id}/undo`,
+      { ...this.actor(), request_id: randomUUID(), review_digest: review.digest },
+    );
+    if (result.state !== 'completed')
+      throw new Error('Undo outcome is uncertain; inspect files before continuing.');
+    await this.refresh();
+    this.report('Reverted the reviewed local edit. Conversation history is preserved.');
+  }
+  async fork(): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const session = await call<Session>(this.socket, `/v1/sessions/${this.snapshot.id}/fork`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      expected_revision: this.snapshot.revision,
+    });
+    await this.open(session.id);
+  }
+  async name(name: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/name`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      name,
+    });
+    this.names[this.snapshot.id] = name;
+    await this.refresh();
   }
   async compact(): Promise<void> {
     const id = this.snapshot?.id;
@@ -138,6 +245,8 @@ export class OperatorClient extends EventEmitter {
   ): Promise<string> {
     if (!coding) {
       const health = await call<OperatorHealth>(this.socket, '/v1/health');
+      if (route?.reasoning !== undefined && !health.local_workspace?.reasoning)
+        throw new Error('Restart the daemon to load reasoning selection support.');
       if (localCoding && !health.local_workspace?.coding)
         throw new Error('Restart the daemon to load local coding support.');
       if (!health.local_workspace?.inspection || !health.local_workspace.session_routes)
@@ -158,7 +267,11 @@ export class OperatorClient extends EventEmitter {
                   route:
                     route.provider === 'salaam-proof'
                       ? { provider: 'offline' }
-                      : { provider: route.provider, model: route.model },
+                      : {
+                          provider: route.provider,
+                          model: route.model,
+                          ...(route.reasoning !== undefined ? { reasoning: route.reasoning } : {}),
+                        },
                 }
               : {}),
           }

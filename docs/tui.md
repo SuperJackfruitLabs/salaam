@@ -11,18 +11,34 @@ sal attach SESSION_ID --takeover
 
 New sessions created in the TUI can inspect the selected local workspace on macOS and Linux without Docker. They can list, read and search actual files. The local inspection profile cannot edit files or execute commands. Hidden paths, credentials/secrets directories, dependency/build directories, symlinks, hard-linked files and database/key files are excluded. Reads are bounded to 256 KiB per file and 16 KiB per page; searches report truncation. Use a narrower path when a scan reaches its limit.
 
-Type `/` to see command completions. Tab or Enter accepts a completion; Enter then runs the command. Slash commands are handled locally and are never submitted as model prompts. Unknown commands remain in the composer with an error.
+Type `/` to see command completions. Tab or Enter accepts a completion; Enter then runs the command. Commands and aliases share one registry with the action palette and `/help`. Unknown commands and malformed arguments remain in the composer. Only `/queue`, `/steer`, `/plan`, and `/review` send instructions to the model; plan and review ask for confirmation first.
 
-| Command     | Action                                                    |
-| ----------- | --------------------------------------------------------- |
-| `/help`     | Show supported commands                                   |
-| `/model`    | Select a provider and model, then create a new session    |
-| `/new`      | Create a session in a workspace                           |
-| `/sessions` | Switch or resume a saved session                          |
-| `/status`   | Show the active session's route and capabilities          |
-| `/compact`  | Compact an idle session using its durable task checkpoint |
+| Commands                                                               | Action                                                                                                                                           |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/help [command]`, `/commands`, `/keys`                                | Command reference and keyboard shortcuts                                                                                                         |
+| `/exit`, `/quit`, `/q`                                                 | Detach the terminal; keep the daemon, session and work running                                                                                   |
+| `/model [provider/model]`, `/provider [provider]`, `/thinking [level]` | Choose configuration for a new session; reasoning levels are off, minimal, low, medium, high, subject to model support                           |
+| `/new [workspace]`, `/coding [workspace]`                              | Create an inspection or reviewed local coding session                                                                                            |
+| `/sessions [id]`, `/resume [id]`, `/name <name>`                       | Resume a saved session or set its durable label                                                                                                  |
+| `/history`, `/compact`, `/context`, `/status`, `/usage`                | Inspect history/context/usage or compact at an idle boundary                                                                                     |
+| `/cancel`, `/stop`                                                     | Explicitly cancel a selected active or queued instruction; these do not stop the daemon                                                          |
+| `/queue [text]`                                                        | Save a durable next-turn instruction, or inspect queued work                                                                                     |
+| `/steer <text>`                                                        | Send guidance during an active local turn; the service records intent before delivery and never replays an uncertain delivery                    |
+| `/diff`, `/tools`, `/approvals`                                        | Inspect actual Git changes, capabilities, tool activity and exact approval requests                                                              |
+| `/copy`, `/export [path]`                                              | Copy the last complete assistant response on macOS, or export captured history (including pre-compaction records) to a new private Markdown file |
+| `/settings`                                                            | Terminal appearance, shortcuts and model selection                                                                                               |
+| `/fork`                                                                | Fork an idle local conversation through Pi's session manager; share the workspace, but not pending approvals or task authority                   |
+| `/undo`, `/undo reconcile`                                             | Review the inverse of the last completed local edit, or verify files after an interrupted undo without replaying mutations                       |
+| `/plan [request]`, `/review [focus]`                                   | Submit a planning or code-review instruction using the current provider; these are prompts, not enforced permission modes                        |
+| `/skills`, `/mcp`, `/agents`, `/tasks`                                 | Inspect skill admission, managed MCP, worker profiles/children, or open durable task actions                                                     |
 
-Model selection keeps existing sessions and running work intact. Each local session retains its provider/model across daemon restarts. Configure authentication using `sal auth login PROVIDER` or `sal auth set PROVIDER`; choosing a catalog model does not establish account access. The header shows the selected session's model. Compaction preserves the saved transcript for history retrieval; its checkpoint is not a model-generated conversation summary.
+`/undo` refuses concurrent file changes and cannot reverse shell commands or external effects. A crash or partial failure leaves a durable fence across local coding sessions sharing the root. Inspect the recorded inverse and restore the original files before `/undo reconcile`; reconciliation verifies every file rather than retrying the edit. Conversation history stays intact.
+
+`/fork` requires an idle local session with no pending work or uncertain effects. The branch retains captured history; inherited provider usage is not charged to it again. Both conversations still point at the same files, so this is not a Git worktree or filesystem snapshot.
+
+`/skills` reports the current disabled implicit skill-discovery policy; it does not install or enable skills. `/mcp` shows only admitted capabilities. Neither command silently expands authority. `/export` refuses existing destinations and includes tool records; review its contents before sharing.
+
+Model and reasoning selection keep existing sessions and running work intact. Each local session retains its provider/model across daemon restarts. Configure authentication using `sal auth login PROVIDER` or `sal auth set PROVIDER`; choosing a catalog model does not establish account access. The header shows the selected session's model. Compaction preserves the saved transcript for history retrieval; its checkpoint is not a model-generated conversation summary.
 
 Older sessions retain their original capabilities. Create a new local session to gain workspace inspection. If the daemon predates this feature, finish active work, run `sal service stop`, and reopen `sal` to load the updated executable.
 
@@ -71,6 +87,10 @@ sal remote MY_SSH_ALIAS --remote-bin /absolute/path/to/sal \
 ```
 
 These paths belong to the remote host. If `--state` is omitted, the remote command uses that host’s normal state resolution. The remote executable defaults to `sal`; supply an absolute path when noninteractive SSH lacks its bin directory. Arguments are shell-quoted; SSH agent and configured port forwarding are disabled. SSH authentication and the host’s OS-account boundary remain the access control. Disconnecting SSH leaves service-owned work running. Reconnect with the same session ID, wait for the old lease to expire or choose Take control.
+
+## Autonomy controls
+
+Use `/permissions` for Inspect, Review, or scoped automatic edits. Use `/progression` independently for manual steps, bounded tasks, or schedules. Both appear in `/settings`. Shell commands still require explicit approval; local permission settings cannot grant missing capabilities or change managed-station authority. See [permissions and progression](autonomy.md).
 
 ## Durable task actions
 

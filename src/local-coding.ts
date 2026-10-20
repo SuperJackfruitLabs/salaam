@@ -10,6 +10,13 @@ import {
   applyLocalEdits,
   type LocalEdit,
 } from './local-edits.js';
+import {
+  permissionPolicy,
+  permissionDigest,
+  matchesEditScope,
+  assertPermissionBinding,
+} from './autonomy.js';
+import { assertUndoSettled } from './local-undo.js';
 import { processIdentity } from './supervisor.js';
 
 interface LocalCall {
@@ -91,6 +98,11 @@ export class LocalCoding {
     return c;
   }
   private guard(c: LocalCall): void {
+    this.store.execution.assert(c.session_id);
+    if (this.store.hasUnknown(c.session_id))
+      throw new ServiceError('operation_blocked', 'Unresolved effects block local permissions');
+    assertUndoSettled(this.store, c.root);
+    assertPermissionBinding(this.store, c.session_id, c.operation_id, c.root);
     if (this.closed || !this.store.localCoding(c.session_id))
       throw new ServiceError('local_denied', 'Local coding is not admitted');
     this.active(c.session_id, c.epoch, c.attempt_id);
@@ -198,6 +210,45 @@ export class LocalCoding {
         action: kind,
       });
     });
+    const policy = permissionPolicy(this.store, session);
+    if (
+      args.action === 'edit' &&
+      matchesEditScope(
+        policy,
+        args.edits.map((e) => e.path),
+      )
+    ) {
+      const approval = this.managed.forOperation(c.operation_id);
+      this.managed.decide(
+        approval.id,
+        'scoped:' + c.id,
+        approval.revision,
+        approval.operation_digest,
+        'approve',
+        {
+          receipt: {
+            policy_digest: permissionDigest(policy),
+            policy_revision: policy.revision,
+            root,
+            call_id: c.id,
+          },
+          authorize: () => {
+            this.guard(c);
+            const fresh = permissionPolicy(this.store, session);
+            if (
+              permissionDigest(fresh) !== permissionDigest(policy) ||
+              args.action !== 'edit' ||
+              !matchesEditScope(
+                fresh,
+                args.edits.map((e) => e.path),
+              )
+            )
+              throw new ServiceError('permission_changed', 'Scoped edit policy changed');
+            verifyLocalEdits(root, args.edits);
+          },
+        },
+      );
+    }
     return this.view(c.id);
   }
   private change(c: LocalCall, state: string, result: unknown): void {

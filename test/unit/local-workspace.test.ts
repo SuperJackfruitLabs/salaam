@@ -38,7 +38,7 @@ test('local inspection reads actual files and excludes private paths, symlinks a
 });
 test('all advertised slash commands parse; unknown commands never become prompts', () => {
   for (const command of SLASH_COMMANDS) expect(slashCommand('/' + command.name)).toBe(command.name);
-  for (const text of ['/bad', '/model surprise', '/help\nmalicious'])
+  for (const text of ['/bad', '/help\nmalicious'])
     expect(() => slashCommand(text)).toThrow('Unknown command');
   expect(slashCommand('explain /model')).toBeNull();
 });

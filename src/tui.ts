@@ -29,8 +29,14 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { ROOT } from './config.js';
-import { PI_PROVIDERS, providerRoute, type ProviderRoute } from './provider-config.js';
-import { SLASH_COMMANDS, slashCommand } from './tui-commands.js';
+import {
+  PI_PROVIDERS,
+  REASONING_LEVELS,
+  providerRoute,
+  type ProviderRoute,
+} from './provider-config.js';
+import { SLASH_COMMANDS, SLASH_COMPLETIONS, parseSlashCommand, slashHelp } from './tui-commands.js';
+import { conversationExport, writeConversationExport } from './tui-export.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
 import { OperatorClient } from './tui-client.js';
@@ -181,7 +187,7 @@ export class SalaamApp {
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
     this.editor.setAutocompleteProvider(
-      new CombinedAutocompleteProvider([...SLASH_COMMANDS], options.cwd ?? process.cwd(), null),
+      new CombinedAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd(), null),
     );
     this.editor.onChange = () => {
       const text = this.editor.getExpandedText(),
@@ -301,7 +307,18 @@ export class SalaamApp {
     )
       return;
     if (matchesKey(data, 'enter')) {
-      void this.execute(() => this.submit());
+      const text = this.editor.getExpandedText(),
+        session = this.client.snapshot?.id;
+      const submit = () => {
+        if (
+          !this.modal &&
+          this.editor.getExpandedText() === text &&
+          this.client.snapshot?.id === session
+        )
+          void this.execute(() => this.submit());
+      };
+      if (this.view.busy) this.pendingAction = submit;
+      else submit();
       return { consume: true };
     }
     const keys: [KeyId, () => void][] = [
@@ -490,41 +507,10 @@ export class SalaamApp {
       },
     );
   }
-  private async runSlashCommand(command: string): Promise<void> {
-    if (command === 'model') {
-      this.modelPicker();
-      return;
-    }
-    if (command === 'new' || command === 'coding') {
-      await this.newSession(command === 'coding');
-      return;
-    }
-    if (command === 'sessions') {
-      await this.sessions();
-      return;
-    }
-    if (command === 'compact') {
-      await this.client.compact();
-      return;
-    }
-    const text =
-      command === 'help'
-        ? SLASH_COMMANDS.map((c) => '/' + c.name + ' — ' + c.description).join('\n') +
-          '\n\nModel choices create a new session; existing work keeps its original model. Configure credentials with sal auth login PROVIDER or sal auth set PROVIDER.'
-        : JSON.stringify(
-            {
-              connection: this.client.connection,
-              session: this.client.snapshot?.id,
-              workspace: this.client.snapshot?.cwd,
-              route: this.client.snapshot?.provider_route ?? this.client.health?.provider_route,
-              capabilities: this.client.snapshot?.capabilities,
-            },
-            null,
-            2,
-          );
+  private showText(title: string, text: string): void {
     this.showModal(
       new TextModal(
-        command === 'help' ? 'Salaam commands' : 'Session status',
+        title,
         text,
         this.view.theme,
         () => this.terminal.rows,
@@ -532,6 +518,428 @@ export class SalaamApp {
         () => this.closeModal(),
       ),
     );
+  }
+  private async runSlashCommand(command: string, args = ''): Promise<void> {
+    const snapshot = this.client.snapshot;
+    const definition = SLASH_COMMANDS.find((c) => c.name === command);
+    if (!definition) throw new Error('Unknown command. Use /help.');
+    if (definition.kind === 'unavailable')
+      throw new Error(definition.description + '. No session or files were changed.');
+    if (command === 'exit') {
+      this.finish();
+      return;
+    }
+    if (command === 'help') {
+      this.showText('Salaam commands', slashHelp(args || undefined));
+      return;
+    }
+    if (command === 'keys') {
+      this.help();
+      return;
+    }
+    if (command === 'model') {
+      if (!args) {
+        this.modelPicker();
+        return;
+      }
+      const slash = args.indexOf('/');
+      if (slash <= 0)
+        throw new Error('Use /model provider/model. The choice creates a new session.');
+      this.selectedRoute = providerRoute(args.slice(0, slash), args.slice(slash + 1));
+      await this.newSession();
+      return;
+    }
+    if (command === 'provider') {
+      if (!args) {
+        this.modelPicker();
+        return;
+      }
+      if (args === 'offline') {
+        this.selectedRoute = providerRoute();
+        await this.newSession();
+        return;
+      }
+      const provider = PI_PROVIDERS.find((p) => p.id === args);
+      if (!provider)
+        throw new Error('Unknown provider. Use /provider to browse the pinned catalog.');
+      this.choice(
+        'Model · ' + provider.name,
+        provider.getModels().map((m) => ({ value: m.id, label: m.name, description: m.id })),
+        (model) => {
+          this.selectedRoute = providerRoute(args, model);
+          void this.execute(() => this.newSession());
+        },
+      );
+      return;
+    }
+    if (command === 'new' || command === 'coding') {
+      if (args) {
+        await this.startService();
+        await this.client.create(resolve(args), false, this.selectedRoute, command === 'coding');
+        this.setTab('conversation');
+      } else await this.newSession(command === 'coding');
+      return;
+    }
+    if (command === 'sessions') {
+      if (args) {
+        await this.client.open(args, {
+          observe: this.options.observe,
+          takeover: this.options.takeover,
+        });
+        this.setTab('conversation');
+      } else await this.sessions();
+      return;
+    }
+    if (command === 'settings') {
+      this.choice(
+        'Settings',
+        [
+          { value: 'permissions', label: 'Permissions · inspect, review or scoped edits' },
+          { value: 'progression', label: 'Progression · manual, bounded tasks or schedules' },
+          { value: 'model', label: 'Provider and model (new session)' },
+          { value: 'theme', label: 'Switch Night / Paper' },
+          { value: 'rail', label: 'Toggle workspace rail' },
+          { value: 'keys', label: 'Keyboard shortcuts' },
+        ],
+        (value) => {
+          if (value === 'theme') {
+            this.view.theme = new SalaamTheme(this.view.theme.name === 'night' ? 'paper' : 'night');
+            this.document.invalidate();
+            this.tui.requestRender(true);
+          } else if (value === 'rail') {
+            this.rail = !this.rail;
+            this.tui.requestRender(true);
+          } else void this.execute(() => this.runSlashCommand(value));
+        },
+      );
+      return;
+    }
+    if (command === 'status') {
+      this.showText(
+        'Session status',
+        JSON.stringify(
+          {
+            connection: this.client.connection,
+            session: snapshot?.id,
+            workspace: snapshot?.cwd,
+            route: snapshot?.provider_route ?? this.client.health?.provider_route,
+            capabilities: snapshot?.capabilities,
+            pending_delivery: this.client.pendingInputs,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (!snapshot) throw new Error('Choose a session with /sessions or /new first.');
+    if (command === 'undo') {
+      if (args === 'reconcile') {
+        await this.client.reconcileUndo();
+        return;
+      }
+      if (args) throw new Error('Use /undo or /undo reconcile.');
+      const review = await this.client.undoReview();
+      this.showModal(
+        new TextModal(
+          'Undo local edit · review the inverse',
+          review.edits
+            .map(
+              (e) =>
+                '--- ' +
+                e.path +
+                '\n' +
+                e.after +
+                '\n+++ restored\n' +
+                (e.before ?? '(remove new file)'),
+            )
+            .join('\n\n'),
+          this.view.theme,
+          () => this.terminal.rows,
+          () => this.tui.requestRender(),
+          () => this.closeModal(),
+          undefined,
+          () => {
+            this.closeModal();
+            void this.execute(() => this.client.undo(review));
+          },
+        ),
+      );
+      return;
+    }
+    if (command === 'fork') {
+      this.confirm(
+        'Fork session',
+        'Create an independent conversation from the captured history? Both sessions share the same workspace; files are not cloned. Pending approvals and task authority are not copied.',
+        'Fork conversation',
+        () => this.client.fork(),
+      );
+      return;
+    }
+    if (command === 'compact') {
+      await this.client.compact();
+      return;
+    }
+    if (command === 'history') {
+      await this.history();
+      return;
+    }
+    if (command === 'context') {
+      this.setTab('context');
+      return;
+    }
+    if (command === 'diff') {
+      if (snapshot.capabilities.includes('local-workspace-read')) {
+        const diff = await call<{ text: string }>(
+          this.client.socket,
+          `/v1/sessions/${snapshot.id}/local-diff`,
+        );
+        this.showText('Local Git changes', diff.text);
+      } else this.setTab('changes');
+      return;
+    }
+    if (command === 'approvals') {
+      this.approvals();
+      return;
+    }
+    if (command === 'tasks') {
+      this.taskActions();
+      return;
+    }
+    if (command === 'cancel') {
+      const active = snapshot.attempts.filter((a) =>
+        ['accepted', 'dispatching', 'running'].includes(a.state),
+      );
+      if (!active.length) {
+        this.client.report('No active or queued instruction to cancel.');
+        return;
+      }
+      const cancel = (id: string) =>
+        this.confirm(
+          'Cancel instruction',
+          'Cancel attempt ' + id + '? /exit would leave it running.',
+          'Cancel work',
+          () => this.client.cancel(id),
+        );
+      if (active.length === 1) cancel(active[0]!.id);
+      else
+        this.choice(
+          'Cancel an instruction',
+          active.map((a) => ({ value: a.id, label: a.state + ' · ' + shortId(a.id) })),
+          cancel,
+        );
+      return;
+    }
+    if (command === 'steer') {
+      if (!args) throw new Error('Use /steer followed by guidance for the active turn.');
+      await this.client.steer(args);
+      return;
+    }
+    if (command === 'queue') {
+      if (args) {
+        await this.client.submit(args);
+        return;
+      }
+      this.showText(
+        'Durable instruction queue',
+        JSON.stringify(
+          snapshot.submissions.filter((s) =>
+            ['accepted', 'dispatching', 'running'].includes(s.state),
+          ),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === 'plan' || command === 'review') {
+      const instruction =
+        command === 'plan'
+          ? 'Produce an implementation plan. Inspect relevant workspace files, explain assumptions, steps and validation. Do not edit files or run mutating commands. '
+          : 'Review the workspace changes. Inspect the actual code and report actionable bugs with file references and verification gaps. Do not edit files. ';
+      this.confirm(
+        command === 'plan' ? 'Request a plan' : 'Request a review',
+        'This submits a model instruction and uses provider credits. It does not change tool permissions; mutations still use existing approval controls.',
+        'Submit instruction',
+        () => this.client.submit(instruction + args).then(() => undefined),
+      );
+      return;
+    }
+    if (command === 'usage') {
+      this.showText(
+        'Provider usage',
+        JSON.stringify(
+          this.client.usage ?? { status: 'No usage observations yet; this is not zero usage.' },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === 'permissions') {
+      await this.permissionControls();
+      return;
+    }
+    if (command === 'progression') {
+      this.choice(
+        'Progression · does not change permissions',
+        [
+          {
+            value: 'manual',
+            label: 'Manual steps',
+            description: 'Pause future task steps; current work can settle',
+          },
+          {
+            value: 'bounded',
+            label: 'Bounded automatic task',
+            description: 'Checked task, step grant and budgets; permission gates still apply',
+          },
+          {
+            value: 'scheduled',
+            label: 'Scheduled tasks',
+            description: 'Reviewed templates and fresh bounded occurrences',
+          },
+        ],
+        (value) => {
+          if (value === 'bounded') this.taskActions(true);
+          else if (value === 'scheduled') void this.execute(() => this.schedules());
+          else {
+            const task = this.client.snapshot?.work_task;
+            if (!task)
+              this.client.report(
+                'Manual instruction mode is active. No task is configured for automatic progression.',
+              );
+            else
+              this.confirm(
+                'Manual progression',
+                'Stop admitting later task steps? Already-running work may settle. Permissions remain unchanged.',
+                'Pause progression',
+                () =>
+                  this.client.taskAction(
+                    'auto',
+                    { max_steps: 0, compact: false },
+                    { id: task.id, revision: task.revision },
+                  ),
+              );
+          }
+        },
+      );
+      return;
+    }
+    if (command === 'tools') {
+      this.showText(
+        command === 'tools' ? 'Tools and activity' : 'Session authority',
+        JSON.stringify(
+          {
+            capabilities: snapshot.capabilities,
+            controller: snapshot.control,
+            pending_approvals: snapshot.approvals.filter((a) => a.state === 'pending'),
+            ...(command === 'tools' ? { activity: this.client.activity } : {}),
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === 'agents') {
+      this.showText(
+        'Agents',
+        JSON.stringify(
+          {
+            profiles: snapshot.agents ?? [],
+            children: snapshot.children,
+            team: snapshot.team ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === 'mcp') {
+      this.showText(
+        'Managed MCP',
+        JSON.stringify(
+          {
+            capabilities: snapshot.capabilities.filter((c) => /mcp|toolkit/.test(c)),
+            operations: snapshot.operations.filter((o) => o.kind === 'mcp'),
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (command === 'skills') {
+      this.showText(
+        'Skills',
+        'Automatic Pi skill discovery is disabled by the worker boundary. No workspace skill files are implicitly loaded. This command does not install or enable skills.',
+      );
+      return;
+    }
+    if (command === 'thinking') {
+      const current = snapshot.provider_route;
+      if (!current || current.provider === 'salaam-proof')
+        throw new Error('Choose a live provider/model first with /model.');
+      const choose = (level: string) => {
+        this.selectedRoute = providerRoute(
+          current.provider,
+          current.model,
+          current.max_tokens,
+          current.workspace_id,
+          current.connection,
+          level as import('./provider-config.js').ReasoningLevel,
+        );
+        return this.newSession(snapshot.capabilities.includes('local-coding-reviewed'));
+      };
+      if (args) await choose(args);
+      else
+        this.choice(
+          'Reasoning · new session · current ' + (current.reasoning ?? 'automatic low'),
+          REASONING_LEVELS.map((level) => ({ value: level, label: level })),
+          (level) => void this.execute(() => choose(level)),
+        );
+      return;
+    }
+    if (command === 'name') {
+      if (!args || args.length > 120 || /[\x00-\x1f\x7f]/.test(args))
+        throw new Error('Use /name followed by 1–120 printable characters.');
+      await this.client.name(args);
+      this.client.report('Session named ' + args);
+      return;
+    }
+    if (command === 'export') {
+      const path = resolve(args || `salaam-${snapshot.id}.md`);
+      const text = await conversationExport(this.client.socket, snapshot.id);
+      writeConversationExport(path, text);
+      this.client.report('Exported full captured history to ' + path);
+      return;
+    }
+    if (command === 'copy') {
+      const last = [...snapshot.messages].reverse().find((m) => m.role === 'assistant');
+      if (!last) throw new Error('No assistant response to copy.');
+      if (last.truncated)
+        throw new Error(
+          'Response preview is truncated. Use /export for complete captured history.',
+        );
+      if (process.platform !== 'darwin')
+        throw new Error(
+          'Clipboard copying is currently supported on macOS; use /export on this platform.',
+        );
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn('/usr/bin/pbcopy', [], { stdio: ['pipe', 'ignore', 'pipe'] });
+        child.on('error', reject);
+        child.stdin.on('error', reject);
+        child.on('close', (code) =>
+          code === 0 ? resolve() : reject(new Error('Clipboard copy failed.')),
+        );
+        child.stdin.end(last.text);
+      });
+      this.client.report('Copied the last assistant response.');
+      return;
+    }
+    throw new Error('Command has no handler: ' + command);
   }
   private async newSession(localCoding = false): Promise<void> {
     await this.startService();
@@ -564,7 +972,8 @@ export class SalaamApp {
         { value: 'new', label: '+ New session', description: 'Start a fresh workspace' },
         ...this.client.sessions.map((session) => ({
           value: session.id,
-          label: basename(session.cwd) + '  ' + shortId(session.id),
+          label:
+            (this.client.names[session.id] ?? basename(session.cwd)) + '  ' + shortId(session.id),
           description: session.state + ' · ' + session.cwd,
         })),
       ],
@@ -589,9 +998,9 @@ export class SalaamApp {
       session = this.client.snapshot?.id,
       continuation = this.view.continuation;
     if (!text.trim()) return;
-    const command = slashCommand(text);
+    const command = parseSlashCommand(text);
     if (command) {
-      await this.runSlashCommand(command);
+      await this.runSlashCommand(command.name, command.args);
       if (this.editor.getExpandedText() === text) this.editor.setText('');
       if (session) this.drafts.delete(session);
       return;
@@ -718,7 +1127,90 @@ export class SalaamApp {
       ),
     );
   }
-  private taskActions(): void {
+  private async permissionControls(): Promise<void> {
+    const session = this.client.snapshot!.id;
+    const current = await this.client.permissions();
+    if (!current.configurable) {
+      this.showText(
+        'Managed permissions',
+        'This session uses host-managed authority. Local permission presets cannot change station or specialist grants.',
+      );
+      return;
+    }
+    this.choice(
+      'Permissions · ' + current.policy.mode + ' · revision ' + current.policy.revision,
+      [
+        {
+          value: 'inspect-current',
+          label: 'Inspect current policy',
+          description: current.policy.paths.join(', ') || 'No automatic edit scopes',
+        },
+        {
+          value: 'inspect',
+          label: 'Inspect only',
+          description: 'Deny future local mutations, including manually approved operations',
+        },
+        ...(current.coding
+          ? [
+              {
+                value: 'review',
+                label: 'Review every mutation',
+                description: 'Explicit approval for each edit and unsandboxed shell command',
+              },
+              {
+                value: 'scoped-edit',
+                label: 'Auto-approve scoped edits',
+                description: 'Exact files or directory prefixes; shell commands still ask',
+              },
+            ]
+          : []),
+      ],
+      (mode) => {
+        if (mode === 'inspect-current') {
+          this.showText('Permissions and execution boundary', JSON.stringify(current, null, 2));
+          return;
+        }
+        const apply = (paths: string[]) =>
+          this.showModal(
+            new TextModal(
+              'Review permission policy',
+              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nAll shell commands still require approval. This is not an OS sandbox. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
+              this.view.theme,
+              () => this.terminal.rows,
+              () => this.tui.requestRender(),
+              () => this.closeModal(),
+              undefined,
+              () => {
+                this.closeModal();
+                void this.execute(() =>
+                  this.client.setPermissions(session, current.policy.revision, {
+                    mode: mode as import('./autonomy.js').PermissionMode,
+                    paths,
+                  }),
+                );
+              },
+              'save permissions',
+            ),
+          );
+        if (mode === 'scoped-edit')
+          this.taskInput(
+            'Auto-edit scopes',
+            current.policy.paths.join(', '),
+            'Comma-separated files or directories ending in /',
+            'Example: src/, test/, README.md. No glob patterns or private paths. Other files still require review.',
+            (text) =>
+              apply(
+                text
+                  .split(',')
+                  .map((p) => p.trim())
+                  .filter(Boolean),
+              ),
+          );
+        else apply([]);
+      },
+    );
+  }
+  private taskActions(progressionOnly = false): void {
     const task = this.client.snapshot?.work_task;
     if (!task) {
       const initial = JSON.stringify({
@@ -815,202 +1307,210 @@ export class SalaamApp {
         description: 'Stop work; uncertain external effects remain recorded',
       },
     ];
-    this.choice('Salaam · task', items, (action) => {
-      if (action === 'inspect')
-        this.showModal(
-          new TextModal(
-            'Task · ' + task.id,
-            JSON.stringify(task, null, 2),
-            this.view.theme,
-            () => this.view.rows() - 8,
-            () => this.tui.requestRender(),
-            () => this.closeModal(),
-          ),
-        );
-      else if (action === 'plan')
-        this.taskInput(
-          'Revise task · plan JSON',
-          JSON.stringify({
-            objective: task.objective,
-            constraints: task.constraints,
-            steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
-              key,
-              title,
-              instruction,
-              depends_on,
-              checks,
-            })),
-            acceptance: task.acceptance,
-            deliverables: task.deliverables,
-            limits: task.limits,
-          }),
-          'Review the complete revised plan',
-          'Revising pauses progression and requires fresh verification.',
-          (value) =>
-            void this.execute(() =>
-              this.client.taskAction('revise', { plan: JSON.parse(value) }, reviewed),
+    this.choice(
+      progressionOnly ? 'Bounded progression · permissions unchanged' : 'Salaam · task',
+      progressionOnly
+        ? items.filter((i) => ['inspect', 'plan', 'auto', 'pause'].includes(i.value))
+        : items,
+      (action) => {
+        if (action === 'inspect')
+          this.showModal(
+            new TextModal(
+              'Task · ' + task.id,
+              JSON.stringify(task, null, 2),
+              this.view.theme,
+              () => this.view.rows() - 8,
+              () => this.tui.requestRender(),
+              () => this.closeModal(),
             ),
-        );
-      else if (action === 'run') {
-        const eligible = task.steps.filter((s) =>
-          ['pending', 'failed', 'cancelled', 'interrupted'].includes(s.state),
-        );
-        if (!eligible.length) {
-          this.client.report('No step is eligible for an explicit run.');
-          return;
-        }
-        this.choice(
-          'Choose a saved step',
-          eligible.map((s) => ({
-            value: s.id,
-            label: s.title,
-            description: s.key + ' · ' + s.state,
-          })),
-          (id) => {
-            const step = eligible.find((s) => s.id === id)!;
-            this.taskInput(
-              'Step instruction',
-              step.state === 'interrupted' ? '' : step.instruction,
-              'Review or enter the instruction',
-              step.state === 'interrupted'
-                ? 'Inspect the interrupted outcome first; this creates a new attempt.'
-                : 'Dependencies and task limits are checked by the service.',
-              (instruction) =>
-                void this.execute(() =>
-                  this.client.taskAction(
-                    `steps/${id}/run`,
-                    {
-                      instruction,
-                      ...(step.state === 'interrupted'
-                        ? { continues_attempt_id: step.attempt_id }
-                        : {}),
-                    },
-                    reviewed,
-                  ),
-                ),
-            );
-          },
-        );
-      } else if (action === 'review') {
-        const steps = task.steps.filter((s) => s.state === 'awaiting_review');
-        if (!steps.length) {
-          this.client.report('No step awaits operator review.');
-          return;
-        }
-        this.choice(
-          'Review a settled step',
-          steps.map((s) => ({ value: s.id, label: s.title, description: s.attempt_id ?? '' })),
-          (id) =>
-            this.taskInput(
-              'Record operator review',
-              '',
-              'What did you inspect?',
-              'This records your decision; fresh command receipts are still required for task success.',
-              (review) =>
-                void this.execute(() =>
-                  this.client.taskAction(`steps/${id}/complete`, { review }, reviewed),
-                ),
-            ),
-        );
-      } else if (action === 'verify') {
-        if (!task.acceptance.length) {
-          this.client.report('Configure acceptance checks in the task plan first.');
-          return;
-        }
-        this.choice(
-          'Choose acceptance check',
-          task.acceptance.map((c) => ({ value: c.key, label: c.key, description: c.command })),
-          (key) =>
-            void this.execute(() => this.client.taskAction('verify', { check_key: key }, reviewed)),
-        );
-      } else if (action === 'finish')
-        this.confirm(
-          'Verify task completion',
-          'The service will recheck every configured command receipt and deliverable against the current workspace.',
-          'Verify completion',
-          () => this.client.taskAction('finish', {}, reviewed),
-        );
-      else if (action === 'auto')
-        this.taskInput(
-          'Bounded progression',
-          String(task.steps.filter((s) => s.state === 'pending').length),
-          'Maximum new steps (1–32)',
-          'Steps advance only after their configured checks pass. Human approvals remain separate.',
-          (value) => {
-            const max_steps = Number(value);
-            this.confirm(
-              'Run this bounded plan',
-              `Task ${shortId(task.id)} · plan revision ${task.plan_revision}\nAt most ${max_steps} new steps; each step needs fresh passing checks.\nLimits: ${task.limits.requests} requests · ${task.limits.runtime_ms} ms · ${task.limits.concurrency} concurrent executions.\n${task.limits.token_units === null ? 'Token budget disabled' : task.limits.token_units + ' declared token units'} · ${task.limits.verification_runs} verification runs.\nChecks: ${task.acceptance.map((c) => c.key).join(', ') || 'none'} · Deliverables: ${task.deliverables.length}.\nDeterministic compaction at idle boundaries. Human approvals remain separate.`,
-              'Run bounded task',
-              () => this.client.taskAction('auto', { max_steps, compact: true }, reviewed),
-            );
-          },
-        );
-      else if (action === 'pause')
-        void this.execute(() =>
-          this.client.taskAction('auto', { max_steps: 0, compact: false }, reviewed),
-        );
-      else if (action === 'checkpoint')
-        void this.execute(() => this.client.taskAction('checkpoint', {}, reviewed));
-      else if (action === 'restore')
-        void this.execute(async () => {
-          const checkpoints = await call<{ id: string; revision: number; digest: string }[]>(
-            this.client.socket,
-            `/v1/tasks/${task.id}/checkpoints`,
           );
-          if (!checkpoints.length) {
-            this.client.report('No checkpoints have been saved.');
+        else if (action === 'plan')
+          this.taskInput(
+            'Revise task · plan JSON',
+            JSON.stringify({
+              objective: task.objective,
+              constraints: task.constraints,
+              steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+                key,
+                title,
+                instruction,
+                depends_on,
+                checks,
+              })),
+              acceptance: task.acceptance,
+              deliverables: task.deliverables,
+              limits: task.limits,
+            }),
+            'Review the complete revised plan',
+            'Revising pauses progression and requires fresh verification.',
+            (value) =>
+              void this.execute(() =>
+                this.client.taskAction('revise', { plan: JSON.parse(value) }, reviewed),
+              ),
+          );
+        else if (action === 'run') {
+          const eligible = task.steps.filter((s) =>
+            ['pending', 'failed', 'cancelled', 'interrupted'].includes(s.state),
+          );
+          if (!eligible.length) {
+            this.client.report('No step is eligible for an explicit run.');
             return;
           }
           this.choice(
-            'Choose checkpoint',
-            checkpoints.map((c) => ({
-              value: c.id,
-              label: 'Workspace revision ' + c.revision,
-              description: c.digest,
+            'Choose a saved step',
+            eligible.map((s) => ({
+              value: s.id,
+              label: s.title,
+              description: s.key + ' · ' + s.state,
             })),
-            (checkpoint_id) => {
-              const w = this.client.workspace;
-              if (!w?.observed_digest) {
-                this.client.report('Refresh the owned workspace before restoring.');
-                return;
-              }
-              this.confirm(
-                'Restore reviewed task changes',
-                JSON.stringify(
-                  {
-                    checkpoint_id,
-                    current_revision: w.revision,
-                    current_digest: w.observed_digest,
-                    human_edits: 'Preserved; conflicts are reported',
-                    external_effects: 'Not rolled back',
-                  },
-                  null,
-                  2,
-                ),
-                'Restore checkpoint',
-                () =>
-                  this.client.taskAction(
-                    'restore',
-                    {
-                      checkpoint_id,
-                      workspace_revision: w.revision,
-                      workspace_digest: w.observed_digest,
-                    },
-                    reviewed,
+            (id) => {
+              const step = eligible.find((s) => s.id === id)!;
+              this.taskInput(
+                'Step instruction',
+                step.state === 'interrupted' ? '' : step.instruction,
+                'Review or enter the instruction',
+                step.state === 'interrupted'
+                  ? 'Inspect the interrupted outcome first; this creates a new attempt.'
+                  : 'Dependencies and task limits are checked by the service.',
+                (instruction) =>
+                  void this.execute(() =>
+                    this.client.taskAction(
+                      `steps/${id}/run`,
+                      {
+                        instruction,
+                        ...(step.state === 'interrupted'
+                          ? { continues_attempt_id: step.attempt_id }
+                          : {}),
+                      },
+                      reviewed,
+                    ),
                   ),
               );
             },
           );
-        });
-      else if (action === 'cancel')
-        this.confirm(
-          'Cancel this task',
-          'Current work is cancelled and later steps stop. Inspect any uncertain effects separately.',
-          'Cancel task',
-          () => this.client.taskAction('cancel', {}, reviewed),
-        );
-    });
+        } else if (action === 'review') {
+          const steps = task.steps.filter((s) => s.state === 'awaiting_review');
+          if (!steps.length) {
+            this.client.report('No step awaits operator review.');
+            return;
+          }
+          this.choice(
+            'Review a settled step',
+            steps.map((s) => ({ value: s.id, label: s.title, description: s.attempt_id ?? '' })),
+            (id) =>
+              this.taskInput(
+                'Record operator review',
+                '',
+                'What did you inspect?',
+                'This records your decision; fresh command receipts are still required for task success.',
+                (review) =>
+                  void this.execute(() =>
+                    this.client.taskAction(`steps/${id}/complete`, { review }, reviewed),
+                  ),
+              ),
+          );
+        } else if (action === 'verify') {
+          if (!task.acceptance.length) {
+            this.client.report('Configure acceptance checks in the task plan first.');
+            return;
+          }
+          this.choice(
+            'Choose acceptance check',
+            task.acceptance.map((c) => ({ value: c.key, label: c.key, description: c.command })),
+            (key) =>
+              void this.execute(() =>
+                this.client.taskAction('verify', { check_key: key }, reviewed),
+              ),
+          );
+        } else if (action === 'finish')
+          this.confirm(
+            'Verify task completion',
+            'The service will recheck every configured command receipt and deliverable against the current workspace.',
+            'Verify completion',
+            () => this.client.taskAction('finish', {}, reviewed),
+          );
+        else if (action === 'auto')
+          this.taskInput(
+            'Bounded progression',
+            String(task.steps.filter((s) => s.state === 'pending').length),
+            'Maximum new steps (1–32)',
+            'Steps advance only after their configured checks pass. Human approvals remain separate.',
+            (value) => {
+              const max_steps = Number(value);
+              this.confirm(
+                'Run this bounded plan',
+                `Task ${shortId(task.id)} · plan revision ${task.plan_revision}\nAt most ${max_steps} new steps; each step needs fresh passing checks.\nLimits: ${task.limits.requests} requests · ${task.limits.runtime_ms} ms · ${task.limits.concurrency} concurrent executions.\n${task.limits.token_units === null ? 'Token budget disabled' : task.limits.token_units + ' declared token units'} · ${task.limits.verification_runs} verification runs.\nChecks: ${task.acceptance.map((c) => c.key).join(', ') || 'none'} · Deliverables: ${task.deliverables.length}.\nDeterministic compaction at idle boundaries. Human approvals remain separate.`,
+                'Run bounded task',
+                () => this.client.taskAction('auto', { max_steps, compact: true }, reviewed),
+              );
+            },
+          );
+        else if (action === 'pause')
+          void this.execute(() =>
+            this.client.taskAction('auto', { max_steps: 0, compact: false }, reviewed),
+          );
+        else if (action === 'checkpoint')
+          void this.execute(() => this.client.taskAction('checkpoint', {}, reviewed));
+        else if (action === 'restore')
+          void this.execute(async () => {
+            const checkpoints = await call<{ id: string; revision: number; digest: string }[]>(
+              this.client.socket,
+              `/v1/tasks/${task.id}/checkpoints`,
+            );
+            if (!checkpoints.length) {
+              this.client.report('No checkpoints have been saved.');
+              return;
+            }
+            this.choice(
+              'Choose checkpoint',
+              checkpoints.map((c) => ({
+                value: c.id,
+                label: 'Workspace revision ' + c.revision,
+                description: c.digest,
+              })),
+              (checkpoint_id) => {
+                const w = this.client.workspace;
+                if (!w?.observed_digest) {
+                  this.client.report('Refresh the owned workspace before restoring.');
+                  return;
+                }
+                this.confirm(
+                  'Restore reviewed task changes',
+                  JSON.stringify(
+                    {
+                      checkpoint_id,
+                      current_revision: w.revision,
+                      current_digest: w.observed_digest,
+                      human_edits: 'Preserved; conflicts are reported',
+                      external_effects: 'Not rolled back',
+                    },
+                    null,
+                    2,
+                  ),
+                  'Restore checkpoint',
+                  () =>
+                    this.client.taskAction(
+                      'restore',
+                      {
+                        checkpoint_id,
+                        workspace_revision: w.revision,
+                        workspace_digest: w.observed_digest,
+                      },
+                      reviewed,
+                    ),
+                );
+              },
+            );
+          });
+        else if (action === 'cancel')
+          this.confirm(
+            'Cancel this task',
+            'Current work is cancelled and later steps stop. Inspect any uncertain effects separately.',
+            'Cancel task',
+            () => this.client.taskAction('cancel', {}, reviewed),
+          );
+      },
+    );
   }
   private jobActions(): void {
     const snapshot = this.client.snapshot,
@@ -1288,6 +1788,11 @@ export class SalaamApp {
   private palette(): void {
     const snapshot = this.client.snapshot;
     const items = [
+      ...SLASH_COMMANDS.filter((c) => c.kind !== 'unavailable').map((c) => ({
+        value: 'slash:' + c.name,
+        label: '/' + c.name,
+        description: c.description,
+      })),
       {
         value: 'schedules',
         label: 'Recurring jobs and schedules',
@@ -1392,6 +1897,15 @@ export class SalaamApp {
       { value: 'stop', label: 'Stop service', description: 'Separate from detach and cancel' },
     ];
     this.choice('Salaam · actions', items, (value) => {
+      if (value.startsWith('slash:')) {
+        const name = value.slice(6);
+        const definition = SLASH_COMMANDS.find((c) => c.name === name)!;
+        if (definition.arguments?.startsWith('<')) {
+          this.editor.setText('/' + name + ' ');
+          this.tui.setFocus(this.editor);
+        } else void this.execute(() => this.runSlashCommand(name));
+        return;
+      }
       if (['conversation', 'changes', 'commands', 'context'].includes(value)) {
         this.setTab(value as ViewTab);
         return;
@@ -1751,8 +2265,11 @@ export class SalaamApp {
       process.stdin.pause();
       process.stdin.unref();
       process.stdout.write('\x1b[23;0t');
+      const detachedSession = this.client.snapshot?.id;
       await this.client.close();
       process.stdout.write('Detached from Salaam. Work continues in the service.\n');
+      if (detachedSession)
+        process.stdout.write('Reattach with sal attach ' + detachedSession + '\n');
     }
   }
 }

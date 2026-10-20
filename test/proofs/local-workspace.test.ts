@@ -51,7 +51,12 @@ test('a local model selection is durable and does not change other sessions or t
   const f = await fixture({ anthropicApiKey: 'fixture-never-sent' });
   let replacement: SalaamService | undefined;
   try {
-    const selected = { provider: 'anthropic', model: 'claude-sonnet-4-6', max_tokens: 2048 };
+    const selected = {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      reasoning: 'high',
+    };
     const create = {
       request_id: randomUUID(),
       cwd: realpathSync(f.dir),

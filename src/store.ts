@@ -69,7 +69,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 27) {
+    if (version > 28) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -501,6 +501,86 @@ export class Store {
       (Omit<Session, 'capabilities'> & { capabilities: string }) | undefined;
     if (!row) throw new ServiceError('not_found', 'Session not found', 404);
     return { ...row, capabilities: JSON.parse(row.capabilities) };
+  }
+  forkLocal(
+    id: string,
+    request: string,
+    expected: number,
+    controller: Controller,
+    clone: (source: Session, target: string) => string,
+  ): Session {
+    return this.request('local-operator', request, { kind: 'fork', id, expected }, () => {
+      this.authorizeControl(id, controller);
+      const source = this.session(id);
+      if (source.revision !== expected)
+        throw new ServiceError('revision_conflict', 'Session changed before fork');
+      if (!this.localWorkspace(id) || !source.pi_session_file || this.hasUnknown(id))
+        throw new ServiceError(
+          'fork_unavailable',
+          'Fork requires an initialized local session without uncertain effects',
+        );
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+          )
+          .get(id)
+      )
+        throw new ServiceError('session_busy', 'Wait for queued and active work before forking');
+      this.execution.assert(id);
+      const target = randomUUID();
+      const file = clone(source, target);
+      this.db
+        .prepare(
+          'INSERT INTO sessions(id,cwd,pi_session_id,pi_session_file,pi_cursor,pi_leaf) VALUES(?,?,?,?,?,?)',
+        )
+        .run(target, source.cwd, target, file, source.pi_cursor, source.pi_leaf);
+      this.event(
+        target,
+        'session.created',
+        {
+          cwd: source.cwd,
+          local_workspace: true,
+          local_coding: this.localCoding(id),
+          output_cap: this.localOutputCap(id) ?? true,
+          forked_from: id,
+        },
+        request,
+      );
+      const route = this.providerRoute(id)!;
+      this.db.prepare('INSERT INTO session_routes VALUES (?,?)').run(target, canonical(route));
+      this.event(target, 'provider.bound', { route });
+      this.db
+        .prepare(
+          'INSERT INTO pi_entries SELECT ?,entry_id,payload FROM pi_entries WHERE session_id=?',
+        )
+        .run(target, id);
+      this.event(
+        target,
+        'session.forked',
+        { parent: id, parent_revision: expected, leaf: source.pi_leaf, cursor: source.pi_cursor },
+        request,
+      );
+      return this.session(target);
+    });
+  }
+  sessionName(id: string): string | undefined {
+    this.session(id);
+    const row = this.db
+      .prepare(
+        "SELECT json_extract(payload,'$.name') AS name FROM events WHERE session_id=? AND kind='session.named' ORDER BY seq DESC LIMIT 1",
+      )
+      .get(id) as { name: string } | undefined;
+    return row?.name;
+  }
+  nameSession(id: string, request: string, name: string, controller: Controller): { name: string } {
+    if (!name.trim() || name.length > 120 || /[\x00-\x1f\x7f]/.test(name))
+      throw new ServiceError('invalid_name', 'Use 1–120 printable characters');
+    return this.request('local-operator', request, { kind: 'name', id, name }, () => {
+      this.authorizeControl(id, controller);
+      this.event(id, 'session.named', { name }, request);
+      return { name };
+    });
   }
   sessions(): Session[] {
     return (

@@ -45,7 +45,11 @@ import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
+import { permissionPolicy, configurePermissions } from './autonomy.js';
 import { LocalCoding } from './local-coding.js';
+import { localDiff } from './local-diff.js';
+import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
+import { forkPiSession } from './pi-sessions.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
 
@@ -1415,7 +1419,12 @@ export class SalaamService {
             checkpoints: true,
             deterministic_compaction: 'operator-bounded-idle-only',
           },
-          local_workspace: { inspection: true, session_routes: true, coding: true },
+          local_workspace: {
+            inspection: true,
+            session_routes: true,
+            coding: true,
+            reasoning: true,
+          },
           provider_route: this.supervisor.route,
           provider_capabilities: this.supervisor.providerCapabilities(),
           effect_connector: this.managed.options.connector?.id ?? null,
@@ -1505,6 +1514,9 @@ export class SalaamService {
                   input.max_tokens === undefined
                     ? undefined
                     : integer(input.max_tokens, 'max_tokens'),
+                  undefined,
+                  undefined,
+                  input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
                 );
               })();
         if (body.local_workspace) {
@@ -1597,6 +1609,159 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        if (parts.length === 4 && parts[3] === 'permissions') {
+          if (req.method === 'GET') {
+            this.send(res, 200, {
+              policy: permissionPolicy(this.store, id),
+              configurable: this.store.localWorkspace(id),
+              coding: this.store.localCoding(id),
+              command_auto_approval: false,
+            });
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              configurePermissions(
+                this.store,
+                id,
+                string(body.request_id, 'request_id', 128),
+                integer(body.expected_revision, 'expected_revision'),
+                body.policy,
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+              ),
+            );
+            return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'local-diff' && req.method === 'GET') {
+          if (!this.store.localWorkspace(id))
+            throw new ServiceError('local_denied', 'Local workspace required');
+          this.send(res, 200, { text: await localDiff(this.store.session(id).cwd) });
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'steer' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            200,
+            await this.supervisor.steer(
+              id,
+              string(body.request_id, 'request_id', 128),
+              string(body.text, 'text', 65536),
+              {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              },
+            ),
+          );
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'undo-reconcile' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.send(
+            res,
+            200,
+            reconcileUndo(
+              this.store,
+              id,
+              {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              },
+              () => this.supervisor.assertIdle(id),
+            ),
+          );
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'undo') {
+          if (req.method === 'GET') {
+            this.send(res, 200, reviewUndo(this.store, id));
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              applyUndo(
+                this.store,
+                id,
+                string(body.request_id, 'request_id', 128),
+                string(body.review_digest, 'review_digest', 128),
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+                () => {
+                  this.supervisor.assertIdle(id);
+                  if (
+                    this.store.db
+                      .prepare(
+                        "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+                      )
+                      .get(id)
+                  )
+                    throw new ServiceError('session_busy', 'Wait for queued work before undo');
+                },
+              ),
+            );
+            return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'fork' && req.method === 'POST') {
+          if (this.agentpod)
+            throw new ServiceError(
+              'admission_required',
+              'Managed station sessions cannot be forked locally',
+            );
+          const body = object(await readJson(req));
+          const session = this.store.forkLocal(
+            id,
+            string(body.request_id, 'request_id', 128),
+            integer(body.expected_revision, 'expected_revision'),
+            {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            },
+            (source, target) => {
+              this.supervisor.assertIdle(id);
+              const dir = join(this.stateDir, 'workers', target, 'sessions');
+              mkdirSync(dir, { recursive: true, mode: 0o700 });
+              return forkPiSession(source.pi_session_file!, source.cwd, dir, target);
+            },
+          );
+          this.send(res, 201, session);
+          return;
+        }
+        if (parts.length === 4 && parts[3] === 'name') {
+          if (req.method === 'GET') {
+            this.send(res, 200, { name: this.store.sessionName(id) ?? null });
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.send(
+              res,
+              200,
+              this.store.nameSession(
+                id,
+                string(body.request_id, 'request_id', 128),
+                string(body.name, 'name', 120),
+                {
+                  client_id: string(body.client_id, 'client_id', 128),
+                  token: string(body.token, 'token', 128),
+                },
+              ),
+            );
+            return;
+          }
+        }
         if (parts.length === 4 && parts[3] === 'revocation' && req.method === 'GET') {
           this.send(res, 200, this.store.execution.revocation(id));
           return;

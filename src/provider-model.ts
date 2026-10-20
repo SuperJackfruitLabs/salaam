@@ -80,7 +80,15 @@ export function bindProviderConfiguration(route: ProviderRoute, auth: AuthResult
 }
 
 /** Leave room for the answer instead of emitting Pi's minimum 1,024-token thinking budget under a smaller ceiling. */
-export function generationOptions(model: Model<Api>, context: TranscriptContext, cap: number) {
+export function generationOptions(
+  model: Model<Api>,
+  context: TranscriptContext,
+  cap: number,
+  reasoning?: import('./provider-config.js').ReasoningLevel,
+) {
   const maxTokens = clampMaxTokensToContext(model, context, cap);
-  return { maxTokens, reasoning: maxTokens >= 2048 ? ('low' as const) : undefined };
+  return {
+    maxTokens,
+    reasoning: maxTokens >= 2048 && reasoning !== 'off' ? (reasoning ?? 'low') : undefined,
+  };
 }

@@ -199,3 +199,34 @@ test('lost execution is fenced durably rather than replayed after restart', asyn
     await f.close();
   }
 });
+
+test('lost undo completion fences the root and reconciles only after original files are restored', async () => {
+  const { reviewUndo, assertUndoSettled, reconcileUndo } = await import('../../src/local-undo.js');
+  const f = setup();
+  try {
+    writeFileSync(join(f.root, 'a.txt'), 'before');
+    const edit = f.prepare('undo-recovery', {
+      action: 'edit',
+      edits: [{ path: 'a.txt', sha256: localHash('before'), content: 'after' }],
+    });
+    f.approve(edit);
+    f.local.run(edit.call.id);
+    const review = reviewUndo(f.store, f.session.id);
+    f.store.transaction(() => f.store.event(f.session.id, 'local.undo.started', review, 'lost'));
+    expect(() => assertUndoSettled(f.store, f.root)).toThrow('unconfirmed');
+    expect(() => f.prepare('blocked', { action: 'command', command: 'true' })).toThrow(
+      'unconfirmed',
+    );
+    const lease = f.store.control(f.session.id, 'take', 'operator', 'acquire', 0);
+    const actor = { client_id: 'operator', token: lease.token };
+    expect(() => reconcileUndo(f.store, f.session.id, actor, () => {})).toThrow('File changed');
+    writeFileSync(join(f.root, 'a.txt'), 'before');
+    expect(reconcileUndo(f.store, f.session.id, actor, () => {})).toMatchObject({
+      state: 'completed',
+      reconciled: true,
+    });
+    expect(() => assertUndoSettled(f.store, f.root)).not.toThrow();
+  } finally {
+    await f.close();
+  }
+});
