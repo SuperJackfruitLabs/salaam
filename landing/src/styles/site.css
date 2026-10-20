@@ -8,6 +8,7 @@
   --on-accent: #1a0b11;
   --line: #3a3033;
   --inset: #110d0f;
+  --warn: #e8c78c;
   --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
 }
@@ -21,6 +22,7 @@
   --on-accent: #ffffff;
   --line: #e2d5d0;
   --inset: #efe6e2;
+  --warn: #8a5a00;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='night']) {
@@ -33,6 +35,7 @@
     --on-accent: #ffffff;
     --line: #e2d5d0;
     --inset: #efe6e2;
+    --warn: #8a5a00;
   }
 }
 * {
@@ -286,9 +289,9 @@ em {
   margin: 0 3px 14px;
 }
 .terminal {
-  color: #f1e9e6;
-  background: #1d181a;
-  border: 1px solid #3e3437;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 9px;
   font-family: var(--mono);
   font-size: 10px;
@@ -301,23 +304,23 @@ em {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #3a3033;
+  border-bottom: 1px solid var(--line);
 }
 .terminal-brand {
-  color: #ff7aa5;
+  color: var(--accent);
   font-size: 14px;
   letter-spacing: -0.06em;
 }
 .terminal-meta {
-  color: #b4a6a5;
+  color: var(--muted);
   font-size: 8px;
 }
 .terminal-tabs {
   display: flex;
   gap: 20px;
   padding: 12px 17px 0;
-  border-bottom: 1px solid #3a3033;
-  color: #b4a6a5;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
   font-size: 9px;
 }
 .terminal-tabs span {
@@ -325,12 +328,12 @@ em {
   white-space: nowrap;
 }
 .terminal-tabs .active {
-  color: #ff7aa5;
-  border-bottom: 1px solid #ff7aa5;
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent);
 }
 .terminal-tabs b {
-  color: #ff7aa5;
-  background: #3a1e29;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   padding: 1px 4px;
   font-weight: 400;
 }
@@ -338,7 +341,7 @@ em {
   padding: 17px 20px 10px;
 }
 .terminal-path {
-  color: #b4a6a5;
+  color: var(--muted);
   font-size: 8px;
   display: flex;
   justify-content: space-between;
@@ -349,7 +352,7 @@ em {
   margin: 24px 0 5px;
 }
 .terminal-who span {
-  color: #b4a6a5;
+  color: var(--muted);
   margin-left: 9px;
 }
 .terminal-body p {
@@ -413,7 +416,7 @@ em {
   padding: 10px 15px;
   display: flex;
   justify-content: space-between;
-  color: #b4a6a5;
+  color: var(--muted);
   font-size: 7px;
 }
 .reconnect {
