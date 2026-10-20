@@ -212,8 +212,10 @@ with durable call/permission ownership, and validate actual broker capabilities.
 The internal cleanup admission is a distinct role. While the execution profile
 and actual resource owner are valid, `ToolkitAdmission.cleanup` can capture a
 credential-free snapshot bound to that exact resource input, executable and
-original full principal/root binding. Its private path and checksum must be
-persisted by the future control supervisor before execution. It contains no
+original full principal/root binding. Schema 24 commits its private path and checksum
+with the execution owner's registration, before process launch or native grants.
+Work callbacks recheck that snapshot; damaged recovery control fences new grants.
+The snapshot contains no
 policy, store, passphrase or execution callback key. Generating a control manifest
 requires the resource registry's immutable stop proof; an active broker, a free
 native lock or an unrecorded process cannot satisfy it.
@@ -223,9 +225,29 @@ can therefore prepare `managed-control-v1` after revocation, credential rotation
 workspace removal and daemon recovery, while keeping the original executable,
 private state/socket and snapshot pins. It cannot launch `managed-mcp-v1` or
 authenticate the execution callback. A changed root, input, executable or stop
-receipt fails closed. This is admission preparation only: owned control-process
-persistence, the private control verifier and asynchronous native acknowledgement
-plus durable operator resolution still must be connected before cleanup is usable.
+receipt fails closed. Cleanup commands use a distinct one-shot process role in the
+same durable PID/start-identity registry. Launch intent precedes spawn, and PID
+ownership precedes control stdin. The bounded process uses a fixed total deadline,
+rejects nonzero/malformed/oversized outcomes, does not retry and observes the local
+group stopped before handing a result to its controller. Command output alone
+does not verify a product effect.
+
+`/managed-toolkit/v1/control` is available only on the private operator socket.
+Its fresh cleanup key, actual registered PID, exact durable control bytes, original
+root/profile and predecessor stop proof must all match. Execution keys cannot use
+this role, and cleanup keys cannot use the work callback. Native inspect, fence,
+cancel and root revoke are supported internally. Acknowledgement remains disabled
+until a durable, exact operator-decision bridge is connected. None of these commands
+clears the parent's uncertain call or grants new work.
+
+Both resource roles recover before the daemon listens. SIGKILL with a recorded
+cleanup PID stops the actual surviving group; a launch intent without its PID
+remains unconfirmed and retains the daemon lock after failed shutdown. The schema
+upgrade preserves historical owners without inventing missing cleanup delegation;
+old binaries reject schema 24. Actual compiled Toolkit rehearsals exercise the
+private cleanup callback after revoked-root daemon reopen and removal of synthetic
+credentials/workspace, including a lost synthetic API response with exactly one
+write. These are local conformance proofs, not live product or fleet acceptance.
 
 ### Native call ownership and callback role
 
@@ -269,7 +291,6 @@ Receipt/control failures also install an immediate resource fence if the journal
 cannot persist uncertainty. Stopped or replaced processes with unfinished delivery
 records cannot authorize a replacement merely because cleanup completed.
 
-The callback implements only the work role. Credential-free cleanup controls and
-asynchronous native acknowledgement/local operator resolution need a separate
-stop-proof-bound role. No generic expired-authority bypass, direct edits to the Go
-journal, public native house tool, or station coding capability is enabled here.
+Asynchronous native acknowledgement and durable operator resolution remain to be
+connected. No generic expired-authority bypass, direct edits to the Go journal,
+public native house tool or station coding capability is enabled here.

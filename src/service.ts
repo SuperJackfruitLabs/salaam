@@ -582,6 +582,10 @@ export class SalaamService {
         this.send(res, 200, await this.toolkitOwners.verify(req));
         return;
       }
+      if (!bridge && req.method === 'POST' && req.url === '/managed-toolkit/v1/control') {
+        this.send(res, 200, await this.toolkitOwners.control(req));
+        return;
+      }
       if (
         !bridge &&
         req.method === 'GET' &&

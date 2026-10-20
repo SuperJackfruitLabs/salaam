@@ -103,7 +103,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
     await f.service.close();
     const db = new DatabaseSync(join(f.state, 'journal.sqlite'));
     db.exec(
-      'DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; DROP TABLE toolkit_resources; DROP TABLE mcp_calls; DROP TABLE mcp_assignments; DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
+      'DROP TABLE toolkit_cleanup_profiles; DROP TABLE toolkit_calls; DROP TABLE toolkit_owners; DROP TABLE toolkit_resources; DROP TABLE mcp_calls; DROP TABLE mcp_assignments; DROP TABLE turn_cancellations; ALTER TABLE attempts DROP COLUMN outcome; DROP TABLE agentpod_admissions; DROP TABLE agentpod_station_epochs; DROP TABLE session_revocations; DROP TABLE a2a_inbound; DROP TABLE external_model_requests; DROP TABLE task_invocations; DROP TABLE external_runs; DROP TABLE external_assignments; DROP TABLE team_rejections; DROP TABLE worker_integrations; DROP TABLE team_messages; DROP TABLE team_assignments; DROP TABLE specialist_reports; DROP TABLE agent_grants; DROP TABLE child_workers; DROP TABLE worker_profiles; DROP TABLE operator_inbox; DROP TABLE recurring_occurrences; DROP TABLE schedule_revisions; DROP TABLE recurring_jobs; DROP TABLE job_occurrences; DROP TABLE jobs; DROP TABLE task_compactions;DROP TABLE task_grants;DROP TABLE task_restores;DROP TABLE task_mutations;DROP TABLE task_checkpoints;DROP TABLE task_completions;DROP TABLE task_checks;DROP TABLE task_reservations;DROP TABLE task_runtime;ALTER TABLE task_steps DROP COLUMN checks;PRAGMA user_version=8;',
     );
     let legacyPlan: unknown;
     for (const row of db.prepare('SELECT task_id,revision,document FROM task_plans').all()) {
@@ -156,7 +156,7 @@ test('schema 8 task migration preserves attempt IDs and conservatively charges k
         .get(),
     ).toMatchObject({ status: 'unknown' });
     expect(f.service.store.db.prepare('PRAGMA user_version').get()).toMatchObject({
-      user_version: 23,
+      user_version: 24,
     });
   } finally {
     await f.close();

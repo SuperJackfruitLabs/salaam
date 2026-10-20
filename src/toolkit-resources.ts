@@ -5,7 +5,11 @@ import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import { canonical, digest, ServiceError } from './protocol.js';
 import { processIdentity } from './supervisor.js';
-import { ManagedStdioTransport, type StdioLaunch } from './mcp-stdio.js';
+import { ManagedStdioTransport, type StdioLaunch, type StdioProcessLaunch } from './mcp-stdio.js';
+import { ToolkitControlProcess } from './toolkit-control-process.js';
+import type { ToolkitCleanupAdmission } from './toolkit-admission.js';
+import { agentpodBinding } from './agentpod-protocol.js';
+import { toolkitControl, type ToolkitControl } from './toolkit-protocol.js';
 
 export interface ToolkitResourceSpec {
   id: string;
@@ -15,6 +19,14 @@ export interface ToolkitResourceSpec {
   manifest_digest: string;
   state_dir: string;
   launch_digest: string;
+}
+interface CleanupSpec extends ToolkitResourceSpec {
+  cleanup: {
+    predecessor_id: string;
+    stop_proof_digest: string;
+    profile_ref: { path: string; sha256: string };
+    control: ToolkitControl;
+  };
 }
 export interface ToolkitResource {
   id: string;
@@ -68,7 +80,7 @@ const hash = (s: unknown): boolean => typeof s === 'string' && /^[a-f0-9]{64}$/.
  * records cannot be recovered by an empty map, a free flock or a PID scan. */
 export class ToolkitResources {
   readonly boot = randomUUID();
-  private active = new Map<string, ManagedStdioTransport>();
+  private active = new Map<string, { close(): Promise<void> }>();
   private observed = new Map<string, { pid: number; identity: string | null }>();
   private blocked = new Set<string>();
   private admissions = new Map<string, () => void>();
@@ -96,12 +108,70 @@ export class ToolkitResources {
       profile_digest: row.profile_digest,
     });
   }
-  private current(row: Pick<ToolkitResource, 'session_id' | 'root_digest'>): void {
+  private cleanupSpec(row: { spec?: string }): CleanupSpec | undefined {
+    if (!row.spec) return;
+    const spec = JSON.parse(row.spec);
+    return 'cleanup' in spec ? (spec as CleanupSpec) : undefined;
+  }
+  private assertCleanup(spec: CleanupSpec): void {
+    if (!this.authority) unavailable();
+    const c = spec.cleanup,
+      predecessor = this.get(c.predecessor_id),
+      control = toolkitControl(c.control),
+      profile = this.store.db
+        .prepare(
+          'SELECT profile_path,profile_digest FROM toolkit_cleanup_profiles WHERE resource_id=?',
+        )
+        .get(predecessor.id),
+      binding = agentpodBinding(
+        JSON.parse(this.authority.bySession(predecessor.session_id).binding),
+      );
+    if (!profile) unavailable();
+    if (
+      canonical(c) !==
+        canonical({
+          predecessor_id: predecessor.id,
+          stop_proof_digest: digest(this.stopProof(predecessor.id)),
+          profile_ref: { path: profile?.profile_path, sha256: profile?.profile_digest },
+          control,
+        }) ||
+      control.action === 'acknowledge' ||
+      spec.session_id !== predecessor.session_id ||
+      spec.root_digest !== predecessor.root_digest ||
+      spec.root_digest !== digest(binding) ||
+      spec.profile_digest !== predecessor.profile_digest ||
+      spec.state_dir !== predecessor.state_dir ||
+      control.root_digest !== spec.root_digest ||
+      control.profile_digest !== spec.profile_digest ||
+      control.stop_proof_digest !== c.stop_proof_digest
+    )
+      unavailable();
+    if (control.action !== 'revoke') {
+      const call = this.store.db
+        .prepare(
+          'SELECT id,request_json FROM toolkit_calls WHERE resource_id=? AND request_digest=?',
+        )
+        .get(predecessor.id, control.request_digest);
+      if (!call || JSON.parse(String(call.request_json)).invocation_id !== control.invocation_id)
+        unavailable();
+    }
+  }
+  private current(
+    row: Pick<ToolkitResource, 'session_id' | 'root_digest'> & {
+      spec?: string;
+      cleanup?: CleanupSpec['cleanup'];
+    },
+  ): void {
     if (!this.authority)
       throw new ServiceError(
         'authority_unavailable',
         'Toolkit resources require AgentPod authority',
       );
+    const cleanup = row.cleanup ? (row as CleanupSpec) : this.cleanupSpec(row);
+    if (cleanup) {
+      this.assertCleanup(cleanup);
+      return;
+    }
     if (digest(this.authority.binding(row.session_id)) !== row.root_digest)
       throw new ServiceError(
         'authority_binding',
@@ -113,6 +183,62 @@ export class ToolkitResources {
     launch: StdioLaunch,
     admission?: () => void,
   ): ManagedStdioTransport {
+    if ('cleanup' in input) unavailable();
+    const spec = structuredClone(input);
+    this.prepare(spec, launch, admission);
+    const transport = new ManagedStdioTransport(launch, () => this.assertLive(spec.id), {
+      starting: () => this.launching(spec.id),
+      spawned: (pid) => this.spawned(spec.id, pid),
+      failed: () => {
+        this.blocked.add(spec.id);
+      },
+    });
+    this.active.set(spec.id, transport);
+    return transport;
+  }
+  control(id: string, admission: ToolkitCleanupAdmission, input: unknown): ToolkitControlProcess {
+    const admitted = admission.launch(this),
+      predecessor = this.get(admitted.predecessor_id),
+      control = toolkitControl(input);
+    const spec: CleanupSpec = {
+      id,
+      session_id: predecessor.session_id,
+      root_digest: predecessor.root_digest,
+      profile_digest: predecessor.profile_digest,
+      state_dir: predecessor.state_dir,
+      manifest_digest: admitted.manifest_digest,
+      launch_digest: digest(admitted.launch),
+      cleanup: {
+        predecessor_id: predecessor.id,
+        stop_proof_digest: admitted.stop_proof_digest,
+        profile_ref: { ...admission.reference },
+        control,
+      },
+    };
+    const check = () => {
+      if (canonical(admission.launch(this)) !== canonical(admitted)) unavailable();
+    };
+    this.prepare(spec, admitted.launch, check);
+    const process = new ToolkitControlProcess(
+      admitted.launch,
+      control,
+      () => this.assertControlLive(id),
+      {
+        starting: () => this.launching(id),
+        spawned: (pid) => this.spawned(id, pid),
+        failed: () => {
+          this.blocked.add(id);
+        },
+      },
+    );
+    this.active.set(id, process);
+    return process;
+  }
+  private prepare(
+    input: ToolkitResourceSpec | CleanupSpec,
+    launch: StdioProcessLaunch,
+    admission?: () => void,
+  ): void {
     if (this.closing) unavailable();
     this.checkAdmission(admission);
     const spec = structuredClone(input);
@@ -121,7 +247,10 @@ export class ToolkitResources {
         'authority_unavailable',
         'Toolkit resources require AgentPod authority',
       );
-    const binding = this.authority.binding(spec.session_id);
+    const binding =
+      'cleanup' in spec
+        ? agentpodBinding(JSON.parse(this.authority.bySession(spec.session_id).binding))
+        : this.authority.binding(spec.session_id);
     const state = (() => {
       try {
         return lstatSync(spec.state_dir);
@@ -138,7 +267,9 @@ export class ToolkitResources {
     const rel = relative(binding.workspace, spec.state_dir);
     if (
       Object.keys(spec).sort().join(',') !==
-        'id,launch_digest,manifest_digest,profile_digest,root_digest,session_id,state_dir' ||
+        ('cleanup' in spec
+          ? 'cleanup,id,launch_digest,manifest_digest,profile_digest,root_digest,session_id,state_dir'
+          : 'id,launch_digest,manifest_digest,profile_digest,root_digest,session_id,state_dir') ||
       typeof spec.id !== 'string' ||
       !/^[A-Za-z0-9_.:-]{1,128}$/.test(spec.id) ||
       !spec.session_id ||
@@ -192,15 +323,6 @@ export class ToolkitResources {
       this.event(this.get(spec.id), 'prepared');
     });
     if (admission) this.admissions.set(spec.id, admission);
-    const transport = new ManagedStdioTransport(launch, () => this.assertLive(spec.id), {
-      starting: () => this.launching(spec.id),
-      spawned: (pid) => this.spawned(spec.id, pid),
-      failed: () => {
-        this.blocked.add(spec.id);
-      },
-    });
-    this.active.set(spec.id, transport);
-    return transport;
   }
   private checkAdmission(check?: () => void): void {
     if (!check) return;
@@ -244,6 +366,14 @@ export class ToolkitResources {
     });
   }
   assertLive(id: string): void {
+    if (this.cleanupSpec(this.get(id))) unavailable();
+    this.assertPhysical(id);
+  }
+  assertControlLive(id: string): void {
+    if (!this.cleanupSpec(this.get(id))) unavailable();
+    this.assertPhysical(id);
+  }
+  private assertPhysical(id: string): void {
     const row = this.get(id);
     this.current(row);
     this.checkAdmission(this.admissions.get(id));
@@ -267,13 +397,16 @@ export class ToolkitResources {
       .prepare(
         `WITH RECURSIVE owners(id) AS (
       SELECT ? UNION SELECT c.parent_session FROM child_tasks c JOIN owners o ON c.child_session=o.id
-    ) SELECT r.id,r.state,r.owner_boot FROM toolkit_resources r JOIN owners o ON o.id=r.session_id WHERE r.state!='stopped'`,
+    ) SELECT r.id,r.state,r.owner_boot,r.spec FROM toolkit_resources r JOIN owners o ON o.id=r.session_id WHERE r.state!='stopped'`,
       )
       .all(session);
     if (
       rows.some(
         (r) =>
-          r.state === 'unconfirmed' || r.owner_boot !== this.boot || this.blocked.has(String(r.id)),
+          r.state === 'unconfirmed' ||
+          r.owner_boot !== this.boot ||
+          this.blocked.has(String(r.id)) ||
+          !!this.cleanupSpec({ spec: String(r.spec) }),
       )
     )
       unavailable();

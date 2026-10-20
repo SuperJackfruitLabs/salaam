@@ -58,7 +58,9 @@ test('actual SDK startup durably records broker identity before any tool deliver
   const { f, launch, spec, resources } = await setup();
   const client = new Client({ name: 'resource-proof', version: '1' }, { capabilities: {} });
   try {
-    const transport = resources.transport(spec, launch);
+    const supplied = { ...spec },
+      transport = resources.transport(supplied, launch);
+    supplied.id = randomUUID();
     expect(resources.get(spec.id)).toMatchObject({ state: 'prepared', pid: null });
     await client.connect(transport);
     const row = resources.get(spec.id);

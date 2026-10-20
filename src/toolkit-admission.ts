@@ -453,6 +453,15 @@ export class ToolkitCleanupAdmission {
     return Object.freeze({ path: this.profilePath, sha256: this.expectedDigest });
   }
 
+  /** Snapshot integrity only; this grants no command or process-stop proof. */
+  check(resources: ToolkitResources): void {
+    try {
+      this.pins(resources);
+    } catch {
+      refused();
+    }
+  }
+
   private pins(resources: ToolkitResources) {
     if (!hash(this.expectedDigest)) refused();
     const profilePath = path(this.profilePath),
@@ -506,8 +515,7 @@ export class ToolkitCleanupAdmission {
     privateDirectory(dirname(socket));
     // This check deliberately uses the persisted original binding above, not
     // authority.binding(), which correctly requires a fresh execution lease.
-    const proof = resources.stopProof(row.id);
-    return { p, root, binding, row, executable, stopDigest: digest(proof), socket };
+    return { p, root, binding, row, executable, socket };
   }
 
   materialize(resources: ToolkitResources): ToolkitCleanupAdmission {
@@ -525,6 +533,7 @@ export class ToolkitCleanupAdmission {
             owner_key: randomBytes(32).toString('hex'),
           }),
         );
+      resources.stopProof(row.id);
       if (bytes.length > 4096) refused();
       const directory = syncedBundle(root, 'control-', { 'manifest.json': bytes }),
         child = new ToolkitCleanupAdmission(this.profilePath, this.expectedDigest);
@@ -544,7 +553,8 @@ export class ToolkitCleanupAdmission {
     owner_key_digest: string;
   } {
     try {
-      const { p, root, binding, row, executable, stopDigest, socket } = this.pins(resources);
+      const { p, root, binding, row, executable, socket } = this.pins(resources),
+        stopDigest = digest(resources.stopProof(row.id));
       if (!this.manifest) refused();
       const bytes = privateFile(this.manifest.path, root, 4096);
       if (sha(bytes) !== this.manifest.sha256) refused();

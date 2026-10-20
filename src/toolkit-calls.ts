@@ -453,21 +453,27 @@ export class ToolkitCalls {
 }
 
 function unknownToolkitCall(store: Store, managed: ManagedWork, call: ToolkitCall): void {
-  store.transaction(() => {
-    const current = store.db
-      .prepare('SELECT * FROM toolkit_calls WHERE id=?')
-      .get(call.id) as unknown as ToolkitCall;
-    if (!['delivered', 'dispatching'].includes(current.state)) return;
-    if (current.operation_id) managed.mcpUnknownInTransaction(current.operation_id);
-    store.db
-      .prepare("UPDATE toolkit_calls SET state='outcome_unknown',revision=revision+1 WHERE id=?")
-      .run(current.id);
-    store.event(current.session_id, 'toolkit.call.outcome_unknown', {
-      call_id: current.id,
-      attempt_id: current.attempt_id,
-      operation_id: current.operation_id,
-      request_digest: current.request_digest,
-    });
+  store.transaction(() => unknownToolkitCallInTransaction(store, managed, call));
+}
+function unknownToolkitCallInTransaction(
+  store: Store,
+  managed: ManagedWork,
+  call: ToolkitCall,
+): void {
+  if (!store.db.isTransaction) throw Error('Native uncertainty requires a transaction');
+  const current = store.db
+    .prepare('SELECT * FROM toolkit_calls WHERE id=?')
+    .get(call.id) as unknown as ToolkitCall;
+  if (!['delivered', 'dispatching'].includes(current.state)) return;
+  if (current.operation_id) managed.mcpUnknownInTransaction(current.operation_id);
+  store.db
+    .prepare("UPDATE toolkit_calls SET state='outcome_unknown',revision=revision+1 WHERE id=?")
+    .run(current.id);
+  store.event(current.session_id, 'toolkit.call.outcome_unknown', {
+    call_id: current.id,
+    attempt_id: current.attempt_id,
+    operation_id: current.operation_id,
+    request_digest: current.request_digest,
   });
 }
 /** Service recovery must fence calls even when no native profile/controller is
@@ -493,7 +499,8 @@ export function cancelToolkitCalls(
     const call = row as unknown as ToolkitCall;
     resources.fence(call.resource_id);
     store.db.prepare('UPDATE toolkit_calls SET cancel_requested=1 WHERE id=?').run(call.id);
-    if (['delivered', 'dispatching'].includes(call.state)) unknownToolkitCall(store, managed, call);
+    if (['delivered', 'dispatching'].includes(call.state))
+      unknownToolkitCallInTransaction(store, managed, call);
     else {
       if (call.operation_id) managed.mcpNotSentInTransaction(call.operation_id);
       store.db

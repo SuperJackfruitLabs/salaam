@@ -1,7 +1,15 @@
 import { expect, test } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
 import { ready, control, until } from '../helpers.js';
@@ -39,7 +47,30 @@ async function fixture(read = false) {
   // verifies the actual producer. This peer never executes any native effect.
   writeFileSync(
     binary,
-    `#!${realpathSync(process.execPath)}\nimport readline from 'node:readline';readline.createInterface({input:process.stdin}).on('line',s=>{const m=JSON.parse(s);if(m.method==='initialize')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'resource-fixture',version:'1'}}})+'\\n');});setInterval(()=>{},1000);`,
+    `#!${realpathSync(process.execPath)}
+import readline from 'node:readline';import http from 'node:http';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {createHash} from 'node:crypto';
+if(process.argv[2]==='managed-control-v1'){
+ const chunks=[];process.stdin.on('data',c=>chunks.push(c));process.stdin.on('end',()=>{
+  const body=Buffer.concat(chunks),c=JSON.parse(body),m=JSON.parse(readFileSync(process.argv[4],'utf8'));
+  writeFileSync(join(process.env.HOME,'control-seen.json'),body);
+  const send=()=>{
+   const req=http.request({socketPath:m.owner_socket,path:'/managed-toolkit/v1/control',method:'POST',headers:{authorization:'Bearer '+m.owner_key,'content-type':'application/json'}},res=>{
+    const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{
+     const reply=JSON.parse(Buffer.concat(chunks));if(res.statusCode!==200||reply.decision!=='allowed')return process.exit(7);
+     const result={version:1,control_digest:createHash('sha256').update(body).digest('hex'),root_revoked:c.action==='revoke'};
+     if(c.action!=='revoke')result.receipt={id:createHash('sha256').update(JSON.stringify(['stk.managed-mcp.v1',c.root_digest,c.invocation_id])).digest('hex'),request_digest:c.request_digest,state:'outcome_unknown'};
+     process.stdout.write(JSON.stringify(result));
+    });
+   });req.on('error',()=>process.exit(8));req.end(body);
+  };
+  const hold=join(process.env.HOME,'control-hold');
+  if(existsSync(hold)){const timer=setInterval(()=>{if(!existsSync(hold)){clearInterval(timer);send();}},20);}else send();
+ });
+}else{
+ readline.createInterface({input:process.stdin}).on('line',s=>{const m=JSON.parse(s);if(m.method==='initialize')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'resource-fixture',version:'1'}}})+'\\n');});setInterval(()=>{},1000);
+}
+`,
     { mode: 0o700 },
   );
   writeFileSync(policy, 'services:\n  github: {}\n', { mode: 0o600 });
@@ -506,3 +537,169 @@ for (const kind of [
       await f.close();
     }
   });
+
+test('actual private control role binds one owned PID, exact saved call and stop proof after revoked-root daemon recovery', async () => {
+  const f = await fixture(true);
+  let pending: Promise<unknown> | undefined;
+  try {
+    await f.client.connect(f.transport);
+    const call = f.prepare();
+    f.calls.deliver(call.id);
+    await f.client.close();
+    await f.resources.stop(f.resourceId);
+    const binding = f.f.service.agentpod!.bySession(f.session).binding;
+    f.f.service.agentpod!.revoke(JSON.parse(binding), randomUUID(), 'control callback proof');
+    await f.f.service.supervisor.stopSession(f.session);
+    await f.f.reopen();
+    const service = f.f.service,
+      resources = service.toolkitResources,
+      admission = service.toolkitOwners.cleanup(f.resourceId).materialize(resources),
+      admitted = admission.launch(resources),
+      manifest = JSON.parse(readFileSync(admitted.launch.args[2]!, 'utf8')),
+      input = {
+        version: 1,
+        action: 'fence',
+        root_digest: f.request.root_digest,
+        profile_digest: f.request.profile_digest,
+        invocation_id: f.request.invocation_id,
+        request_digest: call.request_digest,
+        stop_proof_digest: digest(resources.stopProof(f.resourceId)),
+        decision_id: '',
+      },
+      id = 'actual-cleanup-control',
+      hold = join(f.f.state, 'control-hold');
+    writeFileSync(hold, 'synthetic hold', { mode: 0o600 });
+    const child = resources.control(id, admission, input);
+    service.toolkitOwners.registerControl(id, admission);
+    const verify = (body: unknown = input, key = manifest.owner_key) =>
+      callControl(service.socket, body, key);
+    await expect(verify()).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+    );
+    pending = child.run();
+    void pending.catch(() => {});
+    await until(() => existsSync(join(f.f.state, 'control-seen.json')), Boolean);
+    expect(resources.get(id)).toMatchObject({
+      state: 'running',
+      pid: expect.any(Number),
+      identity: expect.any(String),
+    });
+    expect(await verify()).toEqual({
+      version: 1,
+      control_digest: digest(input),
+      decision: 'allowed',
+    });
+    for (const [body, key] of [
+      [input, f.key],
+      [{ ...input, stop_proof_digest: '0'.repeat(64) }, manifest.owner_key],
+      [{ ...input, action: 'inspect' }, manifest.owner_key],
+      [{ ...input, root_digest: 'e'.repeat(64) }, manifest.owner_key],
+    ])
+      await expect(verify(body, key)).rejects.toThrowError(
+        expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+      );
+    expect(() => resources.assertLive(id)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_resources_unconfirmed' }),
+    );
+    await expect(f.verify('admit', f.request, manifest.owner_key)).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+    );
+    rmSync(hold);
+    expect(await pending).toMatchObject({
+      control_digest: digest(input),
+      receipt: { state: 'outcome_unknown' },
+    });
+    await resources.stop(id);
+    expect(resources.stopProof(id).method).toBe('observed_exit');
+    await expect(verify()).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+    );
+    expect(service.store.hasUnknown(f.session)).toBe(true);
+    const acknowledgement = service.toolkitOwners.cleanup(f.resourceId).materialize(resources);
+    expect(() =>
+      resources.control('unbound-acknowledgement', acknowledgement, {
+        ...input,
+        action: 'acknowledge',
+        decision_id: 'unbound-decision',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'toolkit_resources_unconfirmed' }));
+    expect(JSON.stringify(service.store.events(f.session, 0))).not.toContain(manifest.owner_key);
+  } finally {
+    await pending?.catch(() => {});
+    await f.close();
+  }
+});
+
+function callControl(socket: string, body: unknown, key: string) {
+  return call<any>(socket, '/managed-toolkit/v1/control', body, key);
+}
+
+test('damaged durable cleanup delegation denies native grants and fences renewal before any effect dispatch', async () => {
+  const f = await fixture(true);
+  try {
+    const reference = f.f.service.toolkitOwners.cleanup(f.resourceId).reference;
+    expect(f.resources.get(f.resourceId)).toMatchObject({ state: 'prepared', pid: null });
+    await f.client.connect(f.transport);
+    const row = f.prepare();
+    f.calls.deliver(row.id);
+    writeFileSync(reference.path, readFileSync(reference.path, 'utf8') + ' ');
+    await expect(f.verify('dispatch')).rejects.toThrowError(
+      expect.objectContaining({ code: 'toolkit_owner_unavailable' }),
+    );
+    expect(f.calls.get(row.id).state).toBe('delivered');
+    expect(() =>
+      f.f.service.agentpod!.leaseWindow(f.session, f.request.root_digest, 90000),
+    ).toThrowError(expect.objectContaining({ code: 'toolkit_resources_unconfirmed' }));
+  } finally {
+    await f.close();
+  }
+});
+
+for (const read of [true, false])
+  for (const stop of ['root', 'turn'] as const)
+    test(`${stop} cancellation atomically fences an actually dispatched native ${read ? 'read' : 'write'} without nesting transactions`, async () => {
+      const f = await fixture(read);
+      try {
+        await f.client.connect(f.transport);
+        const call = f.prepare();
+        f.calls.deliver(call.id);
+        if (call.operation_id) {
+          const op = f.f.service.managed.operation(call.operation_id),
+            a = f.f.service.managed.forOperation(op.id);
+          f.f.service.managed.decide(
+            a.id,
+            'before-native-stop',
+            a.revision,
+            op.operation_digest,
+            'approve',
+          );
+        }
+        expect(await f.verify('dispatch')).toMatchObject({ decision: 'allowed' });
+        let observed = 0;
+        f.f.service.store.changes.on('event', (event) => {
+          if (event.kind === 'toolkit.call.outcome_unknown') {
+            expect(f.f.service.store.db.isTransaction).toBe(false);
+            expect(f.calls.get(call.id)).toMatchObject({
+              state: 'outcome_unknown',
+              cancel_requested: 1,
+            });
+            observed++;
+          }
+        });
+        if (stop === 'root')
+          f.f.service.agentpod!.revoke(
+            f.f.service.agentpod!.binding(f.session),
+            randomUUID(),
+            'native dispatch cancellation',
+          );
+        else f.f.service.cancellations.begin(f.session, randomUUID(), f.target, f.actor);
+        expect(observed).toBe(1);
+        expect(f.f.service.store.hasUnknown(f.session)).toBe(true);
+        if (call.operation_id)
+          expect(f.f.service.managed.operation(call.operation_id).state).toBe('outcome_unknown');
+        await f.resources.stop(f.resourceId);
+        expect(f.calls.get(call.id).state).toBe('outcome_unknown');
+      } finally {
+        await f.close();
+      }
+    });

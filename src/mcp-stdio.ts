@@ -57,6 +57,67 @@ function groupExists(pid: number): boolean {
   }
 }
 
+export type StdioProcessLaunch = Omit<StdioLaunch, 'protocol_version'>;
+
+/** Executable and closed launch integrity only; callers supply role admission. */
+export function verifyStdioProcessLaunch(p: StdioProcessLaunch): void {
+  try {
+    if (
+      !['darwin', 'linux'].includes(process.platform) ||
+      !/^[a-f0-9]{64}$/.test(p.executable_digest) ||
+      !isAbsolute(p.command) ||
+      resolve(p.command) !== p.command ||
+      realpathSync(p.command) !== p.command ||
+      !isAbsolute(p.cwd) ||
+      resolve(p.cwd) !== p.cwd ||
+      realpathSync(p.cwd) !== p.cwd ||
+      p.args.length > 32 ||
+      p.args.some((s) => typeof s !== 'string' || s.length > 4096 || s.includes('\0')) ||
+      Object.entries(p.env).some(
+        ([k, v]) =>
+          !allowedEnvironment.has(k) ||
+          typeof v !== 'string' ||
+          v.length > 16384 ||
+          v.includes('\0'),
+      ) ||
+      !p.env.HOME ||
+      !isAbsolute(p.env.HOME) ||
+      realpathSync(p.env.HOME) !== p.env.HOME ||
+      Object.values(p.limits).some(
+        (n) => !Number.isSafeInteger(n) || n < 256 || n > 4 * 1024 * 1024,
+      ) ||
+      Object.keys(p.limits).sort().join(',') !==
+        'request_bytes,response_bytes,stderr_bytes,timeout_ms' ||
+      p.limits.timeout_ms > 120000
+    )
+      throw failed();
+    const fd = openSync(
+      p.command,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    try {
+      const st = fstatSync(fd);
+      if (
+        !st.isFile() ||
+        st.nlink !== 1 ||
+        st.mode & 0o022 ||
+        !(st.mode & 0o111) ||
+        (st.uid !== 0 && st.uid !== process.getuid?.()) ||
+        st.size > 256 * 1024 * 1024 ||
+        createHash('sha256').update(readFileSync(fd)).digest('hex') !== p.executable_digest
+      )
+        throw failed();
+      const after = fstatSync(fd);
+      if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || after.nlink !== 1)
+        throw failed();
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    throw failed();
+  }
+}
+
 /** Internal transport primitive. A trusted admission controller must select the complete
  * launch/configuration and enforce fresh authority. This class is not an ACP stdio feature,
  * a sandbox, or an authorization grant; no model-facing caller can construct it. */
@@ -98,63 +159,8 @@ export class ManagedStdioTransport implements Transport {
     this.verify();
   }
   private verify(): void {
-    try {
-      const p = this.launch;
-      if (
-        !['darwin', 'linux'].includes(process.platform) ||
-        !['2025-06-18', '2025-11-25'].includes(p.protocol_version) ||
-        !/^[a-f0-9]{64}$/.test(p.executable_digest) ||
-        !isAbsolute(p.command) ||
-        resolve(p.command) !== p.command ||
-        realpathSync(p.command) !== p.command ||
-        !isAbsolute(p.cwd) ||
-        resolve(p.cwd) !== p.cwd ||
-        realpathSync(p.cwd) !== p.cwd ||
-        p.args.length > 32 ||
-        p.args.some((s) => typeof s !== 'string' || s.length > 4096 || s.includes('\0')) ||
-        Object.entries(p.env).some(
-          ([k, v]) =>
-            !allowedEnvironment.has(k) ||
-            typeof v !== 'string' ||
-            v.length > 16384 ||
-            v.includes('\0'),
-        ) ||
-        !p.env.HOME ||
-        !isAbsolute(p.env.HOME) ||
-        realpathSync(p.env.HOME) !== p.env.HOME ||
-        Object.values(p.limits).some(
-          (n) => !Number.isSafeInteger(n) || n < 256 || n > 4 * 1024 * 1024,
-        ) ||
-        Object.keys(p.limits).sort().join(',') !==
-          'request_bytes,response_bytes,stderr_bytes,timeout_ms' ||
-        p.limits.timeout_ms > 120000
-      )
-        throw failed();
-      const fd = openSync(
-        p.command,
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-      );
-      try {
-        const st = fstatSync(fd);
-        if (
-          !st.isFile() ||
-          st.nlink !== 1 ||
-          st.mode & 0o022 ||
-          !(st.mode & 0o111) ||
-          (st.uid !== 0 && st.uid !== process.getuid?.()) ||
-          st.size > 256 * 1024 * 1024 ||
-          createHash('sha256').update(readFileSync(fd)).digest('hex') !== p.executable_digest
-        )
-          throw failed();
-        const after = fstatSync(fd);
-        if (st.size !== after.size || st.mtimeMs !== after.mtimeMs || after.nlink !== 1)
-          throw failed();
-      } finally {
-        closeSync(fd);
-      }
-    } catch {
-      throw failed();
-    }
+    if (!['2025-06-18', '2025-11-25'].includes(this.launch.protocol_version)) throw failed();
+    verifyStdioProcessLaunch(this.launch);
   }
   async start(): Promise<void> {
     if (this.child || this.closing || this.faulted) throw failed();

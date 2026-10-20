@@ -68,7 +68,7 @@ export class Store {
     );
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    if (version > 23) {
+    if (version > 24) {
       this.db.close();
       throw new ServiceError('schema_too_new', 'Database schema is newer than this service');
     }
@@ -301,6 +301,12 @@ export class Store {
           CREATE INDEX toolkit_calls_resource ON toolkit_calls(resource_id,state);
           CREATE UNIQUE INDEX toolkit_calls_active_resource ON toolkit_calls(resource_id) WHERE state IN ('prepared','delivered','dispatching','pending','outcome_unknown');
           PRAGMA user_version=23; COMMIT;`);
+      if (
+        (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 24
+      )
+        this.db.exec(`BEGIN IMMEDIATE;
+          CREATE TABLE toolkit_cleanup_profiles(resource_id TEXT PRIMARY KEY NOT NULL REFERENCES toolkit_resources(id),profile_path TEXT NOT NULL,profile_digest TEXT NOT NULL CHECK(length(profile_digest)=64));
+          PRAGMA user_version=24; COMMIT;`);
     } catch (error) {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       this.db.close();
