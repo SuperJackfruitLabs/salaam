@@ -167,3 +167,22 @@ proof of the deployed native host startup path.
 The Linux fixture also accepts `SALAAM_M21_CASES=opaque`. It runs a real daemon, Pi, HTTP MCP transport and durable journals against controlled provider and MCP endpoints. The synthetic mutation withholds its result after accepting exactly one effect. SIGKILL recovery records `outcome_unknown`; fresh completion is rejected, replay preserves the original progression grant, another request cannot mint a grant, and a second daemon restart preserves the unresolved operation without another attempt or effect. This is process/recovery conformance, not a live external product or deployed fleet claim.
 
 Authenticated ACP attachment to a reviewed strict-work Superpipeline root returns `work_control: {version: 1, owner: "superpipeline"}`. That transport may acquire a temporary lease only to bootstrap worker readiness, then releases its own exact lease before returning the session. It never takes over another controller, renews that bootstrap lease in the background, sends direct prompts/cancellations, or projects generic ACP permission dialogs for this root. Decisions use the exact durable work-decision handshake. Ordinary interactive AgentPod sessions keep their controller behavior. Strict progression still rejects an independently held local controller; the handoff does not erase that guard or revoke another terminal's lease.
+
+The private operator-only `work-settle` route handles a narrower recovery case:
+an original task that was admitted but never dispatched, whose exact execution
+root is now revoked and confirmed stopped. The authenticated Hub must first
+settle the original producer run through its normal API and independently verify
+the original run/lease terminal projection. It supplies that projection's canonical
+digest with the original work request and immutable binding. This is a trusted
+private producer assertion, not daemon-side verification of the external service.
+
+The daemon rejects any spent/reserved budget, progression, attempt, operation,
+child, task grant, check, changed plan, pending resource or uncertain outcome.
+It uses the existing task cancellation transaction and retains the original
+admission and owner. Its durable receipt says `cancelled` and `never_dispatched`,
+never success. Exact replay rechecks historical root access and confirmed stop;
+changed request, binding or terminal digest conflicts. This protocol cannot
+settle previously dispatched work, erase uncertain effects, renew revoked
+admissions or authorize a replacement lease. AgentPod must separately commit its
+original-owner retirement only after the exact receipt is joined to the verified
+producer terminal run. No automatic operator settlement is enabled.

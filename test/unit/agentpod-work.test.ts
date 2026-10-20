@@ -18,7 +18,7 @@ import { digest } from '../../src/protocol.js';
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { configurePermissions } from '../../src/autonomy.js';
 
-function fixture(verifier = true, owned = true) {
+function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
   const base = realpathSync(mkdtempSync('/tmp/sal-work-admit-'));
   const workspace = join(base, 'source'),
     state = join(base, 'state');
@@ -52,7 +52,7 @@ function fixture(verifier = true, owned = true) {
   let store: Store, authority: AgentPodAuthority, tasks: TaskWork, work: AgentPodWork;
   const open = () => {
     store = new Store(join(state, 'journal.sqlite'));
-    authority = new AgentPodAuthority(store, state, pins, () => {});
+    authority = new AgentPodAuthority(store, state, pins, () => {}, resourcesStopped);
     const artifacts = new Artifacts(join(state, 'artifacts'), store);
     tasks = new TaskWork(store, new TaskContext(store, artifacts));
     const budget = new TaskBudget(store, tasks);
@@ -401,6 +401,141 @@ test('restart retains the original bounded grant while awaiting a fresh node lea
     expect(f.authority.awaitingRenewal(f.session)).toBe(false);
   } finally {
     await driver?.close();
+    f.close();
+  }
+});
+
+function settlementDriver(f: ReturnType<typeof fixture>) {
+  const v = f.work.verification;
+  return new TaskDriver(
+    f.store,
+    f.tasks,
+    v.budget,
+    v,
+    {} as never,
+    { cancelSessionInTransaction: () => {} } as never,
+    v.coding,
+  );
+}
+
+test('explicit never-dispatched settlement preserves the revoked owner and survives restart', () => {
+  const f = fixture();
+  try {
+    const admitted = f.run(),
+      request = randomUUID(),
+      terminal = 'a'.repeat(64);
+    const settle = () =>
+      f.work.settle(f.binding, request, admitted.request_id, terminal, settlementDriver(f));
+    expect(settle).toThrow('revoked root');
+    f.authority.revoke(f.binding, 'settle-revoke', 'Expired original owner');
+    const receipt = settle();
+    expect(receipt).toMatchObject({
+      state: 'cancelled',
+      effects: 'never_dispatched',
+      task_id: admitted.task_id,
+    });
+    expect(f.tasks.get(admitted.task_id).state).toBe('cancelled');
+    expect(f.authority.inspect(f.binding)).toMatchObject({ revoked: true, authorized: false });
+    expect(f.run()).toEqual(admitted);
+    expect(settle()).toEqual(receipt);
+    f.reopen();
+    expect(settle()).toEqual(receipt);
+    expect(() =>
+      f.work.settle(f.binding, randomUUID(), admitted.request_id, terminal, settlementDriver(f)),
+    ).toThrow();
+    expect(() =>
+      f.work.settle(f.binding, request, admitted.request_id, 'b'.repeat(64), settlementDriver(f)),
+    ).toThrow();
+    expect(() =>
+      f.work.settle(
+        { ...f.binding, run: { ...f.binding.run, epoch: 2 } },
+        request,
+        admitted.request_id,
+        terminal,
+        settlementDriver(f),
+      ),
+    ).toThrow();
+    expect(
+      f.store.events(f.session, 0).filter((e) => e.kind === 'agentpod.work_settled'),
+    ).toHaveLength(1);
+  } finally {
+    f.close();
+  }
+});
+
+test.each([
+  'requests_spent',
+  'reserved_requests',
+  'reserved_tokens',
+  'token_units',
+  'verification_runs',
+  'auto_enabled',
+])('settlement refuses previously dispatched or reserved work (%s)', (column) => {
+  const f = fixture();
+  try {
+    const admitted = f.run();
+    f.authority.revoke(f.binding, 'settle-revoke', 'Expired original owner');
+    f.store.db.prepare(`UPDATE task_runtime SET ${column}=1 WHERE task_id=?`).run(admitted.task_id);
+    expect(() =>
+      f.work.settle(
+        f.binding,
+        randomUUID(),
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow('never-dispatched');
+    expect(f.tasks.get(admitted.task_id).state).toBe('accepted');
+  } finally {
+    f.close();
+  }
+});
+
+test('settlement cancellation failure rolls back both disposition and receipt', () => {
+  const f = fixture();
+  try {
+    const admitted = f.run(),
+      request = randomUUID();
+    f.authority.revoke(f.binding, 'settle-revoke', 'Expired original owner');
+    const driver = settlementDriver(f);
+    driver.children.cancelSessionInTransaction = () => {
+      throw new Error('durable cancellation fault');
+    };
+    expect(() =>
+      f.work.settle(f.binding, request, admitted.request_id, 'a'.repeat(64), driver),
+    ).toThrow('durable cancellation fault');
+    expect(f.tasks.get(admitted.task_id).state).toBe('accepted');
+    expect(
+      f.store.events(f.session, 0).filter((e) => e.kind === 'agentpod.work_settled'),
+    ).toHaveLength(0);
+    expect(
+      f.work.settle(f.binding, request, admitted.request_id, 'a'.repeat(64), settlementDriver(f))
+        .state,
+    ).toBe('cancelled');
+  } finally {
+    f.close();
+  }
+});
+
+test('settlement rechecks unconfirmed resource stop even when a receipt was saved', () => {
+  let stopped = true;
+  const f = fixture(true, true, () => stopped);
+  try {
+    const admitted = f.run(),
+      request = randomUUID();
+    f.authority.revoke(f.binding, 'settle-revoke', 'Expired original owner');
+    const settle = () =>
+      f.work.settle(f.binding, request, admitted.request_id, 'a'.repeat(64), settlementDriver(f));
+    stopped = false;
+    expect(settle).toThrow('confirmed stopped');
+    expect(f.tasks.get(admitted.task_id).state).toBe('accepted');
+    stopped = true;
+    const receipt = settle();
+    stopped = false;
+    expect(settle).toThrow('confirmed stopped');
+    stopped = true;
+    expect(settle()).toEqual(receipt);
+  } finally {
     f.close();
   }
 });

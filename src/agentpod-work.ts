@@ -60,6 +60,96 @@ export class AgentPodWork {
     if (digest(plan) !== agentpodWorkAdmission(admission).work.plan_digest)
       throw new ServiceError('work_plan_changed', 'Task plan differs from original work admission');
   }
+  /** Explicit private operator settlement, restricted to work that never dispatched.
+   * The Hub independently verifies the original producer terminal run/lease and
+   * supplies its immutable digest. This is never success or authority renewal. */
+  settle(
+    binding: unknown,
+    request: string,
+    workRequest: string,
+    terminalDigest: string,
+    driver: TaskDriver,
+  ) {
+    const { root, row, task } = this.owned(binding);
+    if (workRequest !== row.request_id || !/^[a-f0-9]{64}$/.test(terminalDigest))
+      throw new ServiceError(
+        'work_settlement_conflict',
+        'Exact original work and producer terminal digest required',
+      );
+    const stopped = () => {
+      const current = this.authority.inspect(binding);
+      if (
+        !current.revoked ||
+        current.authorized ||
+        !current.owned_execution_stopped ||
+        current.unresolved_operations.length ||
+        current.active_attempts.length ||
+        current.interrupted_attempts.length
+      )
+        throw new ServiceError(
+          'work_settlement_unsafe',
+          'Exact revoked root must have confirmed stopped resources and no uncertainty',
+        );
+    };
+    stopped();
+    return this.store.request(
+      'agentpod-work-settlement',
+      workRequest,
+      {
+        request_id: request,
+        binding: root.binding,
+        work_request_id: workRequest,
+        producer_terminal_digest: terminalDigest,
+      },
+      () => {
+        stopped();
+        this.assertPlan(task, JSON.parse(String(row.admission_json)));
+        const runtime = this.store.db
+          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+          .get(task.id);
+        if (
+          task.state !== 'accepted' ||
+          task.steps.some((s) => s.state !== 'pending') ||
+          !runtime ||
+          runtime.auto_enabled ||
+          runtime.requests_spent ||
+          runtime.reserved_requests ||
+          runtime.reserved_tokens ||
+          runtime.token_units ||
+          runtime.verification_runs ||
+          runtime.started_at !== null ||
+          this.store.db.prepare('SELECT 1 FROM attempts WHERE session_id=?').get(root.session_id) ||
+          this.store.db
+            .prepare('SELECT 1 FROM operations WHERE session_id=?')
+            .get(root.session_id) ||
+          this.store.db
+            .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+            .get(root.session_id) ||
+          this.store.db.prepare('SELECT 1 FROM task_grants WHERE task_id=?').get(task.id) ||
+          this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id)
+        )
+          throw new ServiceError(
+            'work_settlement_unsafe',
+            'Only never-dispatched accepted work can be settled by this protocol',
+          );
+        driver.cancelInTransaction(task.id, task.revision, stopped);
+        const receipt = {
+          version: 1 as const,
+          state: 'cancelled' as const,
+          effects: 'never_dispatched' as const,
+          request_id: request,
+          work_request_id: workRequest,
+          session_id: root.session_id,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          binding_digest: digest(root.binding),
+          producer_terminal_digest: terminalDigest,
+        };
+        this.store.event(root.session_id, 'agentpod.work_settled', receipt, request);
+        return receipt;
+      },
+    );
+  }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);
     const view = await driver.viewAsync(task.id);

@@ -843,6 +843,30 @@ export class SalaamService {
           }
           return;
         }
+        if (parts[2] === 'work-settle') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict work settlement is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !==
+            'binding,producer_terminal_digest,request_id,work_request_id'
+          )
+            throw new ServiceError(
+              'invalid_work_payload',
+              'Closed explicit settlement request required',
+            );
+          this.send(
+            res,
+            200,
+            this.agentpodWork.settle(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.work_request_id, 'work_request_id', 128),
+              string(body.producer_terminal_digest, 'producer_terminal_digest', 64),
+              this.taskDriver,
+            ),
+          );
+          return;
+        }
         if (parts[2] === 'work-completion') {
           if (!this.agentpodWork)
             throw new ServiceError(
