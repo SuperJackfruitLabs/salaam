@@ -1,7 +1,7 @@
 # Salaam landing page
 
 Astro static site, kept separate from the CLI dependency graph, following
-supertoolkit and superwitness. Its Night/Paper palette comes from Salaam's TUI.
+supertoolkit and SuperWitness. Its Night/Paper palette comes from Salaam's TUI.
 
 Use the pinned repository Node/npm versions. `npm ci --ignore-scripts`, then
 `npm run dev` (port 4341) or `npm run build`. `SALAAM_SITE_URL` and

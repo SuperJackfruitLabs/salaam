@@ -1,7 +1,7 @@
 # Salaam documentation
 
 Astro + Starlight, with local search, light/dark themes and llms.txt exports,
-following the org's superpipeline and superwitness pattern.
+following the org's SuperPipeline and SuperWitness pattern.
 
 `docs/` is the canonical source. The build regenerates the ignored content
 collection with working site routes and edit links to the original Markdown.

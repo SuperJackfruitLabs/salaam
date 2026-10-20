@@ -1,6 +1,6 @@
 # Landing page and documentation site
 
-Salaam follows the org's supertoolkit, superwitness and superpipeline pattern:
+Salaam follows the org's supertoolkit, SuperWitness and SuperPipeline pattern:
 a separate Astro landing project, a Starlight docs project, matching product
 branding, Markdown source docs, and asset-only Cloudflare Workers.
 
