@@ -150,9 +150,16 @@ still denies. The Linux fixture includes a daemon kill after the progression
 grant commits but before its first attempt, a no-execution interval before fresh
 renewal, and recovery of that exact grant.
 
-Mixed-version rollout remains closed: current host schema5 has no production
-strict-work opt-in. Enabling a default host requires an explicit reviewed manifest
-contract, source/runtime and protocol pins, CLI/service propagation, native node
-validation, and startup-drift rejection proofs. Older/disabled daemons must be
-rejected by strict bridge selection before a run claim, without falling back to
-unverified ACP completion. Acceptance fixture opt-in alone is not this rollout.
+Reviewed host input may explicitly set `strict_work_version: 1` alongside
+`station_config`. This produces schema6 with the closed `strict_work: {version:1}`
+contract. Source/build/runtime, station configuration, pins, CLI and manifest
+digests still bind the actual executor. `host serve` propagates only this validated
+opt-in; health and `host start` receipts expose the same exact contract. Schema5
+remains disabled and cannot inherit the field. Unknown versions, additional
+fields, missing station configuration and configuration drift reject startup.
+
+Mixed-version rollout remains pending actual integrated Linux acceptance and
+reviewed deployment. Older/disabled daemons must be rejected by strict bridge
+selection before a run claim, without falling back to unverified ACP completion.
+The direct-service Linux fixture and source conformance tests alone are not
+proof of the deployed native host startup path.

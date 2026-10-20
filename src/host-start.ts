@@ -10,11 +10,11 @@ import { call } from './transport.js';
 /** This is node-owned startup, not a station lifecycle grant or a work admission. */
 export async function startHost(path: string) {
   let m = readHost(path);
-  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5 && m.schema !== 6)
     throw Error('Automatic host startup requires a reviewed AgentPod manifest');
   mkdirSync(m.state, { recursive: true, mode: 0o700 });
   m = readHost(path);
-  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+  if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5 && m.schema !== 6)
     throw Error('AgentPod manifest changed');
   const expected = digest(m),
     deadline = Date.now() + 20000;
@@ -50,10 +50,11 @@ export async function startHost(path: string) {
           ) ||
         canonical(h.station_execution ?? null) !==
           canonical(
-            m.schema === 5
+            m.schema === 5 || m.schema === 6
               ? { configuration_digest: m.station_execution.configuration_digest }
               : null,
           ) ||
+        canonical(h.strict_work ?? null) !== canonical(m.schema === 6 ? m.strict_work : null) ||
         canonical(h.provider_route) !== canonical(m.provider)
       )
         throw new ServiceError(
@@ -110,7 +111,7 @@ export async function startHost(path: string) {
         closeSync(log);
       }
     }
-    if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5)
+    if (m.schema !== 2 && m.schema !== 3 && m.schema !== 4 && m.schema !== 5 && m.schema !== 6)
       throw Error('AgentPod manifest changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
     return {
@@ -123,6 +124,7 @@ export async function startHost(path: string) {
       workspace: m.workspace,
       node_id: pins.node_id,
       pins_digest: m.pins_digest,
+      strict_work: m.schema === 6 ? m.strict_work : null,
     };
   } finally {
     release();

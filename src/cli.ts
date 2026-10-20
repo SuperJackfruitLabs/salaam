@@ -553,13 +553,15 @@ async function main(): Promise<void> {
             ? { codingRoot: m.coding_root, codingSocket: m.coding_socket, expectedExecution: m }
             : {
                 agentpodConfig: m.agentpod_config,
-                ...((m.schema === 3 || m.schema === 4 || m.schema === 5) && m.managed_mcp
+                ...((m.schema === 3 || m.schema === 4 || m.schema === 5 || m.schema === 6) &&
+                m.managed_mcp
                   ? { managedMcp: m.managed_mcp }
                   : {}),
-                ...((m.schema === 4 || m.schema === 5) && m.managed_toolkit
+                ...((m.schema === 4 || m.schema === 5 || m.schema === 6) && m.managed_toolkit
                   ? { managedToolkitConfig: m.managed_toolkit }
                   : {}),
-                ...(m.schema === 5 ? { stationConfig: m.station_execution } : {}),
+                ...(m.schema === 5 || m.schema === 6 ? { stationConfig: m.station_execution } : {}),
+                ...(m.schema === 6 ? { agentpodWorkProgression: true } : {}),
               }),
           hostManifestDigest: digest(m),
           providerRoute: m.provider,

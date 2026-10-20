@@ -72,20 +72,30 @@ export interface AgentPodStationHostManifest extends AgentPodHostIdentity {
   managed_toolkit?: AgentPodToolkitHostManifest['managed_toolkit'];
   managed_mcp?: AgentPodMcpHostManifest['managed_mcp'];
 }
+export interface AgentPodStrictWorkHostManifest extends Omit<
+  AgentPodStationHostManifest,
+  'schema'
+> {
+  schema: 6;
+  strict_work: { version: 1 };
+}
 export type HostManifest =
   | CodingHostManifest
   | AgentPodHostManifest
   | AgentPodMcpHostManifest
   | AgentPodToolkitHostManifest
-  | AgentPodStationHostManifest;
+  | AgentPodStationHostManifest
+  | AgentPodStrictWorkHostManifest;
 export function hostMcp(m: HostManifest): AgentPodMcpHostManifest['managed_mcp'] | undefined {
-  return m.schema === 3 || m.schema === 4 || m.schema === 5 ? m.managed_mcp : undefined;
+  return m.schema === 3 || m.schema === 4 || m.schema === 5 || m.schema === 6
+    ? m.managed_mcp
+    : undefined;
 }
 
 export function hostToolkit(
   m: HostManifest,
 ): AgentPodToolkitHostManifest['managed_toolkit'] | undefined {
-  return m.schema === 4 || m.schema === 5 ? m.managed_toolkit : undefined;
+  return m.schema === 4 || m.schema === 5 || m.schema === 6 ? m.managed_toolkit : undefined;
 }
 
 function privateDocument(path: string): Record<string, unknown> {
@@ -121,6 +131,7 @@ async function planAgentPod(
   | AgentPodMcpHostManifest
   | AgentPodToolkitHostManifest
   | AgentPodStationHostManifest
+  | AgentPodStrictWorkHostManifest
 > {
   const fields = [
     'mode',
@@ -133,9 +144,15 @@ async function planAgentPod(
     'mcp_config',
     'toolkit_config',
     'station_config',
+    'strict_work_version',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
+  if (
+    c.strict_work_version !== undefined &&
+    (c.strict_work_version !== 1 || c.station_config === undefined)
+  )
+    throw Error('Strict work version1 requires reviewed protected station config');
   const state = privateState(string(c.state, 'state'));
   const config = string(c.agentpod_config, 'agentpod_config');
   if (!isAbsolute(config) || realpathSync(config) !== config)
@@ -187,7 +204,9 @@ async function planAgentPod(
   return {
     ...(station
       ? {
-          schema: 5 as const,
+          ...(c.strict_work_version === 1
+            ? { schema: 6 as const, strict_work: { version: 1 as const } }
+            : { schema: 5 as const }),
           station_execution: station,
           ...(toolkit ? { managed_toolkit: toolkit } : {}),
           ...(managed ? { managed_mcp: managed } : {}),
@@ -282,7 +301,7 @@ export async function planHost(input: unknown): Promise<HostManifest> {
 export function readHost(path: string): HostManifest {
   const m = privateDocument(path) as unknown as HostManifest;
   if (
-    ![1, 2, 3, 4, 5].includes(m.schema) ||
+    ![1, 2, 3, 4, 5, 6].includes(m.schema) ||
     m.node_version !== 'v26.7.0' ||
     process.version !== m.node_version ||
     realpathSync(process.execPath) !== m.node ||
@@ -292,7 +311,7 @@ export function readHost(path: string): HostManifest {
   const hashes = hostDigests();
   for (const key of ['source_digest', 'build_digest', 'pi_bundle_digest'] as const)
     if (m[key] !== hashes[key]) throw new Error('Host source/build changed: ' + key);
-  if (m.schema === 2 || m.schema === 3 || m.schema === 4 || m.schema === 5) {
+  if (m.schema === 2 || m.schema === 3 || m.schema === 4 || m.schema === 5 || m.schema === 6) {
     const fields = [
       'schema',
       'mode',
@@ -308,35 +327,41 @@ export function readHost(path: string): HostManifest {
       'pins_digest',
       'workspace',
       'cli_digest',
-      ...(m.schema === 3 || ([4, 5].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))
+      ...(m.schema === 3 || ([4, 5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))
         ? ['managed_mcp']
         : []),
-      ...(m.schema === 4 || (m.schema === 5 && Object.hasOwn(m, 'managed_toolkit'))
+      ...(m.schema === 4 || ([5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_toolkit'))
         ? ['managed_toolkit']
         : []),
-      ...(m.schema === 5 ? ['station_execution'] : []),
+      ...([5, 6].includes(m.schema) ? ['station_execution'] : []),
+      ...(m.schema === 6 ? ['strict_work'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
+    if (
+      m.schema === 6 &&
+      (Object.keys(object(m.strict_work)).join(',') !== 'version' || m.strict_work.version !== 1)
+    )
+      throw Error('Unsupported strict work host contract');
     privateState(m.state);
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
     const managed = hostMcp(m);
-    if (m.schema === 3 || ([4, 5].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {
+    if (m.schema === 3 || ([4, 5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {
       if (!managed) throw Error('Missing managed MCP host fields');
       if (Object.keys(object(managed)).sort().join(',') !== 'config,profile_digest')
         throw Error('Unsupported managed MCP host fields');
       new McpAdmission(managed.config, pins, managed.profile_digest);
     }
     const native = hostToolkit(m);
-    if (m.schema === 4 || (m.schema === 5 && Object.hasOwn(m, 'managed_toolkit'))) {
+    if (m.schema === 4 || ([5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_toolkit'))) {
       if (!native) throw Error('Missing native Toolkit host fields');
       if (Object.keys(object(native)).sort().join(',') !== 'config,configuration_digest')
         throw Error('Unsupported native Toolkit host fields');
       readToolkitConfig(native.config, native.configuration_digest, pins.workspace);
     }
-    if (m.schema === 5) {
+    if (m.schema === 5 || m.schema === 6) {
       if (
         Object.keys(object(m.station_execution)).sort().join(',') !== 'config,configuration_digest'
       )

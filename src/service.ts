@@ -137,6 +137,8 @@ export class SalaamService {
   private readonly agentpodWorkProgression: boolean;
   private constructor(options: ServiceOptions) {
     this.agentpodWorkProgression = options.agentpodWorkProgression === true;
+    if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
+      throw Error('Strict work requires reviewed AgentPod protected station configuration');
     this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
@@ -1509,6 +1511,7 @@ export class SalaamService {
           managed_toolkit: this.toolkit
             ? { configuration_digest: this.toolkit.configurationDigest }
             : null,
+          strict_work: this.agentpodWorkProgression && this.agentpodWork ? { version: 1 } : null,
           station_execution: this.station
             ? { configuration_digest: this.station.configurationDigest }
             : null,
