@@ -47,7 +47,7 @@ export class TaskVerification {
       engine_id: this.coding.executor.engineId,
     };
   }
-  assertIdle(task: WorkTask): void {
+  assertIdle(task: WorkTask, stationInspection?: string): void {
     if (
       this.budget.active(task) > 0 ||
       this.store.db
@@ -69,6 +69,14 @@ export class TaskVerification {
     for (const session of tree)
       if (
         this.store.hasUnknown(session) ||
+        this.store.db
+          .prepare(
+            "SELECT 1 FROM station_calls WHERE session_id=? AND NOT(id=? AND kind='read' AND tool_call_id=id AND args_json='{\"action\":\"inspect\"}') AND (state IN ('prepared','dispatching','outcome_unknown') OR helper_state NOT IN ('none','stopped'))",
+          )
+          .get(session, stationInspection ?? '') ||
+        this.store.db
+          .prepare("SELECT 1 FROM station_units WHERE session_id=? AND state!='stopped'")
+          .get(session) ||
         this.store.db
           .prepare(
             "SELECT 1 FROM attempts WHERE session_id=? AND state='interrupted' AND resolved_by IS NULL",

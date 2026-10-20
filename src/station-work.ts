@@ -235,7 +235,11 @@ export class StationWork {
         : {}),
     };
   }
-  private helper(request: Record<string, unknown>, id?: string): Promise<Record<string, any>> {
+  private helper(
+    request: Record<string, unknown>,
+    id?: string,
+    verificationGuard?: () => void,
+  ): Promise<Record<string, any>> {
     const controller = new AbortController();
     if (id) this.files.set(id, controller);
     if (id)
@@ -272,7 +276,8 @@ export class StationWork {
         try {
           if (id) {
             const c = this.get(id);
-            this.guard(c);
+            if (verificationGuard) verificationGuard();
+            else this.guard(c);
             if (c.state !== 'dispatching') stationUnavailable();
             const identity = processIdentity(child.pid!);
             if (!identity) stationUnavailable();
@@ -417,6 +422,83 @@ export class StationWork {
       stationUnavailable();
     }
   }
+  /** A task verifier has no active model attempt. Its read still owns a durable
+   * native helper and must revalidate its caller's task fence before/after I/O. */
+  async verificationTree(
+    sourceCall: string,
+    validate: (inspection: string) => void,
+  ): Promise<{ tree_digest: string; root_identity: string }> {
+    const source = this.get(sourceCall),
+      session = source.session_id;
+    const binding = this.ready(session);
+    const id = digest(['station-verification-read-v1', sourceCall, randomUUID()]);
+    let registered = false;
+    const guard = () => {
+      this.assertBinding(session, binding);
+      if (registered && this.get(id).state !== 'dispatching') stationUnavailable();
+      this.assertVerificationSettled(session, id);
+      validate(id);
+    };
+    guard();
+    this.store.transaction(() => {
+      guard();
+      this.store.db
+        .prepare(
+          "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state) VALUES(?,?,?,?,?,'read',?,?,?,?,'dispatching')",
+        )
+        .run(
+          id,
+          session,
+          source.worker_epoch,
+          source.attempt_id,
+          id,
+          digest({ action: 'inspect' }),
+          binding.root_digest,
+          binding.configuration_digest,
+          canonical({ action: 'inspect' }),
+        );
+    });
+    registered = true;
+    try {
+      const result = await this.helper({ action: 'inspect' }, id, guard);
+      guard();
+      this.store.transaction(() => {
+        guard();
+        this.change(this.get(id), 'returned');
+        this.store.event(session, 'station.verification_observed', {
+          source_call: sourceCall,
+          inspection_call: id,
+          tree_digest: result.tree_digest,
+        });
+      });
+      return {
+        tree_digest: String(result.tree_digest),
+        root_identity: String(result.root_identity),
+      };
+    } catch (error) {
+      this.store.transaction(() => {
+        const current = this.get(id);
+        if (current.state === 'dispatching') this.change(current, 'failed');
+      });
+      throw error;
+    }
+  }
+  assertVerificationSettled(session: string, inspection?: string): void {
+    this.ready(session);
+    if (
+      this.store.hasUnknown(session) ||
+      this.store.db
+        .prepare(
+          "SELECT 1 FROM station_calls WHERE session_id=? AND NOT(id=? AND kind='read' AND tool_call_id=id AND args_json='{\"action\":\"inspect\"}') AND (state IN ('prepared','dispatching','outcome_unknown') OR helper_state NOT IN ('none','stopped'))",
+        )
+        .get(session, inspection ?? '') ||
+      this.store.db
+        .prepare("SELECT 1 FROM station_units WHERE session_id=? AND state!='stopped'")
+        .get(session)
+    )
+      stationUnavailable();
+  }
+
   async read(
     session: string,
     epoch: number,

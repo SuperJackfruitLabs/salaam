@@ -23,3 +23,18 @@ for (const sample of corpus.replays)
     const result = checkAgentPodWorkReplay(sample.value, sample.saved);
     expect(result.ok ? 'replay' : result.code).toBe(sample.result);
   });
+
+// Producer publishes every default explicitly. Consumer normalization must not
+// silently alter the admitted digest before durable task creation.
+import { TaskWork } from '../../src/task-work.js';
+import { digest } from '../../src/protocol.js';
+const payloads = JSON.parse(
+  readFileSync(new URL('../fixtures/agentpod-work-payload-v1.json', import.meta.url), 'utf8'),
+);
+for (const sample of payloads.cases)
+  test(`owner payload normalization: ${sample.name}`, () => {
+    const plan = TaskWork.prototype.parse(sample.payload.plan);
+    expect(plan).toEqual(sample.payload.plan);
+    expect(digest(plan)).toBe(sample.payload.admission.work.plan_digest);
+    expect(digest(sample.payload.input)).toBe(sample.payload.admission.work.input_digest);
+  });
