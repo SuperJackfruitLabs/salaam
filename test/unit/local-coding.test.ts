@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest';
+import { test, expect, vi } from 'vitest';
 import {
   mkdtempSync,
   realpathSync,
@@ -227,6 +227,67 @@ test('lost undo completion fences the root and reconciles only after original fi
     });
     expect(() => assertUndoSettled(f.store, f.root)).not.toThrow();
   } finally {
+    await f.close();
+  }
+});
+
+test('fast commands are owned before release and cancellation before release cannot write', async () => {
+  const f = setup();
+  try {
+    for (let i = 0; i < 8; i++) {
+      const call = f.prepare('fast-' + i, {
+        action: 'command',
+        command: 'read input && exit 9; printf x >> fast',
+      });
+      f.approve(call);
+      f.local.run(call.call.id);
+      const result = await until(
+        () => f.local.view(call.call.id),
+        (v) => v.call.state !== 'running',
+      );
+      expect(result.call.state).toBe('succeeded');
+      expect(f.local.get(call.call.id).identity).toBeTruthy();
+    }
+    expect(readFileSync(join(f.root, 'fast'), 'utf8')).toBe('xxxxxxxx');
+    const call = f.prepare('cancel-before-start', {
+      action: 'command',
+      command: 'printf bad >> fast',
+    });
+    f.approve(call);
+    f.local.run(call.call.id);
+    f.cancel();
+    const result = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(result.call.state).toBe('cancelled');
+    expect(readFileSync(join(f.root, 'fast'), 'utf8')).toBe('xxxxxxxx');
+  } finally {
+    await f.close();
+  }
+});
+
+test('failed process ownership persistence never releases the command', async () => {
+  const f = setup();
+  try {
+    writeFileSync(join(f.root, 'marker'), 'untouched');
+    const call = f.prepare('persistence-failure', {
+      action: 'command',
+      command: 'printf changed > marker',
+    });
+    f.approve(call);
+    f.local.run(call.call.id);
+    vi.spyOn(f.store, 'transaction').mockImplementationOnce(() => {
+      throw Error('journal unavailable');
+    });
+    const result = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(result.call.state).toBe('outcome_unknown');
+    expect(readFileSync(join(f.root, 'marker'), 'utf8')).toBe('untouched');
+  } finally {
+    vi.restoreAllMocks();
     await f.close();
   }
 });

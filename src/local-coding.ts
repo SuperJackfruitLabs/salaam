@@ -324,7 +324,9 @@ export class LocalCoding {
         reason: string | null = null,
         finished = false;
       // Deliberately do not inherit the daemon's provider credentials or service tokens.
-      const child = spawn('/bin/sh', ['-c', command], {
+      // Hold the shell before any user instruction until its identity is durably owned.
+      const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
+      const child = spawn('/bin/sh', ['-c', script], {
         cwd: c.root,
         detached: true,
         env: {
@@ -333,7 +335,7 @@ export class LocalCoding {
           LANG: 'en_US.UTF-8',
           TMPDIR: '/tmp',
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
       let reap: NodeJS.Timeout | undefined;
       const kill = () => {
@@ -376,6 +378,10 @@ export class LocalCoding {
           kill();
         }
       };
+      child.stdin.on('error', () => {
+        reason ??= 'outcome_unknown';
+        kill();
+      });
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
       child.once('spawn', () => {
@@ -387,6 +393,13 @@ export class LocalCoding {
               .prepare('UPDATE local_calls SET pid=?,identity=? WHERE id=?')
               .run(child.pid!, identity, c.id),
           );
+          try {
+            this.guard(c);
+          } catch {
+            stop();
+            return;
+          }
+          child.stdin.end('start\n');
         } catch {
           reason = 'outcome_unknown';
           kill();
