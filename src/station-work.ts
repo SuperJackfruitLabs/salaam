@@ -92,6 +92,7 @@ export class StationWork {
   private readonly directory: string;
   private readonly jobs = new Map<string, Promise<void>>();
   private readonly files = new Map<string, AbortController>();
+  private readonly unitStops = new Map<string, Promise<unknown>>();
   private readonly unregister: () => void;
   taskCheckGuard?: (call: StationCall) => void;
   private closing = false;
@@ -992,7 +993,21 @@ export class StationWork {
       throw error;
     }
   }
-  private async stopUnit(id: string): Promise<unknown> {
+  private stopUnit(id: string): Promise<unknown> {
+    const pending = this.unitStops.get(id);
+    if (pending) return pending;
+    // Revocation, attempt cancellation and the executor finalizer can converge.
+    // They must share one actual stop observation, not race stale row snapshots.
+    const work = this.stopUnitOnce(id);
+    this.unitStops.set(id, work);
+    void work
+      .finally(() => {
+        if (this.unitStops.get(id) === work) this.unitStops.delete(id);
+      })
+      .catch(() => {});
+    return work;
+  }
+  private async stopUnitOnce(id: string): Promise<unknown> {
     const row = this.unit(id);
     if (row.state === 'stopped') return JSON.parse(row.stop_json!);
     try {
