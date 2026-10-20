@@ -149,6 +149,7 @@ test('normal CLI cold startup applies schema4 native tools before actual Pi and 
     file = join(f.state, 'host.json'),
     socket = join(f.state, 'operator.sock');
   let supervisor: number | undefined;
+  let supervisorIdentity: string | null = null;
   const status = () => JSON.parse(readFileSync(join(f.state, 'host/status.json'), 'utf8'));
   const stopped = async () => {
     try {
@@ -177,6 +178,8 @@ test('normal CLI cold startup applies schema4 native tools before actual Pi and 
     const receipts = await Promise.all([start(), start(), start()]);
     expect(receipts.every((r) => JSON.parse(r.stdout).ready)).toBe(true);
     supervisor = status().supervisor_pid;
+    supervisorIdentity = processIdentity(supervisor!);
+    expect(supervisorIdentity).not.toBeNull();
     const health = await call<any>(socket, '/v1/health');
     expect(health.managed_toolkit).toEqual({ configuration_digest: digest(f.config) });
     await call(socket, '/v1/agentpod/renew', {
@@ -227,13 +230,20 @@ test('normal CLI cold startup applies schema4 native tools before actual Pi and 
     writeFileSync(config, text);
     expect(JSON.parse((await start()).stdout).ready).toBe(true);
     supervisor = status().supervisor_pid;
+    supervisorIdentity = processIdentity(supervisor!);
+    expect(supervisorIdentity).not.toBeNull();
   } finally {
-    if (!supervisor && existsSync(join(f.state, 'host/status.json')))
+    if (!supervisor && existsSync(join(f.state, 'host/status.json'))) {
       supervisor = status().supervisor_pid;
+      supervisorIdentity = processIdentity(supervisor!);
+    }
     if (supervisor) {
       const identity = processIdentity(supervisor);
       if (identity) {
-        if (!identity.includes(file)) throw Error('Owned host supervisor identity changed');
+        // Linux identities are opaque boot/start/executable/argv hashes. Compare
+        // the identity captured from this test's successful private host startup;
+        // never treat that hash as a printable argv or signal a replacement PID.
+        if (identity !== supervisorIdentity) throw Error('Owned host supervisor identity changed');
         try {
           process.kill(supervisor, 'SIGTERM');
         } catch (e) {
