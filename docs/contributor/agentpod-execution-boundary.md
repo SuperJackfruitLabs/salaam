@@ -135,7 +135,7 @@ bun tests/integration/salaam-node-e2e.ts
 
 The driver rejects other database destinations. It uses synthetic Accounts
 principals and board ownership; a passing run proves this local integration,
-not a live Accounts deployment, Superpipeline server or production substrate.
+not a live Accounts deployment, SuperPipeline server or production substrate.
 The next packets cover fuller session UX/reconciliation and station filesystem,
 credential and managed-MCP isolation before broad first-class harness claims.
 
