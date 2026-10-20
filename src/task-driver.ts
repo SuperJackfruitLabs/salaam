@@ -12,6 +12,7 @@ import { canonical, ServiceError, type Controller } from './protocol.js';
 /** Persisted, operator-bounded progression. Unknown attempts/commands never become retries. */
 export class TaskDriver {
   private timer?: NodeJS.Timeout;
+  awaitingAuthorityRenewal?: (session: string) => boolean;
   private active?: Promise<void>;
   private stopped = true;
   constructor(
@@ -494,6 +495,7 @@ export class TaskDriver {
       let task = this.tasks.get(row.id);
       const r = this.budget.state(task.id);
       if (['succeeded', 'succeeded_with_exception', 'cancelled'].includes(task.state)) continue;
+      if (this.awaitingAuthorityRenewal?.(task.session_id)) continue;
       if (r.started_at !== null && Date.now() - Number(r.started_at) >= task.limits.runtime_ms) {
         this.budget.block(task.session_id, 'Task runtime limit reached');
         await this.stopActive(task);

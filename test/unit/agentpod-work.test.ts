@@ -8,7 +8,7 @@ import { AgentPodWork } from '../../src/agentpod-work.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { TaskContext } from '../../src/task-context.js';
 import { TaskWork } from '../../src/task-work.js';
-import type { TaskDriver } from '../../src/task-driver.js';
+import { TaskDriver } from '../../src/task-driver.js';
 import { TaskBudget } from '../../src/task-budget.js';
 import { TaskVerification } from '../../src/task-verification.js';
 import { Workspaces } from '../../src/workspaces.js';
@@ -354,6 +354,53 @@ test('private progression binds one original work grant, denies local competitio
     expect(f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toEqual(granted);
     expect(grants).toBe(1);
   } finally {
+    f.close();
+  }
+});
+
+test('restart retains the original bounded grant while awaiting a fresh node lease, never granting execution', async () => {
+  const f = fixture();
+  let driver: TaskDriver | undefined;
+  const make = () => {
+    const v = f.work.verification;
+    const d = new TaskDriver(
+      f.store,
+      f.tasks,
+      v.budget,
+      v,
+      { inspect: () => ({ state: 'starting' }) } as never,
+      {} as never,
+      v.coding,
+    );
+    d.awaitingAuthorityRenewal = (s) => f.authority.awaitingRenewal(s);
+    return d;
+  };
+  try {
+    const receipt = f.run();
+    driver = make();
+    const request = randomUUID();
+    f.work.progress(f.binding, request, receipt.request_id, 1, driver);
+    await driver.close();
+    f.reopen();
+    driver = make();
+    expect(f.authority.awaitingRenewal(f.session)).toBe(true);
+    expect(() => f.store.execution.assert(f.session)).toThrow('not fresh');
+    driver.start();
+    await new Promise((r) => setTimeout(r, 450));
+    expect(
+      f.store.db.prepare('SELECT auto_enabled,remaining_steps,auto_error FROM task_runtime').get(),
+    ).toMatchObject({ auto_enabled: 1, remaining_steps: 1, auto_error: null });
+    expect(f.store.db.prepare('SELECT COUNT(*) AS n FROM task_grants').get()!.n).toBe(0);
+    f.authority.renew(f.binding, 'renew-after-restart', 2);
+    expect(f.authority.awaitingRenewal(f.session)).toBe(false);
+    expect(f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toMatchObject({
+      request_id: request,
+    });
+    expect(f.store.db.prepare('SELECT auto_epoch FROM task_runtime').get()!.auto_epoch).toBe(1);
+    f.authority.revoke(f.binding, 'revoke-after-renew', 'fixture');
+    expect(f.authority.awaitingRenewal(f.session)).toBe(false);
+  } finally {
+    await driver?.close();
     f.close();
   }
 });

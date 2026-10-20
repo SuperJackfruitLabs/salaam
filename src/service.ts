@@ -436,6 +436,8 @@ export class SalaamService {
           );
           this.supervisor.toolkit = this.toolkit;
         }
+        this.taskDriver.awaitingAuthorityRenewal = (session) =>
+          this.agentpod?.awaitingRenewal(session) ?? false;
         if (options.stationConfig) {
           if (!this.agentpod) throw Error('Station execution requires AgentPod authority');
           this.station = new StationWork(

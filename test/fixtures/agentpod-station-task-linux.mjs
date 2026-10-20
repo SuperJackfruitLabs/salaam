@@ -13,6 +13,7 @@ import {
   readFileSync,
   realpathSync,
   existsSync,
+  unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,7 @@ if (process.argv[2] === '--child') {
     },
     agentpodWorkProgression: true,
   });
+  if (existsSync(join(dir, 'hold-progression'))) await service.taskDriver.close();
   process.stdout.write('ready\n');
   process.once('SIGTERM', () => void service.close());
   await service.closed;
@@ -120,6 +122,8 @@ if (process.argv[2] === '--child') {
     writeFileSync(join(dir, 'fixture.json'), JSON.stringify({ configuration_digest }), {
       mode: 0o600,
     });
+    if (mode === 'success')
+      writeFileSync(join(dir, 'hold-progression'), 'pause before first durable grant dispatch');
     const socket = join(state, 'operator.sock');
     let child,
       db,
@@ -248,6 +252,23 @@ if (process.argv[2] === '--child') {
       );
       const status = () => call(socket, '/v1/agentpod/work-status', { binding });
       if (mode === 'success') {
+        assert.equal(rows('SELECT COUNT(*) AS n FROM attempts')[0].n, 0);
+        await stop('SIGKILL');
+        unlinkSync(join(dir, 'hold-progression'));
+        await boot();
+        await new Promise((r) => setTimeout(r, 500));
+        assert.equal(rows('SELECT COUNT(*) AS n FROM attempts')[0].n, 0);
+        assert.equal(rows('SELECT auto_enabled FROM task_runtime')[0].auto_enabled, 1);
+        await renew();
+        renewTimer = setInterval(
+          () =>
+            void renew().catch((e) => {
+              renewError = e;
+            }),
+          15000,
+        );
+        assert.deepEqual(await call(socket, '/v1/agentpod/work-progress', progression), grant);
+
         await until(
           status,
           (s) => {

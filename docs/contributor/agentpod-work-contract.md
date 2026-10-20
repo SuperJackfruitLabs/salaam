@@ -141,3 +141,18 @@ and exercises real native checks, bounded progression, 50,000 source files,
 completion freshness, daemon restart dedup, SIGKILL recovery, explicit revocation
 and actual90-second lease expiry. It uses synthetic private authority and the
 offline model; it does not prove live Hub/Superpipeline or opaque external effects.
+
+Restart handling distinguishes an intact previous-boot lease awaiting renewal
+from an expired/revoked or corrupt admission. The former remains unable to grant
+execution, but does not discard its original bounded progression grant while the
+node reconnects. Actual wall expiry still revokes; current-boot monotonic expiry
+still denies. The Linux fixture includes a daemon kill after the progression
+grant commits but before its first attempt, a no-execution interval before fresh
+renewal, and recovery of that exact grant.
+
+Mixed-version rollout remains closed: current host schema5 has no production
+strict-work opt-in. Enabling a default host requires an explicit reviewed manifest
+contract, source/runtime and protocol pins, CLI/service propagation, native node
+validation, and startup-drift rejection proofs. Older/disabled daemons must be
+rejected by strict bridge selection before a run claim, without falling back to
+unverified ACP completion. Acceptance fixture opt-in alone is not this rollout.

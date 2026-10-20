@@ -161,6 +161,8 @@ export class StationTaskVerification {
       .all()) {
       const id = String(r.id),
         check = this.verification.get(id);
+      if (this.station.authority.awaitingRenewal?.(this.tasks.get(check.task_id).session_id))
+        continue;
       if (check.state === 'accepted') {
         this.dispatch(id);
         continue;
