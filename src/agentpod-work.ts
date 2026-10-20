@@ -1,6 +1,7 @@
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
-import type { TaskWork } from './task-work.js';
+import type { TaskWork, WorkTask } from './task-work.js';
+import type { TaskDriver } from './task-driver.js';
 import type { TaskVerification } from './task-verification.js';
 import { canonical, digest, ServiceError } from './protocol.js';
 import {
@@ -30,6 +31,102 @@ export class AgentPodWork {
     readonly verification: TaskVerification,
   ) {}
 
+  private owned(binding: unknown) {
+    const root = this.authority.inspect(binding);
+    const row = this.store.db
+      .prepare('SELECT * FROM agentpod_work WHERE session_id=?')
+      .get(root.session_id);
+    if (!row) throw new ServiceError('work_missing', 'Admitted work required');
+    const admission = agentpodWorkAdmission(JSON.parse(String(row.admission_json)));
+    if (canonical(admission.binding) !== canonical(root.binding))
+      throw new ServiceError('work_authority_mismatch', 'Exact work authority required');
+    return { root, row, task: this.tasks.get(String(row.task_id)) };
+  }
+  private assertPlan(task: WorkTask, admission: unknown): void {
+    const plan = {
+      objective: task.objective,
+      constraints: task.constraints,
+      acceptance: task.acceptance,
+      deliverables: task.deliverables,
+      limits: task.limits,
+      steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+        key,
+        title,
+        instruction,
+        depends_on,
+        checks,
+      })),
+    };
+    if (digest(plan) !== agentpodWorkAdmission(admission).work.plan_digest)
+      throw new ServiceError('work_plan_changed', 'Task plan differs from original work admission');
+  }
+  async status(binding: unknown, driver: TaskDriver) {
+    const { root, row, task } = this.owned(binding);
+    const view = await driver.viewAsync(task.id);
+    this.authority.inspect(binding);
+    return {
+      ...view,
+      version: 1 as const,
+      work_request_id: String(row.request_id),
+      task_id: task.id,
+      plan_revision: this.tasks.get(task.id).plan_revision,
+      binding_digest: digest(root.binding),
+      auto_enabled: !!view.runtime.auto_enabled,
+    };
+  }
+  progress(
+    binding: unknown,
+    request: string,
+    workRequest: string,
+    steps: number,
+    driver: TaskDriver,
+  ) {
+    const { root, row, task } = this.owned(binding);
+    if (workRequest !== row.request_id)
+      throw new ServiceError('work_request_conflict', 'Original work request required');
+    const receipt = this.store.request(
+      'agentpod-work-progression',
+      workRequest,
+      {
+        binding: root.binding,
+        request_id: request,
+        work_request_id: workRequest,
+        max_steps: steps,
+        compact: false,
+      },
+      () => {
+        this.store.execution.assert(root.session_id);
+        this.assertPlan(task, JSON.parse(String(row.admission_json)));
+        if (steps !== task.steps.length || steps < 1 || steps > 32)
+          throw new ServiceError(
+            'invalid_limit',
+            'Progression must bind every admitted step within32',
+          );
+        if (this.store.controlView(root.session_id).expires_at > Date.now())
+          throw new ServiceError('control_busy', 'Local controller currently owns this session');
+        const runtime = this.store.db
+          .prepare('SELECT auto_enabled FROM task_runtime WHERE task_id=?')
+          .get(task.id);
+        if (runtime?.auto_enabled)
+          throw new ServiceError('work_request_conflict', 'Another progression grant exists');
+        driver.configureInTransaction(task.id, task.revision, steps, false, () =>
+          this.store.execution.assert(root.session_id),
+        );
+        this.store.execution.assert(root.session_id);
+        return {
+          version: 1 as const,
+          request_id: request,
+          work_request_id: workRequest,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          binding_digest: digest(root.binding),
+        };
+      },
+    );
+    driver.kick();
+    return receipt;
+  }
+
   async completion(binding: unknown) {
     const root = this.authority.inspect(binding);
     const row = this.store.db
@@ -41,6 +138,7 @@ export class AgentPodWork {
       throw new ServiceError('work_authority_mismatch', 'Exact work authority required');
     this.store.execution.assert(root.session_id);
     const task = this.tasks.get(String(row.task_id));
+    this.assertPlan(task, admission);
     if (!this.verification.station || task.state !== 'succeeded')
       throw new ServiceError('verification_required', 'Protected verified completion required');
     const view = (await this.verification.viewAsync(task)) as {

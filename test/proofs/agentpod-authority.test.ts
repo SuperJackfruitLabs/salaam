@@ -497,6 +497,13 @@ test('strict work is private-owner only and refuses missing protected verificati
       input,
       plan,
     };
+    expect(await call(f.service.socket, '/v1/agentpod/work-capability', {})).toEqual({
+      version: 1,
+      enabled: false,
+    });
+    await expect(
+      call(f.service.bridgeSocket, '/v1/agentpod/work-capability', {}),
+    ).rejects.toThrow();
     await expect(call(f.service.bridgeSocket, '/v1/agentpod/work-admit', payload)).rejects.toThrow(
       'Bridge route not found',
     );

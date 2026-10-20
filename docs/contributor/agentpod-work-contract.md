@@ -121,3 +121,23 @@ work/task/plan/binding identity plus the completion artifact and evidence digest
 The AgentPod producer must persist this receipt before reporting, and reconcile
 an uncertain report against the original Superpipeline run. These private routes
 remain unadvertised pending integrated Linux and product acceptance.
+
+Strict progression is an explicit service acceptance opt-in
+(`agentpodWorkProgression`), disabled in default hosts. Private `work-capability`
+reports this honestly. `work-progress` binds one original work request and exact
+step count to `TaskDriver.configureInTransaction`, the existing domain-owned grant
+engine also used by jobs. Its authorizer is the fresh AgentPod run admission;
+it does not manufacture terminal control. An active local controller or competing
+grant blocks admission. Reconnect recovers the original grant without replenishing
+steps. `work-status` exposes the existing task view and `auto_enabled`.
+
+Explicit Linux acceptance fixture: `test/fixtures/agentpod-station-task-linux.mjs`.
+Requires built source, Node26.7, root/systemd on an isolated host, the real reviewed
+AgentPod stationfs executable, and the prepared immutable runtime root/image pin.
+Set `SALAAM_M21_LINUX_ACCEPTANCE=1`, `SALAAM_STATION_FILES`,
+`SALAAM_STATION_RUNTIME_ROOT`, and `SALAAM_STATION_RUNTIME_IMAGE`, then run with
+Node. It creates only fresh `/tmp/sm21-*` scratch, retains its journal/evidence,
+and exercises real native checks, bounded progression, 50,000 source files,
+completion freshness, daemon restart dedup, SIGKILL recovery, explicit revocation
+and actual90-second lease expiry. It uses synthetic private authority and the
+offline model; it does not prove live Hub/Superpipeline or opaque external effects.

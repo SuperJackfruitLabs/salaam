@@ -561,6 +561,20 @@ test.each([false, true])(
       const admission = JSON.parse(
         readFileSync(new URL('../fixtures/agentpod-work-v1.json', import.meta.url), 'utf8'),
       ).admissions[0].value;
+      admission.work.plan_digest = digest({
+        objective: completed.objective,
+        constraints: completed.constraints,
+        acceptance: completed.acceptance,
+        deliverables: completed.deliverables,
+        limits: completed.limits,
+        steps: completed.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+          key,
+          title,
+          instruction,
+          depends_on,
+          checks,
+        })),
+      });
       f.store.db
         .prepare('INSERT INTO agentpod_work VALUES (?,?,?,?,?,?)')
         .run(

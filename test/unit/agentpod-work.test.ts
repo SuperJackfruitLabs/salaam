@@ -8,6 +8,7 @@ import { AgentPodWork } from '../../src/agentpod-work.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { TaskContext } from '../../src/task-context.js';
 import { TaskWork } from '../../src/task-work.js';
+import type { TaskDriver } from '../../src/task-driver.js';
 import { TaskBudget } from '../../src/task-budget.js';
 import { TaskVerification } from '../../src/task-verification.js';
 import { Workspaces } from '../../src/workspaces.js';
@@ -295,6 +296,63 @@ test('lease is checked again after actual workspace verification before durable 
     expect(() => f.run()).toThrow('not fresh');
     expect(f.tasks.forSession(f.session)).toBeNull();
     expect(f.store.db.prepare('PRAGMA user_version').get()!.user_version).toBe(27);
+  } finally {
+    f.close();
+  }
+});
+
+test('private progression binds one original work grant, denies local competition, and recovers without regrant', () => {
+  const f = fixture();
+  try {
+    const receipt = f.run();
+    let grants = 0;
+    const driver = {
+      configureInTransaction: (
+        _id: string,
+        _revision: number,
+        _steps: number,
+        _compact: boolean,
+        authorize: () => void,
+      ) => {
+        authorize();
+        grants++;
+      },
+      kick: () => {},
+    } as unknown as TaskDriver;
+    const request = randomUUID();
+    f.store.db
+      .prepare("UPDATE durable_tasks SET objective='changed' WHERE id=?")
+      .run(receipt.task_id);
+    expect(() => f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toThrow(
+      'original work',
+    );
+    f.store.db
+      .prepare('UPDATE durable_tasks SET objective=? WHERE id=?')
+      .run(f.plan.objective, receipt.task_id);
+    expect(() => f.work.progress(f.binding, request, receipt.request_id, 2, driver)).toThrow(
+      'every admitted',
+    );
+    const control = f.store.control(f.session, 'local-control', 'terminal', 'acquire', 0);
+    expect(() => f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toThrow(
+      'Local controller',
+    );
+    f.store.control(
+      f.session,
+      'local-release',
+      'terminal',
+      'release',
+      control.epoch,
+      control.token,
+    );
+    const granted = f.work.progress(f.binding, request, receipt.request_id, 1, driver);
+    expect(grants).toBe(1);
+    expect(f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toEqual(granted);
+    expect(grants).toBe(1);
+    expect(() => f.work.progress(f.binding, randomUUID(), receipt.request_id, 1, driver)).toThrow();
+    f.reopen();
+    f.authority.revoke(f.binding, 'revoke-progression', 'fixture revocation');
+    expect(f.work.progress(f.binding, request, receipt.request_id, 1, driver)).toEqual(granted);
+    expect(grants).toBe(1);
   } finally {
     f.close();
   }

@@ -63,6 +63,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Internal trusted host seam; never accepted from ACP or a worker. */
   managedToolkit?: ToolkitWorkConfig;
   managedToolkitConfig?: { config: string; configuration_digest: string };
+  /** Explicit acceptance opt-in; not advertised by default host manifests. */
+  agentpodWorkProgression?: boolean;
   stationConfig?: { config: string; configuration_digest: string };
   externalBackend?: ExternalBackend;
   harnessConfig?: string;
@@ -132,7 +134,9 @@ export class SalaamService {
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
   private readonly hostManifestDigest: string | null;
+  private readonly agentpodWorkProgression: boolean;
   private constructor(options: ServiceOptions) {
+    this.agentpodWorkProgression = options.agentpodWorkProgression === true;
     this.hostManifestDigest = options.hostManifestDigest ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
@@ -788,6 +792,46 @@ export class SalaamService {
         }
         if (parts[2] === 'status') {
           this.send(res, 200, this.agentpod.inspect(body.binding));
+          return;
+        }
+        if (parts[2] === 'work-capability') {
+          if (Object.keys(body).length)
+            throw new ServiceError('invalid_work_payload', 'Empty capability request required');
+          this.send(res, 200, {
+            version: 1,
+            enabled: !!this.agentpodWork && this.agentpodWorkProgression,
+          });
+          return;
+        }
+        if (parts[2] === 'work-status' || parts[2] === 'work-progress') {
+          if (!this.agentpodWork || !this.agentpodWorkProgression)
+            throw new ServiceError('work_disabled', 'Strict progression is not enabled');
+          if (parts[2] === 'work-status') {
+            if (Object.keys(body).join(',') !== 'binding')
+              throw new ServiceError('invalid_work_payload', 'Closed status request required');
+            this.send(res, 200, await this.agentpodWork.status(body.binding, this.taskDriver));
+          } else {
+            if (
+              Object.keys(body).sort().join(',') !==
+                'binding,compact,max_steps,request_id,work_request_id' ||
+              body.compact !== false
+            )
+              throw new ServiceError(
+                'invalid_work_payload',
+                'Closed bounded progression request required',
+              );
+            this.send(
+              res,
+              200,
+              this.agentpodWork.progress(
+                body.binding,
+                string(body.request_id, 'request_id', 128),
+                string(body.work_request_id, 'work_request_id', 128),
+                integer(body.max_steps, 'max_steps'),
+                this.taskDriver,
+              ),
+            );
+          }
           return;
         }
         if (parts[2] === 'work-completion') {
