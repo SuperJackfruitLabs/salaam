@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync, readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
@@ -535,6 +535,35 @@ test('settlement rechecks unconfirmed resource stop even when a receipt was save
     expect(settle).toThrow('confirmed stopped');
     stopped = true;
     expect(settle()).toEqual(receipt);
+  } finally {
+    f.close();
+  }
+});
+
+test('actual settlement receipt conforms to the shared AgentPod v1 wire fixture', () => {
+  const corpus = JSON.parse(
+    readFileSync(new URL('../fixtures/agentpod-work-settlement-v1.json', import.meta.url), 'utf8'),
+  );
+  const f = fixture();
+  try {
+    const admitted = f.run();
+    f.authority.revoke(f.binding, 'fixture-revoke', 'Original owner expired');
+    const request = { ...corpus.request, binding: f.binding, work_request_id: admitted.request_id };
+    expect(
+      f.work.settle(
+        request.binding,
+        request.request_id,
+        request.work_request_id,
+        request.producer_terminal_digest,
+        settlementDriver(f),
+      ),
+    ).toEqual({
+      ...corpus.receipt,
+      work_request_id: admitted.request_id,
+      session_id: f.session,
+      task_id: admitted.task_id,
+      binding_digest: digest(f.binding),
+    });
   } finally {
     f.close();
   }
