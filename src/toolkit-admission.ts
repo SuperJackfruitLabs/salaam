@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   constants,
   openSync,
@@ -7,8 +7,11 @@ import {
   lstatSync,
   readFileSync,
   realpathSync,
+  mkdtempSync,
+  writeFileSync,
+  fsyncSync,
 } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { agentpodBinding, type AgentPodBinding } from './agentpod-protocol.js';
 import type { StdioLaunch } from './mcp-stdio.js';
 import type { ToolkitResources } from './toolkit-resources.js';
@@ -97,10 +100,78 @@ function privateFile(value: unknown, root: string, limit: number, executable = f
  * process ownership and the exact worker/attempt/call at each native grant.
  * This is deliberately not a public host capability until that controller exists. */
 export class ToolkitAdmission {
+  private parent?: ToolkitAdmission;
   constructor(
     private readonly profilePath: string,
     private readonly expectedDigest: string,
   ) {}
+
+  /** Materialize an execution-only child from the immutable reviewed template.
+   * Only the callback key and private manifest/profile locations change. The
+   * original credential delegation and all original pins are checked again at
+   * every use of the child. A generated hash never replaces host review.
+   *
+   * Private files are synced before returning; registration in ToolkitOwners
+   * and ToolkitResources still must precede starting the process. A crash here
+   * can leave inert private files, never a registered key or an adopted process.
+   * No cleanup role or permission to change principal/root is implied. */
+  materialize(binding: AgentPodBinding): ToolkitAdmission {
+    try {
+      if (this.parent) refused();
+      const admitted = this.launch(binding),
+        root = admitted.launch.env.HOME!;
+      const sourceProfile = privateFile(this.profilePath, root, 65536),
+        sourceManifest = privateFile(admitted.launch.args[2]!, root, 65536);
+      // Recheck after reading both inputs; neither an unpinned file nor a
+      // partially updated operator template may become a fresh child baseline.
+      if (
+        sha(sourceProfile) !== this.expectedDigest ||
+        sha(sourceManifest) !== admitted.manifest_digest
+      )
+        refused();
+      this.launch(binding);
+      const profile = object(JSON.parse(sourceProfile.toString('utf8'))),
+        template = object(JSON.parse(sourceManifest.toString('utf8')));
+      const directory = privateDirectory(mkdtempSync(join(root, 'execution-'))),
+        manifestPath = join(directory, 'manifest.json'),
+        profilePath = join(directory, 'profile.json'),
+        manifestBytes = Buffer.from(
+          JSON.stringify({ ...template, owner_key: randomBytes(32).toString('hex') }),
+        ),
+        profileBytes = Buffer.from(
+          JSON.stringify({
+            ...profile,
+            manifest: { path: manifestPath, sha256: sha(manifestBytes) },
+          }),
+        );
+      for (const [file, bytes] of [
+        [manifestPath, manifestBytes],
+        [profilePath, profileBytes],
+      ] as const) {
+        const fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+        try {
+          writeFileSync(fd, bytes);
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+      }
+      for (const dir of [directory, root]) {
+        const fd = openSync(dir, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+        try {
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
+      }
+      const child = new ToolkitAdmission(profilePath, sha(profileBytes));
+      child.parent = this;
+      child.launch(binding);
+      return child;
+    } catch {
+      refused();
+    }
+  }
 
   /** Only a hash leaves admission; the actual owner key stays in the private
    * manifest read by the pinned broker. This grants no callback permission. */
@@ -151,6 +222,7 @@ export class ToolkitAdmission {
     state_dir: string;
   } {
     try {
+      this.parent?.launch(binding);
       binding = agentpodBinding(binding);
       if (!hash(this.expectedDigest)) refused();
       const profilePath = path(this.profilePath),

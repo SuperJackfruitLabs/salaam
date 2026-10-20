@@ -130,6 +130,7 @@ async function fixture(read = false) {
     admission,
     key,
     manifestPath,
+    profilePath,
     prepare: () =>
       calls.prepare(
         session,
@@ -291,6 +292,85 @@ test('a stopped predecessor key cannot register a replacement process and no own
       1,
     );
   } finally {
+    await f.close();
+  }
+});
+
+test('actual service admits a fresh broker key after observed stop without rewriting the reviewed host profile', async () => {
+  const f = await fixture(true);
+  let replacement: Client | undefined;
+  try {
+    const profileHash = sha(f.profilePath),
+      templateHash = sha(f.manifestPath);
+    await f.client.connect(f.transport);
+    const first = f.prepare();
+    f.calls.deliver(first.id);
+    expect(await f.verify('dispatch')).toMatchObject({ decision: 'allowed' });
+    f.calls.record(first.id, f.resourceId, {
+      id: first.id,
+      request_digest: first.request_digest,
+      state: 'returned',
+      result: '{"read":"protocol-only"}',
+    });
+    const binding = f.f.service.agentpod!.binding(f.session),
+      child = f.admission.materialize(binding),
+      resourceId = 'fresh-owner-resource';
+    // Materialization itself does not stop, replace or adopt an actual process.
+    expect(() => child.transport(f.resources, f.session, resourceId)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_resources_unconfirmed' }),
+    );
+    await f.client.close();
+    await f.resources.stop(f.resourceId);
+    expect(f.resources.stopProof(f.resourceId).method).toBe('observed_exit');
+    const transport = child.transport(f.resources, f.session, resourceId);
+    f.f.service.toolkitOwners.register(resourceId, f.calls, child);
+    replacement = new Client({ name: 'fresh-owner-proof', version: '1' }, { capabilities: {} });
+    await replacement.connect(transport);
+    const manifest = JSON.parse(readFileSync(child.launch(binding).launch.args[2]!, 'utf8')),
+      request = { ...f.request, invocation_id: 'fresh-process-invocation' },
+      next = f.calls.prepare(
+        f.session,
+        f.f.service.store.session(f.session).epoch,
+        f.work.attempt_id,
+        'fresh-native-tool',
+        resourceId,
+        request,
+      );
+    f.calls.deliver(next.id);
+    await expect(
+      call(
+        f.f.service.socket,
+        '/managed-toolkit/v1/verify',
+        { version: 1, phase: 'dispatch', request },
+        f.key,
+      ),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'toolkit_owner_unavailable' }));
+    expect(
+      await call(
+        f.f.service.socket,
+        '/managed-toolkit/v1/verify',
+        { version: 1, phase: 'dispatch', request },
+        manifest.owner_key,
+      ),
+    ).toMatchObject({ decision: 'allowed' });
+    expect(sha(f.profilePath)).toBe(profileHash);
+    expect(sha(f.manifestPath)).toBe(templateHash);
+    // Even a running child's fresh key cannot outlive the original host pins.
+    writeFileSync(f.profilePath, readFileSync(f.profilePath, 'utf8') + ' ');
+    await expect(
+      call(
+        f.f.service.socket,
+        '/managed-toolkit/v1/verify',
+        { version: 1, phase: 'admit', request },
+        manifest.owner_key,
+      ),
+    ).rejects.toThrowError(expect.objectContaining({ code: 'toolkit_owner_unavailable' }));
+    expect(JSON.stringify(f.f.service.store.events(f.session, 0))).not.toContain(
+      manifest.owner_key,
+    );
+    expect(f.f.sent).toHaveLength(0);
+  } finally {
+    await replacement?.close();
     await f.close();
   }
 });

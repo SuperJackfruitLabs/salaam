@@ -168,10 +168,10 @@ surviving a new daemon, including retained ownership after failed shutdown.
 Those peers are disposable Node protocol fixtures, not a compiled Toolkit
 effect executor. Separate local producer interoperability proofs use the actual
 compiled Toolkit and the pinned SDK with synthetic private owner callbacks.
-The actual private effect-owner endpoint, protected Toolkit profile/credential
-delegation, durable call/permission controller, turn/attempt mapping and model
-tool integration are still required. No native Toolkit station capability or
-real provider/Library acceptance is claimed by the resource registry.
+The separate private admission and call-controller proofs below cover the actual
+effect-owner endpoint, credential delegation, call permissions and turn mapping.
+Model tool and station integration remain required. No native Toolkit station
+capability or real provider/Library acceptance is claimed by these local proofs.
 
 ### Private native launch admission
 
@@ -191,6 +191,17 @@ explicit manifest/hash and a closed environment.
 at preparation, before spawn, before PID registration and before SDK tool delivery.
 An asynchronous check cannot admit a launch or delivery. Drift after startup closes
 the transport before any tool bytes are sent.
+
+`ToolkitAdmission.materialize` generates a private, synced manifest/profile pair
+for one process with a fresh callback key. It preserves every reviewed execution
+field, including the original root/principal delegation, policy, credential store,
+passphrase, executable, state directory and socket. The original template stays
+unchanged and is checked again on every child admission and callback; generated
+hashes do not replace review. Generated children cannot generate further children.
+The resource and key registries must still commit before process startup. Merely
+materializing files does not stop or replace a broker, adopt a predecessor, clear
+an uncertain effect or grant execution. Interrupted materialization can leave inert
+owner-only files; they are not authority and are never discovered for adoption.
 
 This checks configuration integrity and delegation. It does not verify that a
 binary implements the required broker protocol, grant a native effect, establish
@@ -212,9 +223,11 @@ It checks private admission and the resource's exact launch pins before recordin
 an owner-key hash. Callback authentication requires that registered process key,
 the current daemon's in-memory owner, actual persisted PID identity, unchanged
 private configuration and fresh root/worker/attempt authority. Old keys cannot be
-registered for another process or silently adopted after daemon recovery. Pending
-replacement currently requires fresh private owner material; automatic per-process
-manifest materialization is still required before exposing this as a station tool.
+registered for another process or silently adopted after daemon recovery. A stopped
+process can be replaced with freshly materialized private owner data under the
+original host pins. An unconfirmed process or effect still blocks new grants.
+The service proof performs an actual observed stop, rejects the old callback key
+on the replacement and rejects original-profile drift even with its fresh key.
 
 MCP delivery records intent without consuming an effect permission. `review`
 answers the exact durable human decision. `admit` bounds credential acquisition

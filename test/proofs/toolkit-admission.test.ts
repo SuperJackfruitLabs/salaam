@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  lstatSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -135,6 +136,71 @@ test('private launch pins the versioned entry and exact credential delegation wi
     await f.close();
   }
 });
+
+test('fresh execution manifests rotate only callback ownership under the immutable host delegation', async () => {
+  const f = await fixture();
+  try {
+    const originalProfile = readFileSync(f.profilePath),
+      originalManifest = readFileSync(f.manifestPath),
+      first = f.admission.materialize(f.binding),
+      second = f.admission.materialize(f.binding),
+      a = first.launch(f.binding),
+      b = second.launch(f.binding),
+      firstManifest = JSON.parse(readFileSync(a.launch.args[2]!, 'utf8')),
+      secondManifest = JSON.parse(readFileSync(b.launch.args[2]!, 'utf8'));
+    expect(readFileSync(f.profilePath)).toEqual(originalProfile);
+    expect(readFileSync(f.manifestPath)).toEqual(originalManifest);
+    expect({ ...firstManifest, owner_key: f.manifest.owner_key }).toEqual(f.manifest);
+    expect({ ...secondManifest, owner_key: f.manifest.owner_key }).toEqual(f.manifest);
+    expect(firstManifest.owner_key).toMatch(/^[a-f0-9]{64}$/);
+    expect(secondManifest.owner_key).not.toBe(firstManifest.owner_key);
+    expect(firstManifest.owner_key).not.toBe(f.manifest.owner_key);
+    expect(first.ownerKeyDigest(f.binding, f.socket)).not.toBe(
+      second.ownerKeyDigest(f.binding, f.socket),
+    );
+    expect(a.profile_digest).toBe(b.profile_digest);
+    expect(a.state_dir).toBe(b.state_dir);
+    expect(a.launch.command).toBe(b.launch.command);
+    expect(a.manifest_digest).not.toBe(b.manifest_digest);
+    expect(a.launch.args[2]).not.toBe(b.launch.args[2]);
+    expect(lstatSync(a.launch.args[2]!).mode & 0o777).toBe(0o600);
+    expect(JSON.stringify(a)).not.toContain(firstManifest.owner_key);
+    expect(() => first.materialize(f.binding)).toThrowError(
+      expect.objectContaining({ code: 'toolkit_profile_changed' }),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+for (const kind of ['profile', 'template', 'child', 'policy', 'passphrase', 'principal'] as const)
+  test(`materialized execution cannot turn changed ${kind} into a new reviewed baseline`, async () => {
+    const f = await fixture();
+    try {
+      const child = f.admission.materialize(f.binding),
+        admitted = child.launch(f.binding);
+      const binding = structuredClone(f.binding);
+      if (kind === 'principal') binding.principal_id = 'prn_00000000000000000003';
+      else {
+        const file = {
+          profile: f.profilePath,
+          template: f.manifestPath,
+          child: admitted.launch.args[2]!,
+          policy: f.policy,
+          passphrase: f.pass,
+        }[kind];
+        writeFileSync(file, readFileSync(file, 'utf8') + ' ');
+      }
+      expect(() => child.launch(binding)).toThrowError(
+        expect.objectContaining({ code: 'toolkit_profile_changed' }),
+      );
+      expect(() => child.ownerKeyDigest(binding, f.socket)).toThrowError(
+        expect.objectContaining({ code: 'toolkit_profile_changed' }),
+      );
+    } finally {
+      await f.close();
+    }
+  });
 
 test('actual service resource creation uses the reviewed profile and rejects changed policy before OS spawn', async () => {
   const f = await fixture(),
