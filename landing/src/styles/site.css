@@ -363,19 +363,19 @@ em {
   font-size: 11px;
 }
 .accent {
-  color: #ff7aa5;
+  color: var(--accent);
 }
 .amber {
-  color: #e8c78c;
+  color: var(--warn);
 }
 .muted {
-  color: #b4a6a5;
+  color: var(--muted);
 }
 .task-line {
   display: flex;
   align-items: center;
   gap: 9px;
-  border-top: 1px solid #352c2f;
+  border-top: 1px solid var(--line);
   padding: 10px 0;
   font-size: 9px;
 }
@@ -387,27 +387,27 @@ em {
   font-size: 8px;
 }
 .pill {
-  background: #3a1e29;
-  color: #ff7aa5;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
   border-radius: 3px;
   padding: 1px 6px;
 }
 .checkpoint {
   margin: 8px 0 15px;
-  color: #b4a6a5;
+  color: var(--muted);
   font-size: 8px;
 }
 .checkpoint > span {
   margin: 0 5px;
 }
 .composer {
-  border: 1px solid #3e3437;
+  border: 1px solid var(--line);
   margin: 0 11px;
   border-radius: 5px;
   padding: 13px 10px;
   display: flex;
   gap: 8px;
-  color: #b4a6a5;
+  color: var(--muted);
 }
 .key {
   margin-left: auto;
@@ -905,3 +905,8 @@ footer nav {
   padding-inline: 24px;
   box-sizing: border-box;
 }
+
+/* The demo's status line names the theme it is drawn in. */
+.terminal-meta .mode-name::before { content: 'night'; }
+:root[data-theme='paper'] .terminal-meta .mode-name::before { content: 'paper'; }
+@media (prefers-color-scheme: light) { :root:not([data-theme='night']) .terminal-meta .mode-name::before { content: 'paper'; } }
