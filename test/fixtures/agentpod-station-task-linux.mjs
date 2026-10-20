@@ -25,7 +25,9 @@ import {
   readStationConfig,
 } from '../../dist/src/station-config.js';
 import { digest } from '../../dist/src/protocol.js';
-import { call } from '../../dist/src/transport.js';
+import { call as transportCall } from '../../dist/src/transport.js';
+// Actual 50k-file verification performs bounded native observations; this is not a cached status read.
+const call = (socket, path, body) => transportCall(socket, path, body, undefined, 120000);
 
 process.umask(0o077);
 if (process.argv[2] === '--child') {
@@ -76,7 +78,14 @@ if (process.argv[2] === '--child') {
     } while (Date.now() < end);
     throw Error('Acceptance condition timed out');
   };
-  for (const mode of ['success', 'crash', 'revoke', 'expiry']) {
+  const cases = (process.env.SALAAM_M21_CASES ?? 'success,crash,revoke,expiry').split(',');
+  assert(
+    cases.length > 0 &&
+      new Set(cases).size === cases.length &&
+      cases.every((c) => ['success', 'crash', 'revoke', 'expiry'].includes(c)),
+  );
+  for (const mode of cases) {
+    console.error(JSON.stringify({ scenario: mode, phase: 'starting', scratch: root }));
     const dir = join(root, mode),
       workspace = join(dir, 'workspace'),
       state = join(dir, 'state');
@@ -218,7 +227,7 @@ if (process.argv[2] === '--child') {
           requests: 2,
           runtime_ms: 240000,
           concurrency: 1,
-          token_units: 16384,
+          token_units: 18432,
           input_token_bound: 8192,
           output_token_bound: 1024,
           verification_runs: 2,
@@ -245,6 +254,8 @@ if (process.argv[2] === '--child') {
         max_steps: 1,
         compact: false,
       };
+      // RuntimeMaxSec is 30s: begin near lease expiry so authority, not that cap, stops the unit.
+      if (mode === 'expiry') await new Promise((r) => setTimeout(r, 65000));
       const grant = await call(socket, '/v1/agentpod/work-progress', progression);
       assert.deepEqual(await call(socket, '/v1/agentpod/work-progress', progression), grant);
       await assert.rejects(
@@ -272,12 +283,16 @@ if (process.argv[2] === '--child') {
         await until(
           status,
           (s) => {
-            if (['blocked', 'failed', 'cancelled'].includes(s.state))
+            if (
+              ['failed', 'cancelled'].includes(s.state) ||
+              (s.state === 'blocked' && !s.auto_enabled)
+            )
               throw Error('Progression failed: ' + s.reason);
             return s.state === 'succeeded';
           },
           240000,
         );
+        console.error(JSON.stringify({ scenario: mode, phase: 'task-succeeded' }));
         const completion = await call(socket, '/v1/agentpod/work-completion', { binding });
         assert.equal(completion.state, 'verified');
         const before = rows('SELECT id FROM task_checks'),
@@ -303,6 +318,7 @@ if (process.argv[2] === '--child') {
         assert.deepEqual(rows('SELECT id FROM attempts'), attempts);
         writeFileSync(join(workspace, 'app.js'), 'export const answer = 43;\n');
         await assert.rejects(call(socket, '/v1/agentpod/work-completion', { binding }));
+        console.error(JSON.stringify({ scenario: mode, phase: 'passed' }));
         reports.push({
           mode,
           session_id: admitted.session_id,
@@ -336,11 +352,21 @@ if (process.argv[2] === '--child') {
           (u) => u?.state === 'stopped',
           120000,
         );
+        if (mode === 'expiry') {
+          const expired = await until(
+            () => call(socket, '/v1/agentpod/status', { binding }),
+            (s) => s.revoked === true,
+            35000,
+          );
+          assert(expired.expires_at <= Date.now());
+          assert.equal(expired.authorized, false);
+        }
         const callRow = rows('SELECT * FROM station_calls').find((c) => c.id === unit.call_id);
         assert.notEqual(callRow.state, 'returned');
         assert.deepEqual(rows("SELECT id FROM station_calls WHERE kind='check'"), originalCalls);
         await assert.rejects(call(socket, '/v1/agentpod/work-completion', { binding }));
         assert.deepEqual(await call(socket, '/v1/agentpod/work-admit', payload), receipt);
+        console.error(JSON.stringify({ scenario: mode, phase: 'passed' }));
         reports.push({
           mode,
           session_id: admitted.session_id,
