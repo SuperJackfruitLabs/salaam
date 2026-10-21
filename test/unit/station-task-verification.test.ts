@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, watch } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AgentPodWork } from '../../src/agentpod-work.js';
@@ -655,5 +655,158 @@ test('partial station ownership upgrade rolls back and restores foreign-key enfo
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('owned gated verification reads defer synchronous admission and serialize fresh consumers', async () => {
+  const f = fixture();
+  let release = () => {};
+  let closeWatcher = () => {};
+  const pending: Promise<unknown>[] = [];
+  try {
+    const helper = join(f.dir, 'gated-file-helper');
+    const ready = join(f.dir, 'ready');
+    const gate = join(f.dir, 'release');
+    writeFileSync(
+      helper,
+      `#!${process.execPath}
+const fs=require('node:fs');let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);const done=()=>console.log(JSON.stringify({version:1,ok:true,tree_digest:'${'a'.repeat(64)}',root_identity:r.root_identity,files:1}));if(fs.existsSync(${JSON.stringify(gate)}))return done();const w=fs.watch(${JSON.stringify(f.dir)},(_,name)=>{if(name==='release'){w.close();done();}});fs.writeFileSync(${JSON.stringify(ready)},'ready');});
+`,
+      { mode: 0o700 },
+    );
+    const entered = new Promise<void>((resolve) => {
+      const watcher = watch(f.dir, (_, name) => {
+        if (name === 'ready') {
+          watcher.close();
+          resolve();
+        }
+      });
+      closeWatcher = () => watcher.close();
+    });
+    release = () => writeFileSync(gate, 'release');
+    Object.setPrototypeOf(f.station, StationWork.prototype);
+    Object.assign(f.station, {
+      store: f.store,
+      files: new Map(),
+      closing: false,
+      config: { workspace_identity: 'd'.repeat(64), workspace: f.dir, files: { path: helper } },
+      options: {
+        assertActive: () => {
+          throw Error('must not borrow model authority');
+        },
+      },
+    });
+    delete (f.station as unknown as Record<string, unknown>).verificationTree;
+    delete (f.station as unknown as Record<string, unknown>).assertVerificationSettled;
+    f.verification.station = f.adapter;
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    const first = f.adapter.withFresh(f.check, () => 'first');
+    pending.push(first);
+    await Promise.race([entered, first]);
+    const second = f.adapter.withFresh(f.check, () => 'second');
+    pending.push(second);
+    // A live owned read never downgrades a separate unknown, mutation, or
+    // unconfirmed native resource into a retryable observation.
+    for (const update of [
+      "UPDATE station_calls SET state='outcome_unknown' WHERE id=?",
+      "UPDATE station_calls SET state='prepared',kind='patch' WHERE id=?",
+      "UPDATE station_calls SET helper_state='unconfirmed' WHERE id=?",
+    ]) {
+      f.store.db.prepare(update).run(f.call);
+      expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+        expect.objectContaining({ code: 'task_uncertain' }),
+      );
+      f.store.db
+        .prepare(
+          "UPDATE station_calls SET state='returned',kind='check',helper_state='none' WHERE id=?",
+        )
+        .run(f.call);
+    }
+    f.store.db.prepare("UPDATE station_units SET state='unconfirmed'").run();
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    f.store.db.prepare("UPDATE station_units SET state='stopped'").run();
+    const inspection = String(
+      f.store.db.prepare("SELECT id FROM station_calls WHERE kind='read'").get()!.id,
+    );
+    f.store.db
+      .prepare("UPDATE station_calls SET helper_state='unconfirmed' WHERE id=?")
+      .run(inspection);
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id), inspection)).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    f.store.db
+      .prepare("UPDATE station_calls SET helper_state='running' WHERE id=?")
+      .run(inspection);
+    // This is the same synchronous fence used by start(), before accepting a check.
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_busy' }),
+    );
+    expect(
+      f.store.db.prepare("SELECT count(*) AS n FROM station_calls WHERE kind='read'").get()!.n,
+    ).toBe(1);
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+    expect(
+      f.store.db
+        .prepare(
+          "SELECT count(*) AS n FROM station_calls WHERE kind='read' AND state='returned' AND helper_state='stopped'",
+        )
+        .get()!.n,
+    ).toBe(2);
+    f.verification.assertIdle(f.tasks.get(f.task.id));
+  } finally {
+    release();
+    closeWatcher();
+    await Promise.allSettled(pending);
+    f.close();
+  }
+});
+
+test('stopping before a queued freshness observation runs launches no helper', async () => {
+  const f = fixture();
+  try {
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    let observations = 0;
+    f.station.verificationTree = async () => {
+      observations++;
+      throw Error('must not launch');
+    };
+    const pending = f.adapter.withFresh(f.check, () => {
+      throw Error('must not consume');
+    });
+    f.adapter.stop();
+    await expect(pending).rejects.toMatchObject({ code: 'verification_stopped' });
+    expect(observations).toBe(0);
+    expect(f.verification.get(f.check).state).toBe('accepted');
+  } finally {
+    f.close();
+  }
+});
+
+test('stopping before a queued dispatch runs preserves accepted work without launching', async () => {
+  const f = fixture();
+  try {
+    let observations = 0;
+    f.station.verificationTree = async () => {
+      observations++;
+      throw Error('must not launch');
+    };
+    f.adapter.dispatch(f.check);
+    f.adapter.stop();
+    await f.adapter.drain();
+    expect(observations).toBe(0);
+    expect(f.verification.get(f.check).state).toBe('accepted');
+    expect(
+      f.store.db.prepare("SELECT count(*) AS n FROM station_calls WHERE kind='read'").get()!.n,
+    ).toBe(0);
+  } finally {
+    f.close();
   }
 });

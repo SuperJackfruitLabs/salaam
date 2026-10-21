@@ -3,7 +3,10 @@ import type { AgentPodAuthority } from './agentpod-authority.js';
 import type { TaskWork, WorkTask } from './task-work.js';
 import type { TaskDriver } from './task-driver.js';
 import type { TaskVerification } from './task-verification.js';
-import { canonical, digest, ServiceError } from './protocol.js';
+import { canonical, digest, textDigest, ServiceError } from './protocol.js';
+import { DIAGNOSTIC_PROFILE, NATIVE_CAPABILITIES } from './worker-boundary.js';
+import { POLICY_DIGEST } from './config.js';
+import { mcpAdmissionView } from './mcp-protocol.js';
 import { executionEvidence } from './execution-evidence.js';
 import { bindWorkTrace } from './execution-trace.js';
 import {
@@ -557,6 +560,803 @@ export class AgentPodWork {
       unbound_stopped_units: units,
     };
   }
+  /** Historical retirement of closed, policy-admitted reads. This does not
+   * revalidate freshness, replay a check, or turn a protocol return into success. */
+  private historicalKnownReadOnlyFailure(
+    binding: import('./agentpod-protocol.js').AgentPodBinding,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+  ) {
+    if (
+      !['partially_completed', 'failed', 'blocked'].includes(task.state) ||
+      !runtime ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens
+    )
+      return null;
+    try {
+      const require = (condition: unknown): void => {
+        if (!condition) throw new Error('Incomplete historical read-only evidence');
+      };
+      const audit: Record<string, unknown> = {};
+      const rows = (key: string, sql: string, ...args: any[]): Record<string, any>[] => {
+        const result = this.store.db.prepare(sql).all(...args);
+        require(result.length <= 256);
+        audit[key] = result;
+        return result;
+      };
+      const root = digest(binding),
+        session = task.session_id;
+      const original = this.store.db
+        .prepare('SELECT verification_json FROM agentpod_work WHERE task_id=? AND session_id=?')
+        .get(task.id, session);
+      require(original);
+      const originalVerification = JSON.parse(String(original!.verification_json));
+      const children = rows(
+        'children',
+        'SELECT * FROM child_tasks WHERE parent_session=?',
+        session,
+      );
+      const sessions = [session, ...children.map((c) => String(c.child_session))];
+      require(new Set(sessions).size === sessions.length && sessions.length <= 33);
+      const marks = sessions.map(() => '?').join(',');
+      require(
+        !this.store.db
+          .prepare(
+            `SELECT 1 FROM child_tasks WHERE child_session=? OR (parent_session IN (${marks}) AND parent_session!=?)`,
+          )
+          .get(session, ...sessions, session),
+      );
+      const attempts = rows(
+        'attempts',
+        `SELECT * FROM attempts WHERE session_id IN (${marks})`,
+        ...sessions,
+      );
+      require(
+        attempts.length > 0 &&
+          attempts.every(
+            (a) =>
+              a.state === 'completed' &&
+              a.error === null &&
+              a.continues_attempt_id === null &&
+              a.resolved_by === null &&
+              canonical(JSON.parse(String(a.outcome))) ===
+                canonical({ version: 1, stopReason: 'end_turn' }),
+          ),
+      );
+      // Native model grants are independently journaled: a completed attempt
+      // cannot hide an unmatched request, unknown receipt, or orphan budget.
+      const attemptIds = attempts.map((a) => String(a.id)),
+        attemptMarks = attemptIds.map(() => '?').join(',');
+      const usage = rows(
+        'usage',
+        `SELECT * FROM usage_observations WHERE session_id IN (${marks}) OR attempt_id IN (${attemptMarks})`,
+        ...sessions,
+        ...attemptIds,
+      );
+      const admissions = rows(
+        'usage_admitted',
+        `SELECT * FROM events WHERE session_id IN (${marks}) AND kind='usage.admitted' ORDER BY seq`,
+        ...sessions,
+      );
+      const models = rows(
+        'model_admitted',
+        `SELECT * FROM events WHERE session_id IN (${marks}) AND kind='model.admitted' ORDER BY seq`,
+        ...sessions,
+      );
+      const budgets = rows(
+        'attempt_budgets',
+        `SELECT b.* FROM attempt_budgets b LEFT JOIN attempts a ON a.id=b.attempt_id WHERE a.id IS NULL OR a.session_id IN (${marks})`,
+        ...sessions,
+      );
+      require(
+        usage.length === admissions.length &&
+          models.length === admissions.length &&
+          budgets.length === attempts.length &&
+          runtime.requests_spent === usage.length,
+      );
+      for (const a of attempts) {
+        const receipts = usage.filter(
+          (u) => u.attempt_id === a.id && u.session_id === a.session_id,
+        );
+        const grants = admissions.filter(
+          (e) => JSON.parse(String(e.payload)).attempt_id === a.id && e.session_id === a.session_id,
+        );
+        const dispatched = models.filter(
+          (e) => JSON.parse(String(e.payload)).attempt_id === a.id && e.session_id === a.session_id,
+        );
+        const budget = budgets.find((b) => b.attempt_id === a.id),
+          route = this.store.providerRoute(String(a.session_id));
+        require(
+          new Set(grants.map((e) => JSON.parse(String(e.payload)).source_key)).size ===
+            grants.length &&
+            receipts.every((r) =>
+              grants.some((e) => JSON.parse(String(e.payload)).source_key === r.source_key),
+            ),
+        );
+        require(
+          route &&
+            budget &&
+            receipts.length > 0 &&
+            receipts.length === grants.length &&
+            grants.length === dispatched.length &&
+            budget.spent_requests === receipts.length &&
+            budget.spent_requests + budget.reserved_requests <= budget.limit_requests &&
+            budget.reserved_requests ===
+              children
+                .filter((c) => c.parent_attempt === a.id)
+                .reduce((n, c) => n + Number(c.budget), 0),
+        );
+        if (a.session_id !== session)
+          require(
+            budget!.limit_requests === children.find((c) => c.child_attempt === a.id)?.budget,
+          );
+        for (let i = 0; i < grants.length; i++) {
+          const grant = grants[i]!,
+            modelEvent = dispatched[i]!,
+            p = JSON.parse(String(grant.payload)),
+            model = JSON.parse(String(modelEvent.payload));
+          const receipt = receipts.find((u) => u.source_key === p.source_key);
+          require(
+            receipt &&
+              ['known', 'estimated'].includes(receipt.status) &&
+              receipt.payload_digest &&
+              receipt.provider === route!.provider &&
+              receipt.model === route!.model &&
+              model.provider === receipt.provider &&
+              model.epoch === a.worker_epoch &&
+              /^[a-f0-9]{64}$/.test(model.context_digest) &&
+              /^[a-f0-9]{64}$/.test(model.payload_digest) &&
+              Number(grant.seq) < Number(modelEvent.seq),
+          );
+          const values = [
+            receipt!.input,
+            receipt!.output,
+            receipt!.cache_read,
+            receipt!.cache_write,
+            receipt!.cost,
+          ];
+          require(
+            values.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0) &&
+              receipt!.payload_digest ===
+                digest({
+                  provider: receipt!.provider,
+                  model: receipt!.model,
+                  values,
+                  status: receipt!.status,
+                }),
+          );
+        }
+      }
+      require(
+        rows('compactions', `SELECT * FROM compactions WHERE session_id IN (${marks})`, ...sessions)
+          .length === 0,
+      );
+      require(
+        attempts.filter((a) => a.session_id !== session).length === children.length &&
+          attempts
+            .filter((a) => a.session_id !== session)
+            .every((a) =>
+              children.some((c) => c.child_attempt === a.id && c.child_session === a.session_id),
+            ),
+      );
+      const rootAttempts = attempts.filter((a) => a.session_id === session);
+      const links = rows(
+        'step_attempts',
+        'SELECT b.* FROM task_step_attempts b JOIN task_steps s ON s.id=b.step_id WHERE s.task_id=?',
+        task.id,
+      );
+      require(
+        rootAttempts.length > 0 &&
+          links.length === rootAttempts.length &&
+          links.every(
+            (l) =>
+              l.plan_revision === task.plan_revision &&
+              rootAttempts.some((a) => a.id === l.attempt_id) &&
+              task.steps.some(
+                (s) =>
+                  s.id === l.step_id &&
+                  s.attempt_id === l.attempt_id &&
+                  ['completed', 'awaiting_review'].includes(s.state),
+              ),
+          ),
+      );
+      require(
+        task.steps.every((s) =>
+          s.state === 'pending'
+            ? s.attempt_id === null
+            : ['completed', 'awaiting_review'].includes(s.state) &&
+              links.some((l) => l.step_id === s.id),
+        ),
+      );
+      require(
+        !this.store.db
+          .prepare(`SELECT 1 FROM workers WHERE session_id IN (${marks}) AND state!='exited'`)
+          .get(...sessions),
+      );
+      const artifactAudit: Record<string, any>[] = [];
+      const artifact = (id: unknown, owner: string, json = true): any => {
+        require(typeof id === 'string');
+        const row = this.store.db.prepare('SELECT * FROM artifacts WHERE id=?').get(String(id));
+        require(row && row.session_id === owner);
+        const text = this.verification.artifacts.read(String(id));
+        require(Buffer.byteLength(text) === row!.bytes);
+        artifactAudit.push(row!);
+        return json ? JSON.parse(text) : text;
+      };
+      for (const table of [
+        'operations',
+        'approvals',
+        'toolkit_calls',
+        'toolkit_resources',
+        'local_calls',
+        'command_runs',
+      ])
+        require(
+          rows(table, `SELECT * FROM ${table} WHERE session_id IN (${marks})`, ...sessions)
+            .length === 0,
+        );
+      require(
+        rows('reservations', 'SELECT * FROM task_reservations WHERE task_id=?', task.id).every(
+          (r) =>
+            r.remaining_requests === 0 &&
+            r.remaining_tokens === 0 &&
+            children.some((c) => c.child_attempt === r.attempt_id),
+        ),
+      );
+      for (const table of [
+        'task_invocations',
+        'task_mutations',
+        'task_restores',
+        'task_completions',
+      ])
+        require(rows(table, `SELECT * FROM ${table} WHERE task_id=?`, task.id).length === 0);
+      require(
+        rows(
+          'workspace_mutations',
+          `SELECT m.* FROM workspace_mutations m JOIN workspaces w ON w.id=m.workspace_id WHERE w.session_id IN (${marks})`,
+          ...sessions,
+        ).length === 0,
+      );
+      require(
+        rows(
+          'integrations',
+          `SELECT * FROM worker_integrations WHERE parent_session IN (${marks})`,
+          ...sessions,
+        ).length === 0,
+      );
+      // Inspect independent child registries, including partial/orphan records.
+      const workers = rows(
+        'child_workers',
+        `SELECT w.* FROM child_workers w LEFT JOIN child_tasks c ON c.id=w.child_id WHERE c.id IS NULL OR c.parent_session IN (${marks}) OR json_extract(w.binding,'$.owner_session')=?`,
+        ...sessions,
+        session,
+      );
+      require(
+        workers.length === children.length &&
+          workers.every((w) => children.some((c) => c.id === w.child_id)),
+      );
+      for (const table of ['external_runs', 'external_model_requests'])
+        require(
+          rows(
+            table,
+            `SELECT e.* FROM ${table} e LEFT JOIN child_tasks c ON c.id=e.child_id WHERE c.id IS NULL OR c.parent_session IN (${marks})`,
+            ...sessions,
+          ).length === 0,
+        );
+      const profile = this.store.db
+        .prepare('SELECT * FROM worker_profiles WHERE id=? AND revision=?')
+        .get(DIAGNOSTIC_PROFILE.id, DIAGNOSTIC_PROFILE.revision);
+      if (children.length)
+        require(
+          profile &&
+            !profile.revoked &&
+            profile.digest === digest(DIAGNOSTIC_PROFILE) &&
+            digest(JSON.parse(String(profile.document))) === profile.digest,
+        );
+      for (const child of children) {
+        const worker = workers.find((w) => w.child_id === child.id)!,
+          b = JSON.parse(String(worker.binding));
+        const attempt = attempts.find(
+          (a) => a.id === child.child_attempt && a.session_id === child.child_session,
+        );
+        require(
+          child.state === 'completed' &&
+            child.result_id &&
+            attempt &&
+            rootAttempts.some((a) => a.id === child.parent_attempt) &&
+            worker.dispatch_state === 'terminal' &&
+            worker.generation === 1 &&
+            worker.worker_epoch === attempt!.worker_epoch &&
+            worker.binding_digest === digest(b) &&
+            b.schema_version === 1 &&
+            b.legacy === false &&
+            b.runtime === 'native-pi' &&
+            !b.agent &&
+            !b.assignment &&
+            !b.external &&
+            !b.isolation &&
+            !b.repository &&
+            b.workspace === null &&
+            b.owner_session === session &&
+            b.owner_task === task.id &&
+            b.parent_attempt === child.parent_attempt &&
+            b.session_id === child.child_session &&
+            b.attempt_id === child.child_attempt &&
+            b.step_key === child.step_key &&
+            b.input_digest === child.input_digest &&
+            b.policy_digest === POLICY_DIGEST &&
+            b.profile_digest === digest(DIAGNOSTIC_PROFILE) &&
+            canonical(b.profile) === canonical(DIAGNOSTIC_PROFILE) &&
+            canonical(b.tools) === canonical(['salaam_probe']) &&
+            child.authority === JSON.stringify(b.tools) &&
+            b.capability_digest === digest(NATIVE_CAPABILITIES) &&
+            canonical(b.capabilities) === canonical(NATIVE_CAPABILITIES) &&
+            b.bounds?.scope === 'model-requests' &&
+            b.bounds.requests === child.budget &&
+            canonical(b.route) === canonical(this.store.providerRoute(child.child_session)),
+        );
+        const prompt = artifact(b.input_artifact, child.child_session, false);
+        const submission = this.store.db
+          .prepare('SELECT * FROM submissions WHERE id=? AND attempt_id=? AND session_id=?')
+          .get(String(attempt!.submission_id), String(attempt!.id), String(child.child_session));
+        require(
+          submission?.text === prompt &&
+            child.input_digest === digest({ prompt, budget: child.budget, requested: b.tools }),
+        );
+        const result = artifact(child.artifact_id, child.child_session);
+        require(
+          canonical(result) ===
+            canonical({
+              schema_version: 1,
+              child_id: child.id,
+              attempt_id: attempt!.id,
+              state: 'completed',
+              text: attempt!.result,
+              error: null,
+            }),
+        );
+      }
+      const mcp = rows(
+        'mcp',
+        `SELECT * FROM mcp_calls WHERE session_id IN (${marks})`,
+        ...sessions,
+      );
+      const assigned = rows(
+        'mcp_admissions',
+        `SELECT * FROM events WHERE session_id IN (${marks}) AND kind='mcp.assigned'`,
+        ...sessions,
+      );
+      for (const call of mcp) {
+        require(
+          call.session_id === session &&
+            call.binding_digest === root &&
+            call.policy === 'read' &&
+            call.state === 'returned' &&
+            call.operation_id === null &&
+            call.error === null &&
+            rootAttempts.some(
+              (a) => a.id === call.attempt_id && a.worker_epoch === call.worker_epoch,
+            ),
+        );
+        const view = assigned
+          .filter((e) => e.session_id === call.session_id)
+          .map((e) => mcpAdmissionView(JSON.parse(String(e.payload))))
+          .find(
+            (v) =>
+              v.binding_digest === root &&
+              v.assignment_digest === call.assignment_digest &&
+              v.profile_digest === call.profile_digest &&
+              v.credential_generation === call.credential_generation,
+          );
+        require(
+          view?.servers
+            .find((s) => s.name === call.server_name)
+            ?.tools.some((t) => t.name === call.tool_name && t.policy === 'read'),
+        );
+        require(
+          call.input_digest ===
+            digest({
+              session,
+              epoch: call.worker_epoch,
+              attempt: call.attempt_id,
+              call: call.tool_call_id,
+              server: call.server_name,
+              tool: call.tool_name,
+              arguments: JSON.parse(String(call.arguments_json)),
+            }),
+        );
+        const result = artifact(call.result_artifact, session);
+        require(
+          result.protocol_result === 'returned' &&
+            result.is_error === false &&
+            Array.isArray(result.content),
+        );
+      }
+      const checks = rows('checks', 'SELECT * FROM task_checks WHERE task_id=?', task.id);
+      require(runtime.verification_runs === checks.length);
+      const calls = rows(
+        'station_calls',
+        `SELECT * FROM station_calls WHERE session_id IN (${marks})`,
+        ...sessions,
+      );
+      const units = rows(
+        'station_units',
+        `SELECT * FROM station_units WHERE session_id IN (${marks}) OR session_id IS NULL`,
+        ...sessions,
+      );
+      const observed = rows(
+        'verification_observed',
+        "SELECT * FROM events WHERE session_id=? AND kind='station.verification_observed'",
+        session,
+      );
+      const plan = digest({
+        objective: task.objective,
+        constraints: task.constraints,
+        acceptance: task.acceptance,
+        deliverables: task.deliverables,
+        limits: task.limits,
+        steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+          key,
+          title,
+          instruction,
+          depends_on,
+          checks,
+        })),
+      });
+      const proofByCheck = new Map<
+        string,
+        { call: Record<string, any>; tree: string; config: string }
+      >();
+      const stopUnit = (unit: Record<string, any>) => {
+        require(unit.state === 'stopped' && unit.stop_json);
+        const stop = JSON.parse(String(unit.stop_json));
+        require(
+          stop.version === 1 &&
+            stop.observed_empty === true &&
+            stop.unit === `salaam-station-${unit.id}.service` &&
+            stop.cgroup === `/system.slice/${stop.unit}` &&
+            /^[a-f0-9]{32}$/.test(stop.invocation),
+        );
+        return stop;
+      };
+      for (const check of checks) {
+        const evidence = artifact(check.artifact_id, session);
+        const saved = this.store.db
+          .prepare("SELECT * FROM requests WHERE actor='station-task-check' AND id=?")
+          .get(String(check.id));
+        require(saved);
+        const bindingArtifact = JSON.parse(String(saved!.response)),
+          bound = artifact(bindingArtifact, session);
+        const call = calls.find((c) => c.id === bound.call_id),
+          configured = task.acceptance.find((c) => c.key === check.check_key);
+        require(
+          check.state === 'passed' &&
+            check.plan_revision === task.plan_revision &&
+            check.engine_id === 'linux-systemd-station-v1' &&
+            check.command_run_id === null &&
+            call &&
+            configured?.cwd === '.' &&
+            (check.step_id === null ||
+              task.steps.some(
+                (s) => s.id === check.step_id && s.checks?.includes(check.check_key),
+              )),
+        );
+        const c = call!,
+          args = JSON.parse(String(c.args_json)),
+          station = bound.station;
+        require(
+          bound.version === 1 &&
+            bound.check_id === check.id &&
+            bound.task_id === task.id &&
+            bound.plan_revision === task.plan_revision &&
+            bound.plan_digest === plan &&
+            bound.check_digest ===
+              digest({
+                id: check.id,
+                task: task.id,
+                key: check.check_key,
+                step: check.step_id,
+                plan_revision: task.plan_revision,
+              }) &&
+            bound.call_digest ===
+              digest({
+                id: c.id,
+                session: c.session_id,
+                epoch: c.worker_epoch,
+                attempt: c.attempt_id,
+                tool: c.tool_call_id,
+                kind: c.kind,
+                input: c.input_digest,
+                root: c.root_digest,
+                configuration: c.configuration_digest,
+                args: c.args_json,
+              }) &&
+            saved!.hash === digest({ checkID: check.id, callID: c.id }) &&
+            station?.version === 1 &&
+            station.runner === 'linux-systemd-station-v1' &&
+            canonical(station) === canonical(originalVerification) &&
+            (runtime.auto_binding === null ||
+              canonical(JSON.parse(String(runtime.auto_binding))) === canonical(station)) &&
+            station.root_digest === root &&
+            station.configuration_digest === c.configuration_digest &&
+            station.network === 'none' &&
+            station.command_workspace === 'read-only-reviewed-snapshot' &&
+            check.workspace_id === 'station:' + root &&
+            check.workspace_revision === 0 &&
+            check.workspace_digest === bound.tree_digest &&
+            check.profile_digest === c.configuration_digest &&
+            c.session_id === session &&
+            c.kind === 'check' &&
+            c.task_check_id === check.id &&
+            c.tool_call_id === 'task-check:' + check.id &&
+            c.attempt_id === null &&
+            canonical(args) ===
+              canonical({
+                action: 'check',
+                command: configured!.command,
+                expected_tree: bound.tree_digest,
+              }),
+        );
+        const result = JSON.parse(String(c.result_json)),
+          unit = units.find((u) => u.call_id === c.id);
+        require(
+          unit &&
+            unit.session_id === session &&
+            unit.context_digest ===
+              digest({
+                id: c.id,
+                root,
+                configuration: c.configuration_digest,
+                input: c.input_digest,
+              }) &&
+            digest(JSON.parse(String(unit.config_json))) === c.configuration_digest &&
+            unit.unit_json,
+        );
+        const stop = stopUnit(unit!),
+          description = JSON.parse(String(unit!.unit_json));
+        require(
+          description.id === stop.unit &&
+            description.cgroup === stop.cgroup &&
+            description.invocation === stop.invocation &&
+            canonical(result.cleanup) === canonical(stop) &&
+            result.exit_code === 0 &&
+            result.verified_check === true &&
+            result.expected_tree === bound.tree_digest &&
+            result.observed_tree === bound.tree_digest &&
+            result.network === 'none' &&
+            result.workspace === 'read-only-reviewed-snapshot',
+        );
+        require(
+          canonical(evidence) ===
+            canonical({
+              version: 1,
+              backend: 'linux-systemd-station-v1',
+              binding_artifact: bindingArtifact,
+              check_id: check.id,
+              call_id: c.id,
+              plan_revision: task.plan_revision,
+              root_digest: root,
+              configuration_digest: c.configuration_digest,
+              tree_digest: bound.tree_digest,
+              result_digest: digest(result),
+            }),
+        );
+        proofByCheck.set(String(check.id), {
+          call: c,
+          tree: bound.tree_digest,
+          config: c.configuration_digest,
+        });
+      }
+      for (const call of calls) {
+        require(
+          call.session_id === session &&
+            call.root_digest === root &&
+            call.operation_id === null &&
+            call.state === 'returned' &&
+            ['read', 'check'].includes(call.kind) &&
+            call.helper_state === 'stopped' &&
+            call.helper_stop_json &&
+            call.helper_identity &&
+            call.helper_pid > 0 &&
+            call.input_digest === digest(JSON.parse(String(call.args_json))),
+        );
+        const stop = JSON.parse(String(call.helper_stop_json));
+        require(
+          stop.version === 1 &&
+            stop.scope === 'local_process_group' &&
+            stop.method === 'observed_exit' &&
+            stop.pid === call.helper_pid &&
+            stop.identity === call.helper_identity,
+        );
+        const proof = proofByCheck.get(String(call.task_check_id));
+        require(proof && call.configuration_digest === proof.config);
+        if (call.kind === 'check') require(proof!.call.id === call.id);
+        else {
+          require(
+            call.attempt_id === null &&
+              call.tool_call_id === call.id &&
+              call.result_json === null &&
+              canonical(JSON.parse(String(call.args_json))) === canonical({ action: 'inspect' }),
+          );
+          require(
+            observed.some((e) => {
+              const p = JSON.parse(String(e.payload));
+              return (
+                p.inspection_call === call.id &&
+                p.tree_digest === proof!.tree &&
+                (p.source_call === proof!.call.id ||
+                  canonical(p.source_call) === canonical({ task_check_id: call.task_check_id }))
+              );
+            }),
+          );
+        }
+      }
+      for (const unit of units) {
+        if (unit.session_id === null) {
+          require(unit.call_id === null);
+          stopUnit(unit);
+        } else
+          require(
+            unit.session_id === session &&
+              checks.some((c) => proofByCheck.get(String(c.id))?.call.id === unit.call_id),
+          );
+      }
+      const tools = rows(
+        'tools',
+        `SELECT * FROM events WHERE session_id IN (${marks}) AND kind IN ('tool.started','tool.finished') ORDER BY seq`,
+        ...sessions,
+      );
+      const starts = tools.filter((e) => e.kind === 'tool.started');
+      require(tools.length === starts.length * 2);
+      const matchedChildren = new Set<string>();
+      require(
+        mcp.every((c) =>
+          starts.some((e) => {
+            const p = JSON.parse(String(e.payload));
+            return (
+              e.session_id === c.session_id &&
+              p.tool === 'salaam_mcp' &&
+              JSON.parse(p.input).action === 'call' &&
+              p.attempt_id === c.attempt_id &&
+              p.worker_epoch === c.worker_epoch &&
+              p.tool_call_id === c.tool_call_id
+            );
+          }),
+        ),
+      );
+      for (const start of starts) {
+        const p = JSON.parse(String(start.payload)),
+          owner = attempts.find(
+            (a) =>
+              a.id === p.attempt_id &&
+              a.session_id === start.session_id &&
+              a.worker_epoch === p.worker_epoch,
+          );
+        const ends = tools.filter((e) => {
+          const q = JSON.parse(String(e.payload));
+          return (
+            e.kind === 'tool.finished' &&
+            e.session_id === start.session_id &&
+            q.attempt_id === p.attempt_id &&
+            q.worker_epoch === p.worker_epoch &&
+            q.tool_call_id === p.tool_call_id &&
+            q.tool === p.tool &&
+            q.failed === false &&
+            Number(e.seq) > Number(start.seq)
+          );
+        });
+        require(
+          owner &&
+            typeof p.tool_call_id === 'string' &&
+            p.tool_call_id &&
+            ends.length === 1 &&
+            !p.input_truncated &&
+            typeof p.input === 'string' &&
+            textDigest(p.input) === p.input_digest,
+        );
+        if (p.tool === 'salaam_mcp') {
+          const input = JSON.parse(p.input);
+          const call =
+            input.action === 'call' &&
+            mcp.some(
+              (c) =>
+                c.session_id === start.session_id &&
+                c.attempt_id === p.attempt_id &&
+                c.tool_call_id === p.tool_call_id,
+            );
+          const catalog =
+            input.action === 'catalog' &&
+            start.session_id === session &&
+            Object.keys(input).every((k) => ['action', 'server', 'tool'].includes(k)) &&
+            assigned.some((e) => {
+              if (e.session_id !== session) return false;
+              const v = mcpAdmissionView(JSON.parse(String(e.payload)));
+              return (
+                v.binding_digest === root &&
+                (input.server === undefined
+                  ? input.tool === undefined
+                  : v.servers.some(
+                      (server) =>
+                        server.name === input.server &&
+                        (input.tool === undefined ||
+                          server.tools.some((t) => t.name === input.tool)),
+                    ))
+              );
+            });
+          require(
+            catalog ||
+              (call &&
+                mcp.some(
+                  (c) =>
+                    c.session_id === start.session_id &&
+                    c.attempt_id === p.attempt_id &&
+                    c.tool_call_id === p.tool_call_id &&
+                    canonical(JSON.parse(p.input)) ===
+                      canonical({
+                        action: 'call',
+                        server: c.server_name,
+                        tool: c.tool_name,
+                        arguments: JSON.parse(String(c.arguments_json)),
+                      }),
+                )),
+          );
+        } else if (p.tool === 'spawn_child') {
+          require(start.session_id === session);
+          const input = JSON.parse(p.input),
+            authority = input.authority ?? ['salaam_probe'],
+            budget = input.budget ?? 2;
+          require(!input.profile && canonical(authority) === canonical(['salaam_probe']));
+          const tasks = input.tasks ?? [
+            { step_key: input.step_key ?? '', prompt: input.prompt ?? '' },
+          ];
+          require(Array.isArray(tasks) && tasks.length > 0 && tasks.length <= 2);
+          for (const t of tasks) {
+            const child = children.find(
+              (c) =>
+                c.parent_attempt === p.attempt_id &&
+                c.step_key === t.step_key &&
+                c.budget === budget &&
+                c.input_digest === digest({ prompt: t.prompt, budget, requested: authority }),
+            );
+            require(child);
+            matchedChildren.add(String(child!.id));
+          }
+        } else if (p.tool === 'inspect_child' || p.tool === 'consume_child_result') {
+          require(start.session_id === session);
+          const input = JSON.parse(p.input);
+          if (p.tool === 'inspect_child')
+            require(
+              canonical(input) ===
+                canonical(input.child_id === undefined ? {} : { child_id: input.child_id }) &&
+                (input.child_id === undefined || children.some((c) => c.id === input.child_id)),
+            );
+          else
+            require(
+              children.some((c) => c.id === input.child_id && c.result_id === input.result_id) &&
+                Object.keys(input).every((k) =>
+                  ['child_id', 'result_id', 'acknowledge'].includes(k),
+                ) &&
+                (input.acknowledge === undefined || typeof input.acknowledge === 'boolean'),
+            );
+        } else {
+          require(p.tool === 'salaam_probe');
+          const input = JSON.parse(p.input);
+          require(
+            Object.keys(input).every((k) => k === 'nested') &&
+              (input.nested === undefined || typeof input.nested === 'boolean'),
+          );
+        }
+      }
+      require(matchedChildren.size === children.length);
+      audit.artifacts = artifactAudit;
+      return audit;
+    } catch {
+      // Corrupt/missing source evidence is uncertainty, never a permissive default.
+      return null;
+    }
+  }
   fail(
     binding: unknown,
     request: string,
@@ -628,6 +1428,7 @@ export class AgentPodWork {
           Number.isFinite(Number(runtime.started_at)) &&
           Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
 
+        const knownReadOnly = this.historicalKnownReadOnlyFailure(root.binding, task, runtime);
         const zeroEffect = this.zeroEffectConcurrencyFailure(
           root.session_id,
           task,
@@ -636,6 +1437,7 @@ export class AgentPodWork {
         );
         if (
           !zeroEffect &&
+          !knownReadOnly &&
           (task.state !== 'blocked' ||
             !runtime ||
             !originalBlock ||
@@ -684,7 +1486,7 @@ export class AgentPodWork {
         )
           throw new ServiceError(
             'work_settlement_unsafe',
-            'Only exact budget-blocked interrupted work with one known approved patch or a proven zero-effect child denial can retire',
+            'Only exact known approved-patch, zero-effect child denial, or closed historical read-only evidence can retire',
           );
         const evidence_digest = digest({
           binding: root.binding,
@@ -696,6 +1498,7 @@ export class AgentPodWork {
           approval: approval ?? null,
           call: call ?? null,
           ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
+          ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
         });
         driver.cancelInTransaction(task.id, task.revision, stopped);
         const receipt = {

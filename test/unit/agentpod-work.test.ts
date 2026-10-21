@@ -16,7 +16,7 @@ import { TaskVerification } from '../../src/task-verification.js';
 import { Workspaces } from '../../src/workspaces.js';
 import { CodingWork } from '../../src/coding.js';
 import { TaskFixtureBackend } from '../fixtures/task-backend.mjs';
-import { digest } from '../../src/protocol.js';
+import { canonical, digest, textDigest } from '../../src/protocol.js';
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { configurePermissions } from '../../src/autonomy.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -94,7 +94,12 @@ test('work trace preserves the original parent across reconnect without renewing
   }
 });
 
-function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
+function fixture(
+  verifier = true,
+  owned = true,
+  resourcesStopped = () => true,
+  nativeStation = false,
+) {
   const base = realpathSync(mkdtempSync('/tmp/sal-work-admit-'));
   const workspace = join(base, 'source'),
     state = join(base, 'state');
@@ -148,6 +153,18 @@ function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
       tasks,
       new TaskVerification(store, tasks, budget, workspaces, coding, artifacts),
     );
+    if (nativeStation)
+      work.verification.station = {
+        binding: () => ({
+          version: 1,
+          runner: 'linux-systemd-station-v1',
+          root_digest: digest(binding),
+          configuration_digest: digest({ fixture: true }),
+          network: 'none',
+          command_workspace: 'read-only-reviewed-snapshot',
+        }),
+        observing: () => false,
+      } as never;
     return workspaces;
   };
   const workspaces = open();
@@ -1274,6 +1291,586 @@ test.each([
     f.close();
   }
 });
+
+// Historical journal conformance; the production child writer creates frozen
+// diagnostic delegation and result artifacts. No model/provider is dispatched.
+function addKnownReadOnlyReceipts(
+  f: ReturnType<typeof fixture>,
+  task: ReturnType<TaskWork['get']>,
+  attempt: string,
+) {
+  const db = f.store.db,
+    root = digest(f.binding),
+    artifacts = f.work.verification.artifacts;
+  const mcpId = randomUUID(),
+    tool = 'readonly-mcp',
+    args = { query: 'fixture' };
+  const view = {
+    version: 1,
+    profile_digest: 'a'.repeat(64),
+    assignment_digest: 'b'.repeat(64),
+    binding_digest: root,
+    credential_generation: 1,
+    servers: [
+      {
+        name: 'superlibrary',
+        endpoint_digest: 'c'.repeat(64),
+        catalog_digest: 'd'.repeat(64),
+        tools: [{ name: 'library_search', schema_digest: 'e'.repeat(64), policy: 'read' }],
+      },
+    ],
+  };
+  f.store.transaction(() => f.store.event(f.session, 'mcp.assigned', view));
+  const result = artifacts.put(
+    f.session,
+    canonical({ protocol_result: 'returned', is_error: false, content: [] }),
+  );
+  db.prepare(
+    "INSERT INTO mcp_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,input_digest,binding_digest,profile_digest,assignment_digest,credential_generation,server_name,tool_name,policy,arguments_json,state,result_artifact,created_at) VALUES(?,?,1,?,?,?,?,?,?,1,'superlibrary','library_search','read',?,'returned',?,1)",
+  ).run(
+    mcpId,
+    f.session,
+    attempt,
+    tool,
+    digest({
+      session: f.session,
+      epoch: 1,
+      attempt,
+      call: tool,
+      server: 'superlibrary',
+      tool: 'library_search',
+      arguments: args,
+    }),
+    root,
+    view.profile_digest,
+    view.assignment_digest,
+    canonical(args),
+    result,
+  );
+  const input = canonical({
+    action: 'call',
+    server: 'superlibrary',
+    tool: 'library_search',
+    arguments: args,
+  });
+  f.store.transaction(() => {
+    f.store.event(f.session, 'tool.started', {
+      attempt_id: attempt,
+      worker_epoch: 1,
+      tool_call_id: tool,
+      tool: 'salaam_mcp',
+      input,
+      input_digest: textDigest(input),
+      input_truncated: false,
+    });
+    f.store.event(f.session, 'tool.finished', {
+      attempt_id: attempt,
+      worker_epoch: 1,
+      tool_call_id: tool,
+      tool: 'salaam_mcp',
+      failed: false,
+    });
+  });
+  f.store.enableStationTaskChecks();
+  const check = randomUUID(),
+    call = randomUUID(),
+    unit = 'a'.repeat(64),
+    inspection = randomUUID(),
+    tree = 'f'.repeat(64),
+    config = { fixture: true };
+  const station = f.work.verification.binding(task) as Record<string, unknown>;
+  const command = task.acceptance[0]!.command;
+  const callArgs = canonical({ action: 'check', command, expected_tree: tree });
+  const cleanup = {
+    version: 1,
+    unit: `salaam-station-${unit}.service`,
+    cgroup: `/system.slice/salaam-station-${unit}.service`,
+    invocation: 'c'.repeat(32),
+    observed_empty: true,
+  };
+  const nativeResult = {
+    cleanup,
+    exit_code: 0,
+    expected_tree: tree,
+    observed_tree: tree,
+    network: 'none',
+    workspace: 'read-only-reviewed-snapshot',
+    verified_check: true,
+    output: 'passed',
+  };
+  db.prepare("INSERT INTO task_checks VALUES(?,?,?,?,?,?,?,?,?,?,NULL,'passed',NULL)").run(
+    check,
+    task.id,
+    task.steps[0]!.id,
+    task.acceptance[0]!.key,
+    task.plan_revision,
+    'station:' + root,
+    0,
+    tree,
+    digest(config),
+    'linux-systemd-station-v1',
+  );
+  const helper = (id: string) => ({
+    version: 1,
+    scope: 'local_process_group',
+    method: 'observed_exit',
+    pid: 42,
+    identity: 'linux-proc-v1:' + id.repeat(64),
+  });
+  for (const [id, kind, toolCall, encoded, resultJson, identity] of [
+    [call, 'check', 'task-check:' + check, callArgs, canonical(nativeResult), 'b'],
+    [inspection, 'read', inspection, canonical({ action: 'inspect' }), null, 'c'],
+  ] as const) {
+    const stop = helper(identity);
+    db.prepare(
+      "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state,result_json,helper_pid,helper_identity,helper_state,helper_stop_json,task_check_id) VALUES(?,?,0,NULL,?,?,?,?,?,?,'returned',?,42,?,'stopped',?,?)",
+    ).run(
+      id,
+      f.session,
+      toolCall,
+      kind,
+      digest(JSON.parse(encoded)),
+      root,
+      digest(config),
+      encoded,
+      resultJson,
+      stop.identity,
+      canonical(stop),
+      check,
+    );
+  }
+  db.prepare('INSERT INTO station_units VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+    unit,
+    f.session,
+    call,
+    digest({ id: call, root, configuration: digest(config), input: digest(JSON.parse(callArgs)) }),
+    canonical(config),
+    '/tmp/fixture-source',
+    '/tmp/fixture-output',
+    canonical({ id: cleanup.unit, cgroup: cleanup.cgroup, invocation: cleanup.invocation }),
+    'stopped',
+    canonical(cleanup),
+  );
+  const plan = digest({
+    objective: task.objective,
+    constraints: task.constraints,
+    acceptance: task.acceptance,
+    deliverables: task.deliverables,
+    limits: task.limits,
+    steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
+      key,
+      title,
+      instruction,
+      depends_on,
+      checks,
+    })),
+  });
+  const bound = {
+    version: 1,
+    check_id: check,
+    check_digest: digest({
+      id: check,
+      task: task.id,
+      key: task.acceptance[0]!.key,
+      step: task.steps[0]!.id,
+      plan_revision: task.plan_revision,
+    }),
+    task_id: task.id,
+    plan_revision: task.plan_revision,
+    plan_digest: plan,
+    station,
+    call_id: call,
+    call_digest: digest({
+      id: call,
+      session: f.session,
+      epoch: 0,
+      attempt: null,
+      tool: 'task-check:' + check,
+      kind: 'check',
+      input: digest(JSON.parse(callArgs)),
+      root,
+      configuration: digest(config),
+      args: callArgs,
+    }),
+    tree_digest: tree,
+  };
+  const bindingArtifact = artifacts.put(f.session, canonical(bound));
+  db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(
+    'station-task-check',
+    check,
+    digest({ checkID: check, callID: call }),
+    JSON.stringify(bindingArtifact),
+  );
+  const receipt = artifacts.put(
+    f.session,
+    canonical({
+      version: 1,
+      backend: 'linux-systemd-station-v1',
+      binding_artifact: bindingArtifact,
+      check_id: check,
+      call_id: call,
+      plan_revision: task.plan_revision,
+      root_digest: root,
+      configuration_digest: digest(config),
+      tree_digest: tree,
+      result_digest: digest(nativeResult),
+    }),
+  );
+  db.prepare('UPDATE task_checks SET artifact_id=? WHERE id=?').run(receipt, check);
+  db.prepare('UPDATE task_runtime SET verification_runs=1 WHERE task_id=?').run(task.id);
+  f.store.transaction(() =>
+    f.store.event(f.session, 'station.verification_observed', {
+      source_call: call,
+      inspection_call: inspection,
+      tree_digest: tree,
+    }),
+  );
+  return { mcpId, check, call, unit, inspection, bindingArtifact, receipt, result };
+}
+
+function knownReadOnlyFailureFixture() {
+  const f = fixture(true, false, () => true, true),
+    admitted = f.run();
+  const task = f.tasks.get(admitted.task_id),
+    step = task.steps[0]!;
+  const accepted = f.store.transaction(() => {
+    const a = f.store.enqueue(f.session, randomUUID(), step.instruction, undefined, null, step.id);
+    f.store.db
+      .prepare('INSERT INTO task_step_attempts VALUES (?,?,?,?)')
+      .run(a.attempt_id, step.id, task.plan_revision, step.instruction);
+    f.store.db
+      .prepare("UPDATE task_steps SET state='awaiting_review',attempt_id=? WHERE id=?")
+      .run(a.attempt_id, step.id);
+    return a;
+  });
+  f.store.bindRoute(f.session, OFFLINE_ROUTE);
+  const epoch = f.store.allocate(f.session, 'readonly-history');
+  f.store.state(f.session, epoch, 'ready');
+  f.store.claim(f.session, epoch);
+  f.store.running(accepted.attempt_id);
+  const supervisor = {
+    assertActive() {},
+    assertSessionProviderSupported() {},
+    start: async () => {},
+    failControl() {},
+  } as unknown as Supervisor;
+  const children = new ChildWork(f.store, f.work.verification.artifacts, supervisor);
+  const recordModel = (session: string, attempt: string) => {
+    const key = 'salaam-request:' + randomUUID(),
+      route = f.store.providerRoute(session)!;
+    f.store.usage.admit(session, attempt, key, route.provider, route.model, {
+      input: 0,
+      output: 1,
+    });
+    f.store.transaction(() => {
+      f.store.event(session, 'model.admitted', {
+        attempt_id: attempt,
+        epoch: 1,
+        provider: route.provider,
+        context_digest: 'a'.repeat(64),
+        payload_digest: 'b'.repeat(64),
+        task_version: 0,
+      });
+      f.store.usage.observe(session, key, route.provider, route.model, {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: { total: 0 },
+      });
+    });
+  };
+  recordModel(f.session, accepted.attempt_id);
+  const childInput = canonical({
+    step_key: 'diagnostic',
+    prompt: 'Read-only diagnostic',
+    budget: 2,
+    wait: true,
+  });
+  f.store.transaction(() =>
+    f.store.event(f.session, 'tool.started', {
+      attempt_id: accepted.attempt_id,
+      worker_epoch: 1,
+      tool_call_id: 'spawn-diagnostic',
+      tool: 'spawn_child',
+      input: childInput,
+      input_digest: textDigest(childInput),
+      input_truncated: false,
+    }),
+  );
+  const child = children.spawn(
+    f.session,
+    epoch,
+    accepted.attempt_id,
+    'diagnostic',
+    'Read-only diagnostic',
+    2,
+    ['salaam_probe'],
+  );
+  f.store.bindRoute(child.child_session, OFFLINE_ROUTE);
+  f.store.db
+    .prepare(
+      "UPDATE child_workers SET generation=1,worker_epoch=1,dispatch_state='accepted' WHERE child_id=?",
+    )
+    .run(child.id);
+  f.store.db
+    .prepare("UPDATE attempts SET state='running',worker_epoch=1 WHERE id=?")
+    .run(child.child_attempt);
+  recordModel(child.child_session, child.child_attempt);
+  f.store.finish(child.child_attempt, 'completed', 'Diagnostic returned', null);
+  f.store.transaction(() =>
+    f.store.event(f.session, 'tool.finished', {
+      attempt_id: accepted.attempt_id,
+      worker_epoch: 1,
+      tool_call_id: 'spawn-diagnostic',
+      tool: 'spawn_child',
+      failed: false,
+    }),
+  );
+  f.store.finish(accepted.attempt_id, 'completed', 'Read-only work returned', null);
+  f.store.db
+    .prepare("UPDATE durable_tasks SET state='partially_completed' WHERE id=?")
+    .run(task.id);
+  f.store.db.prepare("UPDATE task_steps SET state='awaiting_review' WHERE id=?").run(step.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  const receipts = addKnownReadOnlyReceipts(f, task, accepted.attempt_id);
+  f.authority.revoke(f.binding, 'readonly-revoke', 'Original partial run stopped');
+  return { f, admitted, accepted, child, children, receipts };
+}
+
+test('known readonly non-success retirement preserves completed diagnostic history without claiming verification', async () => {
+  const { f, admitted, child, children } = knownReadOnlyFailureFixture();
+  try {
+    const run = () =>
+      f.work.fail(
+        f.binding,
+        'readonly-retire',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    const receipt = run();
+    expect(receipt).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+    expect(f.store.attempt(child.child_attempt).state).toBe('completed');
+    expect(f.tasks.get(admitted.task_id).state).toBe('cancelled');
+    f.reopen();
+    expect(run()).toEqual(receipt);
+  } finally {
+    await children.close();
+    f.close();
+  }
+});
+
+test.each([
+  'foreign-binding',
+  'changed-plan',
+  'auto-enabled',
+  'unfinished-child',
+  'child-coding',
+  'child-binding',
+  'child-result-bytes',
+  'unknown-model',
+  'orphan-budget',
+  'unmatched-model',
+  'mcp-approval',
+  'mcp-unknown',
+  'mcp-profile',
+  'mcp-result-bytes',
+  'unaccounted-mcp',
+  'failed-check',
+  'changed-command',
+  'wrong-tree',
+  'missing-unit-stop',
+  'unit-uncertain',
+  'unit-context',
+  'helper-stop',
+  'unaccounted-inspection',
+  'write-call',
+  'unknown-unit',
+  'unaccounted-tool',
+  'duplicate-tool-end',
+  'orphan-external',
+])('known readonly non-success retirement rejects %s', async (failure) => {
+  const { f, admitted, accepted, child, children, receipts } = knownReadOnlyFailureFixture();
+  try {
+    const db = f.store.db;
+    if (failure === 'changed-plan') db.prepare("UPDATE task_steps SET instruction='changed'").run();
+    if (failure === 'auto-enabled') db.prepare('UPDATE task_runtime SET auto_enabled=1').run();
+    if (failure === 'unfinished-child')
+      db.prepare("UPDATE child_workers SET dispatch_state='dispatching' WHERE child_id=?").run(
+        child.id,
+      );
+    if (failure === 'child-coding' || failure === 'child-binding') {
+      const row = db.prepare('SELECT binding FROM child_workers WHERE child_id=?').get(child.id)!;
+      const binding = JSON.parse(String(row.binding));
+      if (failure === 'child-coding') {
+        binding.capabilities.commands = true;
+        binding.capability_digest = digest(binding.capabilities);
+      } else binding.owner_task = 'foreign-task';
+      db.prepare('UPDATE child_workers SET binding=?,binding_digest=? WHERE child_id=?').run(
+        canonical(binding),
+        digest(binding),
+        child.id,
+      );
+    }
+    if (failure === 'child-result-bytes') {
+      const row = db.prepare('SELECT artifact_id FROM child_tasks WHERE id=?').get(child.id)!;
+      writeFileSync(join(f.state, 'artifacts', String(row.artifact_id)), 'changed');
+    }
+    if (failure === 'unknown-model')
+      db.prepare("UPDATE usage_observations SET status='unknown'").run();
+    if (failure === 'orphan-budget' || failure === 'orphan-external') {
+      db.exec('PRAGMA foreign_keys=OFF');
+      if (failure === 'orphan-budget')
+        db.prepare("INSERT INTO attempt_budgets VALUES('missing',1,0,0)").run();
+      else
+        db.prepare(
+          "INSERT INTO external_runs(child_id,run_id,state,epoch) VALUES('missing','run','running',1)",
+        ).run();
+      db.exec('PRAGMA foreign_keys=ON');
+    }
+    if (failure === 'unmatched-model')
+      f.store.transaction(() =>
+        f.store.event(f.session, 'model.admitted', { attempt_id: accepted.attempt_id, epoch: 1 }),
+      );
+    if (failure === 'mcp-approval') db.prepare("UPDATE mcp_calls SET policy='approval'").run();
+    if (failure === 'mcp-unknown') db.prepare("UPDATE mcp_calls SET state='outcome_unknown'").run();
+    if (failure === 'mcp-profile')
+      db.prepare('UPDATE mcp_calls SET profile_digest=?').run('f'.repeat(64));
+    if (failure === 'mcp-result-bytes')
+      writeFileSync(join(f.state, 'artifacts', receipts.result), 'changed');
+    if (failure === 'unaccounted-mcp')
+      db.prepare(
+        "DELETE FROM events WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool')='salaam_mcp'",
+      ).run();
+    if (failure === 'failed-check') db.prepare("UPDATE task_checks SET state='failed'").run();
+    if (failure === 'changed-command')
+      db.prepare(
+        "UPDATE station_calls SET args_json=json_set(args_json,'$.command','different') WHERE kind='check'",
+      ).run();
+    if (failure === 'wrong-tree')
+      db.prepare(
+        "UPDATE station_calls SET result_json=json_set(result_json,'$.observed_tree',?) WHERE kind='check'",
+      ).run('a'.repeat(64));
+    if (failure === 'missing-unit-stop')
+      db.prepare('UPDATE station_units SET stop_json=NULL').run();
+    if (failure === 'unit-uncertain')
+      db.prepare(
+        "UPDATE station_units SET stop_json=json_set(stop_json,'$.observed_empty',json('false'))",
+      ).run();
+    if (failure === 'unit-context')
+      db.prepare('UPDATE station_units SET context_digest=?').run('f'.repeat(64));
+    if (failure === 'helper-stop')
+      db.prepare(
+        "UPDATE station_calls SET helper_stop_json=json_set(helper_stop_json,'$.pid',99) WHERE kind='read'",
+      ).run();
+    if (failure === 'unaccounted-inspection')
+      db.prepare("DELETE FROM events WHERE kind='station.verification_observed'").run();
+    if (failure === 'write-call')
+      db.prepare(
+        "UPDATE station_calls SET kind='patch',attempt_id=?,task_check_id=NULL WHERE id=?",
+      ).run(accepted.attempt_id, receipts.inspection);
+    if (failure === 'unknown-unit')
+      db.prepare(
+        "INSERT INTO station_units(id,context_digest,config_json,snapshot_path,output_path,state) VALUES('unknown',?,'{}','unused','unused','unconfirmed')",
+      ).run('a'.repeat(64));
+    if (failure === 'unaccounted-tool')
+      f.store.transaction(() => {
+        const input = '{}';
+        f.store.event(f.session, 'tool.started', {
+          attempt_id: accepted.attempt_id,
+          worker_epoch: 1,
+          tool_call_id: 'effect',
+          tool: 'salaam_effect',
+          input,
+          input_digest: textDigest(input),
+          input_truncated: false,
+        });
+        f.store.event(f.session, 'tool.finished', {
+          attempt_id: accepted.attempt_id,
+          worker_epoch: 1,
+          tool_call_id: 'effect',
+          tool: 'salaam_effect',
+          failed: false,
+        });
+      });
+    if (failure === 'duplicate-tool-end')
+      f.store.transaction(() =>
+        f.store.event(f.session, 'tool.finished', {
+          attempt_id: accepted.attempt_id,
+          worker_epoch: 1,
+          tool_call_id: 'readonly-mcp',
+          tool: 'salaam_mcp',
+          failed: false,
+        }),
+      );
+    const binding =
+      failure === 'foreign-binding'
+        ? { ...f.binding, principal_id: 'prn_' + '3'.repeat(20) }
+        : f.binding;
+    expect(() =>
+      f.work.fail(
+        binding,
+        'reject-readonly',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+    expect(f.tasks.get(admitted.task_id).state).toBe('partially_completed');
+    expect(
+      db.prepare("SELECT 1 FROM requests WHERE actor='agentpod-work-failure'").get(),
+    ).toBeUndefined();
+  } finally {
+    await children.close();
+    f.close();
+  }
+});
+
+test.each([true, false])(
+  'known readonly non-success catalog requires an admitted selection (%s)',
+  async (admittedCatalog) => {
+    const { f, admitted, accepted, children } = knownReadOnlyFailureFixture();
+    try {
+      const input = canonical({
+        action: 'catalog',
+        server: admittedCatalog ? 'superlibrary' : 'foreign-server',
+      });
+      f.store.transaction(() => {
+        f.store.event(f.session, 'tool.started', {
+          attempt_id: accepted.attempt_id,
+          worker_epoch: 1,
+          tool_call_id: 'catalog',
+          tool: 'salaam_mcp',
+          input,
+          input_digest: textDigest(input),
+          input_truncated: false,
+        });
+        f.store.event(f.session, 'tool.finished', {
+          attempt_id: accepted.attempt_id,
+          worker_epoch: 1,
+          tool_call_id: 'catalog',
+          tool: 'salaam_mcp',
+          failed: false,
+        });
+      });
+      const run = () =>
+        f.work.fail(
+          f.binding,
+          'catalog-retire',
+          admitted.request_id,
+          'a'.repeat(64),
+          settlementDriver(f),
+        );
+      if (admittedCatalog)
+        expect(run()).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+      else expect(run).toThrow();
+    } finally {
+      await children.close();
+      f.close();
+    }
+  },
+);
 
 async function knownEffectFailureFixture() {
   const x = await expiredWorkFixture(),

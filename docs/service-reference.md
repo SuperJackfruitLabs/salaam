@@ -146,8 +146,13 @@ It requires a revoked root with confirmed stopped execution and no active or unk
 operations. In addition to the existing single approved patch profile, it accepts
 only a first-step native child concurrency denial with one model admission, one
 denied `spawn_child`, concurrency one, no children, calls, checks, reservations,
-workspace mutations, or execution resources belonging to that work. Unknown or
-partially recorded resources reject retirement. The receipt remains cancelled with
+workspace mutations, or execution resources belonging to that work. A separate historical read-only profile accepts stopped non-success tasks whose
+completed native diagnostic children, model requests, policy-admitted MCP reads,
+and protected station checks and observations have complete immutable ownership,
+artifact and stop receipts. It rejects writes, approvals, mutations, unfinished or
+orphan execution, and unaccounted tool activity. MCP returns retain their original
+protocol meaning; retirement does not verify external product effects or refresh
+historical checks. Unknown or partially recorded resources reject retirement. The receipt remains cancelled with
 `known_effects_preserved`; this never establishes success or renews authority.
 
 ## License
