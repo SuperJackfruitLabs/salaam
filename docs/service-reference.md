@@ -140,6 +140,16 @@ Usage observations have stable provider-request or Pi-entry source keys. Reimpor
 
 The service defaults to offline and resolves only the selected provider credentials for each live request. Keep credentials outside Git and chat; default tests and demos use fixtures. See [provider support and authentication](providers.md).
 
+Private AgentPod operator failure retirement preserves the immutable admitted root,
+work request, plan, producer non-success terminal digest, and interrupted history.
+It requires a revoked root with confirmed stopped execution and no active or unknown
+operations. In addition to the existing single approved patch profile, it accepts
+only a first-step native child concurrency denial with one model admission, one
+denied `spawn_child`, concurrency one, no children, calls, checks, reservations,
+workspace mutations, or execution resources belonging to that work. Unknown or
+partially recorded resources reject retirement. The receipt remains cancelled with
+`known_effects_preserved`; this never establishes success or renews authority.
+
 ## License
 
 [Apache License 2.0](../LICENSE).

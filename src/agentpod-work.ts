@@ -362,6 +362,201 @@ export class AgentPodWork {
       },
     );
   }
+  /** A disjoint failure profile: the native child was denied before any effect
+   * ledger was created. Stopped resources alone never establish zero effects. */
+  private zeroEffectConcurrencyFailure(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    const reason = 'Task concurrency limit reached',
+      attempt = attempts[0];
+    if (
+      task.state !== 'blocked' ||
+      task.limits.concurrency !== 1 ||
+      !runtime ||
+      runtime.blocked_reason !== reason ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      runtime.verification_runs ||
+      runtime.requests_spent !== 1 ||
+      attempts.length !== 1 ||
+      !attempt ||
+      attempt.state !== 'interrupted' ||
+      attempt.resolved_by !== null ||
+      attempt.continues_attempt_id !== null ||
+      attempt.result !== null ||
+      attempt.error !== 'Pi exited (0)' ||
+      task.steps.filter((s) => s.state === 'interrupted' && s.attempt_id === attempt.id).length !==
+        1 ||
+      task.steps[0]?.attempt_id !== attempt.id ||
+      task.steps[0]?.state !== 'interrupted' ||
+      task.steps.slice(1).some((s) => s.state !== 'pending' || s.attempt_id !== null)
+    )
+      return null;
+    const blocks = this.store.db
+      .prepare(
+        "SELECT seq,payload FROM events WHERE session_id=? AND kind='work_task.budget_blocked'",
+      )
+      .all(session);
+    if (
+      blocks.length !== 1 ||
+      canonical(JSON.parse(String(blocks[0]!.payload))) !== canonical({ task_id: task.id, reason })
+    )
+      return null;
+    const activity = this.store.db
+      .prepare(
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','worker.unhealthy','attempt.interrupted') ORDER BY seq",
+      )
+      .all(session);
+    if (
+      activity.length !== 3 ||
+      activity[0]!.kind !== 'tool.started' ||
+      activity[1]!.kind !== 'worker.unhealthy' ||
+      activity[2]!.kind !== 'attempt.interrupted' ||
+      Number(activity[0]!.seq) >= Number(blocks[0]!.seq) ||
+      Number(activity[1]!.seq) <= Number(blocks[0]!.seq)
+    )
+      return null;
+    const tool = JSON.parse(String(activity[0]!.payload)),
+      unhealthy = JSON.parse(String(activity[1]!.payload)),
+      interrupted = JSON.parse(String(activity[2]!.payload));
+    if (
+      tool.tool !== 'spawn_child' ||
+      tool.attempt_id !== attempt.id ||
+      tool.worker_epoch !== attempt.worker_epoch ||
+      typeof tool.tool_call_id !== 'string' ||
+      !tool.tool_call_id ||
+      tool.parent_tool_call_id ||
+      unhealthy.epoch !== attempt.worker_epoch ||
+      unhealthy.error !== 'Required control failed: ' + reason ||
+      interrupted.attempt_id !== attempt.id ||
+      interrupted.error !== attempt.error
+    )
+      return null;
+    const models = this.store.db
+      .prepare("SELECT seq,payload FROM events WHERE session_id=? AND kind='model.admitted'")
+      .all(session);
+    const policies = this.store.db
+      .prepare("SELECT seq,payload FROM events WHERE session_id=? AND kind='policy.allowed'")
+      .all(session);
+    if (models.length !== 1 || policies.length !== 1) return null;
+    const model = JSON.parse(String(models[0]!.payload)),
+      policy = JSON.parse(String(policies[0]!.payload));
+    if (
+      model.attempt_id !== attempt.id ||
+      model.epoch !== attempt.worker_epoch ||
+      Number(models[0]!.seq) >= Number(activity[0]!.seq) ||
+      policy.tool !== 'spawn_child' ||
+      policy.attempt_id !== attempt.id ||
+      policy.epoch !== attempt.worker_epoch ||
+      Number(policies[0]!.seq) <= Number(activity[0]!.seq) ||
+      Number(policies[0]!.seq) >= Number(blocks[0]!.seq)
+    )
+      return null;
+    const links = this.store.db
+      .prepare(
+        'SELECT b.* FROM task_step_attempts b JOIN task_steps s ON s.id=b.step_id WHERE s.task_id=?',
+      )
+      .all(task.id);
+    if (
+      links.length !== 1 ||
+      links[0]!.attempt_id !== attempt.id ||
+      links[0]!.plan_revision !== task.plan_revision ||
+      links[0]!.step_id !== task.steps.find((s) => s.attempt_id === attempt.id)?.id
+    )
+      return null;
+    // These are all independent execution/effect ledgers, including read calls.
+    for (const table of [
+      'operations',
+      'mcp_calls',
+      'toolkit_calls',
+      'toolkit_resources',
+      'station_calls',
+      'local_calls',
+      'command_runs',
+    ]) {
+      if (this.store.db.prepare(`SELECT 1 FROM ${table} WHERE session_id=?`).get(session))
+        return null;
+    }
+    if (
+      this.store.db
+        .prepare('SELECT 1 FROM child_tasks WHERE parent_session=? OR child_session=?')
+        .get(session, session) ||
+      this.store.db
+        .prepare('SELECT 1 FROM worker_integrations WHERE parent_session=?')
+        .get(session) ||
+      this.store.db
+        .prepare(
+          'SELECT 1 FROM workspace_mutations m JOIN workspaces w ON w.id=m.workspace_id WHERE w.session_id=?',
+        )
+        .get(session)
+    )
+      return null;
+    for (const table of [
+      'task_reservations',
+      'task_checks',
+      'task_invocations',
+      'task_mutations',
+      'task_restores',
+      'task_completions',
+    ]) {
+      if (this.store.db.prepare(`SELECT 1 FROM ${table} WHERE task_id=?`).get(task.id)) return null;
+    }
+    // Detect partially journaled or orphaned child execution as uncertainty too.
+    if (
+      this.store.db
+        .prepare(
+          'SELECT 1 FROM child_workers w LEFT JOIN child_tasks c ON c.id=w.child_id WHERE c.id IS NULL OR c.parent_session=?',
+        )
+        .get(session) ||
+      this.store.db
+        .prepare(
+          'SELECT 1 FROM external_runs e LEFT JOIN child_tasks c ON c.id=e.child_id WHERE c.id IS NULL OR c.parent_session=?',
+        )
+        .get(session) ||
+      this.store.db
+        .prepare(
+          'SELECT 1 FROM external_model_requests m LEFT JOIN child_tasks c ON c.id=m.child_id WHERE c.id IS NULL OR c.parent_session=?',
+        )
+        .get(session)
+    )
+      return null;
+    // Unbound startup verification units are outside this work's ownership. Only
+    // their complete durable stop proof allows them to coexist with retirement.
+    const units = this.store.db
+      .prepare('SELECT * FROM station_units WHERE session_id=? OR session_id IS NULL')
+      .all(session);
+    for (const unit of units) {
+      if (
+        unit.session_id !== null ||
+        unit.call_id !== null ||
+        unit.state !== 'stopped' ||
+        !unit.stop_json
+      )
+        return null;
+      const stop = JSON.parse(String(unit.stop_json));
+      if (
+        stop.version !== 1 ||
+        stop.observed_empty !== true ||
+        stop.unit !== `salaam-station-${unit.id}.service` ||
+        stop.cgroup !== `/system.slice/${stop.unit}` ||
+        typeof stop.invocation !== 'string' ||
+        !/^[a-f0-9]{32}$/.test(stop.invocation)
+      )
+        return null;
+    }
+    return {
+      block: blocks[0],
+      activity,
+      model: models[0],
+      policy: policies[0],
+      link: links[0],
+      unbound_stopped_units: units,
+    };
+  }
   fail(
     binding: unknown,
     request: string,
@@ -433,66 +628,74 @@ export class AgentPodWork {
           Number.isFinite(Number(runtime.started_at)) &&
           Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
 
+        const zeroEffect = this.zeroEffectConcurrencyFailure(
+          root.session_id,
+          task,
+          runtime,
+          attempts,
+        );
         if (
-          task.state !== 'blocked' ||
-          !runtime ||
-          !originalBlock ||
-          (runtime.blocked_reason !== bound && !runtimeExpired) ||
-          attempt?.error !== 'Required control failed: ' + bound ||
-          runtime.auto_enabled ||
-          runtime.reserved_requests ||
-          runtime.reserved_tokens ||
-          runtime.verification_runs ||
-          attempts.length !== 1 ||
-          attempt?.state !== 'interrupted' ||
-          attempt.resolved_by !== null ||
-          ops.length !== 1 ||
-          op?.kind !== 'workspace' ||
-          op.state !== 'succeeded' ||
-          op.attempt_id !== attempt.id ||
-          op.resolution !== 'workspace-content-receipt-v1' ||
-          calls.length !== 1 ||
-          call?.kind !== 'patch' ||
-          call.state !== 'returned' ||
-          call.helper_state !== 'stopped' ||
-          call.operation_id !== op.id ||
-          call.attempt_id !== attempt.id ||
-          !call.result_json ||
-          !approval ||
-          approval.state !== 'decided' ||
-          approval.decision !== 'approve' ||
-          approval.operation_digest !== op.operation_digest ||
-          !effect ||
-          effect.version !== 1 ||
-          effect.scope !== 'station-workspace' ||
-          effect.call_id !== call.id ||
-          effect.root_digest !== digest(root.binding) ||
-          effect.root_digest !== call.root_digest ||
-          effect.configuration_digest !== call.configuration_digest ||
-          effect.input_digest !== call.input_digest ||
-          canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
-          effect.result?.ok !== true ||
-          task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted')
-            .length !== 1 ||
-          task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||
-          this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
-          this.store.db
-            .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
-            .get(root.session_id)
+          !zeroEffect &&
+          (task.state !== 'blocked' ||
+            !runtime ||
+            !originalBlock ||
+            (runtime.blocked_reason !== bound && !runtimeExpired) ||
+            attempt?.error !== 'Required control failed: ' + bound ||
+            runtime.auto_enabled ||
+            runtime.reserved_requests ||
+            runtime.reserved_tokens ||
+            runtime.verification_runs ||
+            attempts.length !== 1 ||
+            attempt?.state !== 'interrupted' ||
+            attempt.resolved_by !== null ||
+            ops.length !== 1 ||
+            op?.kind !== 'workspace' ||
+            op.state !== 'succeeded' ||
+            op.attempt_id !== attempt.id ||
+            op.resolution !== 'workspace-content-receipt-v1' ||
+            calls.length !== 1 ||
+            call?.kind !== 'patch' ||
+            call.state !== 'returned' ||
+            call.helper_state !== 'stopped' ||
+            call.operation_id !== op.id ||
+            call.attempt_id !== attempt.id ||
+            !call.result_json ||
+            !approval ||
+            approval.state !== 'decided' ||
+            approval.decision !== 'approve' ||
+            approval.operation_digest !== op.operation_digest ||
+            !effect ||
+            effect.version !== 1 ||
+            effect.scope !== 'station-workspace' ||
+            effect.call_id !== call.id ||
+            effect.root_digest !== digest(root.binding) ||
+            effect.root_digest !== call.root_digest ||
+            effect.configuration_digest !== call.configuration_digest ||
+            effect.input_digest !== call.input_digest ||
+            canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
+            effect.result?.ok !== true ||
+            task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted')
+              .length !== 1 ||
+            task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||
+            this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
+            this.store.db
+              .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+              .get(root.session_id))
         )
           throw new ServiceError(
             'work_settlement_unsafe',
-            'Only exact budget-blocked interrupted work with one known approved patch can retire',
+            'Only exact budget-blocked interrupted work with one known approved patch or a proven zero-effect child denial can retire',
           );
         const evidence_digest = digest({
           binding: root.binding,
           task_id: task.id,
           plan_revision: task.plan_revision,
-          blocked_reason: runtime.blocked_reason,
+          blocked_reason: runtime!.blocked_reason,
           attempt,
-          operation: op,
-          approval,
-          call,
+          operation: op ?? null,
+          approval: approval ?? null,
+          call: call ?? null,
+          ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
         });
         driver.cancelInTransaction(task.id, task.revision, stopped);
         const receipt = {
