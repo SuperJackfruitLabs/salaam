@@ -372,7 +372,7 @@ export class AgentPodWork {
             },
             request,
           );
-        driver.cancelInTransaction(task.id, task.revision, stopped);
+        if (task.state !== 'cancelled') driver.cancelInTransaction(task.id, task.revision, stopped);
         const receipt = {
           version: 1 as const,
           state: 'cancelled' as const,
@@ -602,7 +602,8 @@ export class AgentPodWork {
     applied?: { operation: Record<string, any>; approval: Record<string, any> },
   ) {
     if (
-      !['partially_completed', 'failed', 'blocked'].includes(task.state) ||
+      (!['partially_completed', 'failed', 'blocked'].includes(task.state) &&
+        !(expiry && !applied && task.state === 'cancelled')) ||
       !runtime ||
       runtime.auto_enabled ||
       runtime.reserved_requests ||
@@ -639,7 +640,7 @@ export class AgentPodWork {
         const call = patchCalls[0]!,
           args = JSON.parse(String(call.args_json));
         require(
-          task.state === 'blocked' &&
+          ['blocked', 'cancelled'].includes(task.state) &&
             approval.id === offered.approval_id &&
             approval.operation_id === op.id &&
             op.id === offered.operation_id &&

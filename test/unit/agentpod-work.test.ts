@@ -2051,6 +2051,58 @@ test('expired unanswered patch retirement preserves prior native readonly receip
   }
 });
 
+test.each(['closed', 'unknown-effect', 'generic-failure'])(
+  'cancelled expired history recovery %s',
+  async (mode) => {
+    const { f, admitted, children, managed, offer } = await expiredReadOnlyFixture();
+    try {
+      f.store.db
+        .prepare("UPDATE durable_tasks SET state='cancelled' WHERE id=?")
+        .run(admitted.task_id);
+      if (mode === 'unknown-effect')
+        f.store.db.prepare("UPDATE operations SET state='outcome_unknown'").run();
+      let cancelCalls = 0;
+      const driver = {
+        cancelInTransaction: () => {
+          cancelCalls++;
+          throw Error('Already cancelled task must not be cancelled again');
+        },
+      } as unknown as TaskDriver;
+      const run = () =>
+        mode === 'generic-failure'
+          ? f.work.fail(
+              f.binding,
+              'cancelled-expiry-generic',
+              admitted.request_id,
+              'a'.repeat(64),
+              driver,
+            )
+          : f.work.expire(
+              f.binding,
+              'cancelled-expiry-close',
+              admitted.request_id,
+              offer.request_id,
+              'a'.repeat(64),
+              driver,
+            );
+      if (mode === 'closed') {
+        const receipt = run();
+        expect(receipt).toMatchObject({
+          state: 'cancelled',
+          effects: 'expired_approval_unapplied',
+        });
+        f.reopen();
+        expect(run()).toEqual(receipt);
+      } else expect(run).toThrow();
+      expect(cancelCalls).toBe(0);
+    } finally {
+      await managed.close();
+      await children.close();
+      f.close();
+    }
+  },
+);
+
 test.each([
   'answered',
   'unexpired',
