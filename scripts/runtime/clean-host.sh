@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 # Runs ONLY inside a disposable container. Never mount a host runtime path here.
-set -euo pipefail
+set -eu
 test -f /.dockerenv
 test "$#" = 2
 archive_sha=$1

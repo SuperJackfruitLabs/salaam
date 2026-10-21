@@ -1,5 +1,5 @@
 export const privateRuntimeImage =
-  'docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019';
+  'docker.io/library/node@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32';
 export function validatePrivateRuntimeReceipt(receipt, expected, packageSha) {
   if (
     !receipt ||

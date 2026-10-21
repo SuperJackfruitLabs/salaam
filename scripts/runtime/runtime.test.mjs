@@ -10,6 +10,7 @@ import {
   rmSync,
   symlinkSync,
   existsSync,
+  readFileSync,
   chmodSync,
   renameSync,
   unlinkSync,
@@ -304,4 +305,66 @@ test('CI private runtime receipt binds run, package and pinned image and denies 
       () => validatePrivateRuntimeReceipt({ ...receipt, ...patch }, expected, 'a'.repeat(64)),
       /private runtime container proof/,
     );
+});
+
+test('container proof overrides the image entrypoint with a shell and retains offline read-only isolation', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sal-container-command-'));
+  try {
+    const docker = join(dir, 'docker'),
+      capture = join(dir, 'arguments.json');
+    // Emulate the observed image default: without an explicit shell entrypoint,
+    // Docker hands its command to Node and /bin/bash becomes a JS module path.
+    writeFileSync(
+      docker,
+      `#!${process.execPath}
+import fs from 'node:fs';
+const args=process.argv.slice(2), at=args.indexOf('--entrypoint');
+if(at<0 || args[at+1]!=='/bin/sh') {
+  console.error("Cannot find module '/bin/bash'"); process.exit(42);
+}
+fs.writeFileSync(process.env.DOCKER_CAPTURE,JSON.stringify(args));
+`,
+      { mode: 0o755 },
+    );
+    const previous = spawnSync(docker, ['run', privateRuntimeImage, '/bin/bash'], {
+      encoding: 'utf8',
+    });
+    assert.equal(previous.status, 42);
+    assert.match(previous.stderr, /Cannot find module/);
+    execFileSync(
+      '/bin/sh',
+      [
+        new URL('./run-container.sh', import.meta.url).pathname,
+        '/fixture root',
+        '/archive path/private.tgz',
+        'a'.repeat(64),
+        'fixture',
+        privateRuntimeImage,
+      ],
+      { env: { PATH: `${dir}:/usr/bin:/bin`, DOCKER_CAPTURE: capture } },
+    );
+    const args = JSON.parse(readFileSync(capture, 'utf8'));
+    const option = (key) => args[args.indexOf(key) + 1];
+    assert.equal(option('--entrypoint'), '/bin/sh');
+    assert.equal(option('--network'), 'none');
+    assert.ok(args.includes('--pull=never'));
+    assert.equal(option('--cap-drop'), 'ALL');
+    assert.equal(option('--security-opt'), 'no-new-privileges');
+    const imageAt = args.indexOf(privateRuntimeImage);
+    assert.ok(args.indexOf('--entrypoint') < imageAt);
+    assert.deepEqual(args.slice(imageAt + 1), ['/input/clean-host.sh', 'a'.repeat(64), 'fixture']);
+    assert.ok(privateRuntimeImage.includes('4db36457'));
+    const mounts = args.filter((_, i) => args[i - 1] === '--mount');
+    assert.equal(mounts.length, 4);
+    assert.ok(mounts.every((m) => m.endsWith(',readonly')));
+    assert.ok(
+      mounts.includes(
+        'type=bind,src=/archive path/private.tgz,dst=/input/private-runtime.tar.gz,readonly',
+      ),
+    );
+    assert.ok(!mounts.some((m) => /docker\.sock|node_modules/.test(m)));
+    execFileSync('/bin/sh', ['-n', new URL('./clean-host.sh', import.meta.url).pathname]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
