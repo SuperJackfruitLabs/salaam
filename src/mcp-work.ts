@@ -18,6 +18,7 @@ import {
 } from './mcp-protocol.js';
 import { canonical, digest, object, ServiceError, string, type Operation } from './protocol.js';
 import type { AgentPodBinding } from './agentpod-protocol.js';
+import { workTraceHeader } from './execution-trace.js';
 
 export interface McpConnection {
   connect(): Promise<void>;
@@ -27,6 +28,7 @@ export interface McpConnection {
     args: Record<string, unknown>,
     signal: AbortSignal,
     beforeSend: () => void,
+    traceparent?: string,
   ): Promise<McpReturnedResult>;
   close(): Promise<void>;
 }
@@ -509,6 +511,13 @@ export class McpWork {
       active.client = client;
       await client.connect();
       active.invoking = true;
+      let traceparent: string | undefined;
+      try {
+        traceparent =
+          workTraceHeader(this.store, call.session_id, 'managed-http:' + call.id) ?? undefined;
+      } catch {
+        /* Missing/corrupt telemetry is independent of work and usage truth. */
+      }
       const raw = await client.call(
         call.tool_name,
         JSON.parse(call.arguments_json),
@@ -532,6 +541,7 @@ export class McpWork {
             this.change(current, 'dispatching');
           });
         },
+        traceparent,
       );
       const result = redactMcpData(raw, active.secrets) as McpReturnedResult;
       const artifact = this.artifacts.prepare(call.session_id, canonical(result));

@@ -17,7 +17,15 @@ import {
   type Manifest,
   type Session,
 } from './protocol.js';
-import { PI_CLI, HOUSE_EXTENSION, POLICY_DIGEST, bundleDigest } from './config.js';
+import {
+  PI_CLI,
+  HOUSE_EXTENSION,
+  POLICY_DIGEST,
+  bundleDigest,
+  VERSION,
+  PI_VERSION,
+} from './config.js';
+import { readinessFingerprint } from './readiness-fingerprint.js';
 import { PiProcess, PiCommandError } from './pi.js';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -595,6 +603,21 @@ export class Supervisor extends EventEmitter {
         null,
         workerCapabilities(this.codingBinding(id), this.tools(id)),
         file,
+        readinessFingerprint({
+          session_id: id,
+          worker_epoch: epoch,
+          version: 1,
+          harness: 'salaam',
+          harness_version: VERSION,
+          pi_version: PI_VERSION,
+          bundle_digest: worker.bundle,
+          policy_digest: POLICY_DIGEST,
+          provider: route.provider,
+          model: route.model,
+          context_digest: textDigest(worker.frame),
+          context_admission_digest: this.tasks.admitted?.currentDigest(id) ?? null,
+          verification: 'pinned-readiness-handshake',
+        }),
       );
       worker.ready = true;
       worker.lastBeat = Date.now();

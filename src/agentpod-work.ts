@@ -4,6 +4,8 @@ import type { TaskWork, WorkTask } from './task-work.js';
 import type { TaskDriver } from './task-driver.js';
 import type { TaskVerification } from './task-verification.js';
 import { canonical, digest, ServiceError } from './protocol.js';
+import { executionEvidence } from './execution-evidence.js';
+import { bindWorkTrace } from './execution-trace.js';
 import {
   agentpodWorkAdmission,
   checkAgentPodWorkAdmission,
@@ -59,6 +61,85 @@ export class AgentPodWork {
     };
     if (digest(plan) !== agentpodWorkAdmission(admission).work.plan_digest)
       throw new ServiceError('work_plan_changed', 'Task plan differs from original work admission');
+  }
+  /** Read committed evidence with historical ownership, without a live grant,
+   * native recheck, task progression, or model dispatch. */
+  evidence(binding: unknown) {
+    return this.store.transaction(() => {
+      const { root, row, task } = this.owned(binding);
+      const admission = agentpodWorkAdmission(JSON.parse(String(row.admission_json)));
+      return executionEvidence(
+        this.store,
+        this.verification.artifacts,
+        admission,
+        task.id,
+        root.session_id,
+      );
+    });
+  }
+  trace(binding: unknown, traceparent: unknown) {
+    const { root, row } = this.owned(binding);
+    const record = bindWorkTrace(
+      this.store,
+      root.session_id,
+      String(row.request_id),
+      digest(root.binding),
+      traceparent,
+    );
+    return {
+      version: record.version,
+      traceparent: record.traceparent,
+      authority: record.authority,
+    };
+  }
+  evidenceArtifacts(binding: unknown, input: unknown) {
+    if (
+      !Array.isArray(input) ||
+      input.length < 1 ||
+      input.length > 16 ||
+      input.some((id) => typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id)) ||
+      new Set(input).size !== input.length
+    )
+      throw new ServiceError(
+        'invalid_evidence_artifacts',
+        'Select one to sixteen distinct artifact IDs',
+      );
+    return this.store.transaction(() => {
+      const { root, row, task } = this.owned(binding);
+      const admission = agentpodWorkAdmission(JSON.parse(String(row.admission_json)));
+      const evidence = executionEvidence(
+        this.store,
+        this.verification.artifacts,
+        admission,
+        task.id,
+        root.session_id,
+      );
+      let total = 0;
+      const artifacts = input.map((id: string) => {
+        const artifact = evidence.artifacts.find((a) => a.id === id);
+        if (!artifact || !['proposed', 'produced', 'integrated'].includes(artifact.disposition))
+          throw new ServiceError(
+            'evidence_artifact_unavailable',
+            'Only selected produced work artifacts may be exported',
+          );
+        const content = this.verification.artifacts.read(id);
+        total += Buffer.byteLength(content);
+        if (total > 4 * 1024 * 1024)
+          throw new ServiceError(
+            'evidence_artifact_too_large',
+            'Selected source artifacts exceed four MiB',
+          );
+        return {
+          id: String(artifact.id),
+          session_id: String(artifact.session_id),
+          digest: String(artifact.digest),
+          bytes: Number(artifact.bytes),
+          disposition: artifact.disposition,
+          content_base64: Buffer.from(content, 'utf8').toString('base64'),
+        };
+      });
+      return { schema_version: 'salaam-execution-artifacts/v1' as const, evidence, artifacts };
+    });
   }
   /** Explicit private operator settlement, restricted to work that never dispatched.
    * The Hub independently verifies the original producer terminal run/lease and

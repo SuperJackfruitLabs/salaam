@@ -19,6 +19,80 @@ import { TaskFixtureBackend } from '../fixtures/task-backend.mjs';
 import { digest } from '../../src/protocol.js';
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { configurePermissions } from '../../src/autonomy.js';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import addFormats from 'ajv-formats';
+import { workTraceHeader } from '../../src/execution-trace.js';
+import { readinessFingerprint } from '../../src/readiness-fingerprint.js';
+import { ChildWork } from '../../src/children.js';
+import type { Supervisor } from '../../src/supervisor.js';
+
+const executionSchema = JSON.parse(
+  readFileSync(new URL('../fixtures/execution-evidence-v1.schema.json', import.meta.url), 'utf8'),
+);
+const evidenceAjv = new Ajv2020({ strict: false });
+addFormats.default(evidenceAjv);
+const validateEvidence = evidenceAjv.compile(executionSchema);
+const validateArtifacts = evidenceAjv.compile(
+  JSON.parse(
+    readFileSync(
+      new URL('../fixtures/execution-artifacts-v1.schema.json', import.meta.url),
+      'utf8',
+    ),
+  ),
+);
+const assertEvidence = (value: unknown) =>
+  expect(validateEvidence(value), JSON.stringify(validateEvidence.errors)).toBe(true);
+
+test('source evidence uses the canonical AgentPod versioned success/rejection corpus', () => {
+  const corpus = JSON.parse(
+    readFileSync(new URL('../fixtures/execution-evidence-v1.json', import.meta.url), 'utf8'),
+  );
+  for (const example of corpus.success) assertEvidence(example.value);
+  for (const example of corpus.rejection)
+    expect(validateEvidence(example.value), example.name).toBe(false);
+});
+
+test('selected source bytes conform to the shared artifact bundle success/rejection corpus', () => {
+  const corpus = JSON.parse(
+    readFileSync(new URL('../fixtures/execution-artifacts-v1.json', import.meta.url), 'utf8'),
+  );
+  for (const example of corpus.success)
+    expect(validateArtifacts(example.value), JSON.stringify(validateArtifacts.errors)).toBe(true);
+  for (const example of corpus.rejection)
+    expect(validateArtifacts(example.value), example.name).toBe(false);
+});
+
+test('work trace preserves the original parent across reconnect without renewing execution or charging usage', () => {
+  const f = fixture();
+  try {
+    f.run();
+    const parent = '00-' + 'a'.repeat(32) + '-' + 'b'.repeat(16) + '-01';
+    expect(workTraceHeader(f.store, f.session, 'tool:one')).toBe(null);
+    const original = f.work.trace(f.binding, parent);
+    expect(original.authority).toBe(false);
+    expect(original.traceparent.slice(3, 35)).toBe('a'.repeat(32));
+    const tool = workTraceHeader(f.store, f.session, 'tool:one');
+    expect(tool).not.toBe(original.traceparent);
+    expect(workTraceHeader(f.store, f.session, 'tool:two')).not.toBe(tool);
+    f.authority.revoke(f.binding, 'trace-revoke', 'Trace cannot renew execution');
+    f.reopen();
+    expect(f.work.trace(f.binding, '00-' + 'c'.repeat(32) + '-' + 'd'.repeat(16) + '-00')).toEqual(
+      original,
+    );
+    expect(workTraceHeader(f.store, f.session, 'tool:one')).toBe(tool);
+    expect(f.store.usage.evidence(f.session).status).toBe('unreported');
+    expect(f.authority.inspect(f.binding).authorized).toBe(false);
+    expect(() =>
+      f.work.trace({ ...f.binding, principal_id: 'prn_' + '3'.repeat(20) }, parent),
+    ).toThrow();
+    expect(() =>
+      f.work.trace(f.binding, '00-' + '0'.repeat(32) + '-' + 'b'.repeat(16) + '-01'),
+    ).toThrow('nonzero');
+    expect(() => f.work.trace(f.binding, 'Bearer should-never-be-a-trace')).toThrow('W3C');
+  } finally {
+    f.close();
+  }
+});
 
 function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
   const base = realpathSync(mkdtempSync('/tmp/sal-work-admit-'));
@@ -59,11 +133,13 @@ function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
     tasks = new TaskWork(store, new TaskContext(store, artifacts));
     const budget = new TaskBudget(store, tasks);
     const workspaces = new Workspaces(store, artifacts, join(state, 'owned'));
+    const backend = new TaskFixtureBackend();
+    backend.profileDigest = digest('synthetic task fixture execution profile');
     const coding = new CodingWork(
       store,
       workspaces,
       artifacts,
-      verifier ? new TaskFixtureBackend() : undefined,
+      verifier ? backend : undefined,
       () => {},
     );
     work = new AgentPodWork(
@@ -135,6 +211,209 @@ function fixture(verifier = true, owned = true, resourcesStopped = () => true) {
     },
   };
 }
+
+test('synthetic ready receipt is atomically scoped, digest checked, and historical after restart', () => {
+  const f = fixture();
+  try {
+    f.run();
+    const epoch = f.store.allocate(f.session, 'evidence-worker');
+    const fingerprint = readinessFingerprint({
+      version: 1,
+      session_id: f.session,
+      worker_epoch: epoch,
+      harness: 'salaam',
+      harness_version: 'fixture-version',
+      pi_version: 'fixture-pi-version',
+      bundle_digest: 'a'.repeat(64),
+      policy_digest: 'b'.repeat(64),
+      provider: 'fixture',
+      model: 'fixture/model',
+      context_digest: 'c'.repeat(64),
+      context_admission_digest: null,
+      verification: 'pinned-readiness-handshake',
+    });
+    expect(() =>
+      f.store.state(f.session, epoch, 'ready', null, [], undefined, {
+        ...fingerprint,
+        worker_epoch: epoch + 1,
+      }),
+    ).toThrow('exact ready worker');
+    expect(f.store.session(f.session).state).not.toBe('ready');
+    f.store.state(f.session, epoch, 'ready', null, [], undefined, fingerprint);
+    expect(f.work.evidence(f.binding).fingerprints).toEqual([fingerprint]);
+    assertEvidence(f.work.evidence(f.binding));
+    f.reopen();
+    expect(f.work.evidence(f.binding).fingerprints).toEqual([fingerprint]);
+    f.store.db
+      .prepare(
+        "UPDATE events SET payload=json_set(payload,'$.fingerprint.model','changed') WHERE session_id=? AND kind='worker.ready'",
+      )
+      .run(f.session);
+    expect(() => f.work.evidence(f.binding)).toThrow('fingerprint is inconsistent');
+  } finally {
+    f.close();
+  }
+});
+
+test('native child contributor follows its immutable delegation, while an unbound peer cannot close contributor coverage', async () => {
+  const f = fixture();
+  let children: ChildWork | undefined;
+  try {
+    const task = f.run(),
+      step = f.tasks.get(task.task_id).steps[0]!;
+    const submission = f.store.transaction(() =>
+      f.store.enqueue(f.session, randomUUID(), 'Readonly child evidence', undefined, null, step.id),
+    );
+    const epoch = f.store.allocate(f.session, 'parent-evidence');
+    f.store.state(f.session, epoch, 'ready');
+    f.store.claim(f.session, epoch);
+    f.store.running(submission.attempt_id);
+    const supervisor = {
+      assertActive() {},
+      assertSessionProviderSupported() {},
+      start: async () => {},
+      failControl() {},
+    } as unknown as Supervisor;
+    children = new ChildWork(f.store, f.work.verification.artifacts, supervisor);
+    const child = children.spawn(
+      f.session,
+      epoch,
+      submission.attempt_id,
+      'readonly-evidence',
+      'Read-only diagnostic',
+      1,
+      ['salaam_probe'],
+    );
+    children.workerLost(child.child_session, 'Synthetic stopped worker');
+    const evidence = f.work.evidence(f.binding);
+    assertEvidence(evidence);
+    expect(evidence.children).toMatchObject([
+      { id: child.id, contributor_principal_id: f.binding.principal_id },
+    ]);
+    expect(evidence.contributors.closure).toBe('complete');
+    const bundle = f.work.evidenceArtifacts(f.binding, [
+      child.artifact_id ?? String(evidence.children[0]!.artifact_id),
+    ]);
+    expect(validateArtifacts(bundle), JSON.stringify(validateArtifacts.errors)).toBe(true);
+    const selected = bundle.artifacts[0]!;
+    const bytes = Buffer.from(String(selected.content_base64), 'base64');
+    expect(digest(JSON.parse(bytes.toString()))).toBe(
+      digest(JSON.parse(f.work.verification.artifacts.read(String(selected.id)))),
+    );
+    expect(selected.disposition).toBe('proposed');
+    const saved = f.store.workerBoundary.view(child.id).binding;
+    f.store.db
+      .prepare('UPDATE child_workers SET binding=?,binding_digest=? WHERE child_id=?')
+      .run(
+        JSON.stringify({ ...saved, runtime: 'a2a' }),
+        digest({ ...saved, runtime: 'a2a' }),
+        child.id,
+      );
+    expect(f.work.evidence(f.binding).contributors.closure).toBe('incomplete');
+    expect(() =>
+      f.work.evidenceArtifacts(f.binding, [
+        f.work.evidence(f.binding).artifacts.find((a) => a.disposition === 'observed')!.id,
+      ]),
+    ).toThrow('Only selected produced');
+    expect(() =>
+      f.work.evidenceArtifacts(f.binding, [String(selected.id), String(selected.id)]),
+    ).toThrow('distinct');
+    expect(() =>
+      f.work.evidenceArtifacts({ ...f.binding, principal_id: 'prn_' + '3'.repeat(20) }, [
+        String(selected.id),
+      ]),
+    ).toThrow();
+  } finally {
+    await children?.close();
+    f.close();
+  }
+});
+
+test('execution evidence is a root-scoped historical snapshot, not a fresh grant or task success', () => {
+  const f = fixture();
+  try {
+    const receipt = f.run();
+    const before = f.store.db.prepare('SELECT count(*) AS n FROM events').get()!.n;
+    const evidence = f.work.evidence(f.binding);
+    assertEvidence(evidence);
+    expect(evidence).toMatchObject({
+      schema_version: 'salaam-execution-evidence/v1',
+      task: { task_id: receipt.task_id, state: 'accepted', ...f.expected },
+      usage: { status: 'unreported', recorded_subtotal: null },
+      contributors: { principal_ids: [f.binding.principal_id], closure: 'complete' },
+      coverage: { truncated: [], unavailable: [] },
+    });
+    expect(evidence.attempts).toEqual([]);
+    expect(JSON.stringify(evidence)).not.toContain(f.base);
+    expect(JSON.stringify(evidence)).not.toContain('workspace');
+    expect(f.store.db.prepare('SELECT count(*) AS n FROM events').get()!.n).toBe(before);
+    f.authority.revoke(f.binding, 'revoke-evidence', 'Historical evidence test');
+    f.reopen();
+    const after = f.work.evidence(f.binding);
+    expect({ ...after, as_of: evidence.as_of }).toEqual(evidence);
+    expect(f.authority.inspect(f.binding).authorized).toBe(false);
+    expect(() =>
+      f.work.evidence({ ...f.binding, principal_id: 'prn_' + '3'.repeat(20) }),
+    ).toThrow();
+    expect(() => f.work.evidence({ ...f.binding, run: { ...f.binding.run, epoch: 2 } })).toThrow();
+  } finally {
+    f.close();
+  }
+});
+
+test('actual saved tool ownership survives revocation and cannot refer to another session attempt', async () => {
+  const { f, managed } = await expiredWorkFixture();
+  try {
+    const evidence = f.work.evidence(f.binding);
+    assertEvidence(evidence);
+    expect(evidence.attempts).toHaveLength(1);
+    expect(evidence.tools).toHaveLength(1);
+    expect(evidence.tools[0]).toMatchObject({
+      source: 'operation',
+      session_id: f.session,
+      receipt_digest: null,
+    });
+    expect(JSON.stringify(evidence)).not.toContain('library/fixture');
+    const other = f.store.create(f.base, 'foreign-source');
+    // A foreign attempt cannot be used to justify a root's tool receipt.
+    f.store.db
+      .prepare('UPDATE attempts SET session_id=? WHERE id=?')
+      .run(other.id, evidence.attempts[0]!.id!);
+    expect(() => f.work.evidence(f.binding)).toThrow('ownership is inconsistent');
+  } finally {
+    await managed.close();
+    f.close();
+  }
+});
+
+test('execution evidence verifies artifact bytes and cannot upgrade a baseline to integrated work', () => {
+  const f = fixture();
+  try {
+    f.run();
+    const evidence = f.work.evidence(f.binding);
+    expect(evidence.artifacts.length).toBeGreaterThan(0);
+    expect(evidence.artifacts.every((a) => a.disposition === 'observed')).toBe(true);
+    const artifact = evidence.artifacts[0]!;
+    writeFileSync(join(f.state, 'artifacts', String(artifact.id)), 'corrupted immutable bytes');
+    expect(() => f.work.evidence(f.binding)).toThrow('digest mismatch');
+  } finally {
+    f.close();
+  }
+});
+
+test('execution evidence bounds details explicitly rather than pretending a truncated artifact set is complete', () => {
+  const f = fixture();
+  try {
+    f.run();
+    for (let i = 0; i < 257; i++)
+      f.work.verification.artifacts.put(f.session, 'source artifact ' + i);
+    const evidence = f.work.evidence(f.binding);
+    expect(evidence.artifacts).toHaveLength(256);
+    expect(evidence.coverage.truncated).toContain('artifacts');
+  } finally {
+    f.close();
+  }
+});
 
 test('synthetic executor ownership: one durable run/task/request survives restart and revocation without regrant', () => {
   const f = fixture();
