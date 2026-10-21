@@ -12,7 +12,8 @@ import { promisify } from 'node:util';
 test('two fresh pinned Pi sessions receive producer-built admitted skills; edits fence subsequent requests and restart keeps the admission', async () => {
   const f = await fixture(
     { extensionPath: join(ROOT, 'test/fixtures/task-extension.mjs') },
-    '/private/tmp/salaam-m22-context-',
+    // Canonical short Unix temp path keeps Go's socket path within sockaddr_un.
+    join(realpathSync('/tmp'), 'salaam-m22-context-'),
   );
   const root = realpathSync(mkdtempSync('/tmp/sal-admitted-'));
   const client = new OperatorClient(f.dir);
