@@ -9,6 +9,9 @@ const evidenceUrl = pathToFileURL(join(ROOT, 'scripts/ci-evidence.mjs')).href;
 const sourceUrl = pathToFileURL(join(ROOT, 'scripts/release-source.mjs')).href;
 const { acceptancePlan, hash, proofs, portfolios } = await import(planUrl);
 const { collectEvidence, validateCertificate } = await import(evidenceUrl);
+const { privateRuntimeImage } = await import(
+  pathToFileURL(join(ROOT, 'scripts/runtime/receipt.mjs')).href
+);
 const { trustedMainRun, selectCertificateArtifact, findMainRun, validatePromotion } = await import(
   sourceUrl
 );
@@ -164,6 +167,31 @@ function fixture(profile = 'full') {
     ]),
   );
   const options = {
+    privateRuntime: {
+      schema: 1,
+      kind: 'salaam-private-runtime-container-proof',
+      success: true,
+      commit: expected.commit,
+      workflow_run_id: expected.run_id,
+      workflow_run_attempt: 1,
+      version: expected.version,
+      package_sha256: metadata.package_sha256,
+      archive_sha256: 'c'.repeat(64),
+      manifest_sha256: 'd'.repeat(64),
+      image: privateRuntimeImage,
+      platform: 'linux',
+      arch: 'x64',
+      network: 'none',
+      source_checkout_required: false,
+      deployed_fleet: false,
+      system_node_absent: true,
+      installed_offline: true,
+      absolute_private_node: true,
+      concurrent_starts_single_owner: true,
+      pinned_pi_readiness: true,
+      offline_turn: true,
+      reconnect_preserves_attempt: true,
+    },
     manifests,
     receipts,
     packageDirectory,
@@ -180,6 +208,19 @@ function fixture(profile = 'full') {
     close: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
+test('CI collection and promotion deny a missing or incomplete private runtime proof', () => {
+  const f = fixture();
+  try {
+    const certificate = f.collect();
+    expect(() =>
+      validateCertificate({ ...certificate, private_runtime: undefined }, f.expected),
+    ).toThrow('private runtime container proof');
+    f.options.privateRuntime.concurrent_starts_single_owner = false;
+    expect(() => f.collect()).toThrow('private runtime container proof');
+  } finally {
+    f.close();
+  }
+});
 test('quick keeps every test suite, while four proof shards cover each of the 20 rounds exactly once', () => {
   expect(acceptancePlan(['--profile', 'quick'])).toMatchObject({
     baseline: true,

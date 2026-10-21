@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validatePrivateRuntimeReceipt } from './runtime/receipt.mjs';
 import {
   hash,
   sourceIdentity,
@@ -252,6 +253,7 @@ export function validateCertificate(certificate, expected) {
       /^\d+$/.test(String(certificate.package.artifact_id)),
     'Missing package identity',
   );
+  validatePrivateRuntimeReceipt(certificate.private_runtime, expected, certificate.package.sha256);
   return certificate;
 }
 export function validateGates(gates, profile) {
@@ -274,6 +276,7 @@ export function validateGates(gates, profile) {
 export function collectEvidence({
   manifests,
   receipts,
+  privateRuntime,
   packageDirectory,
   expected,
   profile,
@@ -341,6 +344,7 @@ export function collectEvidence({
     package: { name: expected.package, ...pkg, artifact_id: String(packageArtifactId) },
     platforms,
     bundle_digest: [...bundles][0],
+    private_runtime: validatePrivateRuntimeReceipt(privateRuntime, expected, pkg.sha256),
   };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -362,7 +366,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
   };
   const directory = join(root, '.state/ci-input');
+  const privateRuntimeRecords = filesBelow(directory, 'private-runtime.json');
+  requireThat(privateRuntimeRecords.length === 1, 'Missing or duplicate private runtime proof');
   const certificate = collectEvidence({
+    privateRuntime: json(privateRuntimeRecords[0]),
     manifests: filesBelow(directory, 'manifest.json').map((path) => ({
       path,
       document: json(path),
