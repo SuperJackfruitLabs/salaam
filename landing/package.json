@@ -12,7 +12,7 @@
     "check:frame": "node scripts/check-frame.mjs"
   },
   "dependencies": {
-    "@superjackfruit/frontdoor": "file:vendor/superjackfruit-frontdoor-0.0.3.tgz",
+    "@superjackfruit/frontdoor": "file:vendor/superjackfruit-frontdoor-0.0.6.tgz",
     "@superjackfruit/vibekit": "file:vendor/superjackfruit-vibekit-0.0.14.tgz",
     "astro": "7.4.0"
   }
