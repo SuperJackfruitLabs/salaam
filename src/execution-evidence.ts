@@ -253,12 +253,27 @@ export function executionEvidence(
     const completion = store.db
       .prepare('SELECT 1 FROM task_completions WHERE task_id=? AND artifact_id=?')
       .get(taskId, row.id!);
+    const appliedPatch = store.db
+      .prepare(
+        `
+      SELECT 1 FROM station_calls c JOIN operations o ON o.id=c.operation_id
+      WHERE c.session_id=? AND c.root_digest=? AND c.kind='patch' AND c.state='returned'
+        AND o.session_id=c.session_id AND o.state='succeeded'
+        AND json_extract(o.receipt,'$.scope')='station-workspace'
+        AND json_extract(o.receipt,'$.call_id')=c.id
+        AND json_extract(o.receipt,'$.root_digest')=c.root_digest
+        AND json_extract(o.receipt,'$.configuration_digest')=c.configuration_digest
+        AND json_extract(o.receipt,'$.input_digest')=c.input_digest
+        AND json_extract(o.receipt,'$.artifact_id')=?
+    `,
+      )
+      .get(row.session_id!, digest(admission.binding), row.id!);
     const disposition =
       integration?.state === 'applied' && integration.mutation_id
         ? 'integrated'
         : children.some((child) => child.artifact_id === row.id)
           ? 'proposed'
-          : completion || checks.some((check) => check.artifact_id === row.id)
+          : appliedPatch || completion || checks.some((check) => check.artifact_id === row.id)
             ? 'produced'
             : 'observed';
     return { ...row, disposition };

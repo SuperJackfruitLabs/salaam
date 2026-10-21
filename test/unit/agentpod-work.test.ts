@@ -386,6 +386,96 @@ test('actual saved tool ownership survives revocation and cannot refer to anothe
   }
 });
 
+test('only a returned station patch with a matching succeeded receipt exports produced bytes', () => {
+  const f = fixture();
+  try {
+    const task = f.run();
+    const step = f.tasks.get(task.task_id).steps[0]!;
+    const attempt = f.store.transaction(() =>
+      f.store.enqueue(f.session, 'patch-attempt', 'fixture', undefined, null, step.id),
+    ).attempt_id;
+    const artifacts = f.work.verification.artifacts;
+    const artifact = artifacts.put(f.session, 'reviewed applied patch receipt');
+    const receipt = {
+      scope: 'station-workspace',
+      call_id: '22222222-2222-4222-8222-222222222222',
+      artifact_id: artifact,
+      root_digest: digest(f.binding),
+      configuration_digest: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      input_digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+    f.store.db
+      .prepare(
+        `INSERT INTO operations
+      (id,session_id,attempt_id,worker_epoch,tool_call_id,kind,action_key,argument_digest,
+       operation_digest,target,value,target_version,policy_digest,connector,replay,state,receipt)
+      VALUES('11111111-1111-4111-8111-111111111111',?,?,0,'patch-tool','workspace','patch-action','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      'station:test/example.ts','value','target','policy','station','never','succeeded',?)`,
+      )
+      .run(f.session, attempt, JSON.stringify(receipt));
+    f.store.db
+      .prepare(
+        `INSERT INTO station_calls
+      (id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,
+       configuration_digest,args_json,operation_id,state,result_json)
+      VALUES('22222222-2222-4222-8222-222222222222',?,0,?,'patch-tool','patch','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',?,'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc','{}','11111111-1111-4111-8111-111111111111','returned','{}')`,
+      )
+      .run(f.session, attempt, digest(f.binding));
+    const evidence = f.work.evidence(f.binding);
+    assertEvidence(evidence);
+    expect(evidence.artifacts.find((a) => a.id === artifact)?.disposition).toBe('produced');
+    const bundle = f.work.evidenceArtifacts(f.binding, [artifact]);
+    expect(Buffer.from(String(bundle.artifacts[0]!.content_base64), 'base64').toString()).toBe(
+      'reviewed applied patch receipt',
+    );
+    f.reopen();
+    expect(f.work.evidence(f.binding).artifacts.find((a) => a.id === artifact)?.disposition).toBe(
+      'produced',
+    );
+    f.store.db
+      .prepare(
+        "UPDATE station_calls SET root_digest=? WHERE id='22222222-2222-4222-8222-222222222222'",
+      )
+      .run('f'.repeat(64));
+    expect(() => f.work.evidenceArtifacts(f.binding, [artifact])).toThrow('Only selected produced');
+    f.store.db
+      .prepare(
+        "UPDATE station_calls SET root_digest=? WHERE id='22222222-2222-4222-8222-222222222222'",
+      )
+      .run(digest(f.binding));
+    f.store.db
+      .prepare(
+        "UPDATE operations SET state='outcome_unknown' WHERE id='11111111-1111-4111-8111-111111111111'",
+      )
+      .run();
+    expect(() => f.work.evidenceArtifacts(f.binding, [artifact])).toThrow('Only selected produced');
+    f.store.db
+      .prepare(
+        "UPDATE operations SET state='succeeded' WHERE id='11111111-1111-4111-8111-111111111111'",
+      )
+      .run();
+    for (const state of ['failed', 'outcome_unknown', 'cancelled']) {
+      f.store.db
+        .prepare("UPDATE station_calls SET state=? WHERE id='22222222-2222-4222-8222-222222222222'")
+        .run(state);
+      expect(f.work.evidence(f.binding).artifacts.find((a) => a.id === artifact)?.disposition).toBe(
+        'observed',
+      );
+      expect(() => f.work.evidenceArtifacts(f.binding, [artifact])).toThrow(
+        'Only selected produced',
+      );
+    }
+    f.store.db
+      .prepare(
+        "UPDATE station_calls SET state='returned',kind='read' WHERE id='22222222-2222-4222-8222-222222222222'",
+      )
+      .run();
+    expect(() => f.work.evidenceArtifacts(f.binding, [artifact])).toThrow('Only selected produced');
+  } finally {
+    f.close();
+  }
+});
+
 test('execution evidence verifies artifact bytes and cannot upgrade a baseline to integrated work', () => {
   const f = fixture();
   try {

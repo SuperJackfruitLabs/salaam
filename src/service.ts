@@ -448,6 +448,7 @@ export class SalaamService {
           this.station = new StationWork(
             this.store,
             this.managed,
+            this.artifacts,
             this.agentpod,
             options.stationConfig,
             this.stateDir,
