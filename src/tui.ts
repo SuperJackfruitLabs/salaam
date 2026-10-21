@@ -2244,6 +2244,21 @@ export class SalaamApp {
       }
     }
   }
+  private async initialize(): Promise<void> {
+    await this.execute(async () => {
+      await this.client.list();
+      if (this.options.session)
+        await this.client.open(this.options.session, {
+          observe: this.options.observe,
+          takeover: this.options.takeover,
+        });
+      else if (this.client.sessions.length) await this.sessions();
+      else if (this.client.connection === 'offline') {
+        this.client.notice = 'Service is offline. Ctrl+n starts a new workspace.';
+        this.tui.requestRender();
+      }
+    });
+  }
   async run(): Promise<void> {
     this.running = true;
     const close = () => {
@@ -2267,19 +2282,7 @@ export class SalaamApp {
         )
           this.tui.requestRender();
       }, 1000);
-      await this.client.list();
-      if (this.options.session)
-        await this.execute(() =>
-          this.client.open(this.options.session!, {
-            observe: this.options.observe,
-            takeover: this.options.takeover,
-          }),
-        );
-      else if (this.client.sessions.length) await this.sessions();
-      else if (this.client.connection === 'offline') {
-        this.client.notice = 'Service is offline. Ctrl+n starts a new workspace.';
-        this.tui.requestRender();
-      }
+      await this.initialize();
       await this.done;
     } finally {
       this.running = false;
