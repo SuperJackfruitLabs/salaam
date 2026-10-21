@@ -1994,6 +1994,126 @@ function preparedReadOnlyPatchFixture(ttl = 1000) {
   const offer = new AgentPodWorkDecisions(f.work, managed).list(f.binding).decisions[0]!;
   return { ...x, managed, offer, call, attempt, args, tool, task };
 }
+async function invalidatedReadOnlyFixture() {
+  const x = preparedReadOnlyPatchFixture(60000),
+    { f, managed, call, attempt, task, offer } = x;
+  f.store.transaction(() =>
+    f.store.execution.revokeInTransaction(
+      f.session,
+      'invalidated-owner-revoke',
+      'Original owner stopped',
+      (id) => {
+        managed.cancelInTransaction(id, 'agentpod-revocation', 'agentpod-node');
+        f.store.db
+          .prepare("UPDATE station_calls SET state='cancelled',revision=revision+1 WHERE id=?")
+          .run(call);
+        f.store.event(f.session, 'station.call.cancelled', {
+          call_id: call,
+          attempt_id: attempt,
+          kind: 'patch',
+        });
+      },
+    ),
+  );
+  (managed as unknown as { deliver(id: string): void }).deliver(offer.approval_id);
+  f.store.finish(attempt, 'cancelled', null, 'Pi exited (0)');
+  f.store.db.prepare("UPDATE durable_tasks SET state='blocked' WHERE id=?").run(task.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'invalidated-owner-revoke', 'Original owner stopped');
+  return x;
+}
+
+test('invalidated unanswered history retires as non-success and preserves original offer', async () => {
+  const { f, admitted, children, managed, offer } = await invalidatedReadOnlyFixture();
+  try {
+    const run = () =>
+      f.work.fail(
+        f.binding,
+        'invalidated-retire',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    const receipt = run();
+    expect(receipt).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+    expect(
+      f.store.db.prepare('SELECT state,decision FROM approvals WHERE id=?').get(offer.approval_id),
+    ).toMatchObject({ state: 'invalidated', decision: null });
+    f.reopen();
+    expect(run()).toEqual(receipt);
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+
+test.each([
+  ['answered', "UPDATE approvals SET decision='approve',decided_by='local-operator'"],
+  ['pending', "UPDATE approvals SET state='pending'"],
+  ['operation unknown', "UPDATE operations SET state='outcome_unknown'"],
+  ['operation receipt', "UPDATE operations SET receipt='{}'"],
+  ['helper started', "UPDATE station_calls SET helper_pid=42 WHERE kind='patch'"],
+  ['foreign root', "UPDATE station_calls SET root_digest='foreign' WHERE kind='patch'"],
+  ['missing offer', "DELETE FROM requests WHERE actor='agentpod-work-decision-offer'"],
+  ['foreign cancellation actor', "UPDATE cancellations SET requested_by='unknown'"],
+  [
+    'malformed revocation arrays',
+    "UPDATE session_revocations SET receipt=json_set(receipt,'$.session_ids',session_id,'$.unresolved_operations','')",
+  ],
+  ['missing root revocation', 'DELETE FROM session_revocations'],
+  ['reordered root revocation', "UPDATE events SET seq=seq+1000 WHERE kind='execution.revoked'"],
+  [
+    'cancel provenance',
+    "UPDATE events SET causation_id='unknown' WHERE kind='attempt.cancel_requested'",
+  ],
+  [
+    'foreign revocation',
+    "UPDATE session_revocations SET receipt=json_set(receipt,'$.session_id','foreign')",
+  ],
+  ['missing invalidation', "DELETE FROM events WHERE kind='approval.invalidated'"],
+  ['unknown model', "UPDATE usage_observations SET status='unknown'"],
+  ['prior failed check', "UPDATE task_checks SET state='failed'"],
+  ['generic cancelled', "UPDATE durable_tasks SET state='cancelled'"],
+])('invalidated history rejects %s', async (_name, sql) => {
+  const { f, admitted, children, managed } = await invalidatedReadOnlyFixture();
+  try {
+    f.store.db.exec(sql);
+    expect(() =>
+      f.work.fail(
+        f.binding,
+        'invalidated-deny',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+test('invalidated unanswered history cannot be labelled expired', async () => {
+  const { f, admitted, children, managed, offer } = await invalidatedReadOnlyFixture();
+  try {
+    expect(() =>
+      f.work.expire(
+        f.binding,
+        'not-expired',
+        admitted.request_id,
+        offer.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+
 async function expiredReadOnlyFixture() {
   const x = preparedReadOnlyPatchFixture(),
     { f, managed, offer, call, attempt, task } = x;

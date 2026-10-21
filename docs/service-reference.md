@@ -154,7 +154,10 @@ succeeded station workspace patch with its saved human offer and approve answer,
 operator decision provenance, stopped helper, and original produced artifact bytes
 and result bound to the operation. Every other action must satisfy the complete
 historical read-only audit. Retirement preserves that patch and its receipts; it
-does not declare the task successful. Unconfirmed effects, other writes or approvals,
+does not declare the task successful. The same non-success route can retire an unanswered
+patch invalidated by its original owner revocation, only when cancellation
+provenance, the saved offer, never-started helper, and full read-only history are
+proved. It preserves the invalidated decision without labelling it expired. Unconfirmed effects, other writes or approvals,
 mutations, unfinished or orphan execution, and unaccounted tool activity are rejected. MCP returns retain their original
 protocol meaning; retirement does not verify external product effects or refresh
 historical checks. Unknown or partially recorded resources reject retirement. The receipt remains cancelled with

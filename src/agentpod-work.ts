@@ -598,12 +598,13 @@ export class AgentPodWork {
       operation: Record<string, any>;
       approval: Record<string, any>;
       offered: Record<string, any>;
+      invalidated?: true;
     },
     applied?: { operation: Record<string, any>; approval: Record<string, any> },
   ) {
     if (
       (!['partially_completed', 'failed', 'blocked'].includes(task.state) &&
-        !(expiry && !applied && task.state === 'cancelled')) ||
+        !(expiry && !expiry.invalidated && !applied && task.state === 'cancelled')) ||
       !runtime ||
       runtime.auto_enabled ||
       runtime.reserved_requests ||
@@ -624,7 +625,9 @@ export class AgentPodWork {
       const root = digest(binding),
         session = task.session_id;
       const original = this.store.db
-        .prepare('SELECT verification_json FROM agentpod_work WHERE task_id=? AND session_id=?')
+        .prepare(
+          'SELECT verification_json,request_id FROM agentpod_work WHERE task_id=? AND session_id=?',
+        )
         .get(task.id, session);
       require(original);
       const originalVerification = JSON.parse(String(original!.verification_json));
@@ -632,7 +635,7 @@ export class AgentPodWork {
       if (expiry) {
         const { operation: op, approval, offered } = expiry;
         const patchCalls = rows(
-          'expired_patch_calls',
+          expiry.invalidated ? 'invalidated_patch_calls' : 'expired_patch_calls',
           'SELECT * FROM station_calls WHERE operation_id=?',
           op.id,
         );
@@ -640,12 +643,15 @@ export class AgentPodWork {
         const call = patchCalls[0]!,
           args = JSON.parse(String(call.args_json));
         require(
-          ['blocked', 'cancelled'].includes(task.state) &&
+          (expiry.invalidated
+            ? task.state === 'blocked'
+            : ['blocked', 'cancelled'].includes(task.state)) &&
             approval.id === offered.approval_id &&
             approval.operation_id === op.id &&
             op.id === offered.operation_id &&
             approval.session_id === session &&
             op.session_id === session &&
+            offered.work_request_id === original!.request_id &&
             offered.binding_digest === root &&
             offered.task_id === task.id &&
             offered.plan_revision === task.plan_revision &&
@@ -653,10 +659,10 @@ export class AgentPodWork {
             op.operation_digest === offered.operation_digest &&
             operationBinding(op as unknown as import('./protocol.js').Operation) ===
               op.operation_digest &&
-            approval.state === 'expired' &&
+            approval.state === (expiry.invalidated ? 'invalidated' : 'expired') &&
             approval.revision === offered.approval_revision + 1 &&
             approval.expires_at === offered.expires_at &&
-            approval.expires_at <= Date.now() &&
+            (expiry.invalidated || approval.expires_at <= Date.now()) &&
             approval.decision === null &&
             approval.decided_by === null &&
             approval.worker_epoch === op.worker_epoch &&
@@ -734,7 +740,7 @@ export class AgentPodWork {
               }),
         );
         const operationEvents = rows(
-          'expired_operation_history',
+          expiry.invalidated ? 'invalidated_operation_history' : 'expired_operation_history',
           "SELECT * FROM events WHERE session_id=? AND kind LIKE 'operation.%' AND json_extract(payload,'$.operation_id')=?",
           session,
           op.id,
@@ -748,7 +754,7 @@ export class AgentPodWork {
             ),
         );
         const callEvents = rows(
-          'expired_call_history',
+          expiry.invalidated ? 'invalidated_call_history' : 'expired_call_history',
           "SELECT * FROM events WHERE session_id=? AND kind LIKE 'station.call.%' AND json_extract(payload,'$.call_id')=?",
           session,
           call.id,
@@ -760,7 +766,7 @@ export class AgentPodWork {
             ),
         );
         const dialogs = rows(
-          'expired_dialog',
+          expiry.invalidated ? 'invalidated_dialog' : 'expired_dialog',
           'SELECT * FROM approval_dialogs WHERE approval_id=?',
           approval.id,
         );
@@ -778,8 +784,8 @@ export class AgentPodWork {
             .get(String(approval.id)),
         );
         const events = rows(
-          'expiry_events',
-          "SELECT * FROM events WHERE session_id=? AND kind IN ('approval.expired','operation.cancelled_before_dispatch','station.call.cancelled','attempt.cancelled','approval.dialog_replied')",
+          expiry.invalidated ? 'invalidation_events' : 'expiry_events',
+          "SELECT * FROM events WHERE session_id=? AND kind IN ('approval.expired','approval.invalidated','operation.cancelled_before_dispatch','station.call.cancelled','attempt.cancelled','approval.dialog_replied','attempt.cancel_requested','execution.revoked')",
           session,
         );
         const one = (kind: string, predicate: (p: Record<string, any>) => boolean) => {
@@ -790,7 +796,7 @@ export class AgentPodWork {
           return found[0]!;
         };
         const expired = one(
-          'approval.expired',
+          expiry.invalidated ? 'approval.invalidated' : 'approval.expired',
           (p) => p.approval_id === approval.id && p.operation_id === op.id,
         );
         const cancelled = one(
@@ -840,7 +846,67 @@ export class AgentPodWork {
             eventPayload.text === null &&
             canonical(eventPayload.outcome) === canonical(outcome),
         );
-        audit.expired_boundary = { offered, operation: op, approval };
+        if (expiry.invalidated) {
+          require(
+            !this.store.db
+              .prepare(
+                "SELECT 1 FROM requests WHERE actor='local-operator' AND json_extract(response,'$.id')=?",
+              )
+              .get(String(approval.id)),
+          );
+          const requested = one('attempt.cancel_requested', (p) => p.attempt_id === op.attempt_id);
+          const revoked = one('execution.revoked', (p) => p.owner_session === session);
+          const cancellation = rows(
+            'invalidated_cancellation',
+            'SELECT * FROM cancellations WHERE attempt_id=?',
+            op.attempt_id,
+          );
+          const revocations = rows(
+            'invalidated_revocation',
+            'SELECT * FROM session_revocations WHERE session_id=?',
+            session,
+          );
+          require(
+            cancellation.length === 1 &&
+              cancellation[0]!.requested_by === 'agentpod-node' &&
+              requested.causation_id === 'agentpod-revocation' &&
+              revocations.length === 1,
+          );
+          const revocation = JSON.parse(String(revocations[0]!.receipt)),
+            revokedPayload = JSON.parse(String(revoked.payload));
+          require(
+            Array.isArray(revocation.session_ids) &&
+              revocation.session_ids.every(
+                (id: unknown) => typeof id === 'string' && id.length > 0,
+              ) &&
+              Array.isArray(revocation.attempt_ids) &&
+              revocation.attempt_ids.every(
+                (id: unknown) => typeof id === 'string' && id.length > 0,
+              ) &&
+              Array.isArray(revocation.unresolved_operations) &&
+              typeof revocation.request_id === 'string' &&
+              revocation.request_id.length > 0 &&
+              typeof revocation.reason === 'string' &&
+              revocation.reason.length > 0 &&
+              revocation.session_id === session &&
+              revocation.revoked === true &&
+              revocation.request_id === revoked.causation_id &&
+              revocation.reason === revokedPayload.reason &&
+              revocation.session_ids.includes(session) &&
+              revocation.attempt_ids.includes(op.attempt_id) &&
+              revocation.unresolved_operations.length === 0 &&
+              Number(cancelled.seq) < Number(requested.seq) &&
+              Number(requested.seq) < Number(revoked.seq) &&
+              Number(stopped.seq) < Number(revoked.seq) &&
+              Number(revoked.seq) < Number(dialogEvent.seq) &&
+              Number(dialogEvent.seq) < Number(attemptEvent.seq),
+          );
+        }
+        audit[expiry.invalidated ? 'invalidated_unanswered_boundary' : 'expired_boundary'] = {
+          offered,
+          operation: op,
+          approval,
+        };
         unapplied = { attempt: String(op.attempt_id), call, tool: String(op.tool_call_id) };
       }
       const children = rows(
@@ -1999,8 +2065,24 @@ export class AgentPodWork {
           Number.isFinite(Number(runtime.started_at)) &&
           Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
 
+        const savedInvalidatedOffer =
+          approval?.state === 'invalidated'
+            ? this.store.db
+                .prepare(
+                  "SELECT response FROM requests WHERE actor='agentpod-work-decision-offer' AND id=?",
+                )
+                .get(String(approval.id))
+            : undefined;
         const knownReadOnly =
           this.historicalKnownReadOnlyFailure(root.binding, task, runtime) ??
+          (ops.length === 1 && op && approval && savedInvalidatedOffer
+            ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, {
+                operation: op,
+                approval,
+                offered: JSON.parse(String(savedInvalidatedOffer.response)),
+                invalidated: true,
+              })
+            : null) ??
           (ops.length === 1 && op && approval
             ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, undefined, {
                 operation: op,
