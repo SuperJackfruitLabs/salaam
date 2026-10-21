@@ -183,6 +183,16 @@ test('usage imports immutable request and Pi entry sources once, includes compac
       known_cost: 0.03,
       estimated_cost: 0.03,
     });
+    const evidence = f.store.usage.evidence(f.parent.id);
+    expect(evidence).toMatchObject({
+      status: 'partial',
+      coverage: { observations: 3, recorded: 2, unknown: 1, estimated: 1 },
+      recorded_subtotal: { input_tokens: 20, output_tokens: 8, cost_usd: 0.06 },
+    });
+    expect(evidence.observations.every((row) => row.session_id === child.child_session)).toBe(true);
+    expect(
+      evidence.observations.filter((row) => row.source_key === 'salaam-request:one'),
+    ).toHaveLength(1);
     f.store.usage.admit(
       child.child_session,
       child.child_attempt,

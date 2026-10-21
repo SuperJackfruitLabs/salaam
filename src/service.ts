@@ -448,6 +448,7 @@ export class SalaamService {
           this.station = new StationWork(
             this.store,
             this.managed,
+            this.artifacts,
             this.agentpod,
             options.stationConfig,
             this.stateDir,
@@ -946,6 +947,48 @@ export class SalaamService {
               this.taskDriver,
             ),
           );
+          return;
+        }
+        if (parts[2] === 'work-trace') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict work is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !== 'binding,schema_version,traceparent' ||
+            body.schema_version !== 'salaam-work-trace/v1'
+          )
+            throw new ServiceError(
+              'invalid_trace_context',
+              'Closed versioned trace context required',
+            );
+          this.send(res, 200, this.agentpodWork.trace(body.binding, body.traceparent));
+          return;
+        }
+        if (parts[2] === 'work-evidence-artifacts') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict work is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !== 'artifact_ids,binding,schema_version' ||
+            body.schema_version !== 'salaam-execution-artifacts/v1'
+          )
+            throw new ServiceError(
+              'unsupported_evidence_version',
+              'Closed versioned artifact selection required',
+            );
+          this.send(res, 200, this.agentpodWork.evidenceArtifacts(body.binding, body.artifact_ids));
+          return;
+        }
+        if (parts[2] === 'work-evidence') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict work is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !== 'binding,schema_version' ||
+            body.schema_version !== 'salaam-execution-evidence/v1'
+          )
+            throw new ServiceError(
+              'unsupported_evidence_version',
+              'Explicit supported evidence version required',
+            );
+          this.send(res, 200, this.agentpodWork.evidence(body.binding));
           return;
         }
         if (parts[2] === 'work-completion') {

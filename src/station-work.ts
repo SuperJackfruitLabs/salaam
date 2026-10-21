@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { processIdentity } from './supervisor.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
+import type { Artifacts } from './artifacts.js';
 import type { ManagedWork } from './managed.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import {
@@ -100,6 +101,7 @@ export class StationWork {
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
+    readonly artifacts: Artifacts,
     readonly authority: AgentPodAuthority,
     readonly reference: { config: string; configuration_digest: string },
     state: string,
@@ -849,11 +851,36 @@ export class StationWork {
       );
       // Completion records actual file bytes; a subsequent grant still needs a
       // fresh execution lease. A model final answer supplies no receipt.
+      const artifact = this.artifacts.prepare(
+        c.session_id,
+        canonical({
+          version: 1,
+          kind: 'station-applied-patch-receipt',
+          call_id: id,
+          operation_id: c.operation_id,
+          session_id: c.session_id,
+          attempt_id: c.attempt_id,
+          root_digest: c.root_digest,
+          configuration_digest: c.configuration_digest,
+          input_digest: c.input_digest,
+          patch: {
+            path: args.path,
+            content: args.content,
+            expected_tree: args.expected_tree,
+            expected_hash: args.expected_hash,
+          },
+          result,
+        }),
+      );
       this.store.transaction(() => {
-        this.change(this.get(id), 'returned', result);
+        const current = this.get(id);
+        if (current.state !== 'dispatching') stationUnavailable();
+        artifact.commit();
+        this.change(current, 'returned', result);
         this.managed.workspaceResultInTransaction(c.operation_id!, {
           version: 1,
           scope: 'station-workspace',
+          artifact_id: artifact.id,
           call_id: id,
           root_digest: c.root_digest,
           configuration_digest: c.configuration_digest,

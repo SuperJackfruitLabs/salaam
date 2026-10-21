@@ -11,6 +11,7 @@ import {
 import type { McpAssignment, McpProfile, McpServerPin } from './mcp-protocol.js';
 import { redactMcpData } from './mcp-protocol.js';
 import { canonical, digest, object, ServiceError } from './protocol.js';
+import { traceParent } from './execution-trace.js';
 
 /** Pin the complete definition: descriptions/annotations can affect context too. */
 export const mcpToolDigest = (tool: unknown): string => digest(object(tool));
@@ -73,6 +74,7 @@ export class ManagedHttpMcp {
   private definitions: Record<string, unknown>[] = [];
   private callSignal?: AbortSignal;
   private beforeSend?: () => void;
+  private callTrace?: string;
   private validators = new Map<
     string,
     { input: JsonSchemaValidator<unknown>; output?: JsonSchemaValidator<unknown> }
@@ -184,6 +186,7 @@ export class ManagedHttpMcp {
     args: Record<string, unknown>,
     signal: AbortSignal,
     beforeSend: () => void,
+    traceparent?: string,
   ): Promise<McpReturnedResult> {
     if (
       !this.ready ||
@@ -196,6 +199,13 @@ export class ManagedHttpMcp {
     this.busy = true;
     this.sent = false;
     this.beforeSend = beforeSend;
+    // Telemetry is optional. Malformed correlation never becomes a required
+    // execution control or a permission failure.
+    try {
+      this.callTrace = traceparent === undefined ? undefined : traceParent(traceparent);
+    } catch {
+      this.callTrace = undefined;
+    }
     try {
       const parameters = JSON.parse(canonical(object(args))) as Record<string, unknown>;
       const validators = this.validators.get(name)!;
@@ -233,6 +243,7 @@ export class ManagedHttpMcp {
       this.busy = false;
       this.callSignal = undefined;
       this.beforeSend = undefined;
+      this.callTrace = undefined;
     }
   }
   private redact(value: unknown): unknown {
@@ -282,6 +293,9 @@ export class ManagedHttpMcp {
     headers.delete('Authorization');
     headers.delete('Cookie');
     for (const header of this.server.headers) headers.set(header.name, header.value);
+    headers.delete('traceparent');
+    headers.delete('tracestate');
+    if (isCall && this.callTrace) headers.set('traceparent', this.callTrace);
     const signal = AbortSignal.any([
       this.stopped.signal,
       ...(this.callSignal ? [this.callSignal] : []),

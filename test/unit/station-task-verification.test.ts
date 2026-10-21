@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, watch } from 'node:fs';
 import { join } from 'node:path';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { TaskDriver } from '../../src/task-driver.js';
+import type { Supervisor } from '../../src/supervisor.js';
+import type { ChildWork } from '../../src/children.js';
 import { randomUUID } from 'node:crypto';
 import { AgentPodWork } from '../../src/agentpod-work.js';
 import type { AgentPodAuthority } from '../../src/agentpod-authority.js';
@@ -18,7 +22,7 @@ import { canonical, digest } from '../../src/protocol.js';
 
 // Synthetic station boundary double: these tests prove receipt joining and
 // transactional revalidation, never Linux/systemd execution or a live canary.
-function fixture() {
+function fixture(keys = ['tests']) {
   const dir = mkdtempSync('/tmp/sal-station-task-');
   const store = new Store(join(dir, 'journal.sqlite'));
   const artifacts = new Artifacts(join(dir, 'artifacts'), store);
@@ -41,9 +45,13 @@ function fixture() {
         objective: 'Check fixture',
         constraints: [],
         steps: [
-          { key: 'check', title: 'Check', instruction: 'Check', depends_on: [], checks: ['tests'] },
+          { key: 'check', title: 'Check', instruction: 'Check', depends_on: [], checks: keys },
         ],
-        acceptance: [{ key: 'tests', command: 'npm test', cwd: '.' }],
+        acceptance: keys.map((key) => ({
+          key,
+          command: key === 'tests' ? 'npm test' : 'node fixture',
+          cwd: '.',
+        })),
         deliverables: ['app.js'],
       },
       () => {},
@@ -657,3 +665,339 @@ test('partial station ownership upgrade rolls back and restores foreign-key enfo
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('owned gated verification reads defer synchronous admission and serialize fresh consumers', async () => {
+  const f = fixture();
+  let release = () => {};
+  let closeWatcher = () => {};
+  const pending: Promise<unknown>[] = [];
+  try {
+    const helper = join(f.dir, 'gated-file-helper');
+    const ready = join(f.dir, 'ready');
+    const gate = join(f.dir, 'release');
+    writeFileSync(
+      helper,
+      `#!${process.execPath}
+const fs=require('node:fs');let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);const done=()=>console.log(JSON.stringify({version:1,ok:true,tree_digest:'${'a'.repeat(64)}',root_identity:r.root_identity,files:1}));if(fs.existsSync(${JSON.stringify(gate)}))return done();const w=fs.watch(${JSON.stringify(f.dir)},(_,name)=>{if(name==='release'){w.close();done();}});fs.writeFileSync(${JSON.stringify(ready)},'ready');});
+`,
+      { mode: 0o700 },
+    );
+    const entered = new Promise<void>((resolve) => {
+      const watcher = watch(f.dir, (_, name) => {
+        if (name === 'ready') {
+          watcher.close();
+          resolve();
+        }
+      });
+      closeWatcher = () => watcher.close();
+    });
+    release = () => writeFileSync(gate, 'release');
+    Object.setPrototypeOf(f.station, StationWork.prototype);
+    Object.assign(f.station, {
+      store: f.store,
+      files: new Map(),
+      closing: false,
+      config: { workspace_identity: 'd'.repeat(64), workspace: f.dir, files: { path: helper } },
+      options: {
+        assertActive: () => {
+          throw Error('must not borrow model authority');
+        },
+      },
+    });
+    delete (f.station as unknown as Record<string, unknown>).verificationTree;
+    delete (f.station as unknown as Record<string, unknown>).assertVerificationSettled;
+    f.verification.station = f.adapter;
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    const first = f.adapter.withFresh(f.check, () => 'first');
+    pending.push(first);
+    await Promise.race([entered, first]);
+    const second = f.adapter.withFresh(f.check, () => 'second');
+    pending.push(second);
+    // A live owned read never downgrades a separate unknown, mutation, or
+    // unconfirmed native resource into a retryable observation.
+    for (const update of [
+      "UPDATE station_calls SET state='outcome_unknown' WHERE id=?",
+      "UPDATE station_calls SET state='prepared',kind='patch' WHERE id=?",
+      "UPDATE station_calls SET helper_state='unconfirmed' WHERE id=?",
+    ]) {
+      f.store.db.prepare(update).run(f.call);
+      expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+        expect.objectContaining({ code: 'task_uncertain' }),
+      );
+      f.store.db
+        .prepare(
+          "UPDATE station_calls SET state='returned',kind='check',helper_state='none' WHERE id=?",
+        )
+        .run(f.call);
+    }
+    f.store.db.prepare("UPDATE station_units SET state='unconfirmed'").run();
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    f.store.db.prepare("UPDATE station_units SET state='stopped'").run();
+    const inspection = String(
+      f.store.db.prepare("SELECT id FROM station_calls WHERE kind='read'").get()!.id,
+    );
+    f.store.db
+      .prepare("UPDATE station_calls SET helper_state='unconfirmed' WHERE id=?")
+      .run(inspection);
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id), inspection)).toThrowError(
+      expect.objectContaining({ code: 'task_uncertain' }),
+    );
+    f.store.db
+      .prepare("UPDATE station_calls SET helper_state='running' WHERE id=?")
+      .run(inspection);
+    // This is the same synchronous fence used by start(), before accepting a check.
+    expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+      expect.objectContaining({ code: 'task_busy' }),
+    );
+    expect(
+      f.store.db.prepare("SELECT count(*) AS n FROM station_calls WHERE kind='read'").get()!.n,
+    ).toBe(1);
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+    expect(
+      f.store.db
+        .prepare(
+          "SELECT count(*) AS n FROM station_calls WHERE kind='read' AND state='returned' AND helper_state='stopped'",
+        )
+        .get()!.n,
+    ).toBe(2);
+    f.verification.assertIdle(f.tasks.get(f.task.id));
+  } finally {
+    release();
+    closeWatcher();
+    await Promise.allSettled(pending);
+    f.close();
+  }
+});
+
+test('stopping before a queued freshness observation runs launches no helper', async () => {
+  const f = fixture();
+  try {
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    let observations = 0;
+    f.station.verificationTree = async () => {
+      observations++;
+      throw Error('must not launch');
+    };
+    const pending = f.adapter.withFresh(f.check, () => {
+      throw Error('must not consume');
+    });
+    f.adapter.stop();
+    await expect(pending).rejects.toMatchObject({ code: 'verification_stopped' });
+    expect(observations).toBe(0);
+    expect(f.verification.get(f.check).state).toBe('accepted');
+  } finally {
+    f.close();
+  }
+});
+
+test('stopping before a queued dispatch runs preserves accepted work without launching', async () => {
+  const f = fixture();
+  try {
+    let observations = 0;
+    f.station.verificationTree = async () => {
+      observations++;
+      throw Error('must not launch');
+    };
+    f.adapter.dispatch(f.check);
+    f.adapter.stop();
+    await f.adapter.drain();
+    expect(observations).toBe(0);
+    expect(f.verification.get(f.check).state).toBe('accepted');
+    expect(
+      f.store.db.prepare("SELECT count(*) AS n FROM station_calls WHERE kind='read'").get()!.n,
+    ).toBe(0);
+  } finally {
+    f.close();
+  }
+});
+
+test.each([
+  ['final', 'complete'],
+  ['step', 'complete'],
+  ['final', 'drift'],
+  ['final', 'unknown'],
+  ['final', 'unconfirmed'],
+] as const)(
+  'scheduler waits for the entire %s check set before freshness, then enforces %s (real helper and gated native fixture process)',
+  async (stage, outcome) => {
+    const f = fixture(['tests', 'exact']);
+    let native: ChildProcessWithoutNullStreams | undefined;
+    let nativeDone = Promise.resolve();
+    try {
+      // These are actual child processes and durable controller rows. The native
+      // boundary is a fixture runner, not evidence of Linux/systemd isolation.
+      writeFileSync(join(f.dir, 'app.js'), '2');
+      const helper = join(f.dir, 'file-helper');
+      writeFileSync(
+        helper,
+        `#!${process.execPath}
+let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);console.log(JSON.stringify({version:1,ok:true,tree_digest:require('node:fs').readFileSync(${JSON.stringify(join(f.dir, 'app.js'))},'utf8')==='2'?'${'a'.repeat(64)}':'${'e'.repeat(64)}',root_identity:r.root_identity,files:1,...(r.action==='read'?{path:r.path,content:'2',sha256:require('node:crypto').createHash('sha256').update('2').digest('hex')}:{})}));});
+`,
+        { mode: 0o700 },
+      );
+      Object.setPrototypeOf(f.station, StationWork.prototype);
+      Object.assign(f.station, {
+        store: f.store,
+        files: new Map(),
+        closing: false,
+        config: { workspace_identity: 'd'.repeat(64), workspace: f.dir, files: { path: helper } },
+        options: {
+          assertActive: () => {
+            throw Error('must not borrow model authority');
+          },
+        },
+        prepareTaskCheck: StationWork.prototype.prepareTaskCheck,
+      });
+      delete (f.station as unknown as Record<string, unknown>).verificationTree;
+      delete (f.station as unknown as Record<string, unknown>).assertVerificationSettled;
+      f.verification.station = f.adapter;
+      const step = f.task.steps[0]!.id;
+      f.store.db
+        .prepare('UPDATE task_steps SET state=? WHERE id=?')
+        .run(stage === 'step' ? 'awaiting_review' : 'completed', step);
+      if (stage === 'step')
+        f.store.db.prepare('UPDATE task_checks SET step_id=? WHERE id=?').run(step, f.check);
+      f.store.db
+        .prepare("UPDATE task_checks SET engine_id='linux-systemd-station-v1' WHERE id=?")
+        .run(f.check);
+      f.adapter.bind(f.check, f.call);
+      f.returned();
+      const evidence = await f.adapter.withFresh(f.check, (e) => e);
+      const artifact = f.verification.artifacts.put(f.session.id, canonical(evidence));
+      f.store.db
+        .prepare("UPDATE task_checks SET state='passed',artifact_id=? WHERE id=?")
+        .run(artifact, f.check);
+      f.store.db
+        .prepare('UPDATE task_runtime SET auto_enabled=1,auto_plan_revision=? WHERE task_id=?')
+        .run(f.task.plan_revision, f.task.id);
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      f.station.run = (id: string) => {
+        const call = f.station.get(id);
+        f.station.taskCheckGuard!(call);
+        const cleanup = { version: 1, method: 'fixture_process_exited' };
+        f.store.db.prepare("UPDATE station_calls SET state='dispatching' WHERE id=?").run(id);
+        f.store.db.prepare('INSERT INTO station_units VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+          'unit:' + id,
+          f.session.id,
+          id,
+          digest({
+            id,
+            root: call.root_digest,
+            configuration: call.configuration_digest,
+            input: call.input_digest,
+          }),
+          canonical({ workspace_identity: 'd'.repeat(64) }),
+          'fixture',
+          'fixture',
+          '{"invocation":"fixture"}',
+          'running',
+          null,
+        );
+        native = spawn(
+          process.execPath,
+          [
+            '-e',
+            `const fs=require('node:fs');process.stdout.write('ready');process.stdin.resume();process.stdin.on('end',()=>process.exit(fs.readFileSync(process.argv[1],'utf8')==='2'?0:1));`,
+            join(f.dir, 'app.js'),
+          ],
+          { stdio: 'pipe' },
+        );
+        native.stdout.once('data', entered);
+        nativeDone = new Promise<void>((resolve, reject) => {
+          native!.once('error', reject);
+          native!.once('close', (code) => {
+            const args = JSON.parse(call.args_json);
+            f.store.db
+              .prepare("UPDATE station_units SET state='stopped',stop_json=? WHERE call_id=?")
+              .run(canonical(cleanup), id);
+            f.store.db
+              .prepare("UPDATE station_calls SET state='returned',result_json=? WHERE id=?")
+              .run(
+                canonical({
+                  exit_code: code,
+                  verified_check: code === 0,
+                  expected_tree: args.expected_tree,
+                  observed_tree: args.expected_tree,
+                  network: 'none',
+                  workspace: 'read-only-reviewed-snapshot',
+                  cleanup,
+                }),
+                id,
+              );
+            resolve();
+          });
+        });
+        return {};
+      };
+      const driver = new TaskDriver(
+        f.store,
+        f.tasks,
+        f.verification.budget,
+        f.verification,
+        {} as Supervisor,
+        { activeCount: () => 0 } as unknown as ChildWork,
+        f.verification.coding,
+      );
+      const progress = () =>
+        (
+          driver as unknown as { progress(task: ReturnType<TaskWork['get']>): Promise<void> }
+        ).progress(f.tasks.get(f.task.id));
+      await progress(); // Passed first check, accepted/dispatched the second.
+      await f.adapter.drain();
+      await ready;
+      expect(
+        f.verification.latest(f.tasks.get(f.task.id), 'exact', stage === 'step' ? step : null)
+          ?.state,
+      ).toBe('running');
+      expect(() => f.verification.assertIdle(f.tasks.get(f.task.id))).toThrowError(
+        expect.objectContaining({ code: 'task_busy' }),
+      );
+      await progress(); // Regression: this previously falsely stopped on the first check.
+      expect(f.verification.budget.state(f.task.id).auto_enabled).toBe(1);
+      expect(f.tasks.get(f.task.id).state).not.toBe('partially_completed');
+      expect(
+        f.store.db.prepare('SELECT 1 FROM task_completions WHERE task_id=?').get(f.task.id),
+      ).toBeUndefined();
+      native!.stdin.end();
+      await nativeDone;
+      await f.verification.reconcileAsync();
+      expect(
+        f.verification.latest(f.tasks.get(f.task.id), 'exact', stage === 'step' ? step : null)
+          ?.state,
+      ).toBe('passed');
+      if (outcome === 'drift') writeFileSync(join(f.dir, 'app.js'), '3');
+      if (outcome === 'unknown')
+        f.store.db
+          .prepare("UPDATE station_calls SET state='outcome_unknown' WHERE id=?")
+          .run(f.call);
+      if (outcome === 'unconfirmed')
+        f.store.db
+          .prepare("UPDATE station_units SET state='unconfirmed' WHERE call_id=?")
+          .run(f.call);
+      await progress();
+      if (outcome !== 'complete') {
+        expect(f.tasks.get(f.task.id).state).toBe('partially_completed');
+        expect(f.verification.budget.state(f.task.id).auto_enabled).toBe(0);
+        expect(
+          f.store.db.prepare('SELECT 1 FROM task_completions WHERE task_id=?').get(f.task.id),
+        ).toBeUndefined();
+      } else if (stage === 'final') expect(f.tasks.get(f.task.id).state).toBe('succeeded');
+      else expect(f.tasks.get(f.task.id).steps[0]!.state).toBe('completed');
+    } finally {
+      native?.stdin.end();
+      await nativeDone;
+      f.close();
+    }
+  },
+);

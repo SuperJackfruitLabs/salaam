@@ -416,6 +416,16 @@ export class TaskDriver {
         this.stop(task, 'Configure acceptance checks and deliverable evidence before completion');
         return;
       }
+      // A passed receipt cannot be re-observed while another final check owns
+      // the native workspace. Wait for the whole set before testing freshness;
+      // finishAsync still performs the final transactional evidence validation.
+      if (
+        task.acceptance.some((check) => {
+          const receipt = this.verification.latest(task, check.key, null);
+          return receipt?.state === 'accepted' || receipt?.state === 'running';
+        })
+      )
+        return;
       for (const check of task.acceptance) if (!(await this.check(task, check.key, null))) return;
       await this.verification.finishAsync(
         task.id,

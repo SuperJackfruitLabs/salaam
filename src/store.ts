@@ -9,6 +9,7 @@ import { ExecutionAuthority } from './execution-authority.js';
 import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
 import { canonical } from './protocol.js';
 import { acpFailure, type AttemptOutcome } from './acp-outcome.js';
+import { verifyReadinessFingerprint, type ReadinessFingerprint } from './readiness-fingerprint.js';
 import {
   digest,
   ServiceError,
@@ -746,6 +747,7 @@ export class Store {
     error: string | null = null,
     capabilities: string[] = [],
     piFile?: string,
+    fingerprint?: ReadinessFingerprint,
   ): void {
     this.transaction(() => {
       this.assertEpoch(id, epoch);
@@ -757,7 +759,17 @@ export class Store {
       this.db
         .prepare('UPDATE workers SET state=? WHERE session_id=? AND epoch=?')
         .run(state, id, epoch);
-      this.event(id, `worker.${state}`, { epoch, error, capabilities });
+      if (
+        fingerprint &&
+        (state !== 'ready' || fingerprint.session_id !== id || fingerprint.worker_epoch !== epoch)
+      )
+        throw Error('Fingerprint must belong to the exact ready worker');
+      this.event(id, `worker.${state}`, {
+        epoch,
+        error,
+        capabilities,
+        ...(fingerprint ? { fingerprint: verifyReadinessFingerprint(fingerprint) } : {}),
+      });
     });
   }
   accept(

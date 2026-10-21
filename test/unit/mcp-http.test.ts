@@ -89,6 +89,51 @@ test('the real pinned SDK negotiates the reviewed protocol and calls only admitt
   }
 });
 
+test('W3C correlation reaches only actual admitted tool requests; bad telemetry cannot grant or block a call', async () => {
+  const f = fixture(),
+    client = new ManagedHttpMcp(f.server, f.pin, f.profile.limits, f.fetcher);
+  const parent = '00-' + 'a'.repeat(32) + '-' + 'b'.repeat(16) + '-01';
+  try {
+    await client.connect();
+    await client.call(tool.name, { query: 'trace' }, AbortSignal.timeout(1000), () => {}, parent);
+    await client.call(
+      tool.name,
+      { query: 'no trace' },
+      AbortSignal.timeout(1000),
+      () => {},
+      'bad metadata',
+    );
+    const posts = f.fetcher.mock.calls.filter((call) => call[1]?.method === 'POST');
+    const actual = posts.filter(
+      (call) => JSON.parse(String(call[1]?.body)).method === 'tools/call',
+    );
+    expect(actual).toHaveLength(2);
+    expect(new Headers(actual[0]![1]?.headers).get('traceparent')).toBe(parent);
+    expect(new Headers(actual[1]![1]?.headers).get('traceparent')).toBe(null);
+    for (const call of posts.filter(
+      (call) => JSON.parse(String(call[1]?.body)).method !== 'tools/call',
+    ))
+      expect(new Headers(call[1]?.headers).get('traceparent')).toBe(null);
+    let deniedSent = false;
+    await expect(
+      client.call(
+        tool.name,
+        { query: 'denied' },
+        AbortSignal.timeout(1000),
+        () => {
+          deniedSent = true;
+          throw Error('Fresh execution authority denied');
+        },
+        parent,
+      ),
+    ).rejects.toThrow();
+    expect(deniedSent).toBe(true);
+    expect(f.requests.filter((r) => r.method === 'tools/call')).toHaveLength(2);
+  } finally {
+    await client.close();
+  }
+});
+
 test('schema drift rejects the call before a tools/call POST, regardless of read-only annotations', async () => {
   const f = fixture(),
     client = new ManagedHttpMcp(f.server, f.pin, f.profile.limits, f.fetcher);

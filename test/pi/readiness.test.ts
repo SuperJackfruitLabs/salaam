@@ -4,12 +4,24 @@ import { join } from 'node:path';
 import { fixture, create, ready, until, probe } from '../helpers.js';
 import { ROOT } from '../../src/config.js';
 import { call } from '../../src/transport.js';
+import { verifyReadinessFingerprint } from '../../src/readiness-fingerprint.js';
 
 test('real pinned Pi passes readiness, executes a gated turn, and persists its session', async () => {
   const f = await fixture();
   try {
     const session = await create(f.service, f.dir);
     const snapshot = await ready(f.service, session.id);
+    const receipt = f.service.store
+      .events(session.id, 0)
+      .find((event) => event.kind === 'worker.ready')!.payload as any;
+    expect(verifyReadinessFingerprint(receipt.fingerprint)).toMatchObject({
+      session_id: session.id,
+      worker_epoch: snapshot.epoch,
+      harness: 'salaam',
+      verification: 'pinned-readiness-handshake',
+      provider: 'salaam-proof',
+      model: 'scripted',
+    });
     expect(snapshot.capabilities).toEqual([
       'persistent-session',
       'managed-policy',

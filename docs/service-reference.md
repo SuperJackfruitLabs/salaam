@@ -140,6 +140,36 @@ Usage observations have stable provider-request or Pi-entry source keys. Reimpor
 
 The service defaults to offline and resolves only the selected provider credentials for each live request. Keep credentials outside Git and chat; default tests and demos use fixtures. See [provider support and authentication](providers.md).
 
+Private AgentPod operator failure retirement preserves the immutable admitted root,
+work request, plan, producer non-success terminal digest, and interrupted history.
+It requires a revoked root with confirmed stopped execution and no active or unknown
+operations. In addition to the existing single approved patch profile, it accepts
+only a first-step native child concurrency denial with one model admission, one
+denied `spawn_child`, concurrency one, no children, calls, checks, reservations,
+workspace mutations, or execution resources belonging to that work. A separate historical read-only profile accepts stopped non-success tasks whose
+completed native diagnostic children, model requests, policy-admitted MCP reads,
+and protected station checks and observations have complete immutable ownership,
+artifact and stop receipts. A disjoint known-effect boundary permits exactly one
+succeeded station workspace patch with its saved human offer and approve answer,
+operator decision provenance, stopped helper, and original produced artifact bytes
+and result bound to the operation. Every other action must satisfy the complete
+historical read-only audit. Retirement preserves that patch and its receipts; it
+does not declare the task successful. The same non-success route can retire an unanswered
+patch invalidated by its original owner revocation, only when cancellation
+provenance, the saved offer, never-started helper, and full read-only history are
+proved. It preserves the invalidated decision without labelling it expired. Unconfirmed effects, other writes or approvals,
+mutations, unfinished or orphan execution, and unaccounted tool activity are rejected. MCP returns retain their original
+protocol meaning; retirement does not verify external product effects or refresh
+historical checks. Unknown or partially recorded resources reject retirement. The receipt remains cancelled with
+`known_effects_preserved`; this never establishes success or renews authority.
+
+An expired unanswered patch approval can also retire after that closed read-only
+history. The exact saved offer must bind the cancelled current attempt and its
+unapplied operation; no native patch helper, result, effect receipt, or answered
+grant may exist. The current attempt's model receipts stay in the audit. The
+`expired_approval_unapplied` receipt is unchanged, with a separate hash-only audit
+event committed once alongside retirement.
+
 ## License
 
 [Apache License 2.0](../LICENSE).

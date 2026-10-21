@@ -36,6 +36,52 @@ export interface StationCheckEvidence {
 export class StationTaskVerification {
   private jobs = new Map<string, Promise<void>>();
   private stopping = false;
+  // Serialize the entire observe/revalidate/consume operation. A read endpoint
+  // cannot create a competing helper between another check's final validations.
+  private observations = new Map<string, Promise<unknown>>();
+  private inspections = new Map<string, string>();
+  // Process-local ownership is deliberately not reconstructed from durable rows:
+  // after failure or restart an unsettled helper still requires recovery.
+  observing(id: string, session: string): boolean {
+    return this.inspections.get(id) === session;
+  }
+  private async serialized<T>(session: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.observations.get(session);
+    const next = (previous ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => {
+        if (this.stopping)
+          throw new ServiceError('verification_stopped', 'Station verification is stopping');
+        return work();
+      });
+    this.observations.set(session, next);
+    try {
+      return await next;
+    } finally {
+      if (this.observations.get(session) === next) this.observations.delete(session);
+    }
+  }
+  private async observe(
+    source: string | { task_check_id: string },
+    session: string,
+    validate: (inspection?: string) => void,
+    request?: Record<string, unknown>,
+  ): Promise<Record<string, any>> {
+    const owned = new Set<string>();
+    try {
+      return await this.station.verificationTree(
+        source,
+        (id) => {
+          owned.add(id);
+          this.inspections.set(id, session);
+          validate(id);
+        },
+        request,
+      );
+    } finally {
+      for (const id of owned) this.inspections.delete(id);
+    }
+  }
   stop(): void {
     this.stopping = true;
   }
@@ -104,8 +150,13 @@ export class StationTaskVerification {
   dispatch(id: string): void {
     if (this.stopping || this.jobs.has(id) || this.verification.get(id).state !== 'accepted')
       return;
-    const job = this.dispatchOwned(id)
-      .catch((e) => this.failed(id, e))
+    const job = this.serialized(this.tasks.get(this.verification.get(id).task_id).session_id, () =>
+      this.dispatchOwned(id),
+    )
+      .catch((e) => {
+        if (this.stopping && e instanceof ServiceError && e.code === 'verification_stopped') return;
+        this.failed(id, e);
+      })
       .finally(() => this.jobs.delete(id));
     this.jobs.set(id, job);
   }
@@ -130,7 +181,7 @@ export class StationTaskVerification {
         this.fail();
     };
     validate();
-    const observed = await this.station.verificationTree({ task_check_id: id }, validate);
+    const observed = await this.observe({ task_check_id: id }, task.session_id, validate);
     let call: string = '';
     this.store.transaction(() => {
       validate();
@@ -377,11 +428,18 @@ export class StationTaskVerification {
     return { bound, artifact, validate };
   }
   async withFresh<T>(checkID: string, consume: (evidence: StationCheckEvidence) => T): Promise<T> {
+    const session = this.tasks.get(this.verification.get(checkID).task_id).session_id;
+    return this.serialized(session, () => this.freshOwned(checkID, consume));
+  }
+  private async freshOwned<T>(
+    checkID: string,
+    consume: (evidence: StationCheckEvidence) => T,
+  ): Promise<T> {
     const { bound, artifact, validate } = this.prepared(checkID);
     const before = validate();
     const revision = before.current.revision;
     const resultDigest = digest(before.result);
-    const observed = await this.station.verificationTree(bound.call_id, validate);
+    const observed = await this.observe(bound.call_id, before.current.session_id, validate);
     // No await between final authority/plan/resource checks and the consuming write.
     return this.store.transaction(() => {
       const { current, call, result } = validate();
@@ -418,9 +476,17 @@ export class StationTaskVerification {
     consume: (evidence: StationCheckEvidence[], deliverables: unknown[]) => T,
   ): Promise<T> {
     if (!ids.length) this.fail();
+    const session = this.tasks.get(this.verification.get(ids[0]!).task_id).session_id;
+    return this.serialized(session, () => this.freshManyOwned(ids, paths, consume));
+  }
+  private async freshManyOwned<T>(
+    ids: string[],
+    paths: string[],
+    consume: (evidence: StationCheckEvidence[], deliverables: unknown[]) => T,
+  ): Promise<T> {
     const prepared = ids.map((id) => this.prepared(id));
     const evidence: StationCheckEvidence[] = [];
-    for (const id of ids) evidence.push(await this.withFresh(id, (e) => e));
+    for (const id of ids) evidence.push(await this.freshOwned(id, (e) => e));
     const tree = evidence[0]!.tree_digest,
       root = evidence[0]!.root_digest,
       config = evidence[0]!.configuration_digest;
@@ -444,10 +510,15 @@ export class StationTaskVerification {
     };
     const deliverables: unknown[] = [];
     for (const path of paths) {
-      const result = await this.station.verificationTree(evidence[0]!.call_id, validate, {
-        action: 'read',
-        path,
-      });
+      const result = await this.observe(
+        evidence[0]!.call_id,
+        this.tasks.get(prepared[0]!.bound.task_id).session_id,
+        validate,
+        {
+          action: 'read',
+          path,
+        },
+      );
       validate();
       if (
         result.path !== path ||
@@ -457,7 +528,11 @@ export class StationTaskVerification {
         this.fail();
       deliverables.push({ path, sha256: result.sha256 });
     }
-    const final = await this.station.verificationTree(evidence[0]!.call_id, validate);
+    const final = await this.observe(
+      evidence[0]!.call_id,
+      this.tasks.get(prepared[0]!.bound.task_id).session_id,
+      validate,
+    );
     return this.store.transaction(() => {
       validate();
       if (

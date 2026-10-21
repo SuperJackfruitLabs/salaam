@@ -80,14 +80,30 @@ export class TaskVerification {
           .all(task.session_id) as { child_session: string }[]
       ).map((c) => c.child_session),
     ];
-    for (const session of tree)
+    let observing = false;
+    for (const session of tree) {
+      const pending = this.store.db
+        .prepare(
+          "SELECT id,kind,tool_call_id,args_json,state,helper_state FROM station_calls WHERE session_id=? AND NOT(id=? AND kind='read' AND tool_call_id=id AND state='dispatching' AND helper_state IN ('none','launching','running','stopped') AND json_extract(args_json,'$.action') IN ('inspect','read')) AND (state IN ('prepared','dispatching','outcome_unknown') OR helper_state NOT IN ('none','stopped'))",
+        )
+        .all(session, stationInspection ?? '');
+      const uncertain = pending.some((call) => {
+        if (
+          call.state === 'dispatching' &&
+          ['none', 'launching', 'running', 'stopped'].includes(String(call.helper_state)) &&
+          call.kind === 'read' &&
+          call.tool_call_id === call.id &&
+          ['inspect', 'read'].includes(JSON.parse(String(call.args_json)).action) &&
+          this.station?.observing(String(call.id), session)
+        ) {
+          observing = true;
+          return false;
+        }
+        return true;
+      });
       if (
         this.store.hasUnknown(session) ||
-        this.store.db
-          .prepare(
-            "SELECT 1 FROM station_calls WHERE session_id=? AND NOT(id=? AND kind='read' AND tool_call_id=id AND json_extract(args_json,'$.action') IN ('inspect','read')) AND (state IN ('prepared','dispatching','outcome_unknown') OR helper_state NOT IN ('none','stopped'))",
-          )
-          .get(session, stationInspection ?? '') ||
+        uncertain ||
         this.store.db
           .prepare("SELECT 1 FROM station_units WHERE session_id=? AND state!='stopped'")
           .get(session) ||
@@ -104,6 +120,9 @@ export class TaskVerification {
           'task_uncertain',
           'Resolve interrupted work and uncertain effects before task completion',
         );
+    }
+    if (observing)
+      throw new ServiceError('task_busy', 'Wait for owned verification observations to settle');
   }
   get(id: string): CheckReceipt {
     const r = this.store.db.prepare('SELECT * FROM task_checks WHERE id=?').get(id) as unknown as
