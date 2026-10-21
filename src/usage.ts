@@ -1,9 +1,13 @@
 import type { Store } from './store.js';
 import { digest, object, ServiceError } from './protocol.js';
+import { usageEvidence } from './usage-evidence.js';
 
 /** Counts provider requests only; tool results' nested totals are never added. */
 export class UsageLedger {
   constructor(private store: Store) {}
+  evidence(session: string, limit = 256) {
+    return usageEvidence(this.store, session, limit);
+  }
   budget(attempt: string, limit = 16): void {
     this.store.db
       .prepare('INSERT OR IGNORE INTO attempt_budgets(attempt_id,limit_requests) VALUES (?,?)')
