@@ -149,8 +149,13 @@ denied `spawn_child`, concurrency one, no children, calls, checks, reservations,
 workspace mutations, or execution resources belonging to that work. A separate historical read-only profile accepts stopped non-success tasks whose
 completed native diagnostic children, model requests, policy-admitted MCP reads,
 and protected station checks and observations have complete immutable ownership,
-artifact and stop receipts. It rejects writes, approvals, mutations, unfinished or
-orphan execution, and unaccounted tool activity. MCP returns retain their original
+artifact and stop receipts. A disjoint known-effect boundary permits exactly one
+succeeded station workspace patch with its saved human offer and approve answer,
+operator decision provenance, stopped helper, and original produced artifact bytes
+and result bound to the operation. Every other action must satisfy the complete
+historical read-only audit. Retirement preserves that patch and its receipts; it
+does not declare the task successful. Unconfirmed effects, other writes or approvals,
+mutations, unfinished or orphan execution, and unaccounted tool activity are rejected. MCP returns retain their original
 protocol meaning; retirement does not verify external product effects or refresh
 historical checks. Unknown or partially recorded resources reject retirement. The receipt remains cancelled with
 `known_effects_preserved`; this never establishes success or renews authority.

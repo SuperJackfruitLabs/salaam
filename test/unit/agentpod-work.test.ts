@@ -24,6 +24,7 @@ import addFormats from 'ajv-formats';
 import { workTraceHeader } from '../../src/execution-trace.js';
 import { readinessFingerprint } from '../../src/readiness-fingerprint.js';
 import { ChildWork } from '../../src/children.js';
+import { StationWork } from '../../src/station-work.js';
 import type { Supervisor } from '../../src/supervisor.js';
 
 const executionSchema = JSON.parse(
@@ -1837,7 +1838,9 @@ test.each([
         settlementDriver(f),
       ),
     ).toThrow();
-    expect(f.tasks.get(admitted.task_id).state).toBe('partially_completed');
+    expect(
+      f.store.db.prepare('SELECT state FROM durable_tasks WHERE id=?').get(admitted.task_id)!.state,
+    ).toBe('partially_completed');
     expect(
       db.prepare("SELECT 1 FROM requests WHERE actor='agentpod-work-failure'").get(),
     ).toBeUndefined();
@@ -1892,7 +1895,7 @@ test.each([true, false])(
   },
 );
 
-async function expiredReadOnlyFixture() {
+function preparedReadOnlyPatchFixture(ttl = 1000) {
   const x = knownReadOnlyFailureFixture(true),
     { f, admitted, recordModel } = x;
   const task = f.tasks.get(admitted.task_id),
@@ -1914,7 +1917,7 @@ async function expiredReadOnlyFixture() {
     assertActive() {},
     reply() {},
     failed() {},
-    approvalTtlMs: 1000,
+    approvalTtlMs: ttl,
   });
   managed.registerMcpController('station-workspace-v1', {
     owns: () => true,
@@ -1989,6 +1992,11 @@ async function expiredReadOnlyFixture() {
     'expiry-dialog',
   );
   const offer = new AgentPodWorkDecisions(f.work, managed).list(f.binding).decisions[0]!;
+  return { ...x, managed, offer, call, attempt, args, tool, task };
+}
+async function expiredReadOnlyFixture() {
+  const x = preparedReadOnlyPatchFixture(),
+    { f, managed, offer, call, attempt, task } = x;
   await new Promise((r) => setTimeout(r, 1010));
   managed.expire();
   f.store.transaction(() => {
@@ -2006,7 +2014,7 @@ async function expiredReadOnlyFixture() {
   f.store.db.prepare("UPDATE durable_tasks SET state='blocked' WHERE id=?").run(task.id);
   f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
   f.authority.revoke(f.binding, 'rich-expiry-revoke', 'Expired proposal stopped');
-  return { ...x, managed, offer, call, attempt };
+  return x;
 }
 
 test('expired unanswered patch retirement preserves prior native readonly receipts and replays', async () => {
@@ -2142,6 +2150,166 @@ test.each([
     expect(
       db.prepare("SELECT 1 FROM events WHERE kind='agentpod.work_expiry_evidence'").get(),
     ).toBeUndefined();
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+
+async function approvedReadOnlyPatchFixture() {
+  const x = preparedReadOnlyPatchFixture(60000),
+    { f, managed, offer, call, attempt, args, tool, task } = x;
+  const answer = {
+    version: 1,
+    request_id: randomUUID(),
+    decision: offer,
+    decision_digest: digest(offer),
+    elicitation_id: 'elc_approvedfixture',
+    option_id: 'approve',
+    answered_by: 'operator',
+    answered_at: new Date().toISOString(),
+  };
+  new AgentPodWorkDecisions(f.work, managed).answer(f.binding, answer);
+  f.store.transaction(() => {
+    expect(managed.takePermissionInTransaction(offer.operation_id)).toBe(true);
+    f.store.db
+      .prepare("UPDATE station_calls SET state='dispatching',revision=revision+1 WHERE id=?")
+      .run(call);
+    f.store.event(f.session, 'station.call.dispatching', {
+      call_id: call,
+      attempt_id: attempt,
+      kind: 'patch',
+    });
+  });
+  const result = {
+    version: 1,
+    ok: true,
+    path: args.path,
+    before_tree_digest: args.expected_tree,
+    tree_digest: 'c'.repeat(64),
+    sha256: textDigest(args.content),
+    files: 1,
+    root_identity: 'd'.repeat(64),
+  };
+  const stop = {
+    version: 1,
+    scope: 'local_process_group',
+    method: 'observed_exit',
+    pid: 43,
+    identity: 'linux-proc-v1:' + 'e'.repeat(64),
+  };
+  const writer = Object.assign(Object.create(StationWork.prototype), {
+    store: f.store,
+    managed,
+    artifacts: f.work.verification.artifacts,
+    get: () => f.store.db.prepare('SELECT * FROM station_calls WHERE id=?').get(call),
+    guard: () => {},
+    authority: { leaseWindow: () => 5000 },
+    helper: async () => {
+      f.store.db
+        .prepare(
+          "UPDATE station_calls SET helper_state='stopped',helper_pid=43,helper_identity=?,helper_stop_json=? WHERE id=?",
+        )
+        .run(stop.identity, canonical(stop), call);
+      return result;
+    },
+  }) as { perform(id: string): Promise<void> };
+  await writer.perform(call);
+  f.store.transaction(() =>
+    f.store.event(f.session, 'tool.finished', {
+      attempt_id: attempt,
+      worker_epoch: 1,
+      tool_call_id: tool,
+      tool: 'salaam_station',
+      failed: false,
+    }),
+  );
+  f.store.finish(attempt, 'completed', 'Approved patch returned', null);
+  f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE task_id=?").run(task.id);
+  f.store.db
+    .prepare(
+      "UPDATE durable_tasks SET state='partially_completed',reason='Stopped before final completion' WHERE id=?",
+    )
+    .run(task.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'approved-history-revoke', 'Original known-effect work stopped');
+  const effect = JSON.parse(
+    String(
+      f.store.db.prepare('SELECT receipt FROM operations WHERE id=?').get(offer.operation_id)!
+        .receipt,
+    ),
+  );
+  return { ...x, answer, effect };
+}
+
+test('approved patch with closed readonly history retires without changing its produced artifact or success', async () => {
+  const { f, admitted, children, managed, offer, effect } = await approvedReadOnlyPatchFixture();
+  try {
+    const bytes = f.work.verification.artifacts.read(effect.artifact_id);
+    const run = () =>
+      f.work.fail(
+        f.binding,
+        'applied-history-retire',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    expect(run()).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+    expect(f.work.verification.artifacts.read(effect.artifact_id)).toBe(bytes);
+    expect(
+      f.store.db.prepare('SELECT state FROM operations WHERE id=?').get(offer.operation_id)!.state,
+    ).toBe('succeeded');
+    const receipt = run();
+    f.reopen();
+    expect(run()).toEqual(receipt);
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+
+test.each([
+  [
+    'missing patch tool pair',
+    "DELETE FROM events WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool')='salaam_station'",
+  ],
+  [
+    'produced artifact digest',
+    "UPDATE artifacts SET digest='changed' WHERE id=(SELECT json_extract(receipt,'$.artifact_id') FROM operations LIMIT 1)",
+  ],
+  ['approval decision', "UPDATE approvals SET decision='deny'"],
+  ['approval actor', "UPDATE approvals SET decided_by='scoped-policy'"],
+  ['missing human answer', "DELETE FROM requests WHERE actor='agentpod-work-decision-answer'"],
+  [
+    'changed offer',
+    "UPDATE requests SET hash='changed' WHERE actor='agentpod-work-decision-offer'",
+  ],
+  ['operator provenance', "DELETE FROM requests WHERE actor='local-operator'"],
+  ['unknown helper', "UPDATE station_calls SET helper_state='running' WHERE kind='patch'"],
+  ['unconfirmed operation', "UPDATE operations SET state='dispatching'"],
+  ['foreign root', "UPDATE station_calls SET root_digest='foreign' WHERE kind='patch'"],
+  ['foreign patch args', "UPDATE operations SET value='{}'"],
+  ['changed produced receipt', "UPDATE operations SET receipt='{}'"],
+  ['unknown native grant', "UPDATE usage_observations SET status='unknown'"],
+  ['prior failed check', "UPDATE task_checks SET state='failed'"],
+])('approved history rejects %s', async (_name, sql) => {
+  const { f, admitted, children, managed } = await approvedReadOnlyPatchFixture();
+  try {
+    f.store.db.exec(sql);
+    expect(() =>
+      f.work.fail(
+        f.binding,
+        'applied-history-denied',
+        admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+    expect(
+      f.store.db.prepare('SELECT state FROM durable_tasks WHERE id=?').get(admitted.task_id)!.state,
+    ).toBe('partially_completed');
   } finally {
     await managed.close();
     await children.close();

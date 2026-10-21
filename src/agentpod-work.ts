@@ -599,6 +599,7 @@ export class AgentPodWork {
       approval: Record<string, any>;
       offered: Record<string, any>;
     },
+    applied?: { operation: Record<string, any>; approval: Record<string, any> },
   ) {
     if (
       !['partially_completed', 'failed', 'blocked'].includes(task.state) ||
@@ -1040,6 +1041,223 @@ export class AgentPodWork {
         artifactAudit.push(row!);
         return json ? JSON.parse(text) : text;
       };
+      let appliedCall: Record<string, any> | null = null;
+      if (applied) {
+        const { operation: op, approval: a } = applied;
+        const cs = rows(
+          'applied_patch_calls',
+          'SELECT * FROM station_calls WHERE operation_id=?',
+          op.id,
+        );
+        require(cs.length === 1);
+        const c = cs[0]!,
+          args = JSON.parse(String(c.args_json)),
+          effect = JSON.parse(String(op.receipt));
+        const result = JSON.parse(String(c.result_json)),
+          stop = JSON.parse(String(c.helper_stop_json));
+        require(
+          op.session_id === session &&
+            op.kind === 'workspace' &&
+            op.connector === 'station-workspace-v1' &&
+            op.replay === 'opaque' &&
+            op.state === 'succeeded' &&
+            op.revision === 3 &&
+            op.resolution === 'workspace-content-receipt-v1' &&
+            op.error === null &&
+            op.policy_digest === POLICY_DIGEST &&
+            operationBinding(op as unknown as import('./protocol.js').Operation) ===
+              op.operation_digest,
+        );
+        require(
+          a.session_id === session &&
+            a.operation_id === op.id &&
+            a.operation_digest === op.operation_digest &&
+            a.worker_epoch === op.worker_epoch &&
+            a.policy_digest === POLICY_DIGEST &&
+            a.actor_scope === 'local-operator' &&
+            a.state === 'decided' &&
+            a.revision === 2 &&
+            a.decision === 'approve' &&
+            a.decided_by === 'local-operator',
+        );
+        require(
+          c.session_id === session &&
+            c.attempt_id === op.attempt_id &&
+            c.worker_epoch === op.worker_epoch &&
+            c.tool_call_id === op.tool_call_id &&
+            c.id === digest(['station-work-v1', session, c.worker_epoch, c.tool_call_id]) &&
+            c.kind === 'patch' &&
+            c.state === 'returned' &&
+            c.revision === 3 &&
+            c.root_digest === root &&
+            c.configuration_digest === originalVerification.configuration_digest &&
+            c.task_check_id === null &&
+            c.helper_state === 'stopped' &&
+            c.helper_pid > 0 &&
+            c.helper_identity &&
+            !this.store.db.prepare('SELECT 1 FROM station_units WHERE call_id=?').get(String(c.id)),
+        );
+        require(
+          canonical(stop) ===
+            canonical({
+              version: 1,
+              scope: 'local_process_group',
+              method: 'observed_exit',
+              pid: c.helper_pid,
+              identity: c.helper_identity,
+            }),
+        );
+        require(
+          args.action === 'patch' &&
+            Object.keys(args).sort().join(',') ===
+              'action,content,expected_hash,expected_tree,path' &&
+            typeof args.path === 'string' &&
+            /^[a-f0-9]{64}$/.test(args.expected_tree) &&
+            (args.expected_hash === null || /^[a-f0-9]{64}$/.test(args.expected_hash)) &&
+            (args.content === null || typeof args.content === 'string') &&
+            c.input_digest === digest(args) &&
+            op.value === canonical(args) &&
+            op.target === 'station:' + args.path &&
+            op.target_version ===
+              digest({ id: c.id, root, configuration: c.configuration_digest, args }) &&
+            op.argument_digest ===
+              digest({ target: op.target, value: op.value, target_version: op.target_version }) &&
+            op.action_key ===
+              digest({
+                id: op.id,
+                attempt: op.attempt_id,
+                epoch: op.worker_epoch,
+                call: op.tool_call_id,
+                target: op.target,
+                value: op.value,
+                version: op.target_version,
+              }),
+        );
+        require(
+          result.version === 1 &&
+            result.ok === true &&
+            result.files === 1 &&
+            result.path === args.path &&
+            result.before_tree_digest === args.expected_tree &&
+            /^[a-f0-9]{64}$/.test(result.tree_digest) &&
+            /^[a-f0-9]{64}$/.test(result.root_identity) &&
+            result.sha256 === (args.content === null ? null : textDigest(args.content)),
+        );
+        require(
+          canonical(effect) ===
+            canonical({
+              version: 1,
+              scope: 'station-workspace',
+              artifact_id: effect.artifact_id,
+              call_id: c.id,
+              root_digest: root,
+              configuration_digest: c.configuration_digest,
+              input_digest: c.input_digest,
+              result,
+            }),
+        );
+        require(
+          canonical(artifact(effect.artifact_id, session)) ===
+            canonical({
+              version: 1,
+              kind: 'station-applied-patch-receipt',
+              call_id: c.id,
+              operation_id: op.id,
+              session_id: session,
+              attempt_id: c.attempt_id,
+              root_digest: root,
+              configuration_digest: c.configuration_digest,
+              input_digest: c.input_digest,
+              patch: {
+                path: args.path,
+                content: args.content,
+                expected_tree: args.expected_tree,
+                expected_hash: args.expected_hash,
+              },
+              result,
+            }),
+        );
+        const offers = rows(
+          'applied_offer',
+          "SELECT * FROM requests WHERE actor='agentpod-work-decision-offer' AND id=?",
+          a.id,
+        );
+        require(offers.length === 1);
+        const offered = JSON.parse(String(offers[0]!.response));
+        const identity = {
+          work_request_id: offered.work_request_id,
+          binding_digest: root,
+          task_id: task.id,
+          plan_revision: task.plan_revision,
+          operation_id: op.id,
+          operation_digest: op.operation_digest,
+          approval_id: a.id,
+          approval_revision: 1,
+          expires_at: a.expires_at,
+        };
+        const work = this.store.db
+          .prepare('SELECT request_id FROM agentpod_work WHERE task_id=?')
+          .get(task.id);
+        require(
+          offered.version === 1 &&
+            offered.work_request_id === work?.request_id &&
+            offers[0]!.hash === digest(identity) &&
+            Object.entries(identity).every(([k, v]) => offered[k] === v),
+        );
+        const answers = rows(
+          'applied_answer',
+          "SELECT * FROM requests WHERE actor='agentpod-work-decision-answer' AND json_extract(response,'$.approval_id')=?",
+          a.id,
+        );
+        require(answers.length === 1);
+        const answer = JSON.parse(String(answers[0]!.response));
+        require(
+          answer.version === 1 &&
+            answer.request_id === answers[0]!.id &&
+            answer.decision_digest === digest(offered) &&
+            answer.decision === 'approve',
+        );
+        const decision = rows(
+          'applied_operator_decision',
+          "SELECT * FROM requests WHERE actor='local-operator' AND id=?",
+          answer.request_id,
+        );
+        require(
+          decision.length === 1 &&
+            decision[0]!.hash ===
+              digest({
+                kind: 'approval-decision',
+                id: a.id,
+                revision: 1,
+                binding: op.operation_digest,
+                decision: 'approve',
+              }) &&
+            canonical(JSON.parse(String(decision[0]!.response))) === canonical(a),
+        );
+        const dialogs = rows(
+          'applied_dialog',
+          'SELECT * FROM approval_dialogs WHERE approval_id=?',
+          a.id,
+        );
+        require(
+          dialogs.length === 1 &&
+            dialogs[0]!.session_id === session &&
+            dialogs[0]!.worker_epoch === op.worker_epoch &&
+            dialogs[0]!.state === 'replied',
+        );
+        const decisions = rows(
+          'applied_decision_events',
+          "SELECT * FROM events WHERE session_id=? AND kind='approval.decided' AND json_extract(payload,'$.approval_id')=?",
+          session,
+          a.id,
+        );
+        require(
+          decisions.length === 1 &&
+            decisions[0]!.causation_id === answer.request_id &&
+            JSON.parse(String(decisions[0]!.payload)).decision === 'approve',
+        );
+        appliedCall = c;
+      }
       for (const table of [
         'operations',
         'approvals',
@@ -1051,9 +1269,9 @@ export class AgentPodWork {
         require(
           rows(table, `SELECT * FROM ${table} WHERE session_id IN (${marks})`, ...sessions).every(
             (r) =>
-              expiry &&
-              ((table === 'operations' && r.id === expiry.operation.id) ||
-                (table === 'approvals' && r.id === expiry.approval.id)),
+              (expiry || applied) &&
+              ((table === 'operations' && r.id === (expiry || applied)!.operation.id) ||
+                (table === 'approvals' && r.id === (expiry || applied)!.approval.id)),
           ),
         );
       require(
@@ -1415,7 +1633,18 @@ export class AgentPodWork {
               (p) => p.tree === JSON.parse(String(unapplied!.call.args_json)).expected_tree,
             )),
       );
+      if (appliedCall) {
+        const args = JSON.parse(String(appliedCall.args_json)),
+          result = JSON.parse(String(appliedCall.result_json));
+        require(
+          calls.some((c) => canonical(c) === canonical(appliedCall)) &&
+            [...proofByCheck.values()].every(
+              (p) => p.tree === args.expected_tree || p.tree === result.tree_digest,
+            ),
+        );
+      }
       for (const call of calls) {
+        if (appliedCall && canonical(call) === canonical(appliedCall)) continue;
         if (unapplied && canonical(call) === canonical(unapplied.call)) continue;
         require(
           call.session_id === session &&
@@ -1477,6 +1706,17 @@ export class AgentPodWork {
       );
       const starts = tools.filter((e) => e.kind === 'tool.started');
       require(tools.length === starts.length * 2 - (unapplied ? 1 : 0));
+      require(
+        !appliedCall ||
+          starts.filter((e) => {
+            const p = JSON.parse(String(e.payload));
+            return (
+              e.session_id === session &&
+              p.attempt_id === appliedCall!.attempt_id &&
+              p.tool_call_id === appliedCall!.tool_call_id
+            );
+          }).length === 1,
+      );
       const matchedChildren = new Set<string>();
       require(
         mcp.every((c) =>
@@ -1531,6 +1771,17 @@ export class AgentPodWork {
               p.worker_epoch === unapplied.call.worker_epoch &&
               p.tool === 'salaam_station' &&
               canonical(JSON.parse(p.input)) === unapplied.call.args_json,
+          );
+        } else if (
+          appliedCall &&
+          p.attempt_id === appliedCall.attempt_id &&
+          p.tool_call_id === appliedCall.tool_call_id
+        ) {
+          require(
+            start.session_id === session &&
+              p.worker_epoch === appliedCall.worker_epoch &&
+              p.tool === 'salaam_station' &&
+              canonical(JSON.parse(p.input)) === appliedCall.args_json,
           );
         } else if (p.tool === 'salaam_mcp') {
           const input = JSON.parse(p.input);
@@ -1715,7 +1966,14 @@ export class AgentPodWork {
           Number.isFinite(Number(runtime.started_at)) &&
           Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
 
-        const knownReadOnly = this.historicalKnownReadOnlyFailure(root.binding, task, runtime);
+        const knownReadOnly =
+          this.historicalKnownReadOnlyFailure(root.binding, task, runtime) ??
+          (ops.length === 1 && op && approval
+            ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, undefined, {
+                operation: op,
+                approval,
+              })
+            : null);
         const zeroEffect = this.zeroEffectConcurrencyFailure(
           root.session_id,
           task,
