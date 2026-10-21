@@ -495,6 +495,29 @@ async function main(): Promise<void> {
   }
   if (group === 'host') {
     const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
+    if (verb?.startsWith('config-')) {
+      const file = option('--manifest');
+      if (!file) throw Error('Supply --manifest FILE');
+      const { hostConfiguration } = await import('./host-configuration.js');
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of process.stdin) {
+        const data = Buffer.from(chunk);
+        size += data.length;
+        if (size > 65536) throw Error('Configuration request exceeds limit');
+        chunks.push(data);
+      }
+      console.log(
+        JSON.stringify(
+          await hostConfiguration(
+            resolve(file),
+            verb.slice(7),
+            JSON.parse(Buffer.concat(chunks).toString('utf8')),
+          ),
+        ),
+      );
+      return;
+    }
     if (verb === 'plan') {
       const file = option('--config');
       if (!file) throw new Error('Supply --config FILE');

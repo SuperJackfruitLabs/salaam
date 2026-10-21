@@ -8,8 +8,8 @@ import { randomUUID } from 'node:crypto';
 import { PiProcess } from '../src/pi.js';
 import { ROOT } from '../src/config.js';
 
-export async function fixture(options: Partial<ServiceOptions> = {}) {
-  const dir = mkdtempSync('/tmp/sal-test-');
+export async function fixture(options: Partial<ServiceOptions> = {}, prefix = '/tmp/sal-test-') {
+  const dir = mkdtempSync(prefix);
   const service = await SalaamService.open({ stateDir: dir, ...options });
   return {
     service,

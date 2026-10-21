@@ -70,7 +70,12 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
     '[focus]',
     'model',
   ),
-  command('skills', 'Show skill admission status'),
+  command(
+    'skills',
+    'Inspect or review digest-bound context and skills',
+    [],
+    '[review <paths...>|clear]',
+  ),
   command('mcp', 'Show admitted managed MCP capabilities'),
   command('agents', 'Inspect native/external worker profiles and child work'),
   command('progression', 'Choose manual or bounded task progression; permissions stay separate'),

@@ -1,0 +1,12 @@
+{
+  "activation": "Place the complete reviewed bundle under .salaam/skills/sjl-<profile> using project-plan/project-apply. Inspect Salaam skill inventory and explicitly admit its current digest before creating fresh sessions. Placement does not grant capabilities or refresh admission.",
+  "format": "salaam-project-skills",
+  "harness": "salaam",
+  "image_target": null,
+  "local_version": null,
+  "runtime_status": "not-tested",
+  "schema_version": 1,
+  "sources": [
+    "https://github.com/SuperJackfruitLabs/salaam"
+  ]
+}

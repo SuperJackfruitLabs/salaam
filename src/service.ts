@@ -3,6 +3,8 @@ import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } 
 import { join, resolve } from 'node:path';
 import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
+import { ContextAdmission } from './context-admission.js';
+import { SLASH_COMMANDS } from './tui-commands.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
 import { AgentPodWorkDecisions } from './agentpod-work-decisions.js';
@@ -184,6 +186,7 @@ export class SalaamService {
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
+        this.tasks.admitted = new ContextAdmission(this.store);
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
         if (options.admitModelRequest) {
@@ -1603,13 +1606,24 @@ export class SalaamService {
           }
         }
       }
+      if (url.pathname === '/v1/command-inventory' && req.method === 'GET') {
+        this.send(res, 200, {
+          version: 1,
+          surface: 'salaam-tui',
+          commands: SLASH_COMMANDS,
+          automatic_discovery: false,
+        });
+        return;
+      }
       if (url.pathname === '/v1/health' && req.method === 'GET') {
         const sessions = this.store.sessions().map((x) => this.supervisor.inspect(x.id));
         this.send(res, 200, {
+          pid: process.pid,
           host_manifest_digest: this.hostManifestDigest,
           host_supervisor_connected: this.hostManifestDigest ? process.connected === true : null,
           runtime_node: realpathSync(process.execPath),
           service_version: VERSION,
+          context_admission: { version: 1, automatic_discovery: false, child_inheritance: false },
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
           managed_mcp: this.mcp
@@ -2196,6 +2210,41 @@ export class SalaamService {
               this.send(res, 202, this.coding.reconcile(id, parts[4]));
               return;
             }
+          }
+        }
+        if (parts[3] === 'context') {
+          const contexts = this.tasks.admitted!;
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, contexts.inspect(id));
+            return;
+          }
+          if (req.method === 'POST' && (parts[4] === 'plan' || parts[4] === 'admit')) {
+            const body = object(await readJson(req));
+            const authorize = () => {
+              this.store.authorizeControl(id, {
+                client_id: string(body.client_id, 'client_id', 128),
+                token: string(body.token, 'token', 128),
+              });
+              this.supervisor.assertIdle(id);
+            };
+            if (parts[4] === 'plan') {
+              authorize();
+              this.send(res, 200, contexts.plan(id, body.selection));
+            } else {
+              this.send(
+                res,
+                200,
+                contexts.admit(
+                  id,
+                  string(body.request_id, 'request_id', 128),
+                  integer(body.expected_revision, 'expected_revision'),
+                  string(body.digest, 'digest', 128),
+                  body.selection,
+                  authorize,
+                ),
+              );
+            }
+            return;
           }
         }
         if (parts[3] === 'task' && req.method === 'GET') {

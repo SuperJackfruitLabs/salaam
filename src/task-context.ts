@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { TaskWork } from './task-work.js';
+import type { ContextAdmission } from './context-admission.js';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
 import { canonical, ServiceError, string, integer, object } from './protocol.js';
@@ -39,6 +40,7 @@ export interface Compaction {
 /** Explicit operator facts are append-only; summaries have no write authority. */
 export class TaskContext {
   work?: TaskWork;
+  admitted?: ContextAdmission;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,
@@ -96,7 +98,14 @@ export class TaskContext {
       });
     if (Buffer.byteLength(frame) > TASK_FRAME_BYTES)
       throw new ServiceError('context_capacity', 'Mandatory task state exceeds the context budget');
-    return frame;
+    const admittedContext = this.admitted?.frame(id);
+    return admittedContext
+      ? 'SALAAM_TASK_STATE ' +
+          canonical({
+            ...JSON.parse(frame.slice('SALAAM_TASK_STATE '.length)),
+            admitted_context: admittedContext,
+          })
+      : frame;
   }
   update(
     id: string,

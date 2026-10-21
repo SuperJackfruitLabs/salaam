@@ -14,6 +14,7 @@ import {
 } from './protocol.js';
 import type { CommandRun } from './coding.js';
 import type { Workspace } from './workspaces.js';
+import type { ContextPlan, ContextSelection } from './context-admission.js';
 
 export interface OperatorHealth {
   service: string;
@@ -447,6 +448,26 @@ export class OperatorClient extends EventEmitter {
     this.notice = 'You have control.';
     await this.refresh();
     await this.flush();
+  }
+  async planContext(selection: ContextSelection): Promise<ContextPlan> {
+    if (!this.snapshot) throw Error('Select a session first');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/context/plan`, {
+      ...this.actor(),
+      selection,
+    });
+  }
+  async admitContext(plan: ContextPlan): Promise<void> {
+    if (!this.snapshot || plan.document.session_id !== this.snapshot.id)
+      throw Error('The reviewed context belongs to another session');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/context/admit`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      expected_revision: plan.revision,
+      digest: plan.digest,
+      selection: plan.document.selection,
+    });
+    this.notice = 'Reviewed context admitted. Tool permissions are unchanged.';
+    await this.refresh();
   }
   async decide(approval: Approval, decision: 'approve' | 'deny'): Promise<void> {
     if (!this.outbox) throw new Error('Open a session first.');
