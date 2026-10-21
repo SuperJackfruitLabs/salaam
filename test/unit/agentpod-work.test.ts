@@ -1528,9 +1528,28 @@ function addKnownReadOnlyReceipts(
   return { mcpId, check, call, unit, inspection, bindingArtifact, receipt, result };
 }
 
-function knownReadOnlyFailureFixture() {
-  const f = fixture(true, false, () => true, true),
-    admitted = f.run();
+function knownReadOnlyFailureFixture(expiry = false) {
+  const f = fixture(true, false, () => true, true);
+  const plan = expiry
+    ? {
+        ...f.plan,
+        steps: [
+          ...f.plan.steps,
+          {
+            key: 'patch',
+            title: 'Patch',
+            instruction: 'Review one patch',
+            depends_on: ['inspect'],
+            checks: [],
+          },
+        ],
+      }
+    : f.plan;
+  const admitted = f.run(
+    { ...f.request, work: { ...f.request.work, plan_digest: digest(f.tasks.parse(plan)) } },
+    f.input,
+    plan,
+  );
   const task = f.tasks.get(admitted.task_id),
     step = task.steps[0]!;
   const accepted = f.store.transaction(() => {
@@ -1632,10 +1651,11 @@ function knownReadOnlyFailureFixture() {
     .prepare("UPDATE durable_tasks SET state='partially_completed' WHERE id=?")
     .run(task.id);
   f.store.db.prepare("UPDATE task_steps SET state='awaiting_review' WHERE id=?").run(step.id);
-  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  if (!expiry)
+    f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
   const receipts = addKnownReadOnlyReceipts(f, task, accepted.attempt_id);
-  f.authority.revoke(f.binding, 'readonly-revoke', 'Original partial run stopped');
-  return { f, admitted, accepted, child, children, receipts };
+  if (!expiry) f.authority.revoke(f.binding, 'readonly-revoke', 'Original partial run stopped');
+  return { f, admitted, accepted, child, children, receipts, recordModel };
 }
 
 test('known readonly non-success retirement preserves completed diagnostic history without claiming verification', async () => {
@@ -1871,6 +1891,263 @@ test.each([true, false])(
     }
   },
 );
+
+async function expiredReadOnlyFixture() {
+  const x = knownReadOnlyFailureFixture(true),
+    { f, admitted, recordModel } = x;
+  const task = f.tasks.get(admitted.task_id),
+    step = task.steps[1]!;
+  f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE id=?").run(task.steps[0]!.id);
+  const attempt = f.store.transaction(() => {
+    const a = f.store.enqueue(f.session, randomUUID(), step.instruction, undefined, null, step.id);
+    f.store.db
+      .prepare('INSERT INTO task_step_attempts VALUES(?,?,?,?)')
+      .run(a.attempt_id, step.id, task.plan_revision, step.instruction);
+    f.store.db
+      .prepare("UPDATE task_steps SET state='running',attempt_id=? WHERE id=?")
+      .run(a.attempt_id, step.id);
+    return a.attempt_id;
+  });
+  f.store.db.prepare("UPDATE attempts SET state='running',worker_epoch=1 WHERE id=?").run(attempt);
+  recordModel(f.session, attempt);
+  const managed = new ManagedWork(f.store, {
+    assertActive() {},
+    reply() {},
+    failed() {},
+    approvalTtlMs: 1000,
+  });
+  managed.registerMcpController('station-workspace-v1', {
+    owns: () => true,
+    assert() {},
+    assertSettled() {},
+  });
+  const tool = 'expired-patch',
+    call = digest(['station-work-v1', f.session, 1, tool]);
+  const args = {
+    action: 'patch',
+    path: 'app.js',
+    expected_tree: 'f'.repeat(64),
+    expected_hash: 'a'.repeat(64),
+    content: 'reviewed proposal',
+  };
+  const input = JSON.stringify(args),
+    root = digest(f.binding),
+    config = digest({ fixture: true });
+  let approval: string = '';
+  f.store.transaction(() => {
+    f.store.event(f.session, 'tool.started', {
+      attempt_id: attempt,
+      worker_epoch: 1,
+      tool_call_id: tool,
+      tool: 'salaam_station',
+      input,
+      input_digest: textDigest(input),
+      input_truncated: false,
+    });
+    f.store.event(f.session, 'policy.allowed', {
+      attempt_id: attempt,
+      epoch: 1,
+      tool: 'salaam_station',
+    });
+    const prepared = managed.prepareWorkspaceInTransaction(
+      f.session,
+      1,
+      attempt,
+      tool,
+      'station:' + args.path,
+      canonical(args),
+      digest({ id: call, root, configuration: config, args }),
+    );
+    approval = prepared.approval.id;
+    f.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,operation_id,state) VALUES(?,?,1,?,?,'patch',?,?,?,?,?,'prepared')",
+      )
+      .run(
+        call,
+        f.session,
+        attempt,
+        tool,
+        digest(args),
+        root,
+        config,
+        canonical(args),
+        prepared.operation.id,
+      );
+    f.store.event(f.session, 'station.call.prepared', {
+      call_id: call,
+      attempt_id: attempt,
+      kind: 'patch',
+      input_digest: digest(args),
+    });
+  });
+  managed.bindDialog(
+    f.session,
+    1,
+    approval,
+    managed.approval(approval).operation_digest,
+    'expiry-dialog',
+  );
+  const offer = new AgentPodWorkDecisions(f.work, managed).list(f.binding).decisions[0]!;
+  await new Promise((r) => setTimeout(r, 1010));
+  managed.expire();
+  f.store.transaction(() => {
+    f.store.db
+      .prepare("UPDATE station_calls SET state='cancelled',revision=revision+1 WHERE id=?")
+      .run(call);
+    f.store.event(f.session, 'station.call.cancelled', {
+      call_id: call,
+      attempt_id: attempt,
+      kind: 'patch',
+    });
+    f.store.db.prepare("INSERT INTO cancellations VALUES(?,'expiry-test')").run(attempt);
+  });
+  f.store.finish(attempt, 'cancelled', null, 'Pi exited (0)');
+  f.store.db.prepare("UPDATE durable_tasks SET state='blocked' WHERE id=?").run(task.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'rich-expiry-revoke', 'Expired proposal stopped');
+  return { ...x, managed, offer, call, attempt };
+}
+
+test('expired unanswered patch retirement preserves prior native readonly receipts and replays', async () => {
+  const { f, admitted, children, managed, offer, attempt } = await expiredReadOnlyFixture();
+  try {
+    const run = () =>
+      f.work.expire(
+        f.binding,
+        'rich-expiry-retire',
+        admitted.request_id,
+        offer.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      );
+    const receipt = run();
+    expect(receipt).toMatchObject({ state: 'cancelled', effects: 'expired_approval_unapplied' });
+    expect(f.store.attempt(attempt).state).toBe('cancelled');
+    expect(
+      f.store.db
+        .prepare("SELECT count(*) AS n FROM events WHERE kind='agentpod.work_expiry_evidence'")
+        .get()!.n,
+    ).toBe(1);
+    f.reopen();
+    expect(run()).toEqual(receipt);
+    expect(
+      f.store.db
+        .prepare("SELECT count(*) AS n FROM events WHERE kind='agentpod.work_expiry_evidence'")
+        .get()!.n,
+    ).toBe(1);
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
+
+test.each([
+  'answered',
+  'unexpired',
+  'revision-drift',
+  'operation-dispatched',
+  'historical-dispatch',
+  'helper-started',
+  'result-present',
+  'unknown-operation',
+  'unknown-model',
+  'prior-mcp-corrupt',
+  'prior-check-corrupt',
+  'prior-child-corrupt',
+  'offer-drift',
+  'extra-tool',
+  'extra-operation',
+])('expired readonly retirement rejects %s', async (failure) => {
+  const { f, admitted, children, managed, offer, attempt, call, receipts, child } =
+    await expiredReadOnlyFixture();
+  try {
+    const db = f.store.db;
+    if (failure === 'extra-operation')
+      db.prepare(
+        "INSERT INTO operations(id,session_id,attempt_id,worker_epoch,tool_call_id,kind,action_key,argument_digest,operation_digest,target,value,target_version,policy_digest,connector,replay,state) SELECT 'extra',session_id,attempt_id,worker_epoch,'extra-tool',kind,'extra-action',argument_digest,operation_digest,target,value,target_version,policy_digest,connector,replay,'outcome_unknown' FROM operations WHERE id=?",
+      ).run(offer.operation_id);
+
+    if (failure === 'answered')
+      db.prepare("UPDATE approvals SET decision='approve',decided_by='operator' WHERE id=?").run(
+        offer.approval_id,
+      );
+    if (failure === 'unexpired')
+      db.prepare('UPDATE approvals SET expires_at=? WHERE id=?').run(
+        Date.now() + 60000,
+        offer.approval_id,
+      );
+    if (failure === 'revision-drift')
+      db.prepare('UPDATE approvals SET revision=revision+1 WHERE id=?').run(offer.approval_id);
+    if (failure === 'operation-dispatched')
+      db.prepare("UPDATE operations SET state='dispatching' WHERE id=?").run(offer.operation_id);
+    if (failure === 'historical-dispatch')
+      f.store.transaction(() =>
+        f.store.event(f.session, 'operation.dispatching', {
+          operation_id: offer.operation_id,
+          attempt_id: attempt,
+        }),
+      );
+    if (failure === 'helper-started')
+      db.prepare(
+        "UPDATE station_calls SET helper_state='stopped',helper_pid=42,helper_identity='observed' WHERE id=?",
+      ).run(call);
+    if (failure === 'result-present')
+      db.prepare("UPDATE station_calls SET result_json='{}' WHERE id=?").run(call);
+    if (failure === 'unknown-operation')
+      db.prepare("UPDATE operations SET state='outcome_unknown' WHERE id=?").run(
+        offer.operation_id,
+      );
+    if (failure === 'unknown-model')
+      db.prepare("UPDATE usage_observations SET status='unknown' WHERE attempt_id=?").run(attempt);
+    if (failure === 'prior-mcp-corrupt')
+      writeFileSync(join(f.state, 'artifacts', receipts.result), 'changed');
+    if (failure === 'prior-check-corrupt')
+      db.prepare("UPDATE task_checks SET state='failed'").run();
+    if (failure === 'prior-child-corrupt')
+      db.prepare("UPDATE child_workers SET dispatch_state='interrupted' WHERE child_id=?").run(
+        child.id,
+      );
+    if (failure === 'offer-drift')
+      db.prepare(
+        "UPDATE requests SET response=json_set(response,'$.approval_revision',99) WHERE actor='agentpod-work-decision-offer'",
+      ).run();
+    if (failure === 'extra-tool')
+      f.store.transaction(() =>
+        f.store.event(f.session, 'tool.started', {
+          attempt_id: attempt,
+          worker_epoch: 1,
+          tool_call_id: 'unknown',
+          tool: 'salaam_effect',
+          input: '{}',
+          input_digest: textDigest('{}'),
+          input_truncated: false,
+        }),
+      );
+    expect(() =>
+      f.work.expire(
+        f.binding,
+        'reject-rich-expiry',
+        admitted.request_id,
+        offer.request_id,
+        'a'.repeat(64),
+        settlementDriver(f),
+      ),
+    ).toThrow();
+    expect(f.tasks.get(admitted.task_id).state).toBe('blocked');
+    expect(
+      db.prepare("SELECT 1 FROM requests WHERE actor='agentpod-work-expiry'").get(),
+    ).toBeUndefined();
+    expect(
+      db.prepare("SELECT 1 FROM events WHERE kind='agentpod.work_expiry_evidence'").get(),
+    ).toBeUndefined();
+  } finally {
+    await managed.close();
+    await children.close();
+    f.close();
+  }
+});
 
 async function knownEffectFailureFixture() {
   const x = await expiredWorkFixture(),

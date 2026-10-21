@@ -155,6 +155,13 @@ protocol meaning; retirement does not verify external product effects or refresh
 historical checks. Unknown or partially recorded resources reject retirement. The receipt remains cancelled with
 `known_effects_preserved`; this never establishes success or renews authority.
 
+An expired unanswered patch approval can also retire after that closed read-only
+history. The exact saved offer must bind the cancelled current attempt and its
+unapplied operation; no native patch helper, result, effect receipt, or answered
+grant may exist. The current attempt's model receipts stay in the audit. The
+`expired_approval_unapplied` receipt is unchanged, with a separate hash-only audit
+event committed once alongside retirement.
+
 ## License
 
 [Apache License 2.0](../LICENSE).
