@@ -15,6 +15,13 @@ console.log([p.node.url,r.version,r.package_sha256].join("\n"));')
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "${pins[0]}" > "$work/node.tar.xz"
 node scripts/private-runtime-pack.mjs "$work/node.tar.xz" \
   ".state/release/salaam-cli-${pins[1]}.tgz" "${pins[2]}" "$work/private-runtime.tar.gz" > "$output/build.json"
+node scripts/private-runtime-pack.mjs "$work/node.tar.xz" \
+  ".state/release/salaam-cli-${pins[1]}.tgz" "${pins[2]}" "$work/rebuilt-runtime.tar.gz" > "$output/rebuild.json"
+# Each builder invocation creates and cleans independent staging/home/cache.
+# Compare actual archive bytes and manifest identities before testing either one.
+node scripts/runtime/reproducibility.mjs "$output/build.json" "$output/rebuild.json" \
+  "$work/private-runtime.tar.gz" "$work/rebuilt-runtime.tar.gz" > "$output/reproducibility.json"
+rm -f "$work/rebuilt-runtime.tar.gz" "$work/node.tar.xz"
 archive_sha=$(sha256sum "$work/private-runtime.tar.gz")
 archive_sha=${archive_sha%% *}
 # Reuse the already-pinned Debian/glibc whole-harness image. The Alpine coding
@@ -27,6 +34,7 @@ import fs from 'node:fs';
 const [out,image]=process.argv.slice(2);
 const probe=JSON.parse(fs.readFileSync(`${out}/container.json`));
 const build=JSON.parse(fs.readFileSync(`${out}/build.json`));
+const reproducibility=JSON.parse(fs.readFileSync(`${out}/reproducibility.json`));
 const release=JSON.parse(fs.readFileSync('.state/release/release.json'));
 if(probe.success!==true || probe.manifest_sha256!==build.manifest_sha256) throw Error('Private runtime proof identity mismatch');
 fs.writeFileSync(`${out}/private-runtime.json`,JSON.stringify({
@@ -34,6 +42,6 @@ fs.writeFileSync(`${out}/private-runtime.json`,JSON.stringify({
   workflow_run_id:process.env.GITHUB_RUN_ID ?? null,
   workflow_run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
   commit:release.commit, package_sha256:release.package_sha256,
-  archive_sha256:build.sha256, image, ...probe
+  ...reproducibility, archive_sha256:build.sha256, image, ...probe
 },null,2)+'\n');
 NODE

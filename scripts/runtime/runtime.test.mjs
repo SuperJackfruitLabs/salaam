@@ -23,6 +23,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { gzipSync } from 'node:zlib';
 import { inventory, verify, hash } from './inventory.mjs';
 import { validatePrivateRuntimeReceipt, privateRuntimeImage } from './receipt.mjs';
+import { verifyReproducibleBuilds } from './reproducibility.mjs';
 
 test('private activation gates schema, preserves pointers on rejection, and permits restored-state rollback', async () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sal-runtime-test-')));
@@ -276,6 +277,9 @@ test('CI private runtime receipt binds run, package and pinned image and denies 
     package_sha256: 'a'.repeat(64),
     archive_sha256: 'b'.repeat(64),
     manifest_sha256: 'c'.repeat(64),
+    reproducible_two_builds: true,
+    rebuild_archive_sha256: 'b'.repeat(64),
+    rebuild_manifest_sha256: 'c'.repeat(64),
     image: privateRuntimeImage,
     platform: 'linux',
     arch: 'x64',
@@ -300,11 +304,91 @@ test('CI private runtime receipt binds run, package and pinned image and denies 
     { reconnect_preserves_attempt: undefined },
     { deployed_fleet: true },
     { network: 'bridge' },
+    { reproducible_two_builds: undefined },
+    { rebuild_archive_sha256: 'd'.repeat(64) },
+    { rebuild_manifest_sha256: 'd'.repeat(64) },
   ])
     assert.throws(
       () => validatePrivateRuntimeReceipt({ ...receipt, ...patch }, expected, 'a'.repeat(64)),
       /private runtime container proof/,
     );
+});
+
+test('two-build verifier compares actual bytes and manifest identity before accepting reproducibility', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sal-reproducible-builds-'));
+  try {
+    const firstArchive = join(dir, 'first.tgz'),
+      secondArchive = join(dir, 'second.tgz');
+    const bytes = Buffer.from('normalized fixture packet');
+    writeFileSync(firstArchive, bytes);
+    writeFileSync(secondArchive, bytes);
+    const first = { version: 'fixture', sha256: hash(bytes), manifest_sha256: 'a'.repeat(64) };
+    const second = { ...first };
+    const verified = verifyReproducibleBuilds(first, second, firstArchive, secondArchive);
+    assert.equal(verified.reproducible_two_builds, true);
+    const firstRecord = join(dir, 'first.json'),
+      secondRecord = join(dir, 'second.json');
+    writeFileSync(firstRecord, JSON.stringify(first));
+    writeFileSync(secondRecord, JSON.stringify(second));
+    assert.deepEqual(
+      JSON.parse(
+        execFileSync(
+          process.execPath,
+          [
+            new URL('./reproducibility.mjs', import.meta.url).pathname,
+            firstRecord,
+            secondRecord,
+            firstArchive,
+            secondArchive,
+          ],
+          { encoding: 'utf8' },
+        ),
+      ),
+      verified,
+    );
+    assert.throws(
+      () =>
+        verifyReproducibleBuilds(
+          first,
+          { ...second, manifest_sha256: 'b'.repeat(64) },
+          firstArchive,
+          secondArchive,
+        ),
+      /not byte-identical/,
+    );
+    writeFileSync(secondArchive, 'changed archive bytes');
+    assert.throws(
+      () =>
+        execFileSync(
+          process.execPath,
+          [
+            new URL('./reproducibility.mjs', import.meta.url).pathname,
+            firstRecord,
+            secondRecord,
+            firstArchive,
+            secondArchive,
+          ],
+          { encoding: 'utf8', stdio: 'pipe' },
+        ),
+      /not byte-identical/,
+    );
+    assert.throws(
+      () => verifyReproducibleBuilds(first, second, firstArchive, secondArchive),
+      /not byte-identical/,
+    );
+    assert.throws(
+      () =>
+        verifyReproducibleBuilds(
+          first,
+          { ...second, sha256: hash(Buffer.from('changed archive bytes')) },
+          firstArchive,
+          secondArchive,
+        ),
+      /not byte-identical/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('container proof overrides the image entrypoint with a shell and retains offline read-only isolation', () => {

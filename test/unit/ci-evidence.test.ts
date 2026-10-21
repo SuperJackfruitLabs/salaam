@@ -178,6 +178,9 @@ function fixture(profile = 'full') {
       package_sha256: metadata.package_sha256,
       archive_sha256: 'c'.repeat(64),
       manifest_sha256: 'd'.repeat(64),
+      reproducible_two_builds: true,
+      rebuild_archive_sha256: 'c'.repeat(64),
+      rebuild_manifest_sha256: 'd'.repeat(64),
       image: privateRuntimeImage,
       platform: 'linux',
       arch: 'x64',
@@ -215,6 +218,15 @@ test('CI collection and promotion deny a missing or incomplete private runtime p
     expect(() =>
       validateCertificate({ ...certificate, private_runtime: undefined }, f.expected),
     ).toThrow('private runtime container proof');
+    for (const reproducible_two_builds of [undefined, false]) {
+      const privateRuntime = { ...f.options.privateRuntime, reproducible_two_builds };
+      expect(() => collectEvidence({ ...f.options, privateRuntime })).toThrow(
+        'private runtime container proof',
+      );
+      expect(() =>
+        validateCertificate({ ...certificate, private_runtime: privateRuntime }, f.expected),
+      ).toThrow('private runtime container proof');
+    }
     f.options.privateRuntime.concurrent_starts_single_owner = false;
     expect(() => f.collect()).toThrow('private runtime container proof');
   } finally {

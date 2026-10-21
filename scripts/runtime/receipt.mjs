@@ -16,6 +16,9 @@ export function validatePrivateRuntimeReceipt(receipt, expected, packageSha) {
     receipt.image !== privateRuntimeImage ||
     !/^[a-f0-9]{64}$/.test(receipt.archive_sha256) ||
     !/^[a-f0-9]{64}$/.test(receipt.manifest_sha256) ||
+    receipt.reproducible_two_builds !== true ||
+    receipt.rebuild_archive_sha256 !== receipt.archive_sha256 ||
+    receipt.rebuild_manifest_sha256 !== receipt.manifest_sha256 ||
     receipt.platform !== 'linux' ||
     receipt.arch !== 'x64' ||
     receipt.network !== 'none' ||
