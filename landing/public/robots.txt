@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://salaam.sh/sitemap-index.xml

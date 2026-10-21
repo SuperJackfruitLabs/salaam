@@ -5,6 +5,18 @@ import SuiteHead from '@superjackfruit/frontdoor/components/SuiteHead.astro';
 import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
 // Latest published release. Update this one constant when a new release ships.
 const release = '0.0.2';
+const ld = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Salaam',
+  description,
+  url: site,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux',
+  softwareVersion: release,
+  sameAs: [repo],
+  publisher: { '@type': 'Organization', name: 'Super Jackfruit Labs', url: 'https://superjackfruit.com' },
+};
 const installer = new URL('/install.sh', site).href;
 const install = `curl -fsSL ${installer} | sh -s -- --version ${release}`;
 const steps = [
@@ -47,8 +59,17 @@ const steps = [
     <meta property="og:title" content="Salaam — agent coding sessions that outlast your terminal" />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={site} />
+    <meta property="og:site_name" content="Salaam" />
     <meta property="og:image" content={`${site}/social.svg`} />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Salaam: agent coding sessions that outlast your terminal" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Salaam — agent coding sessions that outlast your terminal" />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${site}/social.svg`} />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+    <script type="application/ld+json" set:html={JSON.stringify(ld)} />
     <SuiteHead product="salaam" />
   </head>
   <body>

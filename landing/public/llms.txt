@@ -1,0 +1,23 @@
+# Salaam
+
+> A persistent session service for terminal coding and unattended agent work, built on Pi.
+
+Salaam runs a service on your machine or execution host. Close the terminal and the session, its approvals and results stay; reattach later from a terminal, over SSH or from an editor that speaks ACP. macOS and Linux are supported; Windows is not currently tested. Apache 2.0.
+
+## Docs
+
+- [Documentation](https://docs.salaam.sh): guides and reference
+- [Quickstart](https://docs.salaam.sh/quickstart/): your first session
+- [Installation](https://docs.salaam.sh/install/): requirements and installer options
+
+## Links
+
+- [Home](https://salaam.sh)
+- [Install script](https://salaam.sh/install.sh): `curl -fsSL https://salaam.sh/install.sh | sh`
+- [Source repository](https://github.com/SuperJackfruitLabs/salaam)
+- [Releases](https://github.com/SuperJackfruitLabs/salaam/releases)
+
+## Optional
+
+- [Super Jackfruit Labs](https://superjackfruit.com): the company behind Salaam
+- [Super Jackfruit Labs llms.txt](https://superjackfruit.com/llms.txt)
