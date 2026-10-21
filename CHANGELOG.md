@@ -8,6 +8,7 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [0.0.3] - 2026-10-22
 
+- Update the MCP SDK and optional Hermes certificate bundle to patched releases.
 - Improve local coding with direct workspace access, repository context, model and
   provider selection, and complete terminal slash-command controls.
 - Configure permission policy separately from task progression, with scoped
