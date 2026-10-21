@@ -1042,6 +1042,7 @@ export class AgentPodWork {
         return json ? JSON.parse(text) : text;
       };
       let appliedCall: Record<string, any> | null = null;
+      let appliedTransition: { before: string; after: string; settled: number } | null = null;
       if (applied) {
         const { operation: op, approval: a } = applied;
         const cs = rows(
@@ -1256,6 +1257,33 @@ export class AgentPodWork {
             decisions[0]!.causation_id === answer.request_id &&
             JSON.parse(String(decisions[0]!.payload)).decision === 'approve',
         );
+        const returned = rows(
+          'applied_patch_returned',
+          "SELECT * FROM events WHERE session_id=? AND kind='station.call.returned' AND json_extract(payload,'$.call_id')=?",
+          session,
+          c.id,
+        );
+        const succeeded = rows(
+          'applied_patch_succeeded',
+          "SELECT * FROM events WHERE session_id=? AND kind='operation.succeeded' AND json_extract(payload,'$.operation_id')=?",
+          session,
+          op.id,
+        );
+        require(returned.length === 1 && succeeded.length === 1);
+        const returnedPayload = JSON.parse(String(returned[0]!.payload)),
+          succeededPayload = JSON.parse(String(succeeded[0]!.payload));
+        require(
+          returnedPayload.attempt_id === c.attempt_id &&
+            returnedPayload.kind === 'patch' &&
+            succeededPayload.attempt_id === op.attempt_id &&
+            succeededPayload.error === null &&
+            Number(returned[0]!.seq) < Number(succeeded[0]!.seq),
+        );
+        appliedTransition = {
+          before: args.expected_tree,
+          after: result.tree_digest,
+          settled: Number(succeeded[0]!.seq),
+        };
         appliedCall = c;
       }
       for (const table of [
@@ -1681,7 +1709,11 @@ export class AgentPodWork {
               const p = JSON.parse(String(e.payload));
               return (
                 p.inspection_call === call.id &&
-                p.tree_digest === proof!.tree &&
+                (p.tree_digest === proof!.tree ||
+                  (appliedTransition &&
+                    proof!.tree === appliedTransition.before &&
+                    p.tree_digest === appliedTransition.after &&
+                    Number(e.seq) > appliedTransition.settled)) &&
                 (p.source_call === proof!.call.id ||
                   canonical(p.source_call) === canonical({ task_check_id: call.task_check_id }))
               );

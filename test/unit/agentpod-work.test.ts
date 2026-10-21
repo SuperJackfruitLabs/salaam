@@ -2317,6 +2317,62 @@ test.each([
   }
 });
 
+test.each(['known-stale', 'third-tree', 'before-patch', 'missing-terminal'])(
+  'approved history audits %s inspection without refreshing its check',
+  async (mode) => {
+    const { f, admitted, children, managed, effect, receipts } =
+      await approvedReadOnlyPatchFixture();
+    try {
+      const old = f.store.db
+        .prepare("SELECT * FROM events WHERE kind='station.verification_observed' LIMIT 1")
+        .get()!;
+      const payload = JSON.parse(String(old.payload));
+      payload.tree_digest = mode === 'third-tree' ? '9'.repeat(64) : effect.result.tree_digest;
+      const check = f.store.db.prepare('SELECT * FROM task_checks WHERE id=?').get(receipts.check)!;
+      const bytes = f.work.verification.artifacts.read(String(check.artifact_id));
+      f.store.db.prepare('DELETE FROM events WHERE id=?').run(String(old.id));
+      if (mode === 'before-patch')
+        f.store.db
+          .prepare('INSERT INTO events VALUES(?,?,?,?,?,?)')
+          .run(
+            String(old.session_id),
+            Number(old.seq),
+            String(old.id),
+            String(old.kind),
+            old.causation_id === null ? null : String(old.causation_id),
+            canonical(payload),
+          );
+      else
+        f.store.transaction(() =>
+          f.store.event(f.session, 'station.verification_observed', payload),
+        );
+      if (mode === 'missing-terminal')
+        f.store.db.prepare("DELETE FROM events WHERE kind='operation.succeeded'").run();
+      const retire = () =>
+        f.work.fail(
+          f.binding,
+          'stale-history-retire',
+          admitted.request_id,
+          'a'.repeat(64),
+          settlementDriver(f),
+        );
+      if (mode === 'known-stale')
+        expect(retire()).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+      else expect(retire).toThrow();
+      expect(f.work.verification.artifacts.read(String(check.artifact_id))).toBe(bytes);
+      expect(
+        f.store.db
+          .prepare('SELECT workspace_digest FROM task_checks WHERE id=?')
+          .get(receipts.check)!.workspace_digest,
+      ).toBe(check.workspace_digest);
+    } finally {
+      await managed.close();
+      await children.close();
+      f.close();
+    }
+  },
+);
+
 async function knownEffectFailureFixture() {
   const x = await expiredWorkFixture(),
     { f, admitted, offer } = x;
