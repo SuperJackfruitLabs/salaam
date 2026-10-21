@@ -115,8 +115,9 @@ jobs:
             docs-site/dist/
           retention-days: 14
   execution-boundary:
+    needs: package-build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -133,12 +134,20 @@ jobs:
           npm run verify:execution -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-boundary --report .state/evidence/execution/linux.json
       - name: Provision the pinned Node coding image
         run: docker image pull docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
+      - name: Provision the pinned whole-harness image with Bash
+        run: docker image pull docker.io/library/node@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.package-build.outputs.artifact_id }}
+          path: .state/release/
+      - name: Prove packaged private runtime on a clean offline Linux container
+        run: |
+          node --test scripts/runtime/runtime.test.mjs
+          bash scripts/private-runtime-acceptance.sh
       - name: Prove the coding portfolio and daemon recovery
         run: |
           mkdir -p /tmp/salaam-coding
           npm run test:coding -- --docker-socket /var/run/docker.sock --scratch-root /tmp/salaam-coding
-      - name: Provision the pinned whole-harness image with Bash
-        run: docker image pull docker.io/library/node@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
       - name: Prove AgentPod startup with private Node and no system Node or Docker socket
         run: node scripts/agentpod-startup-acceptance.mjs
       - name: Prove real tasks, isolated native teams and whole-harness boundary
@@ -158,6 +167,7 @@ jobs:
             .state/evidence/m15
             .state/evidence/m16
             .state/evidence/m19
+            .state/evidence/m22
           retention-days: 14
   a2a-peer-interop:
     name: Pinned A2A peer interoperability
@@ -294,6 +304,10 @@ jobs:
         with:
           pattern: package-install-*
           path: .state/ci-input/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: execution-boundary-linux
+          path: .state/ci-input/execution-boundary/
       - run: node scripts/ci-evidence.mjs
       - id: evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

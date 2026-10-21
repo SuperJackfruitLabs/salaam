@@ -1,0 +1,45 @@
+{
+  "digest": "7289195a9c864142aa717163a06988b5cc57490ec81acadaee0a2704ca41060d",
+  "files": {
+    "notices/NOTICE.txt": {
+      "executable": false,
+      "sha256": "1ca4375701b133a83a99cea37ceca3093f8e4dc9c1d195b58a9d21160be5d373"
+    },
+    "sjl-adapter.json": {
+      "executable": false,
+      "sha256": "b8f16bcc339b10b56d847974442694360d96bfb16a0d4e9ead72902ca686265e"
+    },
+    "sjl-sources.json": {
+      "executable": false,
+      "sha256": "a22dedf6efbb8e2882d0ef055b93d2eb07d25119af346ef2379ec9d0349471ad"
+    },
+    "skills/proof/SKILL.md": {
+      "executable": false,
+      "sha256": "c9f449471ec84434d5f53ac169905233621932b0da0830bb42afc0f45d2cfcbc"
+    },
+    "skills/proof/references/rule.md": {
+      "executable": false,
+      "sha256": "c58665eb07473fe0e774021d36430e67f5155aa983c84d907cecd3107788509e"
+    }
+  },
+  "harness": "salaam",
+  "name": "sjl-proof",
+  "profile": "proof",
+  "schema_version": 1,
+  "skills": [
+    {
+      "id": "proof",
+      "license": "CC0-1.0",
+      "lifecycle": "candidate",
+      "notices": [
+        "NOTICE.txt"
+      ],
+      "owner": "fictional-fixture",
+      "path": "skills/proof",
+      "prerequisites": [],
+      "source": "sjl"
+    }
+  ],
+  "version": "0.0.1",
+  "visibility": "public"
+}

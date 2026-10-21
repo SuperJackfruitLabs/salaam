@@ -60,6 +60,71 @@ Install a specific published version:
 npm install --global @superjackfruitlabs/salaam@0.0.2 --ignore-scripts
 ```
 
+## Private runtime packet (Linux x64)
+
+The additive private installer needs no system Node or npm. It requires a Linux
+x64 glibc host with `/bin/sh`, `/usr/bin/env`, `/usr/bin/dirname`, GNU tar, `awk`,
+`sha256sum` (or `shasum`), and the standard Node shared-library requirements. This packet is
+private build output; no public release, image, or deployment is implied.
+
+Runtime maintainers can follow the [private build instructions](contributor/private-runtime.md).
+
+Transfer only this packet and its reviewed digest to the clean host:
+
+```sh
+sh install.sh --private-runtime ./salaam-private.tar.gz \
+  --sha256 REVIEWED_ARCHIVE_SHA256 --prefix "$HOME/.local/salaam-private"
+"$HOME/.local/salaam-private/bin/salaam" --version
+```
+
+The installer checks the archive hash before extraction or executing bundled
+code, rejects unsafe archive entry types and paths before extraction, then
+verifies the full manifest inventory. The prefix is dedicated to
+private installations. It contains `releases/MANIFEST_SHA256`, an atomically
+switched `current` link, and `bin/salaam` / `bin/sal`. The launcher invokes the
+bundled Node by absolute path under `env -i`; it retains only HOME, TMPDIR, fixed
+locale and a private/system utility PATH. Provider credentials must use the
+existing explicit configuration path; inherited provider keys, `NODE_OPTIONS`,
+and permission environment variables are intentionally absent. Create/review a
+host manifest with this installed launcher and its final installation path, then
+use the normal `host start MANIFEST` command. Installing never starts a daemon
+or authorizes a managed operation.
+
+To replace an installed runtime, stop the service, back up the stopped state,
+and provide its actual SQLite database path:
+
+```sh
+sh install.sh --private-runtime ./salaam-private.tar.gz \
+  --sha256 REVIEWED_ARCHIVE_SHA256 --prefix "$HOME/.local/salaam-private" \
+  --database /absolute/path/to/state/journal.sqlite --stopped
+```
+
+`--stopped` records operator intent. Activation additionally acquires the same
+OS-backed exclusive SQLite transactions used by native configuration apply, in
+the same order: `startup/owner.sqlite`, `host/owner.sqlite`, then the daemon's
+`owner.sqlite`. It retains all three through replacement of `current`. A live
+startup, host supervisor or daemon owner prevents activation even when `--stopped`
+is supplied. Missing startup/host lock directories are created privately before
+acquisition, preventing a concurrent first startup from racing an absence check.
+The supplied journal must be named `journal.sqlite`, exist beneath its canonical
+user-owned private state directory, and have a canonical existing `owner.sqlite`;
+Lock directories and files must also be canonical, private and user-owned;
+symlink aliases and outside journal paths are rejected. Activation reads journal
+`user_version` read-only and refuses unsupported schemas before changing `current`.
+The pin's supported schema range must track Store migrations;
+the current maximum is 31. Installation neither migrates nor restores a database.
+Rollback uses the previous reviewed archive and a matching stopped-state backup
+through the same command and checks; `previous-runtime` records the previous
+pointer for inspection. Recreate host manifests after switching versions. Do not
+manually repoint `current` to bypass compatibility checks. A matching schema
+number alone cannot prove semantic compatibility of an arbitrary old package.
+
+Installation serialization also uses an OS-backed SQLite lock. Process death
+releases these locks without stale-PID or timeout guesses. Each attempt owns a
+fresh staging directory and pointer; leftovers from a killed attempt do not
+block retries. Cleanup removes only that attempt's resources, never unknown
+pre-existing staging directories or pointers.
+
 ## Upgrade deliberately
 
 Installing files does not update a running daemon. Finish or explicitly pause

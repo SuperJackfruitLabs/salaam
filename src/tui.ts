@@ -878,9 +878,32 @@ export class SalaamApp {
       return;
     }
     if (command === 'skills') {
+      if (args === 'clear' || args.startsWith('review ')) {
+        const paths =
+          args === 'clear' ? [] : args.slice('review '.length).trim().split(/\s+/).filter(Boolean);
+        if (args !== 'clear' && !paths.length)
+          throw Error('Use /skills review AGENTS.md .salaam/skills/sjl-profile');
+        const plan = await this.client.planContext({
+          files: paths.filter((path) => path.endsWith('.md')),
+          bundles: paths.filter((path) => !path.endsWith('.md')),
+        });
+        this.confirm(
+          'Review context and skills',
+          'These exact bytes become model context. No tools or permissions are granted. Editing any reviewed resource blocks future grants until renewed.\n\n' +
+            JSON.stringify(plan, null, 2),
+          args === 'clear' ? 'Clear admission' : 'Admit reviewed context',
+          () => this.client.admitContext(plan),
+        );
+        return;
+      }
+      if (args) throw Error('Use /skills, /skills review <relative paths>, or /skills clear');
       this.showText(
         'Skills',
-        'Automatic Pi skill discovery is disabled by the worker boundary. No workspace skill files are implicitly loaded. This command does not install or enable skills.',
+        JSON.stringify(
+          await call(this.client.socket, `/v1/sessions/${snapshot.id}/context`),
+          null,
+          2,
+        ),
       );
       return;
     }
@@ -2221,6 +2244,21 @@ export class SalaamApp {
       }
     }
   }
+  private async initialize(): Promise<void> {
+    await this.execute(async () => {
+      await this.client.list();
+      if (this.options.session)
+        await this.client.open(this.options.session, {
+          observe: this.options.observe,
+          takeover: this.options.takeover,
+        });
+      else if (this.client.sessions.length) await this.sessions();
+      else if (this.client.connection === 'offline') {
+        this.client.notice = 'Service is offline. Ctrl+n starts a new workspace.';
+        this.tui.requestRender();
+      }
+    });
+  }
   async run(): Promise<void> {
     this.running = true;
     const close = () => {
@@ -2244,19 +2282,7 @@ export class SalaamApp {
         )
           this.tui.requestRender();
       }, 1000);
-      await this.client.list();
-      if (this.options.session)
-        await this.execute(() =>
-          this.client.open(this.options.session!, {
-            observe: this.options.observe,
-            takeover: this.options.takeover,
-          }),
-        );
-      else if (this.client.sessions.length) await this.sessions();
-      else if (this.client.connection === 'offline') {
-        this.client.notice = 'Service is offline. Ctrl+n starts a new workspace.';
-        this.tui.requestRender();
-      }
+      await this.initialize();
       await this.done;
     } finally {
       this.running = false;

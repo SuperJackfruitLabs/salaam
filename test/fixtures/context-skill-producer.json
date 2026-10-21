@@ -1,0 +1,24 @@
+{
+  "archive_sha256": "c9bddd3022ff74e077949f289619e7170ee278f4dd1f59db9710115d7dae5112",
+  "bundle_digest": "7289195a9c864142aa717163a06988b5cc57490ec81acadaee0a2704ca41060d",
+  "bundle_relative_path": "sjl-proof",
+  "expected_marker": "GREEN",
+  "expected_skill_ids": ["proof"],
+  "fixture_path": "test/fixtures/context-skill-bundle",
+  "limits": [
+    "Synthetic public-safe content only; no private workflow or vendor content.",
+    "Producer build/pack verification only; runtime sessions not exercised by this producer task.",
+    "Producer base plus uncommitted adapter delta, not a released producer revision."
+  ],
+  "metadata_algorithm_interoperability": "Node.js reproduced the root consumer sorted JSON algorithm against this exact generated fixture: digest 7289195a9c864142aa717163a06988b5cc57490ec81acadaee0a2704ca41060d matched.",
+  "producer": "sjl_skills.bundle.build",
+  "producer_base_revision": "3aee77fca97122d1d46af1a092d44179df777fee",
+  "synthetic_only": true,
+  "uncommitted_diff_scope": [
+    "seventh salaam harness and adapter",
+    "project placement .salaam/skills",
+    "legacy six/new seven release verification",
+    "schemas/docs/tests/matrix"
+  ],
+  "visibility": "public"
+}

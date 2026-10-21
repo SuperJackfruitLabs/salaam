@@ -1168,11 +1168,13 @@ export class Supervisor extends EventEmitter {
             epoch: w.epoch,
             provider: body.provider,
             context_digest: body.context_digest,
+            context_admission_digest: this.tasks.admitted?.currentDigest(id) ?? null,
             payload_digest: body.payload_digest,
             task_version: this.tasks.state(id).version,
           });
         });
       } else if (method === 'policy' || method === 'tool') {
+        this.tasks.admitted?.assertFresh(id);
         this.store.taskGrantCheck?.(id);
         if (!this.tools(id).includes(String(body.tool))) throw new Error('Tool is outside policy');
         this.store.transaction(() => {
@@ -1334,6 +1336,7 @@ export class Supervisor extends EventEmitter {
     return state;
   }
   assertActive(id: string, epoch: number, attempt: string): void {
+    this.tasks.admitted?.assertFresh(id);
     this.store.execution.assert(id);
     const w = this.workers.get(id);
     if (

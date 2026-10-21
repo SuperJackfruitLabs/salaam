@@ -269,3 +269,42 @@ test('palette action selected during session loading runs after loading, but not
     app['running'] = false;
   }
 });
+
+test('palette waits through initial session listing and opening before admitting context', async () => {
+  const app = new SalaamApp({
+    state: '/tmp/salaam-initial-list-proof',
+    session: 'one',
+    observe: true,
+  });
+  app['running'] = true;
+  let releaseList!: () => void;
+  let releaseOpen!: () => void;
+  app.client.list = () =>
+    new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+  app.client.open = async () => {
+    await new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    app.client.snapshot = { id: 'one', submissions: [] } as unknown as SessionSnapshot;
+  };
+  const loading = app['initialize']();
+  // The initial frame already says Observer, but no session has been loaded.
+  expect(app.client.snapshot).toBeUndefined();
+  app['input']('\x0b');
+  expect(app.tui.getFocusedComponent()).toBe(app.editor);
+  releaseList();
+  await Promise.resolve();
+  expect(app.tui.getFocusedComponent()).toBe(app.editor);
+  releaseOpen();
+  await loading;
+  const palette = app.tui.getFocusedComponent();
+  expect(palette).toBeInstanceOf(ChoiceModal);
+  for (const key of 'Session context\r') palette!.handleInput!(key);
+  await Promise.resolve();
+  expect(app.view.tab).toBe('context');
+  expect(app.client.notice).not.toContain('Choose a session');
+  app['closeModal']();
+  app['running'] = false;
+});

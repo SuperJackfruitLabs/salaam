@@ -6,3 +6,5 @@ coverage
 .astro
 .wrangler
 docs-site/src/content/docs
+# Immutable output of the shared skill-bundle producer; formatting changes its pins.
+test/fixtures/context-skill-bundle
