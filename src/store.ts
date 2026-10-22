@@ -49,6 +49,8 @@ export class Store {
     after: import('./workspaces.js').WorkspaceTree,
   ) => void;
   taskGrantCheck?: (session: string) => void;
+  /** Provenance: the OS identity that local tool effects run as. */
+  toolExecution?: { mode: string; user: string; uid: number };
   jobGrantCheck?: (session: string) => void;
   taskModelAdmission?: (
     session: string,
@@ -514,6 +516,7 @@ export class Store {
                   local_workspace: true,
                   local_coding: local.coding === true,
                   output_cap: local.outputCap ?? true,
+                  ...(this.toolExecution ? { tool_execution: this.toolExecution } : {}),
                 }
               : {}),
           },
@@ -598,6 +601,7 @@ export class Store {
           local_workspace: true,
           local_coding: this.localCoding(id),
           output_cap: this.localOutputCap(id) ?? true,
+          ...(this.toolExecution ? { tool_execution: this.toolExecution } : {}),
           forked_from: id,
         },
         request,

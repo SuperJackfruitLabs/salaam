@@ -236,6 +236,35 @@ jobs:
             .state/evidence/m10/screens
             .state/evidence/m12/screens
           retention-days: 14
+  tool-user:
+    name: Tool execution user (real uid switch)
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      # The host setup from docs/security.md, applied to the runner user.
+      - run: |
+          sudo useradd --system --no-create-home --shell /usr/sbin/nologin salaam-tools
+          sudo groupadd salaam-work
+          sudo usermod -aG salaam-work salaam-tools
+          sudo usermod -aG salaam-work "$USER"
+          echo "$USER ALL=(salaam-tools) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/salaam-tools >/dev/null
+          sudo chmod 440 /etc/sudoers.d/salaam-tools
+          dir="$GITHUB_WORKSPACE"
+          while [ "$dir" != / ]; do sudo setfacl -m u:salaam-tools:x "$dir"; dir=$(dirname "$dir"); done
+          sudo setfacl -R -m u:salaam-tools:rX "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE/package.json" "$GITHUB_WORKSPACE/pi-pin.json"
+      - run: sg salaam-work -c "npx vitest run test/unit/tool-identity.test.ts"
+        env:
+          SALAAM_TEST_TOOLS_USER: salaam-tools
+          SALAAM_TEST_TOOLS_GROUP: salaam-work
   stress:
     needs: plan
     if: needs.plan.outputs.profile == 'full'

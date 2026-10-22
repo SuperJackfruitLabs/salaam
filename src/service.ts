@@ -58,6 +58,7 @@ import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
+import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
@@ -88,6 +89,10 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   effectConnector?: EffectConnector;
   approvalTtlMs?: number;
   codingRoot?: string;
+  /** Unprivileged OS user for agent-initiated local commands and edits (Linux, sudo -n -u). */
+  toolsUser?: string;
+  /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
+  toolsLauncher?: string[];
   codingSocket?: string;
   codingBackend?: ExecutionBackend;
   expectedExecution?: { profile_digest: string; engine_id: string };
@@ -130,6 +135,7 @@ export class SalaamService {
   readonly workspaces: Workspaces;
   readonly coding: CodingWork;
   readonly localCoding: LocalCoding;
+  readonly toolIdentity: ToolIdentity;
   readonly codingSocket: string | null;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
@@ -175,6 +181,9 @@ export class SalaamService {
     this.codingSocket = options.codingSocket ? resolve(options.codingSocket) : null;
     mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
     this.stateDir = realpathSync(this.stateDir);
+    this.toolIdentity = options.toolsUser
+      ? probeToolsUser(options.toolsUser, this.stateDir, options.toolsLauncher)
+      : serviceToolIdentity();
     const mcpAdmission = options.managedMcp
       ? new McpAdmission(
           options.managedMcp.config,
@@ -189,6 +198,11 @@ export class SalaamService {
     this.release = acquireStateLock(this.stateDir);
     try {
       this.store = new Store(join(this.stateDir, 'journal.sqlite'));
+      this.store.toolExecution = {
+        mode: this.toolIdentity.mode,
+        user: this.toolIdentity.user,
+        uid: this.toolIdentity.uid,
+      };
       try {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
@@ -296,8 +310,11 @@ export class SalaamService {
               : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
-        this.localCoding = new LocalCoding(this.store, this.managed, (id, epoch, attempt) =>
-          this.supervisor.assertActive(id, epoch, attempt),
+        this.localCoding = new LocalCoding(
+          this.store,
+          this.managed,
+          (id, epoch, attempt) => this.supervisor.assertActive(id, epoch, attempt),
+          this.toolIdentity,
         );
         this.supervisor.localCoding = this.localCoding;
         this.agents = new AgentProfiles(
@@ -1700,6 +1717,12 @@ export class SalaamService {
             ? { configuration_digest: this.station.configurationDigest }
             : null,
           service: 'healthy',
+          tool_execution: {
+            mode: this.toolIdentity.mode,
+            user: this.toolIdentity.user,
+            uid: this.toolIdentity.uid,
+            warning: this.toolIdentity.warning,
+          },
           a2a: {
             inbound_enabled: !!this.a2aInbound,
             listener: this.a2aInbound?.server.address() ?? null,
@@ -2031,6 +2054,7 @@ export class SalaamService {
                   )
                     throw new ServiceError('session_busy', 'Wait for queued work before undo');
                 },
+                this.toolIdentity,
               ),
             );
             return;

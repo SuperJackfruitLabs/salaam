@@ -6,6 +6,10 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+- Add `--tools-user` (`SALAAM_TOOLS_USER`) to run local agent commands, edits and
+  undo as a separate unprivileged OS user via a runas-restricted sudo rule, so
+  tools cannot read the provider credential. Without it, startup warns.
+
 ## [0.0.3] - 2026-10-22
 
 - Update the MCP SDK and optional Hermes certificate bundle to patched releases.
