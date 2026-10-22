@@ -14,9 +14,11 @@ import {
   realpathSync,
   writeFileSync,
   fsyncSync,
+  existsSync,
 } from 'node:fs';
 import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
+import { defaultAgentPodConfig } from './agentpod-default-config.js';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
 import { attach, acquireControl, Outbox } from './attach.js';
@@ -1553,7 +1555,8 @@ async function main(): Promise<void> {
       codingSocket = option('--coding-socket'),
       harnessConfig = option('--harness-config'),
       a2aConfig = option('--a2a-config'),
-      agentpodConfig = option('--agentpod-config'),
+      agentpodConfig =
+        option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
       a2aListenConfig = option('--a2a-listen-config');
     if (foreground) {
       const service = await SalaamService.open({

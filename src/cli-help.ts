@@ -212,6 +212,9 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
 salaam service status
 salaam service stop
 
+Without --agentpod-config, start binds to ~/.config/salaam/agentpod-pins.json
+($XDG_CONFIG_HOME/salaam) when that file exists.
+
 The default provider is offline. Anthropic defaults to claude-sonnet-5-5.
 Other providers require --model; use salaam providers list and salaam models list PROVIDER.
 Start with --foreground for process-supervisor use; otherwise the service detaches.
