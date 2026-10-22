@@ -104,6 +104,9 @@ salaam host unit --manifest host-manifest.json --platform systemd|launchd
 salaam host run --manifest host-manifest.json
 salaam host start --manifest host-manifest.json
 salaam host unit-start --unit salaam-host@STATION.service --state DIR
+salaam host bind --organization ORG --node NODE --station-key KEY --workspace DIR \
+  --tools-user USER --files HELPER --runtime-root DIR --runtime-image-digest sha256:… \
+  [--operator-group GROUP] [--provider P --model M] [--mcp-config FILE] [--dir DIR] [--state DIR]
 
 Config requires absolute state, coding_root and coding_socket paths; optional
 provider, model, max_output_tokens and workspace_id. Planning probes the existing
@@ -123,7 +126,12 @@ Launcher profile (Linux): root plans a strict work host with operator_group set.
 A root-owned unit runs host run from that root-held manifest. The daemon lets that
 one group traverse its state and use operator.sock. An unprivileged member then
 runs host unit-start, which asks systemd to start the named salaam-host@ unit and
-prints the receipt the running daemon reports. It cannot choose what root runs.`,
+prints the receipt the running daemon reports. It cannot choose what root runs.
+
+host bind (root, Linux) writes everything a launcher-profile station needs into
+--dir (default /etc/salaam/stations/<key>): agentpod-pins.json, station-config.json
+(with tools_user), host-config.json, and host.json from host plan. It is
+idempotent: the same inputs leave the files and the manifest digest unchanged.`,
   schedules: `salaam schedules create TASK_ID --name NAME --revision N --max-steps N [--schedule FILE] [--compact]
 salaam schedules list [--offset N]
 salaam schedules inspect JOB_ID

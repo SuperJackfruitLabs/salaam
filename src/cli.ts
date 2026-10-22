@@ -539,6 +539,35 @@ async function main(): Promise<void> {
       );
       return;
     }
+    if (verb === 'bind') {
+      const { bindHost } = await import('./host-bind.js');
+      const required = (name: string) => {
+        const v = option(name);
+        if (!v) throw new Error('Supply ' + name);
+        return v;
+      };
+      console.log(
+        JSON.stringify(
+          await bindHost({
+            organization_id: required('--organization'),
+            node_id: required('--node'),
+            station_key: required('--station-key'),
+            workspace: required('--workspace'),
+            tools_user: required('--tools-user'),
+            files: required('--files'),
+            runtime_root: required('--runtime-root'),
+            runtime_image_digest: required('--runtime-image-digest'),
+            operator_group: option('--operator-group'),
+            dir: option('--dir'),
+            state: option('--state'),
+            provider: option('--provider'),
+            model: option('--model'),
+            mcp_config: option('--mcp-config'),
+          }),
+        ),
+      );
+      return;
+    }
     if (verb === 'unit-start') {
       const { startHostUnit } = await import('./host-start.js');
       const unit = option('--unit'),
@@ -608,6 +637,9 @@ async function main(): Promise<void> {
                 ...(m.schema === 6 ? { agentpodWorkProgression: true } : {}),
                 ...(m.schema === 6 && m.operator_access
                   ? { operatorAccess: m.operator_access }
+                  : {}),
+                ...(m.schema === 6 && m.operator_mcp
+                  ? { operatorMcpConfig: m.operator_mcp.config }
                   : {}),
               }),
           hostManifestDigest: digest(m),

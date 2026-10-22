@@ -30,6 +30,7 @@ import { acquireStateLock } from './state-lock.js';
 import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
+import { OperatorMcp } from './operator-mcp.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -80,6 +81,8 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
   strict_work: { version: 1 };
   /** Launcher profile: a root host whose operator socket one unprivileged group may use. */
   operator_access?: OperatorAccess;
+  /** Operator-declared MCP servers (docs/mcp.md), pinned by declaration digest. */
+  operator_mcp?: { config: string; digest: string };
 }
 export interface OperatorAccess {
   group: string;
@@ -174,6 +177,7 @@ async function planAgentPod(
     'station_config',
     'strict_work_version',
     'operator_group',
+    'operator_mcp_config',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -189,6 +193,15 @@ async function planAgentPod(
     if (process.platform !== 'linux' || process.getuid?.() !== 0)
       throw Error('The launcher profile is planned by root on Linux');
     access = resolveOperatorGroup(c.operator_group);
+  }
+  let operatorMcp: { config: string; digest: string } | undefined;
+  if (c.operator_mcp_config !== undefined) {
+    if (c.strict_work_version !== 1)
+      throw Error('operator_mcp_config is only for the strict work host profile');
+    const config = string(c.operator_mcp_config, 'operator_mcp_config');
+    if (!isAbsolute(config) || realpathSync(config) !== config)
+      throw Error('Use a canonical absolute operator MCP config path');
+    operatorMcp = { config, digest: OperatorMcp.load(config).digest };
   }
   const state = privateState(string(c.state, 'state'), access?.gid);
   const config = string(c.agentpod_config, 'agentpod_config');
@@ -246,6 +259,7 @@ async function planAgentPod(
                 schema: 6 as const,
                 strict_work: { version: 1 as const },
                 ...(access ? { operator_access: access } : {}),
+                ...(operatorMcp ? { operator_mcp: operatorMcp } : {}),
               }
             : { schema: 5 as const }),
           station_execution: station,
@@ -377,6 +391,7 @@ export function readHost(path: string): HostManifest {
       ...([5, 6].includes(m.schema) ? ['station_execution'] : []),
       ...(m.schema === 6 ? ['strict_work'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_access') ? ['operator_access'] : []),
+      ...(m.schema === 6 && Object.hasOwn(m, 'operator_mcp') ? ['operator_mcp'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
@@ -395,6 +410,17 @@ export function readHost(path: string): HostManifest {
         throw Error('Host operator group changed');
     }
     privateState(m.state, access?.gid);
+    if (m.schema === 6 && Object.hasOwn(m, 'operator_mcp')) {
+      const o = object(m.operator_mcp);
+      if (
+        Object.keys(o).sort().join(',') !== 'config,digest' ||
+        typeof o.config !== 'string' ||
+        !isAbsolute(o.config) ||
+        realpathSync(o.config) !== o.config ||
+        OperatorMcp.load(o.config).digest !== o.digest
+      )
+        throw Error('Operator MCP declarations changed');
+    }
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
