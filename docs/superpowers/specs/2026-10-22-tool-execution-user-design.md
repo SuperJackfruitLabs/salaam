@@ -19,14 +19,14 @@ unprivileged OS user.
 
 These run on the agent's behalf and touch the host:
 
-| Path | Code | Today |
-| --- | --- | --- |
-| `salaam_local` command | `LocalCoding.command` (`src/local-coding.ts`) | `/bin/sh -c` as the service user |
-| `salaam_local` edit (create, replace) | `applyLocalEdits` (`src/local-edits.ts`) | in-process fs writes as the service user |
-| Operator undo of a local edit | `applyUndo` (`src/local-undo.ts`) | in-process fs writes and unlinks |
-| `salaam_command` (coding sessions) | Docker executor | already a non-root container user with no network; unchanged |
-| `salaam_files` patches (coding sessions) | owned workspace copies under Salaam state | Salaam-owned copies; unchanged |
-| `salaam_workspace` read, list, search | `LocalWorkspace` | path-confined reads as the service user; see Non-goals |
+| Path                                     | Code                                          | Today                                                        |
+| ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
+| `salaam_local` command                   | `LocalCoding.command` (`src/local-coding.ts`) | `/bin/sh -c` as the service user                             |
+| `salaam_local` edit (create, replace)    | `applyLocalEdits` (`src/local-edits.ts`)      | in-process fs writes as the service user                     |
+| Operator undo of a local edit            | `applyUndo` (`src/local-undo.ts`)             | in-process fs writes and unlinks                             |
+| `salaam_command` (coding sessions)       | Docker executor                               | already a non-root container user with no network; unchanged |
+| `salaam_files` patches (coding sessions) | owned workspace copies under Salaam state     | Salaam-owned copies; unchanged                               |
+| `salaam_workspace` read, list, search    | `LocalWorkspace`                              | path-confined reads as the service user; see Non-goals       |
 
 The Pi worker has no built-in tools (`--no-builtin-tools`). Every effect goes
 through the house extension, then over the bridge to the daemon. The daemon is
@@ -64,7 +64,7 @@ Why this mechanism:
   with fewer rights than itself. The rule grants nothing an attacker who owns
   `salaam` did not already have.
 - `systemd-run --uid` needs the system manager and a polkit rule. On staging,
-  Salaam is a systemd *user* unit, so that would add a polkit policy and a
+  Salaam is a systemd _user_ unit, so that would add a polkit policy and a
   privileged manager round-trip to every command. It also does not exist for
   standalone installs on hosts without systemd.
 - sudo is present on every Linux host we run (staging has sudo-rs 0.2.13).
