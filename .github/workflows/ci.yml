@@ -333,3 +333,25 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: .state/release/salaam-cli-*.tgz
+  # Every push to main deploys that commit to the staging execution host (workbench) once the
+  # evidence gate passes. The key is forced (estate provision/301) to
+  # /usr/local/sbin/staging-deploy (`<product> <sha>`), which runs this commit's
+  # deploy/staging/deploy.sh: build, release:pack, install as `salaam`, restart, smoke.
+  deploy-staging:
+    name: Deploy to staging
+    needs: [ci-gate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci-gate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency: { group: deploy-staging, cancel-in-progress: false }
+    steps:
+      - name: Deploy
+        env:
+          KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+          HOST: ${{ vars.STAGING_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh root@"$HOST" salaam "$GITHUB_SHA"
