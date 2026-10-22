@@ -1,5 +1,13 @@
 import { test, expect } from 'vitest';
-import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  realpathSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { bindHost } from '../../src/host-bind.js';
@@ -67,6 +75,7 @@ test.runIf(root)(
         tools_user: 'nobody',
         files: { path: helper },
       });
+      expect(statSync(join(first.state, '..')).mode & 0o777).toBe(0o755);
       const again = await bindHost(input);
       expect(again).toEqual({ ...first, changed: false });
       const moved = await bindHost({ ...input, node_id: 'node_other' });

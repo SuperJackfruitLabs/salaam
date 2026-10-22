@@ -209,3 +209,18 @@ test('ACP clients of a daemon state they do not own keep their journal in their 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the CLI passes --unit and --state through to unit-start', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { ROOT } = await import('../../src/config.js');
+  const run = (...args: string[]) =>
+    promisify(execFile)(process.execPath, [join(ROOT, 'bin/salaam.mjs'), ...args]).then(
+      () => '',
+      (e: { stderr: string }) => e.stderr,
+    );
+  expect(await run('host', 'unit-start', '--unit', 'ssh.service', '--state', '/tmp')).toContain(
+    'Unit must be',
+  );
+  expect(await run('host', 'unit-start', '--unit', 'ssh.service')).toContain('Supply --unit');
+});

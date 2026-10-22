@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   closeSync,
   fsyncSync,
   mkdirSync,
@@ -88,7 +89,10 @@ export async function bindHost(input: BindInput) {
     dir = resolve(input.dir ?? join(roots.config, id)),
     state = resolve(input.state ?? join(roots.state, id, 'state'));
   mkdirSync(dir, { recursive: true, mode: 0o755 });
-  mkdirSync(join(state, '..'), { recursive: true, mode: 0o700 });
+  // Ancestors of state stay traversable so the operator group can reach operator.sock;
+  // state itself is the daemon's (0700, or 0710 for the operator group once served).
+  mkdirSync(join(state, '..'), { recursive: true, mode: 0o755 });
+  chmodSync(join(state, '..'), 0o755);
   const pinsPath = join(dir, 'agentpod-pins.json'),
     stationPath = join(dir, 'station-config.json'),
     configPath = join(dir, 'host-config.json'),

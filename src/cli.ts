@@ -559,7 +559,7 @@ async function main(): Promise<void> {
             runtime_image_digest: required('--runtime-image-digest'),
             operator_group: option('--operator-group'),
             dir: option('--dir'),
-            state: option('--state'),
+            state: explicitState ? state : undefined,
             provider: option('--provider'),
             model: option('--model'),
             mcp_config: option('--mcp-config'),
@@ -571,9 +571,8 @@ async function main(): Promise<void> {
     }
     if (verb === 'unit-start') {
       const { startHostUnit } = await import('./host-start.js');
-      const unit = option('--unit'),
-        state = option('--state');
-      if (!unit || !state) throw new Error('Supply --unit UNIT and --state DIR');
+      const unit = option('--unit');
+      if (!unit || !explicitState) throw new Error('Supply --unit UNIT and --state DIR');
       console.log(JSON.stringify(await startHostUnit(unit, state)));
       return;
     }
