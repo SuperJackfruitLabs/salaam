@@ -34,6 +34,7 @@ export default defineConfig({
             { label: 'External harnesses', slug: 'external-harnesses' },
             { label: 'A2A peers', slug: 'a2a' },
             { label: 'Jobs and schedules', slug: 'jobs' },
+            { label: 'MCP servers', slug: 'mcp' },
             { label: 'Editors and SSH', slug: 'clients' },
             { label: 'Session operations', slug: 'service-reference' },
           ],

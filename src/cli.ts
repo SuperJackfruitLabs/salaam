@@ -18,6 +18,8 @@ import {
 } from 'node:fs';
 import { ROOT, VERSION } from './config.js';
 import { cliHelp, hasHelpFlag } from './cli-help.js';
+import { mcpCli, MCP_HELP } from './operator-mcp-cli.js';
+import { operatorMcpPath, readOperatorMcpFile } from './operator-mcp.js';
 import { defaultAgentPodConfig } from './agentpod-default-config.js';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
@@ -62,6 +64,15 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === '--version' || args[0] === '-V' || args[0] === 'version') {
     console.log('salaam ' + VERSION);
+    return;
+  }
+  if (args[0] === 'mcp') {
+    // Parsed before global help: a declared command's own flags follow "--".
+    const rest = args.slice(1);
+    const dash = rest.indexOf('--');
+    const flags = dash < 0 ? rest : rest.slice(0, dash);
+    if (!rest.length || flags.includes('--help') || flags.includes('-h')) console.log(MCP_HELP);
+    else console.log(mcpCli(rest));
     return;
   }
   if (
@@ -1557,12 +1568,14 @@ async function main(): Promise<void> {
       a2aConfig = option('--a2a-config'),
       agentpodConfig =
         option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
-      a2aListenConfig = option('--a2a-listen-config');
+      a2aListenConfig = option('--a2a-listen-config'),
+      mcpConfig = resolve(option('--mcp-config') ?? operatorMcpPath(process.env));
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
         providerRoute: route,
         agentpodConfig: agentpodConfig ? resolve(agentpodConfig) : undefined,
+        operatorMcpConfig: mcpConfig,
         codingRoot: codingRoot ? resolve(codingRoot) : undefined,
         codingSocket: codingSocket ? resolve(codingSocket) : undefined,
         harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
@@ -1592,6 +1605,7 @@ async function main(): Promise<void> {
           coding_socket?: string | null;
           agentpod_config?: string | null;
           agentpod_pins_digest?: string | null;
+          operator_mcp?: { config: string; digest: string } | null;
         }
       | undefined;
     try {
@@ -1615,6 +1629,15 @@ async function main(): Promise<void> {
       )
         throw new Error(
           'Service is already running with another coding configuration; stop it first',
+        );
+      if ((health.operator_mcp?.config ?? null) !== mcpConfig)
+        throw new Error('Service is already running with another MCP config; stop it first');
+      if (
+        health.operator_mcp &&
+        health.operator_mcp.digest !== digest(readOperatorMcpFile(mcpConfig))
+      )
+        console.error(
+          'Declared MCP servers changed since the service started; run salaam service stop, then start, to apply them',
         );
       console.log('Salaam service already running');
       return;
@@ -1643,6 +1666,8 @@ async function main(): Promise<void> {
         ...(a2aConfig ? ['--a2a-config', resolve(a2aConfig)] : []),
         ...(agentpodConfig ? ['--agentpod-config', resolve(agentpodConfig)] : []),
         ...(a2aListenConfig ? ['--a2a-listen-config', resolve(a2aListenConfig)] : []),
+        '--mcp-config',
+        mcpConfig,
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

@@ -45,6 +45,7 @@ export function workerCapabilities(
     ...(childTools?.includes('salaam_station') ? ['protected-station-v1'] : []),
     ...(childTools?.includes('salaam_workspace') ? ['local-workspace-read'] : []),
     ...(childTools?.includes('salaam_local') ? ['local-coding-reviewed'] : []),
+    ...(childTools?.includes('salaam_operator_mcp') ? ['operator-mcp-v1'] : []),
   ];
 }
 export function workerTools(
@@ -57,6 +58,7 @@ export function workerTools(
   station = false,
   local = false,
   localCoding = false,
+  operatorMcp = false,
 ): string[] {
   return child
     ? [...(childTools ?? ['salaam_probe'])].sort()
@@ -69,6 +71,7 @@ export function workerTools(
         ...(mcp ? ['salaam_mcp'] : []),
         ...(toolkit ? ['salaam_toolkit'] : []),
         ...(station ? ['salaam_station'] : []),
+        ...(operatorMcp ? ['salaam_operator_mcp'] : []),
       ].sort();
 }
 export interface ChildTask {
@@ -89,6 +92,7 @@ export interface ChildTask {
 }
 export type WorkerState = 'stopped' | 'starting' | 'ready' | 'unhealthy' | 'exited';
 export interface Session {
+  mcp_servers?: import('./operator-mcp.js').McpServerProvenance[];
   id: string;
   cwd: string;
   revision: number;

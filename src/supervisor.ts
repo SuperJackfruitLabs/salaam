@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, existsSync, writeFileSync, readFileSync, readlinkSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
@@ -32,6 +32,7 @@ import type { ManagedWork } from './managed.js';
 import type { McpWork, McpWorkerBinding } from './mcp-work.js';
 import type { StationWork, StationBinding } from './station-work.js';
 import type { ToolkitWork, ToolkitWorkerBinding } from './toolkit-work.js';
+import { mergeMcpProvenance, type McpServerProvenance, type OperatorMcp } from './operator-mcp.js';
 import type { ChildWork } from './children.js';
 import {
   OFFLINE_ROUTE,
@@ -81,6 +82,8 @@ export interface SupervisorOptions {
 }
 interface Worker {
   mcp?: McpWorkerBinding;
+  operatorMcp?: McpServerProvenance[];
+  mcpServers?: McpServerProvenance[];
   toolkit?: ToolkitWorkerBinding;
   station?: StationBinding;
   secrets?: string[];
@@ -168,6 +171,7 @@ export class Supervisor extends EventEmitter {
   private compactionJobs = new Set<Promise<void>>();
   managed?: ManagedWork;
   mcp?: McpWork;
+  operatorMcp?: OperatorMcp;
   toolkit?: ToolkitWork;
   station?: StationWork;
   children?: ChildWork;
@@ -222,7 +226,25 @@ export class Supervisor extends EventEmitter {
       !!this.station,
       this.store.localWorkspace(id),
       this.store.localCoding(id),
+      this.declaredMcp(id),
     );
+  }
+  /** Operator-declared MCP reaches root sessions only; children get no MCP authority. */
+  private declaredMcp(id: string): boolean {
+    return !!this.operatorMcp && !this.operatorMcp.empty && !this.children?.owned(id);
+  }
+  /** Every MCP server the session got, from both sources; persisted beside the worker. */
+  mcpServers(id: string): McpServerProvenance[] | undefined {
+    const live = this.workers.get(id)?.mcpServers;
+    if (live) return structuredClone(live);
+    try {
+      const path = join(this.options.stateDir, 'workers', id, 'mcp-servers.json');
+      return existsSync(path)
+        ? (JSON.parse(readFileSync(path, 'utf8')) as McpServerProvenance[])
+        : undefined;
+    } catch {
+      return undefined;
+    }
   }
   private childBoundary(id: string, epoch: number) {
     const child = this.children?.owned(id);
@@ -406,6 +428,20 @@ export class Supervisor extends EventEmitter {
       const child = this.children?.owned(id);
       if (this.mcp && !child) worker.mcp = await this.mcp.ready(id);
       if (this.toolkit && !child) worker.toolkit = await this.toolkit.ready(id);
+      if (this.declaredMcp(id)) worker.operatorMcp = this.operatorMcp!.provenance();
+      if (worker.operatorMcp || worker.mcp) {
+        // Collisions are refused at admission; nothing is silently shadowed.
+        worker.mcpServers = mergeMcpProvenance(
+          worker.operatorMcp ?? [],
+          (worker.mcp?.servers ?? []).map((server) => ({
+            name: server.name,
+            source: 'agentpod' as const,
+            transport: 'http' as const,
+            endpoint_digest: server.endpoint_digest,
+            declaration_digest: digest(server),
+          })),
+        );
+      }
       if (this.station && !child) worker.station = this.station.ready(id);
       this.store.execution.assert(id);
       if (worker.stopping || worker.invalid) throw new Error('Worker startup cancelled');
@@ -421,6 +457,10 @@ export class Supervisor extends EventEmitter {
       );
       const sessionDir = join(workerDir, 'sessions');
       mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+      const provenancePath = join(workerDir, 'mcp-servers.json');
+      if (worker.mcpServers)
+        writeFileSync(provenancePath, JSON.stringify(worker.mcpServers, null, 2), { mode: 0o600 });
+      else rmSync(provenancePath, { force: true });
       const config = {
         socket: this.options.bridgeSocket,
         token: worker.token,
@@ -437,6 +477,8 @@ export class Supervisor extends EventEmitter {
         local: this.store.localWorkspace(id),
         localCoding: this.store.localCoding(id),
         ...(worker.mcp ? { mcp: worker.mcp } : {}),
+        ...(worker.operatorMcp ? { operator_mcp: worker.operatorMcp } : {}),
+        ...(worker.mcpServers ? { mcp_servers: worker.mcpServers } : {}),
         ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
         ...(worker.station ? { station: worker.station } : {}),
       };
@@ -732,6 +774,10 @@ export class Supervisor extends EventEmitter {
           context_digest: textDigest(w.frame),
           ...(boundary ? { worker_binding: boundary } : {}),
           ...(w.mcp ? { mcp: w.mcp } : {}),
+          ...(w.operatorMcp ? { operator_mcp: w.operatorMcp } : {}),
+          ...(w.mcpServers
+            ? { mcp_servers: w.mcpServers, mcp_servers_digest: digest(w.mcpServers) }
+            : {}),
           ...(w.toolkit ? { toolkit: w.toolkit } : {}),
           ...(w.station ? { station: w.station } : {}),
         };
@@ -838,6 +884,45 @@ export class Supervisor extends EventEmitter {
         const auth = prepared.auth;
         w.secrets = [...new Set([...(w.secrets ?? []), ...credentialStrings(auth)])];
         return auth;
+      }
+      if (method.startsWith('operator_mcp.')) {
+        if (!this.declaredMcp(id) || !w.operatorMcp || !w.attempt)
+          throw new ServiceError('mcp_disabled', 'Worker has no declared MCP servers', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'operator_mcp.catalog')
+          return await this.operatorMcp!.catalog(id, body.server, body.tool);
+        if (method !== 'operator_mcp.call')
+          throw new ServiceError('invalid_field', 'Unknown declared MCP method', 400);
+        const attempt = w.attempt;
+        const args = body.arguments ?? {};
+        const server = String(body.server ?? ''),
+          tool = String(body.tool ?? '');
+        try {
+          const result = await this.operatorMcp!.call(id, body.server, body.tool, args);
+          this.store.transaction(() =>
+            this.store.event(id, 'operator_mcp.call', {
+              attempt_id: attempt,
+              server,
+              tool,
+              argument_digest: digest(args),
+              outcome: result.is_error ? 'tool_error' : 'returned',
+              result_digest: digest(result),
+            }),
+          );
+          return result;
+        } catch (error) {
+          this.store.transaction(() =>
+            this.store.event(id, 'operator_mcp.call', {
+              attempt_id: attempt,
+              server,
+              tool,
+              argument_digest: digest(args),
+              outcome: 'failed',
+              error: (error as ServiceError).code ?? 'mcp_server_failed',
+            }),
+          );
+          throw error;
+        }
       }
       if (method.startsWith('toolkit.')) {
         if (!this.toolkit || !w.toolkit || !w.attempt || this.children?.owned(id))
@@ -1226,6 +1311,18 @@ export class Supervisor extends EventEmitter {
       )
         throw error;
       if (
+        method.startsWith('operator_mcp.') &&
+        error instanceof ServiceError &&
+        [
+          'invalid_field',
+          'invalid_mcp_server',
+          'invalid_mcp_tool',
+          'invalid_mcp_arguments',
+          'mcp_server_failed',
+        ].includes(error.code)
+      )
+        throw error;
+      if (
         (method.startsWith('mcp.') || method.startsWith('toolkit.')) &&
         error instanceof ServiceError &&
         [
@@ -1339,6 +1436,7 @@ export class Supervisor extends EventEmitter {
                 ? null
                 : 'No provider-enforced output cap; tasks must explicitly disable token budgeting',
             },
+      ...(this.mcpServers(id) ? { mcp_servers: this.mcpServers(id) } : {}),
     };
     const w = this.workers.get(id);
     if (w?.invalid) return { ...state, state: 'unhealthy', capabilities: [], error: w.invalid };
@@ -1684,6 +1782,7 @@ export class Supervisor extends EventEmitter {
     try {
       this.managed?.invalidateWorker(w.id, w.epoch);
       this.cancelMcpWorker(w);
+      void this.operatorMcp?.stopSession(w.id).catch(() => {});
       this.children?.workerLost(w.id, 'Worker stopped before child dispatch');
     } catch {
       /* shutdown still owns and stops the worker */
