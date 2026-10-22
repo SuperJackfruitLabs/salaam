@@ -10,6 +10,7 @@
   "external-harnesses",
   "a2a",
   "jobs",
+  "mcp",
   "clients",
   "service-reference",
   "host-operation",

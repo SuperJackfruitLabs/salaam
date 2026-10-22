@@ -12,6 +12,7 @@ the conversation. The terminal, SSH and ACP editor clients share that same servi
 - [Terminal](tui.md): Night and Paper themes, session switching, changes, commands and approvals.
 - [Coding](coding.md): owned workspace copies, hash-bound patches and isolated commands.
 - [Tasks](durable-tasks.md): checked plans, budgets, checkpoints and explicit completion checks.
+- [MCP servers](mcp.md): declare stdio and HTTP servers for the service; a workspace can never add one.
 - [Jobs](jobs.md): durable occurrence identities, recurring templates and missed-run policies.
 - [Host operation](host-operation.md): reviewed manifests, supervisor recovery and the operator inbox.
 

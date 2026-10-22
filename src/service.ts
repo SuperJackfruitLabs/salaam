@@ -41,6 +41,7 @@ import { DockerHarnessBackend } from './harness-backend.js';
 import { A2AInbound } from './a2a-inbound.js';
 import { AgentPodAuthority, readAgentPodPins } from './agentpod-authority.js';
 import { ToolkitResources } from './toolkit-resources.js';
+import { OperatorMcp } from './operator-mcp.js';
 import { cancelToolkitCalls, recoverToolkitCalls } from './toolkit-calls.js';
 import { ToolkitOwners } from './toolkit-owners.js';
 import { ToolkitResolutions, resolvedToolkitCallSql } from './toolkit-resolutions.js';
@@ -61,6 +62,10 @@ import { readToolkitConfig } from './toolkit-config.js';
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
   agentpodConfig?: string;
+  /** Operator-declared MCP file (never a workspace path); absent means none declared. */
+  operatorMcpConfig?: string;
+  /** Environment that ${VAR} references resolve from; defaults to process.env. */
+  operatorMcpEnvironment?: NodeJS.ProcessEnv;
   managedMcp?: { config: string; profile_digest: string };
   /** Internal trusted host seam; never accepted from ACP or a worker. */
   managedToolkit?: ToolkitWorkConfig;
@@ -88,6 +93,7 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   expectedExecution?: { profile_digest: string; engine_id: string };
 }
 export class SalaamService {
+  operatorMcpPath?: string;
   readonly agentpod?: AgentPodAuthority;
   readonly agentpodWork?: AgentPodWork;
   readonly toolkitResources: ToolkitResources;
@@ -262,6 +268,13 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
+        if (options.operatorMcpConfig) {
+          this.operatorMcpPath = options.operatorMcpConfig;
+          this.supervisor.operatorMcp = OperatorMcp.load(
+            options.operatorMcpConfig,
+            options.operatorMcpEnvironment ?? process.env,
+          );
+        }
         this.taskWork.providerCheck = (limits, session) =>
           this.supervisor.assertTaskProviderSupported(
             limits,
@@ -1669,6 +1682,13 @@ export class SalaamService {
           context_admission: { version: 1, automatic_discovery: false, child_inheritance: false },
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
+          operator_mcp: this.operatorMcpPath
+            ? {
+                config: this.operatorMcpPath,
+                digest: this.supervisor.operatorMcp!.digest,
+                servers: this.supervisor.operatorMcp!.provenance(),
+              }
+            : null,
           managed_mcp: this.mcp
             ? { profile_digest: this.mcp.options.admission.profileDigest }
             : null,
@@ -2795,6 +2815,7 @@ export class SalaamService {
     await attempt(() => this.toolkitResolutions.close());
     await attempt(() => this.children.close());
     await attempt(() => this.supervisor.close());
+    await attempt(() => this.supervisor.operatorMcp?.close());
     await attempt(() => this.dispatcher.drain());
     await attempt(() => this.managed.close());
     await attempt(() =>
