@@ -1569,7 +1569,8 @@ async function main(): Promise<void> {
       agentpodConfig =
         option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
       a2aListenConfig = option('--a2a-listen-config'),
-      mcpConfig = resolve(option('--mcp-config') ?? operatorMcpPath(process.env));
+      mcpConfig = resolve(option('--mcp-config') ?? operatorMcpPath(process.env)),
+      toolsUser = option('--tools-user') ?? (process.env.SALAAM_TOOLS_USER || undefined);
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
@@ -1581,12 +1582,16 @@ async function main(): Promise<void> {
         harnessConfig: harnessConfig ? resolve(harnessConfig) : undefined,
         a2aConfig: a2aConfig ? resolve(a2aConfig) : undefined,
         a2aListenConfig: a2aListenConfig ? resolve(a2aListenConfig) : undefined,
+        toolsUser,
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
       });
       const warning = service.supervisor.providerCapabilities().warning;
       if (warning) console.error(warning);
+      // Only a live provider has a credential to share; the offline proof route stays quiet.
+      if (service.toolIdentity.warning && route.provider !== 'salaam-proof')
+        console.error('warning: ' + service.toolIdentity.warning);
       process.stdout.write(JSON.stringify({ socket, service: 'started' }) + '\n');
       for (const signal of ['SIGINT', 'SIGTERM'] as const)
         process.once(signal, () => {
@@ -1668,6 +1673,7 @@ async function main(): Promise<void> {
         ...(a2aListenConfig ? ['--a2a-listen-config', resolve(a2aListenConfig)] : []),
         '--mcp-config',
         mcpConfig,
+        ...(toolsUser ? ['--tools-user', toolsUser] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

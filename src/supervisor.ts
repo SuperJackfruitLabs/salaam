@@ -129,7 +129,15 @@ export function processIdentity(pid: number): string | null {
       };
       const before = stat(),
         boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
-        executable = readlinkSync(path + '/exe'),
+        // A tools-user launcher (sudo) is root-owned; its exe link is unreadable to the service.
+        executable = (() => {
+          try {
+            return readlinkSync(path + '/exe');
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'EACCES') return 'unreadable';
+            throw error;
+          }
+        })(),
         argv = readFileSync(path + '/cmdline');
       if (
         !/^[a-f0-9-]{36}$/.test(boot) ||

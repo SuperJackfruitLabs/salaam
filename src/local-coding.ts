@@ -18,6 +18,13 @@ import {
 } from './autonomy.js';
 import { assertUndoSettled } from './local-undo.js';
 import { processIdentity } from './supervisor.js';
+import {
+  applyEditsAsTools,
+  killToolGroup,
+  serviceToolIdentity,
+  toolArgv,
+  type ToolIdentity,
+} from './tool-identity.js';
 
 interface LocalCall {
   id: string;
@@ -42,6 +49,7 @@ export class LocalCoding {
     readonly store: Store,
     readonly managed: ManagedWork,
     readonly active: (s: string, e: number, a: string) => void,
+    readonly tools: ToolIdentity = serviceToolIdentity(),
   ) {
     this.unregister = managed.registerMcpController('local-coding-v1', {
       owns: (op) => !!store.db.prepare('SELECT 1 FROM local_calls WHERE operation_id=?').get(op.id),
@@ -64,6 +72,8 @@ export class LocalCoding {
           /* outcome remains uncertain */
         }
       }
+      const pgid = c.result ? Number(JSON.parse(c.result).tool_pgid) : NaN;
+      if (Number.isSafeInteger(pgid)) killToolGroup(this.tools, pgid);
       store.transaction(() => {
         this.change(c, 'outcome_unknown', {
           error:
@@ -177,7 +187,7 @@ export class LocalCoding {
           ? args.edits
               .map((e) => `--- ${e.path}\n${e.before ?? '(new file)'}\n+++ ${e.path}\n${e.after}`)
               .join('\n\n')
-          : `Runs as your local user, outside an OS sandbox. May access files and network beyond this workspace.\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, outside an OS sandbox. May access files and network beyond this workspace.\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -287,16 +297,19 @@ export class LocalCoding {
       try {
         verifyLocalEdits(c.root, args.edits as LocalEdit[]);
         entered = true;
-        applyLocalEdits(c.root, args.edits as LocalEdit[], (path) => {
+        const progress = (path: string) => {
           applied.push(path);
           this.store.transaction(() => this.change(c, 'running', { applied }));
-        });
+        };
+        if (this.tools.mode === 'tools-user')
+          applyEditsAsTools(this.tools, c.root, args.edits as LocalEdit[], progress);
+        else applyLocalEdits(c.root, args.edits as LocalEdit[], progress);
         verifyLocalEdits(
           c.root,
           (args.edits as LocalEdit[]).map((edit) => ({ ...edit, before: edit.after })),
         );
         this.store.transaction(() => {
-          const result = { applied, verified: true };
+          const result = { applied, verified: true, tool_uid: this.tools.uid };
           this.change(c, 'succeeded', result);
           this.managed.workspaceResultInTransaction(c.operation_id, result);
         });
@@ -325,8 +338,24 @@ export class LocalCoding {
         finished = false;
       // Deliberately do not inherit the daemon's provider credentials or service tokens.
       // Hold the shell before any user instruction until its identity is durably owned.
-      const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
-      const child = spawn('/bin/sh', ['-c', script], {
+      const tools = this.tools.mode === 'tools-user';
+      const script =
+        (tools ? 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n' : '') +
+        'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' +
+        command;
+      // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
+      const argv = tools
+        ? toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', script])
+        : ['/bin/sh', '-c', script];
+      let toolGroup: number | null = null,
+        marker = tools ? '' : null,
+        spawned = false;
+      // Release the gate only once the process is owned and, as the tools user, its group is
+      // known: otherwise a kill before the marker could miss a command already running.
+      const release = () => {
+        if (spawned && (!tools || toolGroup) && !reason && !finished) child.stdin.end('start\n');
+      };
+      const child = spawn(argv[0]!, argv.slice(1), {
         cwd: c.root,
         detached: true,
         env: {
@@ -339,6 +368,8 @@ export class LocalCoding {
       });
       let reap: NodeJS.Timeout | undefined;
       const kill = () => {
+        if (toolGroup) killToolGroup(this.tools, toolGroup);
+        if (tools) child.stdin.destroy();
         if (child.pid)
           try {
             process.kill(-child.pid, 'SIGKILL');
@@ -347,11 +378,17 @@ export class LocalCoding {
           }
         if (!finished && !reap)
           reap = setTimeout(() => {
-            reason = 'outcome_unknown';
-            child.stdout.destroy();
-            child.stderr.destroy();
-            child.unref();
-            finish(null);
+            if (toolGroup) killToolGroup(this.tools, toolGroup);
+            // A busy event loop runs timers before pending I/O: let an already delivered close
+            // settle the outcome before declaring it unknown.
+            setImmediate(() => {
+              if (finished) return;
+              reason = 'outcome_unknown';
+              child.stdout.destroy();
+              child.stderr.destroy();
+              child.unref();
+              finish(null);
+            });
           }, 1500);
       };
       stop = () => {
@@ -382,7 +419,35 @@ export class LocalCoding {
         reason ??= 'outcome_unknown';
         kill();
       });
-      child.stdout.on('data', collect);
+      child.stdout.on('data', (chunk: Buffer) => {
+        if (marker === null) return collect(chunk);
+        marker += chunk.toString('latin1');
+        const end = marker.indexOf('\n');
+        if (end < 0) {
+          if (marker.length > 64) {
+            reason = 'outcome_unknown';
+            kill();
+          }
+          return;
+        }
+        const found = /^salaam-tool-pgid:(\d+)$/.exec(marker.slice(0, end));
+        const rest = Buffer.from(marker.slice(end + 1), 'latin1');
+        marker = null;
+        if (!found) {
+          reason = 'outcome_unknown';
+          kill();
+          return;
+        }
+        toolGroup = Number(found[1]);
+        try {
+          this.store.transaction(() => this.change(c, 'running', { tool_pgid: toolGroup }));
+        } catch {
+          reason = 'outcome_unknown';
+          kill();
+        }
+        if (rest.length) collect(rest);
+        release();
+      });
       child.stderr.on('data', collect);
       child.once('spawn', () => {
         try {
@@ -399,7 +464,8 @@ export class LocalCoding {
             stop();
             return;
           }
-          child.stdin.end('start\n');
+          spawned = true;
+          release();
         } catch {
           reason = 'outcome_unknown';
           kill();
@@ -419,7 +485,8 @@ export class LocalCoding {
           output,
           state,
           error: error ? 'Command could not start' : null,
-          isolation: 'local-user-no-os-sandbox',
+          isolation: tools ? 'tools-user-no-os-sandbox' : 'local-user-no-os-sandbox',
+          tool_uid: this.tools.uid,
         };
         this.store.transaction(() => {
           this.change(c, state, result);

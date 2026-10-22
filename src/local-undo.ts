@@ -3,6 +3,7 @@ import { rmSync, openSync, closeSync, fsyncSync, constants } from 'node:fs';
 import { assertPermissionBinding } from './autonomy.js';
 import type { Store } from './store.js';
 import { digest, ServiceError, type Controller } from './protocol.js';
+import { applyEditsAsTools, type ToolIdentity } from './tool-identity.js';
 import { applyLocalEdits, localPath, verifyLocalEdits, type LocalEdit } from './local-edits.js';
 
 export interface UndoReview {
@@ -53,6 +54,7 @@ export function applyUndo(
   reviewed: string,
   controller: Controller,
   idle: () => void,
+  tools?: ToolIdentity,
 ) {
   const input = { kind: 'local-undo', id, reviewed };
   const saved = store.cachedRequest<{ state: string }>('local-operator', request, input);
@@ -79,20 +81,33 @@ export function applyUndo(
     return { state: 'outcome_unknown', ...review };
   });
   // Intent is durable before touching files. A lost process never repeats this mutation.
-  for (const edit of work.edits) {
-    const inverse = { ...edit, before: edit.after, after: edit.before ?? '' };
-    if (edit.before === null) {
-      verifyLocalEdits(root, [inverse]);
-      const path = localPath(root, edit.path);
-      rmSync(path);
-      const directory = openSync(dirname(path), constants.O_RDONLY);
-      try {
-        fsyncSync(directory);
-      } finally {
-        closeSync(directory);
-      }
-    } else applyLocalEdits(root, [inverse], () => {});
-  }
+  if (tools?.mode === 'tools-user')
+    applyEditsAsTools(
+      tools,
+      root,
+      work.edits.map((edit: LocalEdit) => ({
+        ...edit,
+        before: edit.after,
+        after: edit.before ?? '',
+        ...(edit.before === null ? { remove: true } : {}),
+      })),
+      () => {},
+    );
+  else
+    for (const edit of work.edits) {
+      const inverse = { ...edit, before: edit.after, after: edit.before ?? '' };
+      if (edit.before === null) {
+        verifyLocalEdits(root, [inverse]);
+        const path = localPath(root, edit.path);
+        rmSync(path);
+        const directory = openSync(dirname(path), constants.O_RDONLY);
+        try {
+          fsyncSync(directory);
+        } finally {
+          closeSync(directory);
+        }
+      } else applyLocalEdits(root, [inverse], () => {});
+    }
   verifyLocalEdits(root, work.edits);
   return store.transaction(() => {
     const result = { state: 'completed', call_id: work.call_id };

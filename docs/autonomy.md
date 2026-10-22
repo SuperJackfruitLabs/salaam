@@ -18,7 +18,7 @@ Review the workspace, mode and complete scope list before saving. Changes are co
 
 An automatic decision records the policy revision/digest and exact operation binding. Execution still requires the original worker/attempt, current authority, an unexpired approval, a valid task grant, unchanged files and settled resources. Uncertain operations are never replayed. Configuring permissions advances the state schema so older daemons refuse to open it rather than ignore restrictions. Policies survive daemon restarts; old worker approvals do not gain fresh authority. Forks do not inherit automatic edit permission and default to manual review.
 
-Local commands run as your OS user, outside an OS sandbox. A command or test script may access files and network beyond its working directory. Scoped edit permission therefore does **not** auto-approve shell commands, network access, MCP calls, external effects or child work. It is an approval convenience within the existing local-user execution profile, not isolation from hostile processes or later execution of modified scripts.
+Local commands run as your OS user, outside an OS sandbox, unless the service was started with `--tools-user` (see [security](security.md#tool-execution-user)). A command or test script may access files and network beyond its working directory. Scoped edit permission therefore does **not** auto-approve shell commands, network access, MCP calls, external effects or child work. It is an approval convenience within the existing local-user execution profile, not isolation from hostile processes or later execution of modified scripts.
 
 ## Progression
 

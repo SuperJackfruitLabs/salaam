@@ -209,8 +209,13 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--harness-config OWNER_ONLY_FILE] [--a2a-config OWNER_ONLY_FILE]
                      [--a2a-listen-config OWNER_ONLY_FILE]
                      [--agentpod-config OWNER_ONLY_FILE] [--mcp-config FILE]
+                     [--tools-user USER]
 salaam service status
 salaam service stop
+
+--tools-user USER (or SALAAM_TOOLS_USER) runs local agent commands and edits as
+USER through sudo -n -u USER on Linux. Without it, tools share the provider
+credential's OS user and start prints a warning.
 
 Without --agentpod-config, start binds to ~/.config/salaam/agentpod-pins.json
 ($XDG_CONFIG_HOME/salaam) when that file exists.
@@ -360,6 +365,7 @@ const valueOptions = new Set([
   '--a2a-config',
   '--agentpod-config',
   '--a2a-listen-config',
+  '--tools-user',
   '--assignment',
   '--peer',
   '--peer-client',
