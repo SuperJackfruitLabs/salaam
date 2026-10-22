@@ -208,7 +208,7 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
                      [--harness-config OWNER_ONLY_FILE] [--a2a-config OWNER_ONLY_FILE]
                      [--a2a-listen-config OWNER_ONLY_FILE]
-                     [--agentpod-config OWNER_ONLY_FILE]
+                     [--agentpod-config OWNER_ONLY_FILE] [--mcp-config FILE]
 salaam service status
 salaam service stop
 
@@ -289,6 +289,7 @@ Commands:
   auth          Configure provider credentials or OAuth
   service       Start, inspect or stop the session service
   session       Create, inspect, submit, resume or cancel work
+  mcp           Declare operator MCP servers (add, list, rm)
   attach        Open an interactive terminal on a session
   acp           Connect an editor over ACP v1 stdio
   approvals     Inspect, approve or deny managed operations

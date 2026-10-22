@@ -15,7 +15,12 @@ import { providerRoute } from '../src/provider-config.js';
 import { ROOT } from '../src/config.js';
 import corpus from './fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
-export async function mcpServiceFixture(options: { liveFixture?: boolean } = {}) {
+export async function mcpServiceFixture(
+  options: {
+    liveFixture?: boolean;
+    serviceOptions?: Partial<import('../src/service.js').ServiceOptions>;
+  } = {},
+) {
   const dir = realpathSync(mkdtempSync('/tmp/smsp-')),
     workspace = join(dir, 'w');
   mkdirSync(workspace, { mode: 0o700 });
@@ -142,6 +147,7 @@ export async function mcpServiceFixture(options: { liveFixture?: boolean } = {})
       stateDir: state,
       agentpodConfig: pinsPath,
       managedMcp: { config: profilePath, profile_digest: profileDigest },
+      ...options.serviceOptions,
       ...(provider
         ? {
             providerRoute: providerRoute('anthropic', undefined, 512),
