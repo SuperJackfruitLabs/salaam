@@ -1589,7 +1589,9 @@ async function main(): Promise<void> {
       });
       const warning = service.supervisor.providerCapabilities().warning;
       if (warning) console.error(warning);
-      if (service.toolIdentity.warning) console.error('warning: ' + service.toolIdentity.warning);
+      // Only a live provider has a credential to share; the offline proof route stays quiet.
+      if (service.toolIdentity.warning && route.provider !== 'salaam-proof')
+        console.error('warning: ' + service.toolIdentity.warning);
       process.stdout.write(JSON.stringify({ socket, service: 'started' }) + '\n');
       for (const signal of ['SIGINT', 'SIGTERM'] as const)
         process.once(signal, () => {

@@ -17,7 +17,7 @@ inventory are fixed by the admitted session route. OAuth refresh is serialized a
 
 By default, approved `salaam_local` commands and edits run as the Salaam
 service user. That user also holds the provider credential, so an approved
-`cat ~/.config/salaam/kimi.env` would return the key. Startup warns about this,
+`cat ~/.config/salaam/kimi.env` would return the key. With a live provider, startup warns about this,
 and `/v1/health` reports `tool_execution.mode: "service-user"`.
 
 On a shared or production Linux host, run tools as a separate unprivileged
