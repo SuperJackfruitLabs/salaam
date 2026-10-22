@@ -11,7 +11,7 @@ import {
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { bindHost } from '../../src/host-bind.js';
-import { readHost } from '../../src/host.js';
+import { readHost, hostToolsUser } from '../../src/host.js';
 import { readStationConfig } from '../../src/station-config.js';
 import { digest } from '../../src/protocol.js';
 
@@ -76,6 +76,7 @@ test.runIf(root)(
         files: { path: helper },
       });
       expect(statSync(join(first.state, '..')).mode & 0o777).toBe(0o755);
+      expect(hostToolsUser(m)).toBe('nobody');
       const again = await bindHost(input);
       expect(again).toEqual({ ...first, changed: false });
       const moved = await bindHost({ ...input, node_id: 'node_other' });

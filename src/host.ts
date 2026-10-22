@@ -491,6 +491,15 @@ export function hostReceipt(m: HostManifest) {
     strict_work: m.schema === 6 ? m.strict_work : null,
   };
 }
+/** The tools user a reviewed station config names, for host serve's --tools-user. */
+export function hostToolsUser(m: HostManifest): string | undefined {
+  if (m.schema !== 5 && m.schema !== 6) return undefined;
+  return readStationConfig(
+    m.station_execution.config,
+    m.workspace,
+    m.station_execution.configuration_digest,
+  ).tools_user;
+}
 export function hostUnit(path: string, platform: string): string {
   const m = readHost(path),
     manifest = realpathSync(path),

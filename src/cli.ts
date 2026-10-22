@@ -507,7 +507,8 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'host') {
-    const { planHost, readHost, hostUnit, runHost, hostReceipt } = await import('./host.js');
+    const { planHost, readHost, hostUnit, runHost, hostReceipt, hostToolsUser } =
+      await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
       if (!file) throw Error('Supply --manifest FILE');
@@ -644,6 +645,7 @@ async function main(): Promise<void> {
               }),
           hostManifestDigest: digest(m),
           hostReceipt: hostReceipt(m),
+          toolsUser: hostToolsUser(m),
           providerRoute: m.provider,
         });
       if (process.connected) process.once('disconnect', () => void service.close());
