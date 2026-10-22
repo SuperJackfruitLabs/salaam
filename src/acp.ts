@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { once } from 'node:events';
 import { call } from './transport.js';
@@ -44,7 +44,8 @@ interface Connection {
 /** ACP v1 newline-delimited stdio adapter. The daemon remains the only worker owner. */
 export async function acp(state: string, options: { coding?: boolean } = {}): Promise<void> {
   const socket = join(state, 'operator.sock');
-  const journal = new AcpJournal(state);
+  const client = acpClientState(state);
+  const journal = new AcpJournal(client);
   const admission = process.env.SALAAM_AGENTPOD_ADMISSION,
     admissionToken = process.env.SALAAM_AGENTPOD_TOKEN;
   delete process.env.SALAAM_AGENTPOD_ADMISSION;
@@ -290,7 +291,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         )
           throw new Error('Invalid permission outcome');
         const decide = async () => {
-          const outbox = new Outbox(state, c.id);
+          const outbox = new Outbox(client, c.id);
           outbox.enqueueDecision(
             approval.id,
             approval.operation_digest,
@@ -877,4 +878,22 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         }).catch(() => {});
     }
   }
+}
+
+/** A launcher-profile daemon's state belongs to root; its ACP clients keep their own
+ * journal and outbox in the caller's state home, keyed by the daemon state path. */
+export function acpClientState(state: string, env: NodeJS.ProcessEnv = process.env): string {
+  let own = false;
+  try {
+    own = statSync(state).uid === process.getuid?.();
+  } catch {}
+  if (own) return state;
+  const home = env.XDG_STATE_HOME || join(env.HOME ?? '/nonexistent', '.local/state');
+  const dir = join(
+    home,
+    'salaam/acp-clients',
+    createHash('sha256').update(state).digest('hex').slice(0, 32),
+  );
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
 }

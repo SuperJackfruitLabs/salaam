@@ -1,5 +1,13 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
-import { mkdirSync, chmodSync, existsSync, unlinkSync, realpathSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  chmodSync,
+  chownSync,
+  existsSync,
+  unlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
@@ -62,6 +70,10 @@ import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-i
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   hostManifestDigest?: string;
+  /** Receipt fields for the launcher profile; reported only by a manifest-served host. */
+  hostReceipt?: Record<string, unknown>;
+  /** Launcher profile: one group may traverse state and use the operator socket. */
+  operatorAccess?: { group: string; gid: number };
   agentpodConfig?: string;
   /** Operator-declared MCP file (never a workspace path); absent means none declared. */
   operatorMcpConfig?: string;
@@ -148,12 +160,18 @@ export class SalaamService {
   private revocationStops = new Set<Promise<void>>();
   private authorityTimer?: NodeJS.Timeout;
   private readonly hostManifestDigest: string | null;
+  private readonly hostReceipt: Record<string, unknown> | null;
+  private readonly operatorAccess: { group: string; gid: number } | null;
   private readonly agentpodWorkProgression: boolean;
   private constructor(options: ServiceOptions) {
     this.agentpodWorkProgression = options.agentpodWorkProgression === true;
     if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
       throw Error('Strict work requires reviewed AgentPod protected station configuration');
     this.hostManifestDigest = options.hostManifestDigest ?? null;
+    this.hostReceipt = options.hostManifestDigest ? (options.hostReceipt ?? null) : null;
+    if (options.operatorAccess && !this.agentpodWorkProgression)
+      throw Error('Operator group access is only for the strict work launcher profile');
+    this.operatorAccess = options.operatorAccess ?? null;
     if (process.platform === 'win32') throw new Error('Windows transport is not implemented');
     this.stateDir = resolve(options.stateDir);
     if (options.managedMcp && !options.agentpodConfig)
@@ -643,6 +661,7 @@ export class SalaamService {
       }
       await service.listen(service.bridgeServer, service.bridgeSocket);
       await service.listen(service.operator, service.socket);
+      service.shareOperatorSocket();
       service.taskDriver.start();
       service.jobs.start();
       service.recurring.start();
@@ -714,6 +733,16 @@ export class SalaamService {
       );
     }
     await Promise.allSettled(jobs);
+  }
+  /** The launcher profile's only widening: group traverse on state and rw on operator.sock.
+   * The bridge socket, journal, keys and every file below state stay owner-only. */
+  private shareOperatorSocket(): void {
+    if (!this.operatorAccess) return;
+    const { gid } = this.operatorAccess;
+    chownSync(this.socket, process.getuid!(), gid);
+    chmodSync(this.socket, 0o660);
+    chownSync(this.stateDir, process.getuid!(), gid);
+    chmodSync(this.stateDir, 0o710);
   }
   private async listen(server: Server, path: string): Promise<void> {
     // The exclusive state lock is held before removing a stale socket.
@@ -1694,6 +1723,7 @@ export class SalaamService {
           pid: process.pid,
           host_manifest_digest: this.hostManifestDigest,
           host_supervisor_connected: this.hostManifestDigest ? process.connected === true : null,
+          host_receipt: this.hostReceipt,
           runtime_node: realpathSync(process.execPath),
           service_version: VERSION,
           context_admission: { version: 1, automatic_discovery: false, child_inheritance: false },

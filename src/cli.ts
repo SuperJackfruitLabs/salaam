@@ -507,7 +507,7 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'host') {
-    const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
+    const { planHost, readHost, hostUnit, runHost, hostReceipt } = await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
       if (!file) throw Error('Supply --manifest FILE');
@@ -537,6 +537,14 @@ async function main(): Promise<void> {
       console.log(
         JSON.stringify(await planHost(JSON.parse(readFileSync(resolve(file), 'utf8'))), null, 2),
       );
+      return;
+    }
+    if (verb === 'unit-start') {
+      const { startHostUnit } = await import('./host-start.js');
+      const unit = option('--unit'),
+        state = option('--state');
+      if (!unit || !state) throw new Error('Supply --unit UNIT and --state DIR');
+      console.log(JSON.stringify(await startHostUnit(unit, state)));
       return;
     }
     const file = option('--manifest');
@@ -598,8 +606,12 @@ async function main(): Promise<void> {
                   : {}),
                 ...(m.schema === 5 || m.schema === 6 ? { stationConfig: m.station_execution } : {}),
                 ...(m.schema === 6 ? { agentpodWorkProgression: true } : {}),
+                ...(m.schema === 6 && m.operator_access
+                  ? { operatorAccess: m.operator_access }
+                  : {}),
               }),
           hostManifestDigest: digest(m),
+          hostReceipt: hostReceipt(m),
           providerRoute: m.provider,
         });
       if (process.connected) process.once('disconnect', () => void service.close());
