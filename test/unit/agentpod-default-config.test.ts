@@ -18,8 +18,8 @@ describe('default AgentPod pins', () => {
   });
   it('is what service start falls back to', () => {
     const cli = readFileSync(new URL('../../src/cli.ts', import.meta.url), 'utf8');
-    expect(cli).toContain(
-      "option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync)",
+    expect(cli).toMatch(
+      /option\('--agentpod-config'\)\s*\?\?\s*defaultAgentPodConfig\(process\.env, existsSync\)/,
     );
   });
 });

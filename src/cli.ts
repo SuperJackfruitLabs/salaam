@@ -1555,7 +1555,8 @@ async function main(): Promise<void> {
       codingSocket = option('--coding-socket'),
       harnessConfig = option('--harness-config'),
       a2aConfig = option('--a2a-config'),
-      agentpodConfig = option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
+      agentpodConfig =
+        option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
       a2aListenConfig = option('--a2a-listen-config');
     if (foreground) {
       const service = await SalaamService.open({
