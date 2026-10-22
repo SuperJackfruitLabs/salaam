@@ -28,10 +28,19 @@ first-class place for the **operator** of a Salaam service to declare servers.
    {
      "version": 1,
      "servers": [
-       { "name": "time", "transport": "stdio", "command": "uvx",
-         "args": ["mcp-server-time==2026.1.26"], "env": { "TZ": "${TZ}" } },
-       { "name": "docs", "transport": "http", "url": "https://mcp.example.com/mcp",
-         "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" } }
+       {
+         "name": "time",
+         "transport": "stdio",
+         "command": "uvx",
+         "args": ["mcp-server-time==2026.8.18"],
+         "env": { "TZ": "${TZ}" }
+       },
+       {
+         "name": "docs",
+         "transport": "http",
+         "url": "https://mcp.example.com/mcp",
+         "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" }
+       }
      ]
    }
    ```
@@ -57,9 +66,9 @@ first-class place for the **operator** of a Salaam service to declare servers.
    - `salaam mcp list` prints the declarations (references, never values) with each
      declaration digest.
    - `salaam mcp rm <name>`.
-   All three validate with the same function the service uses and write the file atomically
-   with mode `0600`. Changes take effect at the next `service start`; a running service whose
-   loaded declaration digest differs makes `service start` say so.
+     All three validate with the same function the service uses and write the file atomically
+     with mode `0600`. Changes take effect at the next `service start`; a running service whose
+     loaded declaration digest differs makes `service start` say so.
 
 4. **Validation at service start.** The service refuses to start on a malformed file, a
    duplicate name, an unresolvable command, a non-loopback `http:` URL, an inline secret or a
