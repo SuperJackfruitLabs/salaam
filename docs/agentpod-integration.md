@@ -13,7 +13,7 @@ against a live station. This note lists the obligations that fall to Salaam.
   source is Superpipeline.
 - `salaam host plan --config` is the interface AgentPod's node uses to produce the manifest. Keep it
   stable and versioned. Its input is `{"mode":"agentpod", state, agentpod_config, station_config,
-  "strict_work_version":1}`.
+"strict_work_version":1}`.
 - Provide a launcher profile, so an unprivileged node can start a reviewed host through a
   root-owned helper unit. This is the recommended option in the spec. The operator decides between it and running the node as root.
 - Tools must run as a separate OS user (`--tools-user`, #46), and the station config must be able to set that user.
