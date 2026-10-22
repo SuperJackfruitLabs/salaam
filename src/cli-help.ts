@@ -106,7 +106,7 @@ salaam host start --manifest host-manifest.json
 salaam host unit-start --unit salaam-host@STATION.service --state DIR
 salaam host bind --organization ORG --node NODE --station-key KEY --workspace DIR \
   --tools-user USER --files HELPER --runtime-root DIR --runtime-image-digest sha256:… \
-  [--operator-group GROUP] [--provider P --model M] [--mcp-config FILE] [--dir DIR] [--state DIR]
+  [--operator-group GROUP] [--provider P --model M] [--mcp-config FILE] [--managed-mcp-config FILE] [--dir DIR] [--state DIR]
 
 Config requires absolute state, coding_root and coding_socket paths; optional
 provider, model, max_output_tokens and workspace_id. Planning probes the existing

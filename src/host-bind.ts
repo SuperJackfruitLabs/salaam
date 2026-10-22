@@ -35,6 +35,8 @@ export interface BindInput {
   provider?: string;
   model?: string;
   mcp_config?: string;
+  /** AgentPod-managed MCP profile: HTTP mcpServers the node assigns to admitted sessions. */
+  managed_mcp_config?: string;
   /** Defaults to /usr/bin/systemd-run and /usr/bin/systemctl. */
   systemd_run?: string;
   systemctl?: string;
@@ -123,6 +125,7 @@ export async function bindHost(input: BindInput) {
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.mcp_config ? { operator_mcp_config: realpathSync(input.mcp_config) } : {}),
+    ...(input.managed_mcp_config ? { mcp_config: realpathSync(input.managed_mcp_config) } : {}),
   };
   changed = put(configPath, config) || changed;
   const manifest = await planHost(config);

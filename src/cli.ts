@@ -563,6 +563,7 @@ async function main(): Promise<void> {
             provider: option('--provider'),
             model: option('--model'),
             mcp_config: option('--mcp-config'),
+            managed_mcp_config: option('--managed-mcp-config'),
           }),
         ),
       );

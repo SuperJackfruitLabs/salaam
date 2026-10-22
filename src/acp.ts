@@ -6,7 +6,7 @@ import { call } from './transport.js';
 import { acquireControl, Outbox, subscribe, type Feed } from './attach.js';
 import { AcpJournal } from './acp-journal.js';
 import { VERSION } from './config.js';
-import { acpFailure, AcpFailureError, toolMetadata } from './acp-outcome.js';
+import { acpFailure, AcpFailureError, permissionKind, toolMetadata } from './acp-outcome.js';
 import type { CancellationReceipt } from './turn-cancellations.js';
 import { validateManagedMcpDeclarations } from './mcp-acp.js';
 import {
@@ -268,7 +268,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       const toolCall = {
         toolCallId: 'salaam-operation:' + op.id,
         title: op.kind + ': ' + op.target,
-        kind: 'other',
+        kind: permissionKind(op.kind),
         status: 'pending',
         rawInput: {
           target: op.target,
