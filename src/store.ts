@@ -64,6 +64,8 @@ export class Store {
   taskCommandAdmission?: (session: string) => void;
   taskRemainingRuntime?: (session: string) => number;
   private committed: DurableEvent[] | null = null;
+  private readonly activity = new Map<string, number>();
+  readonly openedAt = Date.now();
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     if (path !== ':memory:') chmodSync(path, 0o600);
@@ -420,6 +422,8 @@ export class Store {
     } finally {
       this.committed = null;
     }
+    const now = Date.now();
+    for (const event of events!) this.activity.set(event.session_id, now);
     for (const event of events!) this.changes.emit('event', event);
     return result!;
   }
@@ -640,6 +644,14 @@ export class Store {
       this.event(id, 'session.named', { name }, request);
       return { name };
     });
+  }
+  /** Wall-clock time of the last committed event for a session in this process, if any. */
+  lastActivity(id: string): number | null {
+    return this.activity.get(id) ?? null;
+  }
+  /** The newest committed event in this process, or the time the store opened. */
+  lastActivityAny(): number {
+    return Math.max(this.openedAt, ...this.activity.values());
   }
   sessions(): Session[] {
     return (

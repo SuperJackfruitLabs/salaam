@@ -1784,9 +1784,11 @@ export class SalaamService {
                 backend: this.coding.executor?.evidence ?? null,
               }
             : EXECUTION_STATUS,
+          last_activity_at: new Date(this.store.lastActivityAny()).toISOString(),
           sessions: sessions.map((x) => ({
             id: x.id,
             state: x.state,
+            last_activity_at: iso(this.store.lastActivity(x.id)),
             error: x.error,
             capabilities: x.capabilities,
             pending_approvals: this.store
@@ -2870,4 +2872,8 @@ export class SalaamService {
     this.resolveClosed();
     if (this.shutdownFailure) throw this.shutdownFailure;
   }
+}
+
+function iso(ms: number | null): string | null {
+  return ms === null ? null : new Date(ms).toISOString();
 }
