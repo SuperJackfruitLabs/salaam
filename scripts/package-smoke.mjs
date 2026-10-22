@@ -59,6 +59,7 @@ try {
     assert(listing.includes('package/harness-runtime/' + name));
   assert(listing.includes('package/src/host.ts'));
   assert(listing.includes('package/dist/src/house-extension.js'));
+  assert(listing.includes('package/dist/src/local-edit-helper.js'));
   assert(
     !listing.some((p) =>
       /^package\/(?:\.state|\.git|test|landing|docs-site|credentials|\.env)(?:\/|$)/.test(p),

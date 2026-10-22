@@ -13,6 +13,11 @@ status=$(salaam service status --state "$state")
 [ "$(json v.service <<<"$status")" = healthy ] || { echo "smoke: service not healthy"; exit 1; }
 systemctl --user is-active --quiet salaam.service
 route=$(json v.provider_route.provider <<<"$status")
+tools=$(json 'v.tool_execution.mode+" "+v.tool_execution.user+" uid "+v.tool_execution.uid' <<<"$status")
+echo "   tool execution: $tools"
+tools_want=$(sed -n 's/^SALAAM_TOOLS_USER=//p' "$HOME/.config/salaam/service.env" 2>/dev/null || true)
+[ -z "$tools_want" ] || [ "$tools" = "tools-user $tools_want uid $(id -u "$tools_want")" ] ||
+  { echo "smoke: tools user $tools_want configured but not active"; exit 1; }
 pins=$(json v.agentpod_config <<<"$status")
 if [ -n "$pins" ]; then
   [ "$pins" = "${XDG_CONFIG_HOME:-$HOME/.config}/salaam/agentpod-pins.json" ] || { echo "smoke: bound to unexpected pins $pins"; exit 1; }
