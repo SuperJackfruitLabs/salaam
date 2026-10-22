@@ -25,7 +25,8 @@ import { call } from '../../src/transport.js';
 const linux = process.platform === 'linux';
 
 /** A launcher that records each invocation, answers the probe as uid 4242, then runs the argv. */
-function fakeLauncher() {
+/** With a delay, the launcher behaves like sudo: the daemon cannot signal the work it starts. */
+function fakeLauncher(delay = 0) {
   const dir = realpathSync(mkdtempSync('/tmp/sal-fake-tools-'));
   const log = join(dir, 'log');
   const launcher = join(dir, 'launch');
@@ -38,7 +39,7 @@ case "$1" in
   /usr/bin/test) exit 1 ;;
 esac
 export SALAAM_FAKE_TOOLS=via-launcher
-exec "$@"
+${delay ? `exec /usr/bin/setsid -w /bin/sh -c 'sleep ${delay}; exec "$@"' launcher "$@"\n` : ''}exec "$@"
 `,
   );
   chmodSync(launcher, 0o755);
@@ -247,6 +248,35 @@ test.skipIf(!linux || !realUser || !realGroup)(
       rmSync(state, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
       expect(existsSync(root)).toBe(false);
+    }
+  },
+);
+
+// A slow host can time a command out before the tools shell reports its process group. The gate
+// must stay closed until then, or the kill misses a command that already started.
+test.skipIf(!linux)(
+  'a timeout before the tools group is known is still recorded as timed_out',
+  async () => {
+    const fl = fakeLauncher(0.6);
+    const tools: ToolIdentity = {
+      mode: 'tools-user',
+      user: 'tools',
+      uid: 4242,
+      prefix: [fl.launcher],
+      warning: null,
+    };
+    const f = setup(tools);
+    try {
+      const slow = await f.run('slow', {
+        action: 'command',
+        command: 'printf started > started; sleep 30',
+        timeout_ms: 200,
+      });
+      expect(slow.call.state).toBe('timed_out');
+      expect(existsSync(join(f.root, 'started'))).toBe(false);
+    } finally {
+      await f.close();
+      rmSync(fl.dir, { recursive: true, force: true });
     }
   },
 );

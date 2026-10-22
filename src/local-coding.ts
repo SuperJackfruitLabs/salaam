@@ -348,7 +348,13 @@ export class LocalCoding {
         ? toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', script])
         : ['/bin/sh', '-c', script];
       let toolGroup: number | null = null,
-        marker = tools ? '' : null;
+        marker = tools ? '' : null,
+        spawned = false;
+      // Release the gate only once the process is owned and, as the tools user, its group is
+      // known: otherwise a kill before the marker could miss a command already running.
+      const release = () => {
+        if (spawned && (!tools || toolGroup) && !reason && !finished) child.stdin.end('start\n');
+      };
       const child = spawn(argv[0]!, argv.slice(1), {
         cwd: c.root,
         detached: true,
@@ -372,11 +378,17 @@ export class LocalCoding {
           }
         if (!finished && !reap)
           reap = setTimeout(() => {
-            reason = 'outcome_unknown';
-            child.stdout.destroy();
-            child.stderr.destroy();
-            child.unref();
-            finish(null);
+            if (toolGroup) killToolGroup(this.tools, toolGroup);
+            // A busy event loop runs timers before pending I/O: let an already delivered close
+            // settle the outcome before declaring it unknown.
+            setImmediate(() => {
+              if (finished) return;
+              reason = 'outcome_unknown';
+              child.stdout.destroy();
+              child.stderr.destroy();
+              child.unref();
+              finish(null);
+            });
           }, 1500);
       };
       stop = () => {
@@ -434,6 +446,7 @@ export class LocalCoding {
           kill();
         }
         if (rest.length) collect(rest);
+        release();
       });
       child.stderr.on('data', collect);
       child.once('spawn', () => {
@@ -451,7 +464,8 @@ export class LocalCoding {
             stop();
             return;
           }
-          child.stdin.end('start\n');
+          spawned = true;
+          release();
         } catch {
           reason = 'outcome_unknown';
           kill();
