@@ -24,8 +24,11 @@ import { call } from '../../src/transport.js';
 
 const linux = process.platform === 'linux';
 
-/** A launcher that records each invocation, answers the probe as uid 4242, then runs the argv. */
-/** With a delay, the launcher behaves like sudo: the daemon cannot signal the work it starts. */
+/**
+ * A launcher that records each invocation, answers the probe as uid 4242, then runs the argv.
+ * Like sudo, the launcher stays as the parent and waits; it never execs, so its recorded process
+ * identity is stable. With a delay it also puts the work in a new session the daemon cannot signal.
+ */
 function fakeLauncher(delay = 0) {
   const dir = realpathSync(mkdtempSync('/tmp/sal-fake-tools-'));
   const log = join(dir, 'log');
@@ -39,7 +42,7 @@ case "$1" in
   /usr/bin/test) exit 1 ;;
 esac
 export SALAAM_FAKE_TOOLS=via-launcher
-${delay ? `exec /usr/bin/setsid -w /bin/sh -c 'sleep ${delay}; exec "$@"' launcher "$@"\n` : ''}exec "$@"
+${delay ? `/usr/bin/setsid -w /bin/sh -c 'sleep ${delay}; exec "$@"' launcher "$@"; exit $?\n` : ''}"$@"; exit $?
 `,
   );
   chmodSync(launcher, 0o755);
