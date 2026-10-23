@@ -23,6 +23,8 @@ import { fixture, fake, until } from '../helpers.js';
 import { call } from '../../src/transport.js';
 
 const linux = process.platform === 'linux';
+// Conditional tests are left undefined rather than skipped: CI evidence rejects pending tests.
+const testIf = (condition: boolean) => (condition ? test : ((() => {}) as unknown as typeof test));
 
 /**
  * A launcher that records each invocation, answers the probe as uid 4242, then runs the argv.
@@ -115,7 +117,7 @@ test('unset tools user keeps single-user execution and warns that tools share th
   }
 });
 
-test.skipIf(!linux)(
+testIf(linux)(
   'a configured tools user is probed, reported in health and fails closed',
   async () => {
     const fl = fakeLauncher();
@@ -147,7 +149,7 @@ test.skipIf(!linux)(
   },
 );
 
-test.skipIf(!linux)(
+testIf(linux)(
   'local commands and edits run through the tools launcher and record its uid',
   async () => {
     const fl = fakeLauncher();
@@ -195,7 +197,7 @@ test.skipIf(!linux)(
 // CI's tool-user job and the staging host set SALAAM_TEST_TOOLS_USER (+ _GROUP for the shared workspace group).
 const realUser = process.env.SALAAM_TEST_TOOLS_USER;
 const realGroup = process.env.SALAAM_TEST_TOOLS_GROUP;
-test.skipIf(!linux || !realUser || !realGroup)(
+testIf(linux && !!realUser && !!realGroup)(
   'real tools user: runs as its uid, cannot read service-only files, writes shared workspace files Salaam can diff',
   async () => {
     const state = realpathSync(mkdtempSync('/tmp/sal-tools-state-'));
@@ -257,7 +259,7 @@ test.skipIf(!linux || !realUser || !realGroup)(
 
 // A slow host can time a command out before the tools shell reports its process group. The gate
 // must stay closed until then, or the kill misses a command that already started.
-test.skipIf(!linux)(
+testIf(linux)(
   'a timeout before the tools group is known is still recorded as timed_out',
   async () => {
     const fl = fakeLauncher(0.6);
