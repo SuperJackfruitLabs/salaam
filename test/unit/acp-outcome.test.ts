@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import {
+  permissionKind,
   providerOutcome,
   acpFailure,
   toolMetadata,
@@ -122,4 +123,11 @@ test('known tool kinds use their actual guarded root and never invent source loc
   expect(toolMetadata('salaam_review', {})).toEqual({ kind: 'other', locations: [] });
   expect(toolMetadata('salaam_repository', { action: 'patch', path: 'a.ts' }).kind).toBe('other');
   expect(toolMetadata('salaam_files', { action: 'unknown', path: 'a.ts' }).kind).toBe('other');
+});
+
+test('approval kinds let AgentPod modes approve edits without approving commands', () => {
+  expect(permissionKind('workspace')).toBe('edit');
+  expect(permissionKind('harness')).toBe('execute');
+  for (const kind of ['review', 'effect', 'mcp', 'unknown'])
+    expect(permissionKind(kind)).toBe('other');
 });

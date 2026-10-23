@@ -87,10 +87,28 @@ test('concurrent private-runtime startup owns one daemon, restarts a killed chil
       }),
     );
     await expect(start()).rejects.toThrow();
+    // The running supervisor must notice the change and exit before the manifest is
+    // restored; on a loaded host it may otherwise see the restored file and carry on.
+    const changed = supervisor!;
+    await until(
+      () => {
+        try {
+          process.kill(changed, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      },
+      Boolean,
+      20000,
+    );
     writeFileSync(file, JSON.stringify({ ...m, build_digest: 'partial-upgrade' }));
     await expect(start()).rejects.toThrow();
     writeFileSync(file, JSON.stringify(m));
     expect(JSON.parse((await start()).stdout).ready).toBe(true);
+    const restarted = status().supervisor_pid;
+    expect(restarted).not.toBe(changed);
+    supervisor = restarted;
     expect(await call<any>(join(state, 'operator.sock'), '/v1/health')).toMatchObject({
       coding_root: null,
       agentpod_pins_digest: (m as any).pins_digest,

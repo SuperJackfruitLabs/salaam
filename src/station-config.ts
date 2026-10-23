@@ -28,6 +28,8 @@ export interface StationConfig {
   runtime_root: string;
   runtime_fingerprint: string;
   runtime_image_digest: string;
+  /** OS user the agent's local tools run as (salaam --tools-user). Optional. */
+  tools_user?: string;
 }
 const hashShape = /^[a-f0-9]{64}$/;
 export const stationHash = (bytes: Uint8Array): string =>
@@ -149,9 +151,15 @@ export function readStationConfig(
 ): StationConfig {
   try {
     const v = object(JSON.parse(stationPrivateFile(path, 16384).toString('utf8')));
+    const keys = Object.keys(v)
+      .filter((k) => k !== 'tools_user')
+      .sort()
+      .join(',');
     if (
-      Object.keys(v).sort().join(',') !==
+      keys !==
         'files,kind,runtime_fingerprint,runtime_image_digest,runtime_root,systemctl,systemd_run,version,workspace,workspace_identity' ||
+      (Object.hasOwn(v, 'tools_user') &&
+        (typeof v.tools_user !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(v.tools_user))) ||
       v.version !== 1 ||
       v.kind !== 'linux-systemd-station-v1' ||
       v.workspace !== workspace ||
@@ -174,6 +182,7 @@ export function readStationConfig(
       runtime_root: v.runtime_root,
       runtime_fingerprint: v.runtime_fingerprint,
       runtime_image_digest: v.runtime_image_digest,
+      ...(Object.hasOwn(v, 'tools_user') ? { tools_user: v.tools_user as string } : {}),
     };
     if (
       workspace

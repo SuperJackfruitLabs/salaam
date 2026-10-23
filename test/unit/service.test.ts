@@ -168,3 +168,32 @@ test('a stale persisted ready row cannot advertise a missing worker', async () =
     await f.close();
   }
 });
+
+test('health reports last_activity_at at the top level and per session as RFC3339', async () => {
+  const f = await fixture(fake());
+  try {
+    const rfc3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+    const before = await call<any>(f.service.socket, '/v1/health');
+    expect(before.last_activity_at).toMatch(rfc3339);
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    const quiet = await call<any>(f.service.socket, '/v1/health');
+    const entry = quiet.sessions.find((x: { id: string }) => x.id === session.id);
+    expect(entry.last_activity_at).toMatch(rfc3339);
+    expect(Date.parse(quiet.last_activity_at)).toBeGreaterThanOrEqual(
+      Date.parse(entry.last_activity_at),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const marked = Date.now();
+    f.service.store.transaction(() => f.service.store.event(session.id, 'test.activity', {}));
+    const after = await call<any>(f.service.socket, '/v1/health');
+    const moved = after.sessions.find((x: { id: string }) => x.id === session.id);
+    expect(Date.parse(moved.last_activity_at)).toBeGreaterThanOrEqual(marked);
+    expect(Date.parse(after.last_activity_at)).toBeGreaterThanOrEqual(marked);
+    // Reading health is not activity.
+    const again = await call<any>(f.service.socket, '/v1/health');
+    expect(again.last_activity_at).toBe(after.last_activity_at);
+  } finally {
+    await f.close();
+  }
+});

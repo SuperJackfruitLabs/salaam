@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import {
   readFileSync,
@@ -30,6 +30,7 @@ import { acquireStateLock } from './state-lock.js';
 import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
+import { OperatorMcp } from './operator-mcp.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -78,6 +79,34 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
 > {
   schema: 6;
   strict_work: { version: 1 };
+  /** Launcher profile: a root host whose operator socket one unprivileged group may use. */
+  operator_access?: OperatorAccess;
+  /** Operator-declared MCP servers (docs/mcp.md), pinned by declaration digest. */
+  operator_mcp?: { config: string; digest: string };
+}
+export interface OperatorAccess {
+  group: string;
+  gid: number;
+}
+const groupName = /^[a-z_][a-z0-9_-]{0,31}$/;
+/** Resolve a system group by name. The launcher profile never accepts a numeric id alone. */
+export function resolveOperatorGroup(group: unknown): OperatorAccess {
+  if (typeof group !== 'string' || !groupName.test(group))
+    throw Error('operator_group must be a system group name');
+  let line: string;
+  try {
+    line = execFileSync('/usr/bin/getent', ['group', group], { encoding: 'utf8' }).trim();
+  } catch {
+    throw Error('operator_group does not exist');
+  }
+  const [name, , id] = line.split(':');
+  const gid = Number(id);
+  if (name !== group || !Number.isInteger(gid) || gid <= 0)
+    throw Error('operator_group must name a non-root group');
+  return { group, gid };
+}
+export function hostOperatorAccess(m: HostManifest): OperatorAccess | undefined {
+  return m.schema === 6 ? m.operator_access : undefined;
 }
 export type HostManifest =
   | CodingHostManifest
@@ -109,7 +138,7 @@ function privateDocument(path: string): Record<string, unknown> {
     closeSync(fd);
   }
 }
-function privateState(path: string): string {
+function privateState(path: string, gid?: number): string {
   if (!isAbsolute(path) || resolve(path) !== path)
     throw Error('Use canonical absolute private state paths');
   // Existing ancestors must resolve to their literal identity; never follow a workspace symlink.
@@ -119,7 +148,9 @@ function privateState(path: string): string {
     throw Error('Private state path must not contain symlinks');
   if (existsSync(path)) {
     const st = lstatSync(path);
-    if (!st.isDirectory() || st.uid !== process.getuid?.() || st.mode & 0o077)
+    // The launcher profile lets exactly one group traverse (x) to the operator socket.
+    const shared = gid !== undefined && (st.mode & 0o077) === 0o010 && st.gid === gid;
+    if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077 && !shared))
       throw Error('Host state must be a private owner-held directory');
   }
   return path;
@@ -145,6 +176,8 @@ async function planAgentPod(
     'toolkit_config',
     'station_config',
     'strict_work_version',
+    'operator_group',
+    'operator_mcp_config',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -153,7 +186,24 @@ async function planAgentPod(
     (c.strict_work_version !== 1 || c.station_config === undefined)
   )
     throw Error('Strict work version1 requires reviewed protected station config');
-  const state = privateState(string(c.state, 'state'));
+  let access: OperatorAccess | undefined;
+  if (c.operator_group !== undefined) {
+    if (c.strict_work_version !== 1)
+      throw Error('operator_group is only for the strict work launcher profile');
+    if (process.platform !== 'linux' || process.getuid?.() !== 0)
+      throw Error('The launcher profile is planned by root on Linux');
+    access = resolveOperatorGroup(c.operator_group);
+  }
+  let operatorMcp: { config: string; digest: string } | undefined;
+  if (c.operator_mcp_config !== undefined) {
+    if (c.strict_work_version !== 1)
+      throw Error('operator_mcp_config is only for the strict work host profile');
+    const config = string(c.operator_mcp_config, 'operator_mcp_config');
+    if (!isAbsolute(config) || realpathSync(config) !== config)
+      throw Error('Use a canonical absolute operator MCP config path');
+    operatorMcp = { config, digest: OperatorMcp.load(config).digest };
+  }
+  const state = privateState(string(c.state, 'state'), access?.gid);
   const config = string(c.agentpod_config, 'agentpod_config');
   if (!isAbsolute(config) || realpathSync(config) !== config)
     throw Error('Use a canonical absolute pins path');
@@ -205,7 +255,12 @@ async function planAgentPod(
     ...(station
       ? {
           ...(c.strict_work_version === 1
-            ? { schema: 6 as const, strict_work: { version: 1 as const } }
+            ? {
+                schema: 6 as const,
+                strict_work: { version: 1 as const },
+                ...(access ? { operator_access: access } : {}),
+                ...(operatorMcp ? { operator_mcp: operatorMcp } : {}),
+              }
             : { schema: 5 as const }),
           station_execution: station,
           ...(toolkit ? { managed_toolkit: toolkit } : {}),
@@ -335,6 +390,8 @@ export function readHost(path: string): HostManifest {
         : []),
       ...([5, 6].includes(m.schema) ? ['station_execution'] : []),
       ...(m.schema === 6 ? ['strict_work'] : []),
+      ...(m.schema === 6 && Object.hasOwn(m, 'operator_access') ? ['operator_access'] : []),
+      ...(m.schema === 6 && Object.hasOwn(m, 'operator_mcp') ? ['operator_mcp'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
@@ -343,7 +400,27 @@ export function readHost(path: string): HostManifest {
       (Object.keys(object(m.strict_work)).join(',') !== 'version' || m.strict_work.version !== 1)
     )
       throw Error('Unsupported strict work host contract');
-    privateState(m.state);
+    const access = hostOperatorAccess(m);
+    if (access !== undefined) {
+      const a = object(access);
+      if (
+        Object.keys(a).sort().join(',') !== 'gid,group' ||
+        canonical(resolveOperatorGroup(a.group)) !== canonical({ group: a.group, gid: a.gid })
+      )
+        throw Error('Host operator group changed');
+    }
+    privateState(m.state, access?.gid);
+    if (m.schema === 6 && Object.hasOwn(m, 'operator_mcp')) {
+      const o = object(m.operator_mcp);
+      if (
+        Object.keys(o).sort().join(',') !== 'config,digest' ||
+        typeof o.config !== 'string' ||
+        !isAbsolute(o.config) ||
+        realpathSync(o.config) !== o.config ||
+        OperatorMcp.load(o.config).digest !== o.digest
+      )
+        throw Error('Operator MCP declarations changed');
+    }
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
@@ -395,6 +472,33 @@ export function readHost(path: string): HostManifest {
     if (canonical(route) !== canonical(m.provider)) throw Error('Invalid reviewed provider route');
   }
   return m;
+}
+/** What the daemon reports about itself so that a caller which cannot read the
+ * manifest (the launcher profile) receives the same receipt as host start. */
+export function hostReceipt(m: HostManifest) {
+  if (m.schema === 1) return undefined;
+  const pins = readAgentPodPins(m.agentpod_config, m.state);
+  return {
+    version: 1,
+    ready: true,
+    manifest_digest: digest(m),
+    node: m.node,
+    cli: join(m.repo, 'bin/salaam.mjs'),
+    state: m.state,
+    workspace: m.workspace,
+    node_id: pins.node_id,
+    pins_digest: m.pins_digest,
+    strict_work: m.schema === 6 ? m.strict_work : null,
+  };
+}
+/** The tools user a reviewed station config names, for host serve's --tools-user. */
+export function hostToolsUser(m: HostManifest): string | undefined {
+  if (m.schema !== 5 && m.schema !== 6) return undefined;
+  return readStationConfig(
+    m.station_execution.config,
+    m.workspace,
+    m.station_execution.configuration_digest,
+  ).tools_user;
 }
 export function hostUnit(path: string, platform: string): string {
   const m = readHost(path),

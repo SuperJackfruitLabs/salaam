@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { constants, openSync, closeSync, fstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { readHost, hostMcp, hostToolkit } from './host.js';
@@ -129,4 +129,54 @@ export async function startHost(path: string) {
   } finally {
     release();
   }
+}
+
+const launcherUnit = /^salaam-host@[a-f0-9]{16}\.service$/;
+/** Launcher profile: an unprivileged operator asks systemd to start a root-owned,
+ * provisioned unit. It names only the unit; root reads its own reviewed manifest. */
+export async function startHostUnit(
+  unit: string,
+  state: string,
+  options: { systemctl?: string; timeoutMs?: number } = {},
+) {
+  if (!launcherUnit.test(unit)) throw Error('Unit must be salaam-host@<16 hex>.service');
+  if (realpathSync(state) !== state) throw Error('Use the canonical state path');
+  const socket = join(state, 'operator.sock'),
+    deadline = Date.now() + (options.timeoutMs ?? 20000);
+  const ready = async () => {
+    let h: Record<string, any>;
+    try {
+      h = await call(socket, '/v1/health', undefined, undefined, 2000);
+    } catch {
+      return null;
+    }
+    if (!h.host_receipt || h.host_receipt.manifest_digest !== h.host_manifest_digest)
+      throw new ServiceError('host_mismatch', 'Running daemon reports no reviewed host receipt');
+    if (h.host_receipt.state !== state)
+      throw new ServiceError('host_mismatch', 'Running daemon serves another state directory');
+    if (h.host_supervisor_connected !== true || h.service !== 'healthy') return null;
+    if (
+      h.job_execution?.control_error ||
+      h.job_execution?.schedule_control_error ||
+      h.job_execution?.inbox_control_error
+    )
+      throw Error('Reviewed host controls are not ready');
+    return h.host_receipt as Record<string, unknown>;
+  };
+  let receipt = await ready();
+  if (receipt) return receipt;
+  await new Promise<void>((done, fail) =>
+    execFile(
+      options.systemctl ?? '/usr/bin/systemctl',
+      ['start', '--no-ask-password', unit],
+      { env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' }, timeout: 20000 },
+      (error) =>
+        error ? fail(Error('systemd refused to start ' + unit + '; inspect its journal')) : done(),
+    ),
+  );
+  while (!(receipt = await ready())) {
+    if (Date.now() >= deadline) throw Error('Host unit did not become ready; inspect its journal');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return receipt;
 }

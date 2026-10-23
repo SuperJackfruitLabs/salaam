@@ -312,6 +312,13 @@ export function acpFailure(
     ...(kind === 'unknown' ? {} : { retryable: false }),
   };
 }
+/** ACP tool kind for an approval, so a client's modes can tell edits apart:
+ * AgentPod's accept-edits approves only kind "edit"; full-auto approves all; ask none. */
+export function permissionKind(operationKind: string): 'edit' | 'execute' | 'other' {
+  if (operationKind === 'workspace') return 'edit';
+  if (operationKind === 'harness') return 'execute';
+  return 'other';
+}
 export function toolMetadata(
   name: string,
   input: unknown,

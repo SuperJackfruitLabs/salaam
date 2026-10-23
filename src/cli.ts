@@ -507,7 +507,8 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'host') {
-    const { planHost, readHost, hostUnit, runHost } = await import('./host.js');
+    const { planHost, readHost, hostUnit, runHost, hostReceipt, hostToolsUser } =
+      await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
       if (!file) throw Error('Supply --manifest FILE');
@@ -537,6 +538,43 @@ async function main(): Promise<void> {
       console.log(
         JSON.stringify(await planHost(JSON.parse(readFileSync(resolve(file), 'utf8'))), null, 2),
       );
+      return;
+    }
+    if (verb === 'bind') {
+      const { bindHost } = await import('./host-bind.js');
+      const required = (name: string) => {
+        const v = option(name);
+        if (!v) throw new Error('Supply ' + name);
+        return v;
+      };
+      console.log(
+        JSON.stringify(
+          await bindHost({
+            organization_id: required('--organization'),
+            node_id: required('--node'),
+            station_key: required('--station-key'),
+            workspace: required('--workspace'),
+            tools_user: required('--tools-user'),
+            files: required('--files'),
+            runtime_root: required('--runtime-root'),
+            runtime_image_digest: required('--runtime-image-digest'),
+            operator_group: option('--operator-group'),
+            dir: option('--dir'),
+            state: explicitState ? state : undefined,
+            provider: option('--provider'),
+            model: option('--model'),
+            mcp_config: option('--mcp-config'),
+            managed_mcp_config: option('--managed-mcp-config'),
+          }),
+        ),
+      );
+      return;
+    }
+    if (verb === 'unit-start') {
+      const { startHostUnit } = await import('./host-start.js');
+      const unit = option('--unit');
+      if (!unit || !explicitState) throw new Error('Supply --unit UNIT and --state DIR');
+      console.log(JSON.stringify(await startHostUnit(unit, state)));
       return;
     }
     const file = option('--manifest');
@@ -598,8 +636,16 @@ async function main(): Promise<void> {
                   : {}),
                 ...(m.schema === 5 || m.schema === 6 ? { stationConfig: m.station_execution } : {}),
                 ...(m.schema === 6 ? { agentpodWorkProgression: true } : {}),
+                ...(m.schema === 6 && m.operator_access
+                  ? { operatorAccess: m.operator_access }
+                  : {}),
+                ...(m.schema === 6 && m.operator_mcp
+                  ? { operatorMcpConfig: m.operator_mcp.config }
+                  : {}),
               }),
           hostManifestDigest: digest(m),
+          hostReceipt: hostReceipt(m),
+          toolsUser: hostToolsUser(m),
           providerRoute: m.provider,
         });
       if (process.connected) process.once('disconnect', () => void service.close());
