@@ -402,3 +402,32 @@ export function toolMetadata(
   }
   return { kind, locations };
 }
+
+/** A durable task's steps as the ACP `plan` session update: the whole list, replaced on every
+ * change (https://agentclientprotocol.com/protocol/agent-plan). ACP has only pending,
+ * in_progress and completed, so a step that stopped says so in its text instead. */
+export function planUpdate(
+  task: { steps: { title: string; state: string }[] } | null | undefined,
+): {
+  sessionUpdate: 'plan';
+  entries: { content: string; priority: 'medium'; status: string }[];
+} | null {
+  if (!task?.steps.length) return null;
+  return {
+    sessionUpdate: 'plan',
+    entries: task.steps.map((step) => {
+      const status =
+        step.state === 'completed'
+          ? 'completed'
+          : step.state === 'running' || step.state === 'awaiting_review'
+            ? 'in_progress'
+            : 'pending';
+      const stopped = ['cancelled', 'failed', 'interrupted'].includes(step.state);
+      return {
+        content: stopped ? `${step.title} (${step.state})` : step.title,
+        priority: 'medium' as const,
+        status,
+      };
+    }),
+  };
+}

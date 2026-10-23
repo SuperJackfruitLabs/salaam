@@ -7,6 +7,7 @@ import {
   toolTitle,
   parseAcpFailure,
   providerRefusalEvent,
+  planUpdate,
 } from '../../src/acp-outcome.js';
 import corpus from '../fixtures/agentpod-acp-v1.json' with { type: 'json' };
 import { ServiceError } from '../../src/protocol.js';
@@ -159,4 +160,46 @@ test('a failed tool names itself, and only a plain identifier is echoed', async 
   expect(toolFailureMessage('salaam_station')).toBe('Tool execution failed (tool salaam_station)');
   for (const bad of [undefined, 7, '', 'x'.repeat(65), 'rm -rf /', 'a\nb'])
     expect(toolFailureMessage(bad)).toBe('Tool execution failed');
+});
+
+test('a durable task plan is the ACP plan update the protocol defines', () => {
+  const step = (key: string, title: string, state: string) => ({
+    key,
+    title,
+    instruction: 'do ' + key,
+    depends_on: [],
+    checks: [],
+    id: key,
+    state,
+    attempt_id: null,
+    review: null,
+  });
+  const update = planUpdate({
+    steps: [
+      step('a', 'Read the RFC', 'completed'),
+      step('b', 'Write answer.md', 'running'),
+      step('c', 'Review', 'awaiting_review'),
+      step('d', 'Publish', 'pending'),
+      step('e', 'Queued', 'queued'),
+      step('f', 'Stopped', 'cancelled'),
+      step('g', 'Broke', 'failed'),
+      step('h', 'Cut off', 'interrupted'),
+    ],
+  } as never);
+  expect(update).toEqual({
+    sessionUpdate: 'plan',
+    entries: [
+      { content: 'Read the RFC', priority: 'medium', status: 'completed' },
+      { content: 'Write answer.md', priority: 'medium', status: 'in_progress' },
+      { content: 'Review', priority: 'medium', status: 'in_progress' },
+      { content: 'Publish', priority: 'medium', status: 'pending' },
+      { content: 'Queued', priority: 'medium', status: 'pending' },
+      // ACP has no failed status; the entry says what happened instead of claiming progress.
+      { content: 'Stopped (cancelled)', priority: 'medium', status: 'pending' },
+      { content: 'Broke (failed)', priority: 'medium', status: 'pending' },
+      { content: 'Cut off (interrupted)', priority: 'medium', status: 'pending' },
+    ],
+  });
+  expect(planUpdate(null)).toBe(null);
+  expect(planUpdate({ steps: [] } as never)).toBe(null);
 });
