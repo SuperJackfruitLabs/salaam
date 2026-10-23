@@ -772,7 +772,8 @@ figcaption {
 .stage.pending img {
   opacity: 0;
 }
-.walk {
+.walk,
+.split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
   gap: 56px;
@@ -804,7 +805,8 @@ figcaption {
   .section {
     padding: 64px 0;
   }
-  .walk {
+  .walk,
+  .split {
     grid-template-columns: 1fr;
     gap: 0;
   }
@@ -823,7 +825,14 @@ figcaption {
   .walk.walking .steps li:not(.current) {
     opacity: 1;
   }
-
+  .split .pin {
+    order: -1;
+    margin-bottom: 24px;
+  }
+  .split .pinned {
+    position: relative;
+    top: auto;
+  }
   .steps {
     grid-template-columns: 1fr;
   }

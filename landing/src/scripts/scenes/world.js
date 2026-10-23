@@ -28,8 +28,9 @@ import {
 import { accentRGB, stageProgress, stillAt, timeline } from './common.js';
 import { disposeMaterials } from './kit.js';
 import service from './service.js';
+import workspace from './workspace.js';
 
-const SCENES = { service };
+const SCENES = { service, workspace };
 
 // Sun direction (degrees: elevation, azimuth from the front, + to the right), colour and sky per
 // phase. The same table as the other SJL landing pages, so their scenes share one day.
