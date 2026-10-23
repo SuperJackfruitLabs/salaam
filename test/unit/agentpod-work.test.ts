@@ -3140,3 +3140,45 @@ test.each([
     f.close();
   }
 });
+
+test('verified deliverable bytes named by the completion are produced and exportable', () => {
+  const f = fixture();
+  try {
+    const admitted = f.run();
+    const task = f.tasks.get(admitted.task_id);
+    const artifacts = f.work.verification.artifacts;
+    const content = 'the verified answer\n';
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    const deliverable = artifacts.put(f.session, content),
+      stray = artifacts.put(f.session, content);
+    const record = (d: Record<string, unknown>) =>
+      artifacts.put(f.session, JSON.stringify({ task_id: task.id, deliverables: [d] }));
+    const complete = (id: string) =>
+      f.store.db
+        .prepare(
+          "INSERT INTO task_completions VALUES (?,?,'station:x',0,?,?,'succeeded',NULL) ON CONFLICT(task_id) DO UPDATE SET artifact_id=excluded.artifact_id",
+        )
+        .run(task.id, task.plan_revision, 'a'.repeat(64), id);
+    const disposition = (id: string) =>
+      f.work.evidence(f.binding).artifacts.find((a) => a.id === id)?.disposition;
+    complete(record({ path: 'answer.md', sha256, artifact_id: deliverable }));
+    expect(disposition(deliverable)).toBe('produced');
+    expect(disposition(stray)).toBe('observed');
+    const bundle = f.work.evidenceArtifacts(f.binding, [deliverable]);
+    expect(Buffer.from(String(bundle.artifacts[0]!.content_base64), 'base64').toString()).toBe(
+      content,
+    );
+    expect(() => f.work.evidenceArtifacts(f.binding, [stray])).toThrow('Only selected produced');
+    // A completion whose digest does not match the artifact's bytes proves nothing.
+    complete(record({ path: 'answer.md', sha256: 'f'.repeat(64), artifact_id: deliverable }));
+    expect(disposition(deliverable)).toBe('observed');
+    // Another session's artifact cannot be claimed by a completion.
+    const other = f.store.create('/tmp/other', randomUUID());
+    const foreign = artifacts.put(other.id, content);
+    complete(record({ path: 'answer.md', sha256, artifact_id: foreign }));
+    expect(disposition(foreign)).toBeUndefined();
+    expect(() => f.work.evidenceArtifacts(f.binding, [foreign])).toThrow();
+  } finally {
+    f.close();
+  }
+});

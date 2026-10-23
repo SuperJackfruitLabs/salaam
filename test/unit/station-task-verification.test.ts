@@ -5,7 +5,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { TaskDriver } from '../../src/task-driver.js';
 import type { Supervisor } from '../../src/supervisor.js';
 import type { ChildWork } from '../../src/children.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AgentPodWork } from '../../src/agentpod-work.js';
 import type { AgentPodAuthority } from '../../src/agentpod-authority.js';
 import { Store } from '../../src/store.js';
@@ -503,7 +503,12 @@ test.each([false, true])(
         const result = await observe(source, validate);
         if (missing && request?.action === 'read') throw Error('deliverable missing');
         return request?.action === 'read'
-          ? { ...result, path: request.path, sha256: 'f'.repeat(64) }
+          ? {
+              ...result,
+              path: request.path,
+              content: 'fixture',
+              sha256: createHash('sha256').update('fixture').digest('hex'),
+            }
           : result;
       };
       const task = f.tasks.get(f.task.id);
@@ -563,6 +568,27 @@ test.each([false, true])(
         () => {},
       );
       expect(completed.state).toBe('succeeded');
+      // Each deliverable keeps the exact verified bytes as a session artifact, so it can be
+      // published from the verified revision rather than re-read from a changing workspace.
+      const record = JSON.parse(
+        f.verification.artifacts.read(
+          String(
+            f.store.db
+              .prepare('SELECT artifact_id FROM task_completions WHERE task_id=?')
+              .get(task.id)!.artifact_id,
+          ),
+        ),
+      );
+      expect(record.deliverables.length).toBe(completed.deliverables.length);
+      for (const d of record.deliverables) {
+        const bytes = f.verification.artifacts.read(d.artifact_id);
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(d.sha256);
+        expect(
+          f.store.db.prepare('SELECT session_id FROM artifacts WHERE id=?').get(d.artifact_id)!
+            .session_id,
+        ).toBe(task.session_id);
+        expect(Object.keys(d).sort()).toEqual(['artifact_id', 'path', 'sha256']);
+      }
       expect(await f.verification.viewAsync(completed)).toMatchObject({
         completion: { fresh: true, state: 'succeeded' },
       });
