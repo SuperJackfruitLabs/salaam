@@ -739,6 +739,18 @@ export class Supervisor extends EventEmitter {
     }
     return w;
   }
+  /** Is this attempt a task step that has acceptance checks to decide it? */
+  private checkedStepAttempt(attempt: string): boolean {
+    const row = this.store.db
+      .prepare('SELECT checks FROM task_steps WHERE attempt_id=?')
+      .get(attempt) as { checks?: string } | undefined;
+    try {
+      const checks = row?.checks ? JSON.parse(String(row.checks)) : [];
+      return Array.isArray(checks) && checks.length > 0;
+    } catch {
+      return false;
+    }
+  }
   /** A station call refused before it runs leaves no station_calls row, so record its
    * method, requested action and refusal code: never its path, arguments or content. */
   private recordStationRefusal(
@@ -1740,7 +1752,15 @@ export class Supervisor extends EventEmitter {
           if (candidate.stopReason !== 'end_turn') outcome = candidate;
         }
       }
-      if (value.type === 'tool_execution_end' && value.isError === true)
+      // A checked task step is decided by its checks, not by a tool error the model went on
+      // to recover from (operator decision, 2026-10-23). The error stays in the journal
+      // (tool.finished failed=true). A delegated child turn, whose denied probes are its
+      // boundary proof, and any attempt outside a checked step still fail on it.
+      if (
+        value.type === 'tool_execution_end' &&
+        value.isError === true &&
+        (this.children?.owned(id) || !this.checkedStepAttempt(work.attempt.id))
+      )
         outcome ??= {
           version: 1,
           stopReason: 'error',

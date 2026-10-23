@@ -283,7 +283,12 @@ test('a refused station call records its method, action and refusal code, and no
       f.service.supervisor.bridge(f.child.child_session, 'station.prepare', f.credentials.token, {
         epoch: f.credentials.epoch,
         tool_call_id: 'refused-call',
-        args: { action: 'check', path: '/etc/secret-path', content: 'secret-content' },
+        args: {
+          action: 'check',
+          command: 'secret-command',
+          path: '/etc/secret-path',
+          content: 'secret-content',
+        },
       }),
     ).rejects.toThrow();
     const rows = f.service.store.db
