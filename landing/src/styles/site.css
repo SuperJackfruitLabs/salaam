@@ -739,10 +739,91 @@ figcaption {
   max-width: 760px;
   margin: 0 0 16px;
 }
+/* The scenes: one lazy three.js canvas (src/scripts/scenes) visits these stages. How it works
+   walks its steps one at a time: on a wide screen they stand in a column beside one pinned stage,
+   each tall enough to be the only one in focus; on a narrow one each step has its own stage above
+   its text. loader.js marks the step at the viewport's middle current. */
+.stage {
+  position: relative;
+  margin: 0;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+.stage img,
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.stage canvas {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  touch-action: pan-y;
+}
+.stage img {
+  transition: opacity 0.5s ease;
+}
+.stage.live canvas {
+  opacity: 1;
+}
+.stage.live img,
+.stage.pending img {
+  opacity: 0;
+}
+.walk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 56px;
+}
+.walk .steps {
+  display: block;
+}
+.walk .steps li {
+  min-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: opacity 0.35s ease;
+}
+.walk.walking .steps li:not(.current) {
+  opacity: 0.5;
+}
+.walk .per-step {
+  display: none;
+}
+.pin {
+  position: relative;
+}
+.pinned {
+  position: sticky;
+  top: calc(50vh - 180px);
+}
 @media (max-width: 900px) {
   .section {
     padding: 64px 0;
   }
+  .walk {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .walk .pin {
+    display: none;
+  }
+  .walk .per-step {
+    display: block;
+    order: -1;
+    margin-bottom: 18px;
+  }
+  .walk .steps li {
+    min-height: 0;
+    padding-bottom: 44px;
+  }
+  .walk.walking .steps li:not(.current) {
+    opacity: 1;
+  }
+
   .steps {
     grid-template-columns: 1fr;
   }

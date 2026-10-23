@@ -189,18 +189,60 @@ const steps = [
               One service, any terminal. The terminal, SSH and your editor are clients; the service
               keeps the record.
             </p>
-            <ol class="steps">
-              {steps.map((item) => (
-                <li>
-                  <span class="number">{item.number}</span>
-                  <h3>{item.title}</h3>
-                  <p>{item.text}</p>
-                  <a class="text-link" href={`${docs}${item.link}`}>
-                    {item.label} <span aria-hidden="true">↗</span>
-                  </a>
-                </li>
-              ))}
-            </ol>
+            <div class="walk" data-steps>
+              <ol class="steps">
+                {steps.map((item, i) => (
+                  <li data-step={i + 1}>
+                    <figure
+                      class="stage per-step"
+                      data-scene="service"
+                      data-beat={i + 1}
+                      aria-hidden="true"
+                    >
+                      <img
+                        data-still
+                        alt=""
+                        width="480"
+                        height="360"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <noscript>
+                        <img
+                          src={`/scenes/service-${i + 1}-noon.webp`}
+                          alt=""
+                          width="480"
+                          height="360"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </noscript>
+                    </figure>
+                    <span class="number">{item.number}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.text}</p>
+                    <a class="text-link" href={`${docs}${item.link}`}>
+                      {item.label} <span aria-hidden="true">↗</span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+              <div class="pin">
+                <figure class="stage pinned" data-scene="service" data-beat="1" aria-hidden="true">
+                  <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+                  <noscript>
+                    <img
+                      src="/scenes/service-1-noon.webp"
+                      alt=""
+                      width="480"
+                      height="360"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </noscript>
+                </figure>
+              </div>
+            </div>
           </div>
         </section>
         <section class="section" aria-labelledby="use-title">
@@ -324,6 +366,9 @@ const steps = [
         </section>
       </main>
     </Frame>
+    <script>
+      import '../scripts/scenes/loader.js';
+    </script>
     <script>
       // Hero moment: plays once, animating INTO the static demo. Reduced motion: never.
       const demo = document.querySelector<HTMLElement>('.terminal');
