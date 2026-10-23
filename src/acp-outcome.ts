@@ -319,6 +319,38 @@ export function permissionKind(operationKind: string): 'edit' | 'execute' | 'oth
   if (operationKind === 'harness') return 'execute';
   return 'other';
 }
+/** An operator MCP catalog read is a read; a server's `fetch` tool is a fetch; others stay other. */
+function operatorMcpKind(action: string, tool: unknown): string {
+  if (action === 'catalog') return 'read';
+  return action === 'call' && tool === 'fetch' ? 'fetch' : 'other';
+}
+
+function toolArgs(input: unknown): Record<string, unknown> {
+  try {
+    const value = typeof input === 'string' ? JSON.parse(input) : input;
+    if (value && typeof value === 'object' && !Array.isArray(value))
+      return value as Record<string, unknown>;
+  } catch {}
+  return {};
+}
+
+const label = (v: unknown) => (typeof v === 'string' && /^[\w.-]{1,128}$/.test(v) ? v : undefined);
+
+/**
+ * The ACP title for a tool call. Every operator MCP call goes through the one wrapper tool, so
+ * its own name says nothing: a client showed six identical "salaam_operator_mcp" cards for six
+ * fetches. Name the server and tool instead. Other tools keep their own name.
+ */
+export function toolTitle(name: string, input: unknown): string {
+  if (name !== 'salaam_operator_mcp') return name;
+  const args = toolArgs(input);
+  const server = label(args.server);
+  const tool = label(args.tool);
+  if (args.action === 'call' && server && tool) return `${server} · ${tool}`;
+  if (args.action === 'catalog') return server ? `MCP catalog · ${server}` : 'MCP catalog';
+  return 'Operator MCP';
+}
+
 export function toolMetadata(
   name: string,
   input: unknown,
@@ -351,7 +383,9 @@ export function toolMetadata(
             ? 'read'
             : ['salaam_history', 'inspect_child', 'consume_child_result'].includes(name)
               ? 'read'
-              : 'other';
+              : name === 'salaam_operator_mcp'
+                ? operatorMcpKind(action, args.tool)
+                : 'other';
   const locations: { path: string; line?: number }[] = [];
   if (
     ['salaam_files', 'salaam_station'].includes(name) &&
