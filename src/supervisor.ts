@@ -739,6 +739,31 @@ export class Supervisor extends EventEmitter {
     }
     return w;
   }
+  /** A station call refused before it runs leaves no station_calls row, so record its
+   * method, requested action and refusal code: never its path, arguments or content. */
+  private recordStationRefusal(
+    id: string,
+    method: string,
+    body: Record<string, unknown>,
+    error: unknown,
+  ): void {
+    const args =
+      body.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    const ident = (v: unknown) =>
+      typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(v) ? v : null;
+    try {
+      this.store.transaction(() =>
+        this.store.event(id, 'station.call_refused', {
+          attempt_id: this.workers.get(id)?.attempt ?? null,
+          method: ident(method),
+          action: ident(args.action),
+          code: error instanceof ServiceError ? ident(error.code) : 'error',
+        }),
+      );
+    } catch {
+      // Recording a refusal never changes the refusal itself.
+    }
+  }
   async bridge(
     id: string,
     method: string,
@@ -1304,6 +1329,7 @@ export class Supervisor extends EventEmitter {
       return { ok: true };
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
+      if (method.startsWith('station.')) this.recordStationRefusal(id, method, body, error);
       if (
         method.startsWith('station.') &&
         error instanceof ServiceError &&
