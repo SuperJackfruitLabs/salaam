@@ -1718,7 +1718,7 @@ export class Supervisor extends EventEmitter {
         outcome ??= {
           version: 1,
           stopReason: 'error',
-          failure: acpFailure(new ServiceError('tool_failed', 'Tool execution failed')),
+          failure: acpFailure(new ServiceError('tool_failed', toolFailureMessage(value.toolName))),
         };
     };
     w.pi.on('record', record);
@@ -1817,4 +1817,12 @@ export class Supervisor extends EventEmitter {
     if (errors.length)
       throw new AggregateError(errors, 'Worker shutdown could not persist all final states');
   }
+}
+
+/** Names the failing tool (never its arguments or output), so a failed step says which call
+ * failed it. Only a plain tool identifier is echoed. */
+export function toolFailureMessage(toolName: unknown): string {
+  return typeof toolName === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(toolName)
+    ? `Tool execution failed (tool ${toolName})`
+    : 'Tool execution failed';
 }
