@@ -8,10 +8,12 @@ import {
   writeFileSync,
   fsyncSync,
   realpathSync,
+  mkdirSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import type { Store } from './store.js';
-import { canonical, digest, ServiceError, object, integer } from './protocol.js';
+import { canonical, digest, ServiceError, object, integer, type Session } from './protocol.js';
+import { forkPiSession } from './pi-sessions.js';
 import {
   agentpodBinding,
   AGENTPOD_LEASE_MS,
@@ -84,6 +86,7 @@ export class AgentPodAuthority {
   readonly boot = randomUUID();
   readonly pins: AgentPodPins;
   private key: Buffer;
+  private readonly stateDir: string;
   constructor(
     readonly store: Store,
     state: string,
@@ -92,6 +95,7 @@ export class AgentPodAuthority {
     readonly ownedResourcesStopped: (session: string) => boolean = () => true,
   ) {
     this.pins = readAgentPodPins(configPath, state);
+    this.stateDir = state;
     const keyPath = join(state, 'agentpod-control-key');
     try {
       const fd = openSync(keyPath, 'wx', 0o600);
@@ -247,12 +251,28 @@ export class AgentPodAuthority {
     this.assert(row);
     return { session_id: row.session_id, binding: JSON.parse(row.binding) };
   }
-  admit(input: unknown, request: string) {
+  /**
+   * `continueFrom` names an earlier interactive admission (its hub session id) whose conversation
+   * this new admission carries on. The earlier execution stays revoked: the new admission gets a
+   * NEW session, its own lease and its own authority, seeded with a branch of the old Pi
+   * transcript and its entries. Only a revoked, stopped and reconciled interactive admission for
+   * the same organization, station, occupant and workspace can be continued, and only once.
+   */
+  admit(input: unknown, request: string, continueFrom?: string) {
     const b = this.checked(input);
+    if (
+      continueFrom !== undefined &&
+      (typeof continueFrom !== 'string' || !continueFrom || continueFrom.length > 128)
+    )
+      throw new ServiceError('invalid_continuation', 'continue_from must be a hub session id', 400);
     const admitted = this.store.request(
       'agentpod-node',
       request,
-      { kind: 'admit', binding: b },
+      {
+        kind: 'admit',
+        binding: b,
+        ...(continueFrom === undefined ? {} : { continue_from: continueFrom }),
+      },
       () => {
         const old = this.store.db
           .prepare('SELECT id FROM agentpod_admissions WHERE hub_session_id=?')
@@ -303,17 +323,56 @@ export class AgentPodAuthority {
             'INSERT INTO agentpod_station_epochs VALUES (?,?,?) ON CONFLICT(station_id) DO UPDATE SET occupancy_epoch=excluded.occupancy_epoch,principal_id=excluded.principal_id',
           )
           .run(b.station_id, b.occupancy_epoch, b.principal_id);
+        const prior = continueFrom === undefined ? undefined : this.continuable(b, continueFrom);
         const session = randomUUID(),
           id = randomUUID();
-        this.store.db
-          .prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)')
-          .run(session, b.workspace, session);
-        this.store.event(
-          session,
-          'session.created',
-          { cwd: b.workspace, authority: 'agentpod-v1' },
-          request,
-        );
+        if (prior) {
+          const source = this.store.session(prior.session_id);
+          const file = source.pi_session_file
+            ? (() => {
+                const dir = join(this.stateDir, 'workers', session, 'sessions');
+                mkdirSync(dir, { recursive: true, mode: 0o700 });
+                return forkPiSession(source.pi_session_file, source.cwd, dir, session);
+              })()
+            : null;
+          this.store.db
+            .prepare(
+              'INSERT INTO sessions(id,cwd,pi_session_id,pi_session_file,pi_cursor,pi_leaf) VALUES (?,?,?,?,?,?)',
+            )
+            .run(session, b.workspace, session, file, source.pi_cursor, source.pi_leaf);
+          this.store.event(
+            session,
+            'session.created',
+            { cwd: b.workspace, authority: 'agentpod-v1', forked_from: prior.session_id },
+            request,
+          );
+          this.store.db
+            .prepare(
+              'INSERT INTO pi_entries SELECT ?,entry_id,payload FROM pi_entries WHERE session_id=?',
+            )
+            .run(session, prior.session_id);
+          this.store.event(
+            session,
+            'session.forked',
+            {
+              parent: prior.session_id,
+              parent_revision: source.revision,
+              leaf: source.pi_leaf,
+              cursor: source.pi_cursor,
+            },
+            request,
+          );
+        } else {
+          this.store.db
+            .prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)')
+            .run(session, b.workspace, session);
+          this.store.event(
+            session,
+            'session.created',
+            { cwd: b.workspace, authority: 'agentpod-v1' },
+            request,
+          );
+        }
         this.store.db
           .prepare(
             'INSERT INTO agentpod_admissions(id,session_id,hub_session_id,run_key,binding,digest,pins_digest,expires_at) VALUES (?,?,?,?,?,?,?,?)',
@@ -331,7 +390,12 @@ export class AgentPodAuthority {
         this.store.event(
           session,
           'agentpod.admitted',
-          { admission_id: id, binding_digest: digest(b), binding: b },
+          {
+            admission_id: id,
+            binding_digest: digest(b),
+            binding: b,
+            ...(prior ? { continued_from: continueFrom, continued_admission: prior.id } : {}),
+          },
           request,
         );
         return { admission_id: id };
@@ -384,6 +448,59 @@ export class AgentPodAuthority {
         return this.status(this.row(row.id));
       },
     );
+  }
+  /** The earlier admission a new interactive admission may continue, or a refusal. */
+  private continuable(b: AgentPodBinding, continueFrom: string): Admission {
+    if (b.run.source !== 'agentpod')
+      throw new ServiceError(
+        'continuation_refused',
+        'Only an interactive admission can continue an earlier conversation',
+      );
+    const row = this.store.db
+      .prepare('SELECT id FROM agentpod_admissions WHERE hub_session_id=?')
+      .get(continueFrom);
+    if (!row)
+      throw new ServiceError(
+        'admission_not_found',
+        'The session to continue has no admission',
+        404,
+      );
+    const prior = this.row(String(row.id));
+    const before = JSON.parse(prior.binding) as AgentPodBinding;
+    if (
+      prior.binding !== canonical(before) ||
+      prior.digest !== digest(before) ||
+      before.run.source !== 'agentpod' ||
+      before.organization_id !== b.organization_id ||
+      before.station_id !== b.station_id ||
+      before.principal_id !== b.principal_id ||
+      before.workspace !== b.workspace ||
+      before.hub_session_id === b.hub_session_id
+    )
+      throw new ServiceError(
+        'continuation_refused',
+        'Only the same station, occupant and workspace can continue this conversation',
+      );
+    const status = this.status(prior);
+    if (
+      prior.state !== 'revoked' ||
+      !status.revoked ||
+      !status.owned_execution_stopped ||
+      status.unresolved_operations.length
+    )
+      throw new ServiceError(
+        'execution_unconfirmed',
+        'The conversation to continue must be revoked, stopped and reconciled first',
+      );
+    if (
+      this.store.db
+        .prepare(
+          "SELECT 1 FROM events WHERE kind='agentpod.admitted' AND json_extract(payload,'$.continued_admission')=? LIMIT 1",
+        )
+        .get(prior.id)
+    )
+      throw new ServiceError('already_continued', 'This conversation was already continued');
+    return prior;
   }
   revoke(input: unknown, request: string, reason: string) {
     const b = this.checked(input);
@@ -482,9 +599,15 @@ export class AgentPodAuthority {
       this.assert(row);
       authorized = true;
     } catch {}
+    const continued = this.store.db
+      .prepare(
+        "SELECT json_extract(payload,'$.continued_from') AS source FROM events WHERE session_id=? AND kind='agentpod.admitted' LIMIT 1",
+      )
+      .get(row.session_id) as { source: string | null } | undefined;
     return {
       admission_id: row.id,
       session_id: row.session_id,
+      continued_from: continued?.source ?? null,
       binding: JSON.parse(row.binding) as AgentPodBinding,
       binding_digest: row.digest,
       lease_sequence: row.lease_sequence,

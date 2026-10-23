@@ -637,3 +637,98 @@ test('strict ACP bootstrap cannot take over a competing controller', async () =>
     await f.close();
   }
 });
+
+test('a revoked interactive conversation continues under a fresh admission, once, with its history', async () => {
+  const f = await setup();
+  let a: ReturnType<typeof client> | undefined;
+  try {
+    const first = {
+      ...f.binding,
+      hub_session_id: 'acps_first',
+      run: { source: 'agentpod', id: 'acps_first', epoch: 1 },
+    };
+    const admitted = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      request_id: 'admit:first',
+      binding: first,
+    });
+    expect(admitted.continued_from).toBeNull();
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      request_id: 'renew:first',
+      binding: first,
+      lease_sequence: 1,
+    });
+    a = client(f.state, {
+      SALAAM_AGENTPOD_ADMISSION: admitted.admission_id,
+      SALAAM_AGENTPOD_TOKEN: admitted.token,
+    });
+    await a.initialize({ _meta: { 'salaam.dev/features': { promptReceipts: 1, updateIds: 1 } } });
+    await a.request('session/new', { cwd: f.dir, mcpServers: [] });
+    await ready(f.service, admitted.session_id);
+    await a.request('session/prompt', {
+      sessionId: admitted.session_id,
+      prompt: [{ type: 'text', text: 'Remember the word mango' }],
+      _meta: { 'salaam.dev/requestId': randomUUID() },
+    });
+    await a.close();
+    a = undefined;
+    const history = f.service.store.snapshot(admitted.session_id).messages;
+    expect(history.length).toBeGreaterThan(0);
+    const second = {
+      ...first,
+      hub_session_id: 'acps_second',
+      run: { ...first.run, id: 'acps_second' },
+    };
+    // Live authority cannot be continued: the old execution must be revoked and stopped first.
+    await expect(
+      call(f.service.socket, '/v1/agentpod/admit', {
+        request_id: 'admit:early',
+        binding: second,
+        continue_from: 'acps_first',
+      }),
+    ).rejects.toThrow(/revoked|stopped|reconciled/i);
+    f.service.agentpod!.revoke(first, 'revoke:first', 'Idle');
+    await f.service.supervisor.stopSession(admitted.session_id);
+    // Board work never continues an interactive conversation.
+    await expect(
+      call(f.service.socket, '/v1/agentpod/admit', {
+        request_id: 'admit:board',
+        binding: { ...second, run: { source: 'superpipeline', id: 'run_x', epoch: 1 } },
+        continue_from: 'acps_first',
+      }),
+    ).rejects.toThrow(/interactive/i);
+    const resumed = await call<any>(f.service.socket, '/v1/agentpod/admit', {
+      request_id: 'admit:second',
+      binding: second,
+      continue_from: 'acps_first',
+    });
+    expect(resumed.session_id).not.toBe(admitted.session_id);
+    expect(resumed.admission_id).not.toBe(admitted.admission_id);
+    expect(resumed.continued_from).toBe('acps_first');
+    expect(resumed.revoked).toBe(false);
+    expect(f.service.store.snapshot(resumed.session_id).messages).toEqual(history);
+    // The old execution stays revoked: continuing never resurrects its authority.
+    expect(f.service.agentpod!.inspect(first).revoked).toBe(true);
+    await call(f.service.socket, '/v1/agentpod/renew', {
+      request_id: 'renew:second',
+      binding: second,
+      lease_sequence: 1,
+    });
+    expect(f.service.agentpod!.inspect(second).authorized).toBe(true);
+    f.service.agentpod!.revoke(second, 'revoke:second', 'Done');
+    const third = {
+      ...first,
+      hub_session_id: 'acps_third',
+      run: { ...first.run, id: 'acps_third' },
+    };
+    await expect(
+      call(f.service.socket, '/v1/agentpod/admit', {
+        request_id: 'admit:third',
+        binding: third,
+        continue_from: 'acps_first',
+      }),
+    ).rejects.toThrow(/already continued/i);
+  } finally {
+    await a?.close();
+    await f.close();
+  }
+});
