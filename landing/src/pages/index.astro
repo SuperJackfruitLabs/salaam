@@ -189,50 +189,109 @@ const steps = [
               One service, any terminal. The terminal, SSH and your editor are clients; the service
               keeps the record.
             </p>
-            <ol class="steps">
-              {steps.map((item) => (
-                <li>
-                  <span class="number">{item.number}</span>
-                  <h3>{item.title}</h3>
-                  <p>{item.text}</p>
-                  <a class="text-link" href={`${docs}${item.link}`}>
-                    {item.label} <span aria-hidden="true">↗</span>
-                  </a>
-                </li>
-              ))}
-            </ol>
+            <div class="walk" data-steps>
+              <ol class="steps">
+                {steps.map((item, i) => (
+                  <li data-step={i + 1}>
+                    <figure
+                      class="stage per-step"
+                      data-scene="service"
+                      data-beat={i + 1}
+                      aria-hidden="true"
+                    >
+                      <img
+                        data-still
+                        alt=""
+                        width="480"
+                        height="360"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <noscript>
+                        <img
+                          src={`/scenes/service-${i + 1}-noon.webp`}
+                          alt=""
+                          width="480"
+                          height="360"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </noscript>
+                    </figure>
+                    <span class="number">{item.number}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.text}</p>
+                    <a class="text-link" href={`${docs}${item.link}`}>
+                      {item.label} <span aria-hidden="true">↗</span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+              <div class="pin">
+                <figure class="stage pinned" data-scene="service" data-beat="1" aria-hidden="true">
+                  <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+                  <noscript>
+                    <img
+                      src="/scenes/service-1-noon.webp"
+                      alt=""
+                      width="480"
+                      height="360"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </noscript>
+                </figure>
+              </div>
+            </div>
           </div>
         </section>
         <section class="section" aria-labelledby="use-title">
           <div class="container">
             <h2 id="use-title">What it's like to use</h2>
             <p class="intro">Say you ask it to fix a parser.</p>
-            <div class="prose">
-              <p>
-                With coding switched on, Salaam's Pi worker edits a copy of your project in a
-                workspace the service owns, not your checkout. Before the patch is applied, the
-                operation waits in your approval inbox, and your approval covers exactly the
-                arguments and target you reviewed. If you made it a checked task, the model saying
-                "done" is not enough: the checks have to pass first. You can detach at any point and
-                reattach later to the same state.
-              </p>
-              <p>
-                You can also hand a step to a specialist (an explorer, builder, reviewer or tester)
-                whose draft stays private until you integrate it, or to a Claude, Codex or Gemini
-                harness route. Today all three harness routes run on your host's Claude API key and
-                Sonnet 4.6; Codex and Gemini are translated to that backend, not run against OpenAI
-                or Google models. They need Docker and a prepared runtime bundle.
-              </p>
-              <p>
-                Salaam can also ask another agent on the network for an opinion over A2A (the
-                Agent2Agent protocol), including documented Hermes and OpenClaw routes. Those peers
-                return analysis, never patches. For unattended work there are jobs and recurring
-                schedules; each run gets a fresh workspace and explicit overlap rules. It is not an
-                open-ended background cron.
-              </p>
-              <a class="text-link" href={`${docs}/coding/`}>
-                Read about coding <span aria-hidden="true">↗</span>
-              </a>
+            <div class="split">
+              <div class="prose">
+                <p>
+                  With coding switched on, Salaam's Pi worker edits a copy of your project in a
+                  workspace the service owns, not your checkout. Before the patch is applied, the
+                  operation waits in your approval inbox, and your approval covers exactly the
+                  arguments and target you reviewed. If you made it a checked task, the model saying
+                  "done" is not enough: the checks have to pass first. You can detach at any point
+                  and reattach later to the same state.
+                </p>
+                <p>
+                  You can also hand a step to a specialist (an explorer, builder, reviewer or
+                  tester) whose draft stays private until you integrate it, or to a Claude, Codex or
+                  Gemini harness route. Today all three harness routes run on your host's Claude API
+                  key and Sonnet 4.6; Codex and Gemini are translated to that backend, not run
+                  against OpenAI or Google models. They need Docker and a prepared runtime bundle.
+                </p>
+                <p>
+                  Salaam can also ask another agent on the network for an opinion over A2A (the
+                  Agent2Agent protocol), including documented Hermes and OpenClaw routes. Those
+                  peers return analysis, never patches. For unattended work there are jobs and
+                  recurring schedules; each run gets a fresh workspace and explicit overlap rules.
+                  It is not an open-ended background cron.
+                </p>
+                <a class="text-link" href={`${docs}/coding/`}>
+                  Read about coding <span aria-hidden="true">↗</span>
+                </a>
+              </div>
+              <div class="pin">
+                <figure class="stage pinned" data-scene="workspace" aria-hidden="true">
+                  <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+                  <noscript>
+                    <img
+                      src="/scenes/workspace-noon.webp"
+                      alt=""
+                      width="480"
+                      height="360"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </noscript>
+                </figure>
+              </div>
             </div>
             <figure class="real-tui">
               <img
@@ -324,6 +383,9 @@ const steps = [
         </section>
       </main>
     </Frame>
+    <script>
+      import '../scripts/scenes/loader.js';
+    </script>
     <script>
       // Hero moment: plays once, animating INTO the static demo. Reduced motion: never.
       const demo = document.querySelector<HTMLElement>('.terminal');

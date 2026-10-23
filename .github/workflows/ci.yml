@@ -29,10 +29,19 @@ concurrency:
 env:
   CI_PROFILE: ${{ inputs.profile || (github.event_name == 'pull_request' && 'quick' || 'full') }}
 jobs:
+  # The profile, and which parts changed. A pull request or push that only touches landing/ or
+  # docs-site/ runs just the sites build; anything else, the workflows themselves, a schedule, a
+  # manual run, or the release's own call (which passes a profile) runs it all. A release on such
+  # a commit finds no reusable main run, so release.yml runs these checks in full itself.
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       profile: ${{ steps.profile.outputs.value }}
+      app: ${{ steps.changes.outputs.app }}
+      sites: ${{ steps.changes.outputs.sites }}
     steps:
       - id: profile
         run: |
@@ -40,8 +49,41 @@ jobs:
             quick|full) echo "value=$CI_PROFILE" >> "$GITHUB_OUTPUT" ;;
             *) exit 1 ;;
           esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            app:
+              - '**'
+              - '!landing/**'
+              - '!docs-site/**'
+            workflows:
+              - '.github/**'
+            sites:
+              - '{landing,docs-site}/**'
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          CALLED: ${{ inputs.profile }}
+          APP: ${{ steps.filter.outputs.app }}
+          WORKFLOWS: ${{ steps.filter.outputs.workflows }}
+          SITES: ${{ steps.filter.outputs.sites }}
+        run: |
+          app=false
+          case "$EVENT" in push|pull_request) ;; *) app=true ;; esac
+          case "$REF" in refs/tags/*) app=true ;; esac
+          if [ -n "$CALLED" ] || [ "$APP" = true ] || [ "$WORKFLOWS" = true ]; then app=true; fi
+          sites=$SITES
+          if [ "$app" = true ]; then sites=true; fi
+          { echo "app=$app"; echo "sites=$sites"; } >> "$GITHUB_OUTPUT"
+          echo "app=$app sites=$sites"
   package-build:
     name: Build release package
+    needs: plan
+    if: needs.plan.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -92,6 +134,8 @@ jobs:
           retention-days: 14
   sites:
     name: Build and check public sites
+    needs: plan
+    if: needs.plan.outputs.sites == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -171,6 +215,8 @@ jobs:
           retention-days: 14
   a2a-peer-interop:
     name: Pinned A2A peer interoperability
+    needs: plan
+    if: needs.plan.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -204,6 +250,7 @@ jobs:
           retention-days: 14
   service:
     needs: plan
+    if: needs.plan.outputs.app == 'true'
     env:
       SALAAM_TUI_CAPTURE_DIR: .state/evidence/m10/screens
       SALAAM_JOB_CAPTURE_DIR: .state/evidence/m12/screens
@@ -239,6 +286,7 @@ jobs:
   tool-user:
     name: Tool execution user (real uid switch)
     needs: plan
+    if: needs.plan.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -267,7 +315,7 @@ jobs:
           SALAAM_TEST_TOOLS_GROUP: salaam-work
   stress:
     needs: plan
-    if: needs.plan.outputs.profile == 'full'
+    if: needs.plan.outputs.app == 'true' && needs.plan.outputs.profile == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -306,7 +354,9 @@ jobs:
         service,
         stress,
       ]
-    if: always() && !cancelled()
+    # Skipped only when the plan passed and found nothing but the sites changed; a failed plan still
+    # reaches the gate, which then fails.
+    if: always() && !cancelled() && (needs.plan.result != 'success' || needs.plan.outputs.app == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:

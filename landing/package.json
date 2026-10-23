@@ -15,6 +15,7 @@
     "@astrojs/sitemap": "^3.7.4",
     "@superjackfruit/frontdoor": "file:vendor/superjackfruit-frontdoor-0.0.10.tgz",
     "@superjackfruit/vibekit": "file:vendor/superjackfruit-vibekit-0.0.14.tgz",
-    "astro": "7.4.0"
+    "astro": "7.4.0",
+    "three": "^0.186.1"
   }
 }
