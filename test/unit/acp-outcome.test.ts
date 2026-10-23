@@ -4,6 +4,7 @@ import {
   providerOutcome,
   acpFailure,
   toolMetadata,
+  toolTitle,
   parseAcpFailure,
   providerRefusalEvent,
 } from '../../src/acp-outcome.js';
@@ -130,4 +131,25 @@ test('approval kinds let AgentPod modes approve edits without approving commands
   expect(permissionKind('harness')).toBe('execute');
   for (const kind of ['review', 'effect', 'mcp', 'unknown'])
     expect(permissionKind(kind)).toBe('other');
+});
+
+// Staging E2E 2026-10-23: six fetches showed as six "salaam_operator_mcp" cards of kind "other".
+test('operator MCP calls are titled by server and tool, and a fetch is a fetch', () => {
+  const call = { action: 'call', server: 'fetch', tool: 'fetch', arguments: { url: 'https://x' } };
+  expect(toolTitle('salaam_operator_mcp', call)).toBe('fetch · fetch');
+  expect(toolTitle('salaam_operator_mcp', JSON.stringify(call))).toBe('fetch · fetch');
+  expect(toolMetadata('salaam_operator_mcp', call).kind).toBe('fetch');
+  expect(toolMetadata('salaam_operator_mcp', { ...call, tool: 'search_issues' }).kind).toBe(
+    'other',
+  );
+  expect(toolTitle('salaam_operator_mcp', { action: 'catalog' })).toBe('MCP catalog');
+  expect(toolTitle('salaam_operator_mcp', { action: 'catalog', server: 'fetch' })).toBe(
+    'MCP catalog · fetch',
+  );
+  expect(toolMetadata('salaam_operator_mcp', { action: 'catalog' }).kind).toBe('read');
+  // A name that is not a plain identifier is not echoed into the title.
+  expect(
+    toolTitle('salaam_operator_mcp', { action: 'call', server: 'x\n<b>', tool: 'fetch' }),
+  ).toBe('Operator MCP');
+  expect(toolTitle('salaam_files', { action: 'read' })).toBe('salaam_files');
 });

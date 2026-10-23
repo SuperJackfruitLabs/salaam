@@ -6,7 +6,13 @@ import { call } from './transport.js';
 import { acquireControl, Outbox, subscribe, type Feed } from './attach.js';
 import { AcpJournal } from './acp-journal.js';
 import { VERSION } from './config.js';
-import { acpFailure, AcpFailureError, permissionKind, toolMetadata } from './acp-outcome.js';
+import {
+  acpFailure,
+  AcpFailureError,
+  permissionKind,
+  toolMetadata,
+  toolTitle,
+} from './acp-outcome.js';
 import type { CancellationReceipt } from './turn-cancellations.js';
 import { validateManagedMcpDeclarations } from './mcp-acp.js';
 import {
@@ -202,7 +208,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
                 await update(c.id, {
                   sessionUpdate: 'tool_call',
                   toolCallId: String(part.id),
-                  title: String(part.name),
+                  title: toolTitle(String(part.name), part.arguments),
                   ...(await toolDetails(c.id, String(part.id), String(part.name), part.arguments)),
                   status: 'in_progress',
                   rawInput: part.arguments,
@@ -392,7 +398,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           void update(c.id, {
             sessionUpdate: started && fresh ? 'tool_call' : 'tool_call_update',
             toolCallId: p.tool_call_id,
-            title: p.tool ?? 'Tool',
+            title: p.tool ? toolTitle(p.tool, p.input) : 'Tool',
             ...(started
               ? {
                   kind: p.kind ?? toolMetadata(p.tool ?? '', p.input).kind,
