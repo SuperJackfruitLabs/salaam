@@ -1,4 +1,4 @@
-import { toolMetadata, toolTitle } from './acp-outcome.js';
+import { planUpdate, toolMetadata, toolTitle } from './acp-outcome.js';
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import type { TaskWork, WorkTask } from './task-work.js';
@@ -2568,6 +2568,7 @@ export class AgentPodWork {
       binding_digest: digest(root.binding),
       auto_enabled: !!view.runtime.auto_enabled,
       activity: this.activity(root.session_id),
+      plan: planUpdate(view),
     };
   }
   /** The latest tool steps, oldest first, for the owner to show as card activity while the work

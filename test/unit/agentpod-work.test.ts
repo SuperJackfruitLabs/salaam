@@ -22,6 +22,7 @@ import { configurePermissions } from '../../src/autonomy.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { workTraceHeader } from '../../src/execution-trace.js';
+import { planUpdate } from '../../src/acp-outcome.js';
 import { readinessFingerprint } from '../../src/readiness-fingerprint.js';
 import { ChildWork } from '../../src/children.js';
 import { StationWork } from '../../src/station-work.js';
@@ -3234,6 +3235,13 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
       ['failed', 'input', 'kind', 'phase', 'seq', 'title', 'tool_call_id'].sort(),
     );
     expect(admitted.task_id).toBe(status.task_id);
+    // The plan rides along as the ACP plan update, so the owner can show it before work starts.
+    expect((status as unknown as { plan: unknown }).plan).toEqual(
+      planUpdate(f.tasks.get(admitted.task_id)),
+    );
+    expect((status as unknown as { plan: { entries: unknown[] } }).plan.entries.length).toBe(
+      f.tasks.get(admitted.task_id).steps.length,
+    );
   } finally {
     f.close();
   }
