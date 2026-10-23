@@ -276,6 +276,37 @@ test.each(['before-intent', 'after-intent', 'after-dispatch', 'after-acceptance'
   },
 );
 
+test('a refused station call records its method, action and refusal code, and nothing else', async () => {
+  const f = await activeChild();
+  try {
+    await expect(
+      f.service.supervisor.bridge(f.child.child_session, 'station.prepare', f.credentials.token, {
+        epoch: f.credentials.epoch,
+        tool_call_id: 'refused-call',
+        args: {
+          action: 'check',
+          command: 'secret-command',
+          path: '/etc/secret-path',
+          content: 'secret-content',
+        },
+      }),
+    ).rejects.toThrow();
+    const rows = f.service.store.db
+      .prepare("SELECT payload FROM events WHERE session_id=? AND kind='station.call_refused'")
+      .all(f.child.child_session)
+      .map((r) => JSON.parse(String(r.payload)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      method: 'station.prepare',
+      action: 'check',
+      code: 'station_disabled',
+    });
+    expect(JSON.stringify(rows)).not.toContain('secret');
+  } finally {
+    await f.close();
+  }
+});
+
 test('opaque adapter capability fixture cannot satisfy model-request bounds even with no token budget', () => {
   assertModelRequestBoundary(NATIVE_CAPABILITIES);
   expect(() => assertModelRequestBoundary({ schema_version: 1, model_requests: false })).toThrow(

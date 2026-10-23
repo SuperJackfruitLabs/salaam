@@ -739,6 +739,43 @@ export class Supervisor extends EventEmitter {
     }
     return w;
   }
+  /** Is this attempt a task step that has acceptance checks to decide it? */
+  private checkedStepAttempt(attempt: string): boolean {
+    const row = this.store.db
+      .prepare('SELECT checks FROM task_steps WHERE attempt_id=?')
+      .get(attempt) as { checks?: string } | undefined;
+    try {
+      const checks = row?.checks ? JSON.parse(String(row.checks)) : [];
+      return Array.isArray(checks) && checks.length > 0;
+    } catch {
+      return false;
+    }
+  }
+  /** A station call refused before it runs leaves no station_calls row, so record its
+   * method, requested action and refusal code: never its path, arguments or content. */
+  private recordStationRefusal(
+    id: string,
+    method: string,
+    body: Record<string, unknown>,
+    error: unknown,
+  ): void {
+    const args =
+      body.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    const ident = (v: unknown) =>
+      typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(v) ? v : null;
+    try {
+      this.store.transaction(() =>
+        this.store.event(id, 'station.call_refused', {
+          attempt_id: this.workers.get(id)?.attempt ?? null,
+          method: ident(method),
+          action: ident(args.action),
+          code: error instanceof ServiceError ? ident(error.code) : 'error',
+        }),
+      );
+    } catch {
+      // Recording a refusal never changes the refusal itself.
+    }
+  }
   async bridge(
     id: string,
     method: string,
@@ -1304,6 +1341,7 @@ export class Supervisor extends EventEmitter {
       return { ok: true };
     } catch (error) {
       this.store.taskBudgetDenied?.(id, error);
+      if (method.startsWith('station.')) this.recordStationRefusal(id, method, body, error);
       if (
         method.startsWith('station.') &&
         error instanceof ServiceError &&
@@ -1714,11 +1752,19 @@ export class Supervisor extends EventEmitter {
           if (candidate.stopReason !== 'end_turn') outcome = candidate;
         }
       }
-      if (value.type === 'tool_execution_end' && value.isError === true)
+      // A checked task step is decided by its checks, not by a tool error the model went on
+      // to recover from (operator decision, 2026-10-23). The error stays in the journal
+      // (tool.finished failed=true). A delegated child turn, whose denied probes are its
+      // boundary proof, and any attempt outside a checked step still fail on it.
+      if (
+        value.type === 'tool_execution_end' &&
+        value.isError === true &&
+        (this.children?.owned(id) || !this.checkedStepAttempt(work.attempt.id))
+      )
         outcome ??= {
           version: 1,
           stopReason: 'error',
-          failure: acpFailure(new ServiceError('tool_failed', 'Tool execution failed')),
+          failure: acpFailure(new ServiceError('tool_failed', toolFailureMessage(value.toolName))),
         };
     };
     w.pi.on('record', record);
@@ -1817,4 +1863,12 @@ export class Supervisor extends EventEmitter {
     if (errors.length)
       throw new AggregateError(errors, 'Worker shutdown could not persist all final states');
   }
+}
+
+/** Names the failing tool (never its arguments or output), so a failed step says which call
+ * failed it. Only a plain tool identifier is echoed. */
+export function toolFailureMessage(toolName: unknown): string {
+  return typeof toolName === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(toolName)
+    ? `Tool execution failed (tool ${toolName})`
+    : 'Tool execution failed';
 }

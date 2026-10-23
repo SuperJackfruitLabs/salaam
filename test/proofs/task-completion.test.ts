@@ -261,3 +261,23 @@ test('checkpoint restore preserves pre-existing dirty bytes and newer human edit
     await f.close();
   }
 });
+
+test('a tool error the model recovers from does not fail its checked step; the error stays recorded', async () => {
+  const f = await taskFixture();
+  try {
+    await f.plan();
+    await f.run(0, '[files] {"action":"read","path":"no-such-file.txt"}');
+    const t = await until(f.task, (t) =>
+      ['awaiting_review', 'failed', 'interrupted'].includes(t.steps[0]!.state),
+    );
+    expect(t.steps[0]!.state).toBe('awaiting_review');
+    const failed = f.service.store.db
+      .prepare(
+        "SELECT count(*) AS n FROM events WHERE session_id=? AND kind='tool.finished' AND json_extract(payload,'$.failed')=1",
+      )
+      .get(f.session.id)!.n;
+    expect(failed).toBeGreaterThan(0);
+  } finally {
+    await f.close();
+  }
+});

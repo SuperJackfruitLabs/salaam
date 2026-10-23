@@ -221,7 +221,7 @@ test('invalid MCP arguments fail the tool without sending a call or invalidating
           arguments: { unknown: true },
         }),
       ),
-    ).rejects.toThrow('Tool execution failed');
+    ).rejects.toThrow(/Tool execution failed \(tool [A-Za-z0-9_.:-]+\)/);
     expect(f.sent).toHaveLength(0);
     expect(f.service.supervisor.inspect(f.admitted.session_id)).toMatchObject({
       state: 'ready',
