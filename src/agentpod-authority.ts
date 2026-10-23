@@ -260,12 +260,19 @@ export class AgentPodAuthority {
    */
   admit(input: unknown, request: string, continueFrom?: string) {
     const b = this.checked(input);
-    if (continueFrom !== undefined && (typeof continueFrom !== 'string' || !continueFrom || continueFrom.length > 128))
+    if (
+      continueFrom !== undefined &&
+      (typeof continueFrom !== 'string' || !continueFrom || continueFrom.length > 128)
+    )
       throw new ServiceError('invalid_continuation', 'continue_from must be a hub session id', 400);
     const admitted = this.store.request(
       'agentpod-node',
       request,
-      { kind: 'admit', binding: b, ...(continueFrom === undefined ? {} : { continue_from: continueFrom }) },
+      {
+        kind: 'admit',
+        binding: b,
+        ...(continueFrom === undefined ? {} : { continue_from: continueFrom }),
+      },
       () => {
         const old = this.store.db
           .prepare('SELECT id FROM agentpod_admissions WHERE hub_session_id=?')
@@ -453,7 +460,11 @@ export class AgentPodAuthority {
       .prepare('SELECT id FROM agentpod_admissions WHERE hub_session_id=?')
       .get(continueFrom);
     if (!row)
-      throw new ServiceError('admission_not_found', 'The session to continue has no admission', 404);
+      throw new ServiceError(
+        'admission_not_found',
+        'The session to continue has no admission',
+        404,
+      );
     const prior = this.row(String(row.id));
     const before = JSON.parse(prior.binding) as AgentPodBinding;
     if (
