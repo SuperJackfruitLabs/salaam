@@ -1120,7 +1120,17 @@ export class SalaamService {
         }
         const request = string(body.request_id, 'request_id', 128);
         if (parts[2] === 'admit') {
-          this.send(res, 200, this.agentpod.admit(body.binding, request));
+          this.send(
+            res,
+            200,
+            this.agentpod.admit(
+              body.binding,
+              request,
+              body.continue_from === undefined
+                ? undefined
+                : string(body.continue_from, 'continue_from', 128),
+            ),
+          );
           return;
         }
         if (parts[2] === 'renew') {
