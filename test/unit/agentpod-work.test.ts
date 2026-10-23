@@ -3182,3 +3182,59 @@ test('verified deliverable bytes named by the completion are produced and export
     f.close();
   }
 });
+
+test('work status carries a bounded, ordered tail of tool activity for card activity', async () => {
+  const f = fixture();
+  try {
+    const admitted = f.run();
+    const attempt = randomUUID();
+    const tool = (n: number, phase: 'started' | 'finished', extra: object = {}) =>
+      f.store.transaction(() =>
+        f.store.event(f.session, 'tool.' + phase, {
+          attempt_id: attempt,
+          worker_epoch: 1,
+          tool_call_id: 'call-' + n,
+          tool: n % 2 ? 'salaam_operator_mcp' : 'salaam_station',
+          phase,
+          ...extra,
+        }),
+      );
+    for (let n = 0; n < 40; n++) {
+      tool(n, 'started', {
+        input: JSON.stringify(
+          n % 2
+            ? { action: 'call', server: 'fetch', tool: 'fetch', arguments: { url: 'https://x' } }
+            : { action: 'read', path: 'notes.md', pad: 'p'.repeat(5000) },
+        ),
+        kind: n % 2 ? 'fetch' : 'read',
+      });
+      tool(n, 'finished', { failed: n === 3 });
+    }
+    f.store.transaction(() => f.store.event(f.session, 'usage.observed', { attempt_id: attempt }));
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      activity: Record<string, unknown>[];
+      task_id: string;
+    };
+    const tail = status.activity;
+    expect(tail.length).toBe(64);
+    expect(tail.map((a) => a.seq)).toEqual(
+      [...tail.map((a) => a.seq)].sort((a, b) => Number(a) - Number(b)),
+    );
+    expect(tail.at(-1)).toMatchObject({
+      phase: 'finished',
+      tool_call_id: 'call-39',
+      failed: false,
+    });
+    const started = tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'started')!;
+    expect(started).toMatchObject({ title: 'fetch · fetch', kind: 'fetch' });
+    const read = tail.find((a) => a.tool_call_id === 'call-8' && a.phase === 'started')!;
+    expect(read.title).toBe('salaam_station');
+    expect(String(read.input).length).toBeLessThanOrEqual(2048);
+    expect(Object.keys(read).sort()).toEqual(
+      ['failed', 'input', 'kind', 'phase', 'seq', 'title', 'tool_call_id'].sort(),
+    );
+    expect(admitted.task_id).toBe(status.task_id);
+  } finally {
+    f.close();
+  }
+});

@@ -1,3 +1,4 @@
+import { toolMetadata, toolTitle } from './acp-outcome.js';
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import type { TaskWork, WorkTask } from './task-work.js';
@@ -2566,7 +2567,33 @@ export class AgentPodWork {
       plan_revision: this.tasks.get(task.id).plan_revision,
       binding_digest: digest(root.binding),
       auto_enabled: !!view.runtime.auto_enabled,
+      activity: this.activity(root.session_id),
     };
+  }
+  /** The latest tool steps, oldest first, for the owner to show as card activity while the work
+   * runs. Observation only: it carries no authority and changes nothing. Input is clipped. */
+  activity(session: string) {
+    return this.store.db
+      .prepare(
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished') ORDER BY seq DESC LIMIT 64",
+      )
+      .all(session)
+      .reverse()
+      .map((row) => {
+        const p = JSON.parse(String(row.payload)) as Record<string, unknown>;
+        const started = row.kind === 'tool.started',
+          tool = typeof p.tool === 'string' ? p.tool : '';
+        const input = typeof p.input === 'string' ? p.input.slice(0, 2048) : null;
+        return {
+          seq: Number(row.seq),
+          phase: started ? ('started' as const) : ('finished' as const),
+          tool_call_id: typeof p.tool_call_id === 'string' ? p.tool_call_id : '',
+          title: tool ? toolTitle(tool, p.input) : 'Tool',
+          kind: started ? String(p.kind ?? toolMetadata(tool, p.input).kind) : null,
+          input: started ? input : null,
+          failed: !started && p.failed === true,
+        };
+      });
   }
   progress(
     binding: unknown,
