@@ -546,6 +546,109 @@ export class AgentPodWork {
       unbound_stopped_units: units,
     };
   }
+  /** An attempt the request-budget control interrupted after its operator MCP calls kept failing:
+   * every call is journaled as failed or tool_error, the only station calls are closed reads, and
+   * no tool ran after the stop. The failed calls are preserved as the known effects. */
+  private requestBudgetStopFailure(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    const reason = 'Required control failed: No model request budget remains',
+      // Picked by state, never by row order; the count below rejects any other attempt.
+      attempt = attempts.find((a) => a.state === 'interrupted');
+    if (
+      task.state !== 'blocked' ||
+      !runtime ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      runtime.verification_runs ||
+      attempts.length !== 1 ||
+      !attempt ||
+      attempt.error !== reason ||
+      attempt.resolved_by !== null ||
+      attempt.continues_attempt_id !== null ||
+      attempt.result !== null
+    )
+      return null;
+    const steps = task.steps.filter((s) => s.attempt_id === attempt.id);
+    if (
+      steps.length !== 1 ||
+      steps[0]!.state !== 'interrupted' ||
+      task.steps.some((s) => s !== steps[0] && (s.state !== 'pending' || s.attempt_id !== null))
+    )
+      return null;
+    // Stopped by the budget control, not cancelled by anyone.
+    if (
+      this.store.db
+        .prepare('SELECT 1 FROM cancellations WHERE attempt_id=?')
+        .get(String(attempt.id))
+    )
+      return null;
+    const events = this.store.db
+      .prepare('SELECT seq,kind,payload FROM events WHERE session_id=? ORDER BY seq')
+      .all(session);
+    const of = (e: Record<string, any>) => JSON.parse(String(e.payload));
+    const unhealthy = events.filter((e) => e.kind === 'worker.unhealthy'),
+      interrupted = events.filter((e) => e.kind === 'attempt.interrupted');
+    if (
+      unhealthy.length !== 1 ||
+      interrupted.length !== 1 ||
+      of(unhealthy[0]!).error !== reason ||
+      of(interrupted[0]!).attempt_id !== attempt.id ||
+      of(interrupted[0]!).error !== reason ||
+      Number(unhealthy[0]!.seq) >= Number(interrupted[0]!.seq)
+    )
+      return null;
+    // Tools: operator MCP (catalog reads, or one journaled failed call each) and station reads,
+    // every one closed before the stop.
+    const calls: Record<string, any>[] = [];
+    let open: { id: string; tool: string; calls: number } | null = null;
+    for (const e of events) {
+      if (!['tool.started', 'tool.finished', 'operator_mcp.call'].includes(String(e.kind)))
+        continue;
+      const payload = of(e);
+      if (Number(e.seq) >= Number(unhealthy[0]!.seq) || payload.attempt_id !== attempt.id)
+        return null;
+      if (e.kind === 'tool.started') {
+        if (
+          open ||
+          !['salaam_operator_mcp', 'salaam_station'].includes(String(payload.tool)) ||
+          typeof payload.tool_call_id !== 'string' ||
+          !payload.tool_call_id ||
+          payload.parent_tool_call_id
+        )
+          return null;
+        open = { id: payload.tool_call_id, tool: String(payload.tool), calls: 0 };
+      } else if (e.kind === 'tool.finished') {
+        if (!open || payload.tool_call_id !== open.id || payload.tool !== open.tool) return null;
+        open = null;
+      } else {
+        if (
+          !open ||
+          open.tool !== 'salaam_operator_mcp' ||
+          ++open.calls > 1 ||
+          !['failed', 'tool_error'].includes(String(payload.outcome))
+        )
+          return null;
+        calls.push({ seq: e.seq, ...payload });
+      }
+    }
+    if (open) return null;
+    const units = this.noLedgeredEffects(session, task, { stationReads: true });
+    if (!units) return null;
+    return {
+      unhealthy: unhealthy[0],
+      interrupted: interrupted[0],
+      operator_mcp_calls: calls,
+      reads: this.store.db
+        .prepare('SELECT id,input_digest FROM station_calls WHERE session_id=? ORDER BY id')
+        .all(session),
+      unbound_stopped_units: units,
+    };
+  }
   /** A disjoint failure profile: the native child was denied before any effect
    * ledger was created. Stopped resources alone never establish zero effects. */
   private zeroEffectConcurrencyFailure(
@@ -2430,9 +2533,14 @@ export class AgentPodWork {
         const revokeCancelled = zeroEffect
           ? null
           : this.revokeCancelledFailure(root.session_id, task, runtime, attempts);
+        const budgetStop =
+          zeroEffect || revokeCancelled
+            ? null
+            : this.requestBudgetStopFailure(root.session_id, task, runtime, attempts);
         if (
           !zeroEffect &&
           !revokeCancelled &&
+          !budgetStop &&
           !knownReadOnly &&
           (task.state !== 'blocked' ||
             !runtime ||
@@ -2482,7 +2590,7 @@ export class AgentPodWork {
         )
           throw new ServiceError(
             'work_settlement_unsafe',
-            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, or closed historical read-only evidence can retire',
+            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, or closed historical read-only evidence can retire',
           );
         const evidence_digest = digest({
           binding: root.binding,
@@ -2495,6 +2603,7 @@ export class AgentPodWork {
           call: call ?? null,
           ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
           ...(revokeCancelled ? { revoke_cancelled: revokeCancelled } : {}),
+          ...(budgetStop ? { request_budget_stop: budgetStop } : {}),
           ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
         });
         driver.cancelInTransaction(task.id, task.revision, stopped);
