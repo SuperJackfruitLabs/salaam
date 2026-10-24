@@ -602,10 +602,11 @@ export class AgentPodWork {
       Number(unhealthy[0]!.seq) >= Number(interrupted[0]!.seq)
     )
       return null;
-    // Tools: operator MCP (catalog reads, or one journaled failed call each) and station reads,
-    // every one closed before the stop.
+    // Tools: operator MCP (catalog reads, or a journaled failed call) and station reads, every one
+    // closed before the stop. Tools may run in parallel, and a call does not name its tool, so each
+    // call takes an open operator MCP tool that has none yet; a call with no such tool is refused.
     const calls: Record<string, any>[] = [];
-    let open: { id: string; tool: string; calls: number } | null = null;
+    const open = new Map<string, { tool: string; calls: number }>();
     for (const e of events) {
       if (!['tool.started', 'tool.finished', 'operator_mcp.call'].includes(String(e.kind)))
         continue;
@@ -614,29 +615,27 @@ export class AgentPodWork {
         return null;
       if (e.kind === 'tool.started') {
         if (
-          open ||
           !['salaam_operator_mcp', 'salaam_station'].includes(String(payload.tool)) ||
           typeof payload.tool_call_id !== 'string' ||
           !payload.tool_call_id ||
           payload.parent_tool_call_id
         )
           return null;
-        open = { id: payload.tool_call_id, tool: String(payload.tool), calls: 0 };
+        open.set(payload.tool_call_id, { tool: String(payload.tool), calls: 0 });
       } else if (e.kind === 'tool.finished') {
-        if (!open || payload.tool_call_id !== open.id || payload.tool !== open.tool) return null;
-        open = null;
+        const started = open.get(String(payload.tool_call_id));
+        if (!started || payload.tool !== started.tool) return null;
+        open.delete(String(payload.tool_call_id));
       } else {
-        if (
-          !open ||
-          open.tool !== 'salaam_operator_mcp' ||
-          ++open.calls > 1 ||
-          !['failed', 'tool_error'].includes(String(payload.outcome))
-        )
-          return null;
+        const free = [...open.values()].find(
+          (t) => t.tool === 'salaam_operator_mcp' && t.calls === 0,
+        );
+        if (!free || !['failed', 'tool_error'].includes(String(payload.outcome))) return null;
+        free.calls++;
         calls.push({ seq: e.seq, ...payload });
       }
     }
-    if (open) return null;
+    if (open.size) return null;
     const units = this.noLedgeredEffects(session, task, { stationReads: true });
     if (!units) return null;
     return {
