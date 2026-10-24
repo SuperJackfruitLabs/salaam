@@ -22,9 +22,14 @@ export function stationFileResult(
   };
   const fields = keys[String(request.action)];
   if (!fields) bad();
+  // A new file's missing parent directories, created beneath the root, are part of its effect.
+  const extra =
+    request.action === 'patch' && 'created_directories' in v ? ['created_directories'] : [];
   if (
     Object.keys(v).sort().join(',') !==
-      ['version', 'ok', 'tree_digest', 'files', 'root_identity', ...fields!].sort().join(',') ||
+      ['version', 'ok', 'tree_digest', 'files', 'root_identity', ...fields!, ...extra]
+        .sort()
+        .join(',') ||
     v.version !== 1 ||
     v.ok !== true ||
     v.root_identity !== request.root_identity ||
@@ -47,6 +52,8 @@ export function stationFileResult(
     )
       bad();
   }
+  if (extra.length && !createdParents(String(request.path), v.created_directories, request.content))
+    bad();
   if (request.action === 'patch') {
     if (
       v.path !== request.path ||
@@ -101,4 +108,16 @@ export function stationFileResult(
     }
   }
   return v;
+}
+
+/** The created directories must be a non-empty, in-order run of the path's own
+ * ancestors ending at its parent: each one beneath the last, nothing else. Only a
+ * new file creates them. */
+function createdParents(path: string, dirs: unknown, content: unknown): boolean {
+  if (typeof content !== 'string' || !Array.isArray(dirs) || dirs.length === 0) return false;
+  const parts = path.split('/');
+  if (parts.length < 2 || parts.some((p) => p === '' || p === '.' || p === '..')) return false;
+  const ancestors = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'));
+  const tail = ancestors.slice(ancestors.length - dirs.length);
+  return dirs.length <= ancestors.length && dirs.every((d, i) => d === tail[i]);
 }

@@ -3767,3 +3767,257 @@ test.each([
     f.close();
   }
 });
+
+// A strict attempt the task runtime limit stopped while every approved workspace write was refused
+// by the protected filesystem before its mutation boundary (and the last, still waiting, was
+// cancelled before dispatch). Besides those writes only closed reads and fetches ran.
+const RUNTIME_STOP = 'Task runtime limit reached';
+const WRITE_REFUSED = 'Protected filesystem refused before its mutation boundary';
+const WRITE_NOT_SENT = 'Workspace apply was cancelled before dispatch';
+function refusedWritesFixture() {
+  const f = fixture();
+  const admitted = f.run();
+  const task = f.tasks.get(admitted.task_id),
+    step = task.steps[0]!;
+  const attempt = f.store.transaction(() => {
+    const a = f.store.enqueue(f.session, randomUUID(), step.instruction, undefined, null, step.id);
+    f.store.db
+      .prepare('INSERT INTO task_step_attempts VALUES(?,?,?,?)')
+      .run(a.attempt_id, step.id, task.plan_revision, step.instruction);
+    f.store.db
+      .prepare("UPDATE task_steps SET state='running',attempt_id=? WHERE id=?")
+      .run(a.attempt_id, step.id);
+    return a.attempt_id;
+  });
+  f.store.db.prepare("UPDATE attempts SET state='running',worker_epoch=1 WHERE id=?").run(attempt);
+  const a64 = 'a'.repeat(64);
+  const ev = (kind: string, payload: object) =>
+    f.store.transaction(() => f.store.event(f.session, kind, { attempt_id: attempt, ...payload }));
+  const started = (id: string, tool: string) =>
+    ev('tool.started', { worker_epoch: 1, tool_call_id: id, tool });
+  const finished = (id: string, tool: string) =>
+    ev('tool.finished', { worker_epoch: 1, tool_call_id: id, tool });
+  const call = (
+    id: string,
+    kind: string,
+    state: string,
+    op: string | null,
+    helper: string,
+    result: string | null,
+  ) =>
+    f.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,operation_id,state,helper_state,result_json) VALUES(?,?,1,?,?,?,?,?,?,'{}',?,?,?,?)",
+      )
+      .run(id, f.session, attempt, id, kind, a64, a64, a64, op, state, helper, result);
+  const write = (n: number, refused: boolean) => {
+    const op = `op-${n}`,
+      opDigest = n.toString(16).repeat(64).slice(0, 64);
+    f.store.db
+      .prepare(
+        "INSERT INTO operations(id,session_id,attempt_id,worker_epoch,tool_call_id,kind,action_key,argument_digest,operation_digest,target,value,target_version,policy_digest,connector,replay,state,error) VALUES(?,?,?,1,?,'workspace',?,?,?,'station:runs/answer.md','v','t','policy','station','never','failed_definite',?)",
+      )
+      .run(
+        op,
+        f.session,
+        attempt,
+        `write-${n}`,
+        `action-${n}`,
+        a64,
+        opDigest,
+        refused ? WRITE_REFUSED : WRITE_NOT_SENT,
+      );
+    f.store.db
+      .prepare(
+        "INSERT INTO approvals(id,operation_id,session_id,worker_epoch,operation_digest,actor_scope,policy_digest,expires_at,state,decision,decided_by) VALUES(?,?,?,1,?,'owner','policy',0,?,?,?)",
+      )
+      .run(
+        `ap-${n}`,
+        op,
+        f.session,
+        opDigest,
+        refused ? 'decided' : 'invalidated',
+        refused ? 'approve' : null,
+        refused ? 'owner' : null,
+      );
+    call(
+      `write-${n}`,
+      'patch',
+      refused ? 'failed' : 'cancelled',
+      op,
+      refused ? 'stopped' : 'none',
+      refused ? '{"code":"station_files_changed"}' : null,
+    );
+  };
+  started('fetch-1', 'salaam_operator_mcp');
+  ev('operator_mcp.call', {
+    server: 'fetch',
+    tool: 'fetch',
+    argument_digest: a64,
+    outcome: 'returned',
+  });
+  finished('fetch-1', 'salaam_operator_mcp');
+  call('read-1', 'read', 'returned', null, 'stopped', null);
+  started('read-1', 'salaam_station');
+  finished('read-1', 'salaam_station');
+  for (const n of [1, 2]) {
+    started(`write-${n}`, 'salaam_station');
+    write(n, true);
+    finished(`write-${n}`, 'salaam_station');
+  }
+  // The last write still waits for its approval when the runtime limit stops the attempt.
+  started('write-3', 'salaam_station');
+  write(3, false);
+  f.store.db.prepare('UPDATE task_runtime SET started_at=0 WHERE task_id=?').run(task.id);
+  f.work.verification.budget.block(f.session, RUNTIME_STOP);
+  ev('attempt.cancel_requested', {});
+  f.store.db.prepare("INSERT INTO cancellations VALUES(?,'task-stop')").run(attempt);
+  finished('write-3', 'salaam_station');
+  f.store.db
+    .prepare("UPDATE attempts SET state='cancelled',error='Attempt aborted' WHERE id=?")
+    .run(attempt);
+  f.store.db.prepare("UPDATE task_steps SET state='cancelled' WHERE id=?").run(step.id);
+  ev('attempt.cancelled', {});
+  f.store.db.prepare("UPDATE durable_tasks SET state='blocked' WHERE id=?").run(task.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'runtime-revoke', 'Bounded progression stopped');
+  return { f, admitted, attempt, task };
+}
+const failRefused = (x: ReturnType<typeof refusedWritesFixture>, request = 'refused-retire') =>
+  x.f.work.fail(x.f.binding, request, x.admitted.request_id, 'a'.repeat(64), settlementDriver(x.f));
+
+test('a runtime-stopped attempt whose approved writes were all refused before the boundary retires and replays', () => {
+  const x = refusedWritesFixture();
+  try {
+    const receipt = failRefused(x);
+    expect(receipt).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+    expect(x.f.tasks.get(x.admitted.task_id).state).toBe('cancelled');
+    x.f.reopen();
+    expect(failRefused(x)).toEqual(receipt);
+  } finally {
+    x.f.close();
+  }
+});
+
+test.each([
+  'runtime-not-exceeded',
+  'other-block',
+  'not-cancelled',
+  'other-error',
+  'cancelled-by-someone',
+  'write-succeeded',
+  'write-failed-otherwise',
+  'refused-without-approval',
+  'refused-but-denied',
+  'mcp-call-in-station-tool',
+  'tool-started-during-stop',
+  'refused-call-returned',
+  'refused-call-other-code',
+  'refused-call-unstopped',
+  'not-sent-call-dispatched',
+  'other-operation-kind',
+  'other-station-call',
+  'returned-mcp-outside-tool',
+  'tool-after-cancel',
+  'open-tool',
+  'other-tool',
+  'mcp-ledger-row',
+  'checks',
+])('runtime-stopped refused-write retirement rejects %s', (failure) => {
+  const x = refusedWritesFixture();
+  const { f, attempt, task } = x;
+  try {
+    const db = f.store.db,
+      a64 = 'a'.repeat(64);
+    const withoutKeys = (fn: () => void) => {
+      db.exec('PRAGMA foreign_keys=OFF');
+      fn();
+      db.exec('PRAGMA foreign_keys=ON');
+    };
+    const ev = (kind: string, payload: object) =>
+      f.store.transaction(() =>
+        f.store.event(f.session, kind, { attempt_id: attempt, ...payload }),
+      );
+    if (failure === 'runtime-not-exceeded')
+      db.prepare('UPDATE task_runtime SET started_at=?').run(Date.now());
+    if (failure === 'other-block')
+      db.prepare("UPDATE task_runtime SET blocked_reason='Task request limit reached'").run();
+    if (failure === 'not-cancelled')
+      db.prepare("UPDATE attempts SET state='interrupted' WHERE id=?").run(attempt);
+    if (failure === 'other-error')
+      db.prepare("UPDATE attempts SET error='Pi exited (1)' WHERE id=?").run(attempt);
+    if (failure === 'cancelled-by-someone')
+      db.prepare("UPDATE cancellations SET requested_by='local-operator'").run();
+    if (failure === 'write-succeeded')
+      db.prepare("UPDATE operations SET state='succeeded' WHERE id='op-1'").run();
+    if (failure === 'write-failed-otherwise')
+      db.prepare("UPDATE operations SET error='Station helper exited (1)' WHERE id='op-2'").run();
+    if (failure === 'refused-without-approval')
+      db.prepare("UPDATE approvals SET state='invalidated',decision=NULL WHERE id='ap-1'").run();
+    if (failure === 'refused-but-denied')
+      db.prepare("UPDATE approvals SET decision='deny' WHERE id='ap-2'").run();
+    if (failure === 'mcp-call-in-station-tool')
+      // The fetch's journaled call then sits inside a station tool, not an operator MCP one.
+      db.prepare(
+        "UPDATE events SET payload=json_set(payload,'$.tool','salaam_station') WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool_call_id')='fetch-1'",
+      ).run();
+    if (failure === 'tool-started-during-stop') {
+      // A tool that starts after the stop was requested, closed before the cancellation.
+      ev('tool.started', { tool_call_id: 'late', tool: 'salaam_operator_mcp' });
+      ev('tool.finished', { tool_call_id: 'late', tool: 'salaam_operator_mcp' });
+      db.prepare(
+        "UPDATE events SET seq=(SELECT max(seq) FROM events)+10 WHERE session_id=? AND kind='attempt.cancelled'",
+      ).run(f.session);
+    }
+    if (failure === 'refused-call-returned')
+      db.prepare("UPDATE station_calls SET state='returned' WHERE id='write-1'").run();
+    if (failure === 'refused-call-other-code')
+      db.prepare(
+        'UPDATE station_calls SET result_json=\'{"code":"station_execution_unconfirmed"}\' WHERE id=\'write-2\'',
+      ).run();
+    if (failure === 'refused-call-unstopped')
+      db.prepare("UPDATE station_calls SET helper_state='running' WHERE id='write-1'").run();
+    if (failure === 'not-sent-call-dispatched')
+      db.prepare("UPDATE station_calls SET state='failed' WHERE id='write-3'").run();
+    if (failure === 'other-operation-kind')
+      db.prepare("UPDATE operations SET kind='command' WHERE id='op-1'").run();
+    if (failure === 'other-station-call')
+      db.prepare("UPDATE station_calls SET kind='check' WHERE id='read-1'").run();
+    if (failure === 'returned-mcp-outside-tool')
+      ev('operator_mcp.call', { server: 'fetch', tool: 'fetch', outcome: 'returned' });
+    if (failure === 'tool-after-cancel') {
+      ev('tool.started', { tool_call_id: 'late', tool: 'salaam_operator_mcp' });
+      ev('tool.finished', { tool_call_id: 'late', tool: 'salaam_operator_mcp' });
+    }
+    if (failure === 'open-tool')
+      db.prepare(
+        "DELETE FROM events WHERE kind='tool.finished' AND json_extract(payload,'$.tool_call_id')='write-3'",
+      ).run();
+    if (failure === 'other-tool')
+      db.prepare(
+        "UPDATE events SET payload=json_set(payload,'$.tool','salaam_files') WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool_call_id')='read-1'",
+      ).run();
+    if (failure === 'mcp-ledger-row')
+      withoutKeys(() =>
+        db
+          .prepare(
+            "INSERT INTO mcp_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,input_digest,binding_digest,profile_digest,assignment_digest,credential_generation,server_name,tool_name,policy,arguments_json,state,revision,created_at) VALUES('m',?,1,?,'m',?,?,?,?,1,'s','t','p','{}','returned',1,0)",
+          )
+          .run(f.session, attempt, a64, a64, a64, a64),
+      );
+    if (failure === 'checks')
+      withoutKeys(() =>
+        db
+          .prepare(
+            "INSERT INTO task_checks(id,task_id,step_id,check_key,plan_revision,workspace_id,workspace_revision,workspace_digest,profile_digest,engine_id,state) VALUES('c',?,?,'k',1,'w',1,?,?,'e','passed')",
+          )
+          .run(task.id, task.steps[0]!.id, a64, a64),
+      );
+    expect(() => failRefused(x, 'reject-refused')).toThrow(
+      'runtime-stopped refused workspace writes',
+    );
+    expect(f.tasks.get(x.admitted.task_id).state).not.toBe('cancelled');
+  } finally {
+    f.close();
+  }
+});
