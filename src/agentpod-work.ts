@@ -350,12 +350,16 @@ export class AgentPodWork {
                 offered,
               })
             : null;
-        if (!simple && !history)
+        const multi =
+          !simple && !history
+            ? this.multiOfferReviewExpiry(root.session_id, task, runtime, offered)
+            : null;
+        if (!simple && !history && !multi)
           throw new ServiceError(
             'work_settlement_unsafe',
             'Only exact expired unanswered unapplied work with closed historical evidence can be settled',
           );
-        if (history)
+        if (history || multi)
           this.store.event(
             root.session_id,
             'agentpod.work_expiry_evidence',
@@ -368,7 +372,7 @@ export class AgentPodWork {
                 request_id: request,
                 work_request_id: workRequest,
                 producer_terminal_digest: terminalDigest,
-                history,
+                ...(history ? { history } : { several_review_offers: multi }),
               }),
             },
             request,
@@ -393,6 +397,154 @@ export class AgentPodWork {
         return receipt;
       },
     );
+  }
+  /** Several unanswered review offers in one attempt: each one expired, or was invalidated by the
+   * owner's revocation (a hub restart), before anyone answered it. Every operation was cancelled
+   * before dispatch, the only station calls are closed reads, and nothing ran after the revoke. */
+  private multiOfferReviewExpiry(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    offered: Record<string, any>,
+  ) {
+    if (
+      task.state !== 'blocked' ||
+      task.steps.some((s) => !['pending', 'cancelled'].includes(s.state)) ||
+      !runtime ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      runtime.verification_runs
+    )
+      return null;
+    const attempts = this.store.db
+      .prepare('SELECT * FROM attempts WHERE session_id=?')
+      .all(session);
+    const attempt = attempts[0];
+    if (
+      attempts.length !== 1 ||
+      !attempt ||
+      attempt.state !== 'cancelled' ||
+      attempt.resolved_by !== null ||
+      attempt.result !== null
+    )
+      return null;
+    // Cancelled by the node's revocation of this session, which names exactly this attempt.
+    const cancellations = this.store.db
+      .prepare('SELECT * FROM cancellations WHERE attempt_id=?')
+      .all(String(attempt.id));
+    const revocations = this.store.db
+      .prepare('SELECT * FROM session_revocations WHERE session_id=?')
+      .all(session);
+    if (
+      cancellations.length !== 1 ||
+      cancellations[0]!.requested_by !== 'agentpod-node' ||
+      revocations.length !== 1
+    )
+      return null;
+    const revocation = JSON.parse(String(revocations[0]!.receipt));
+    if (
+      revocation.revoked !== true ||
+      canonical(revocation.attempt_ids) !== canonical([attempt.id]) ||
+      canonical(revocation.unresolved_operations) !== canonical([])
+    )
+      return null;
+    const events = this.store.db
+      .prepare('SELECT seq,kind,payload,causation_id FROM events WHERE session_id=? ORDER BY seq')
+      .all(session);
+    const one = (kind: string) => {
+      const found = events.filter((e) => e.kind === kind);
+      return found.length === 1 ? found[0]! : null;
+    };
+    const requested = one('attempt.cancel_requested'),
+      revoked = one('execution.revoked'),
+      cancelled = one('attempt.cancelled');
+    if (
+      !requested ||
+      !revoked ||
+      !cancelled ||
+      requested.causation_id !== 'agentpod-revocation' ||
+      !(
+        Number(requested.seq) < Number(revoked.seq) && Number(revoked.seq) < Number(cancelled.seq)
+      ) ||
+      events.some((e) => e.kind === 'tool.started' && Number(e.seq) > Number(requested.seq))
+    )
+      return null;
+    // Two or more review operations, all on this attempt, all cancelled before dispatch.
+    const ops = this.store.db
+      .prepare('SELECT * FROM operations WHERE session_id=? ORDER BY rowid')
+      .all(session);
+    if (
+      ops.length < 2 ||
+      !ops.some((op) => op.id === offered.operation_id) ||
+      ops.some(
+        (op) =>
+          op.kind !== 'review' ||
+          op.state !== 'cancelled_before_dispatch' ||
+          op.attempt_id !== attempt.id,
+      )
+    )
+      return null;
+    const of = (e: Record<string, any>) => JSON.parse(String(e.payload));
+    // The invalidations the revocation made: the contiguous block of invalidated approvals and
+    // their cancelled operations that ends at the revocation's own cancel request.
+    const block = new Set<string>();
+    for (let n = events.indexOf(requested) - 1; n >= 0; n--) {
+      const e = events[n]!;
+      if (e.kind === 'operation.cancelled_before_dispatch') continue;
+      if (e.kind !== 'approval.invalidated') break;
+      block.add(String(of(e).approval_id));
+    }
+    const offers = [];
+    for (const op of ops) {
+      const approvals = this.store.db
+        .prepare('SELECT * FROM approvals WHERE operation_id=?')
+        .all(String(op.id));
+      const approval = approvals[0];
+      if (
+        approvals.length !== 1 ||
+        !approval ||
+        approval.session_id !== session ||
+        approval.decision !== null ||
+        approval.operation_digest !== op.operation_digest
+      )
+        return null;
+      if (approval.state === 'expired') {
+        const expired = events.findIndex(
+          (e) => e.kind === 'approval.expired' && of(e).approval_id === approval.id,
+        );
+        if (
+          expired < 0 ||
+          Number(approval.expires_at) > Date.now() ||
+          events[expired + 1]?.kind !== 'operation.cancelled_before_dispatch' ||
+          of(events[expired + 1]!).operation_id !== op.id
+        )
+          return null;
+      } else if (approval.state !== 'invalidated' || !block.has(String(approval.id))) return null;
+      offers.push({ operation_id: op.id, approval_id: approval.id, state: approval.state });
+    }
+    // The decision being settled is one that expired unanswered, exactly as it was offered.
+    const settled = offers.find((o) => o.approval_id === offered.approval_id);
+    const approval = this.store.db
+      .prepare('SELECT * FROM approvals WHERE id=?')
+      .get(String(offered.approval_id));
+    if (
+      settled?.state !== 'expired' ||
+      !approval ||
+      approval.operation_digest !== offered.operation_digest ||
+      approval.expires_at !== offered.expires_at
+    )
+      return null;
+    const units = this.noLedgeredEffects(session, task, { operations: true, stationReads: true });
+    if (!units) return null;
+    return {
+      revocation,
+      offers,
+      reads: this.store.db
+        .prepare('SELECT id,input_digest FROM station_calls WHERE session_id=? ORDER BY id')
+        .all(session),
+      unbound_stopped_units: units,
+    };
   }
   /** A disjoint failure profile: the native child was denied before any effect
    * ledger was created. Stopped resources alone never establish zero effects. */
@@ -513,7 +665,11 @@ export class AgentPodWork {
   }
   /** Every execution/effect ledger, including read calls, is empty for this session and task,
    * and any station unit is unbound with a complete durable stop proof. Returns those units. */
-  private noLedgeredEffects(session: string, task: WorkTask): Record<string, any>[] | null {
+  private noLedgeredEffects(
+    session: string,
+    task: WorkTask,
+    checked: { operations?: boolean; stationReads?: boolean } = {},
+  ): Record<string, any>[] | null {
     // These are all independent execution/effect ledgers, including read calls.
     for (const table of [
       'operations',
@@ -524,6 +680,18 @@ export class AgentPodWork {
       'local_calls',
       'command_runs',
     ]) {
+      // A caller that proves its own operations or closed reads checks those itself.
+      if (table === 'operations' && checked.operations) continue;
+      if (
+        table === 'station_calls' &&
+        checked.stationReads &&
+        !this.store.db
+          .prepare(
+            "SELECT 1 FROM station_calls WHERE session_id=? AND NOT (kind='read' AND state='returned')",
+          )
+          .get(session)
+      )
+        continue;
       if (this.store.db.prepare(`SELECT 1 FROM ${table} WHERE session_id=?`).get(session))
         return null;
     }
