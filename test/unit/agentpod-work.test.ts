@@ -3493,7 +3493,7 @@ test.each([
 // A strict attempt whose operator MCP calls kept failing until the request budget ran out: the
 // budget control interrupted it, and nothing but those failed calls and a closed read ran.
 const BUDGET_STOP = 'Required control failed: No model request budget remains';
-function budgetStopFixture() {
+function budgetStopFixture(parallel = false) {
   const f = fixture();
   const admitted = f.run();
   const task = f.tasks.get(admitted.task_id),
@@ -3543,8 +3543,22 @@ function budgetStopFixture() {
     )
     .run(f.session, attempt, ...Array(3).fill('a'.repeat(64)));
   tool('inspect-1', 'salaam_station', null);
-  tool('fetch-1', 'salaam_operator_mcp', 'tool_error');
-  tool('fetch-2', 'salaam_operator_mcp', 'failed');
+  if (parallel) {
+    // Two fetches start together; their journaled calls cannot be told apart by tool.
+    const ev = (kind: string, payload: object) =>
+      f.store.transaction(() =>
+        f.store.event(f.session, kind, { attempt_id: attempt, ...payload }),
+      );
+    for (const id of ['fetch-1', 'fetch-2'])
+      ev('tool.started', { worker_epoch: 1, tool_call_id: id, tool: 'salaam_operator_mcp' });
+    for (const outcome of ['tool_error', 'failed'])
+      ev('operator_mcp.call', { server: 'fetch', tool: 'fetch', outcome });
+    for (const id of ['fetch-2', 'fetch-1'])
+      ev('tool.finished', { worker_epoch: 1, tool_call_id: id, tool: 'salaam_operator_mcp' });
+  } else {
+    tool('fetch-1', 'salaam_operator_mcp', 'tool_error');
+    tool('fetch-2', 'salaam_operator_mcp', 'failed');
+  }
   f.store.db
     .prepare("UPDATE attempts SET state='interrupted',error=? WHERE id=?")
     .run(BUDGET_STOP, attempt);
@@ -3575,6 +3589,43 @@ test('an attempt the request budget stopped, with only failed operator MCP calls
     x.f.close();
   }
 });
+
+test('parallel operator MCP tools with failed calls also retire', () => {
+  const x = budgetStopFixture(true);
+  try {
+    expect(failBudget(x)).toMatchObject({ state: 'cancelled', effects: 'known_effects_preserved' });
+  } finally {
+    x.f.close();
+  }
+});
+
+test.each(['call-in-station-tool', 'more-calls-than-tools'])(
+  'request-budget retirement with parallel tools rejects %s',
+  (failure) => {
+    const x = budgetStopFixture(true);
+    const { f, attempt } = x;
+    try {
+      const db = f.store.db;
+      if (failure === 'call-in-station-tool') {
+        // The only open tool is a station read, so the call belongs to no operator MCP tool.
+        db.prepare(
+          "UPDATE events SET payload=json_set(payload,'$.tool','salaam_station') WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool_call_id') IN ('fetch-1','fetch-2')",
+        ).run();
+      }
+      if (failure === 'more-calls-than-tools')
+        db.prepare(
+          "DELETE FROM events WHERE kind IN ('tool.started','tool.finished') AND json_extract(payload,'$.tool_call_id')='fetch-2'",
+        ).run();
+      expect(attempt).toBeTruthy();
+      expect(() => failBudget(x, 'reject-parallel')).toThrow(
+        'request budget stopped operator MCP reads',
+      );
+      expect(f.tasks.get(x.admitted.task_id).state).not.toBe('cancelled');
+    } finally {
+      f.close();
+    }
+  },
+);
 
 test.each([
   'not-blocked',
