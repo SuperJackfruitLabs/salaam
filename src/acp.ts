@@ -12,6 +12,7 @@ import {
   permissionKind,
   toolMetadata,
   toolTitle,
+  planUpdate,
 } from './acp-outcome.js';
 import type { CancellationReceipt } from './turn-cancellations.js';
 import { validateManagedMcpDeclarations } from './mcp-acp.js';
@@ -46,6 +47,8 @@ interface Connection {
   dirty: boolean;
   decisions: Promise<void>;
   failed?: Error;
+  /** The last plan sent, so an unchanged task sends nothing. */
+  plan?: string;
 }
 /** ACP v1 newline-delimited stdio adapter. The daemon remains the only worker owner. */
 export async function acp(state: string, options: { coding?: boolean } = {}): Promise<void> {
@@ -108,6 +111,14 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       method: 'session/update',
       params: { sessionId: id, update: out },
     });
+  };
+  /** Send the session's durable task plan when it differs from the last one sent. */
+  const sendPlan = async (c: Connection, task?: SessionSnapshot['work_task']) => {
+    const plan = planUpdate(task === undefined ? (await snapshot(c.id)).work_task : task);
+    const key = plan ? JSON.stringify(plan) : undefined;
+    if (!plan || key === c.plan) return;
+    c.plan = key;
+    await update(c.id, plan as unknown as Json);
   };
   const promptReceipt = async (session: string, request: string, attemptId: string) => {
     if (!bound || !wantsReceipts) return;
@@ -415,6 +426,10 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           });
         }
       }
+      if (event.kind.startsWith('work_task.'))
+        void sendPlan(c).catch((error) => {
+          c.failed = error;
+        });
       if (
         [
           'inbox.changed',
@@ -525,6 +540,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         if (record.receipt) await promptReceipt(id, record.request_id, record.receipt.attempt_id);
       if (wantsCancellations) await cancellationReceipts(c);
       await approvals(c, view);
+      // The plan is visible before any step runs.
+      await sendPlan(c, view.work_task ?? null);
       watch(c);
     } catch (error) {
       sessions.delete(id);

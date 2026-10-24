@@ -597,7 +597,17 @@ export class TaskVerification {
         if (protectedResult) {
           const e = protectedResult.evidence[0]!;
           workspace = { id: 'station:' + e.root_digest, revision: 0, digest: e.tree_digest };
-          deliverables = protectedResult.deliverables;
+          // Keep each deliverable's verified bytes as a session artifact, committed with the
+          // completion, so publication reads the verified revision and never the live workspace.
+          deliverables = (
+            protectedResult.deliverables as { path: string; sha256: string; content: string }[]
+          ).map(({ path, sha256, content }) => {
+            if (typeof content !== 'string')
+              throw new ServiceError('verification_required', 'Deliverable bytes unavailable');
+            const artifact = this.artifacts.prepare(task.session_id, content);
+            artifact.commit();
+            return { path, sha256, artifact_id: artifact.id };
+          });
           diff = {
             backend: 'linux-systemd-station-v1',
             root_digest: e.root_digest,

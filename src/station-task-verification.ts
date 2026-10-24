@@ -526,7 +526,8 @@ export class StationTaskVerification {
         result.root_identity !== this.station.config.workspace_identity
       )
         this.fail();
-      deliverables.push({ path, sha256: result.sha256 });
+      // The verified bytes travel with the digest; completion keeps them as an artifact.
+      deliverables.push({ path, sha256: result.sha256, content: result.content });
     }
     const final = await this.observe(
       evidence[0]!.call_id,

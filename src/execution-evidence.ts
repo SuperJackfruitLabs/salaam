@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
 import type { AgentPodWorkAdmission } from './agentpod-work-protocol.js';
@@ -244,6 +245,32 @@ export function executionEvidence(
     SELECT id,session_id,digest,bytes FROM artifacts
     WHERE session_id IN (SELECT id FROM tree) ORDER BY id LIMIT 257`),
   );
+  // A verified completion names each deliverable's artifact with the sha256 of its bytes.
+  // Only an artifact whose bytes match that digest counts as produced; dispositions are
+  // computed for this session's own artifacts alone, so another session's id names nothing.
+  const deliverables = new Set<string>();
+  const completed = store.db
+    .prepare("SELECT artifact_id FROM task_completions WHERE task_id=? AND state='succeeded'")
+    .get(taskId);
+  if (completed?.artifact_id) {
+    let record: { deliverables?: unknown } = {};
+    try {
+      record = JSON.parse(artifacts.read(String(completed.artifact_id)));
+    } catch {
+      record = {};
+    }
+    for (const d of Array.isArray(record.deliverables) ? record.deliverables : []) {
+      const id = (d as { artifact_id?: unknown }).artifact_id,
+        sha = (d as { sha256?: unknown }).sha256;
+      if (typeof id !== 'string' || typeof sha !== 'string') continue;
+      try {
+        if (createHash('sha256').update(artifacts.read(id)).digest('hex') === sha)
+          deliverables.add(id);
+      } catch {
+        /* a missing or corrupt artifact is not a deliverable */
+      }
+    }
+  }
   const artifactEvidence = artifactRows.map((row): Row & { disposition: string } => {
     // Check actual immutable bytes, not just a database's claimed fingerprint.
     const content = artifacts.read(String(row.id));
@@ -273,7 +300,10 @@ export function executionEvidence(
         ? 'integrated'
         : children.some((child) => child.artifact_id === row.id)
           ? 'proposed'
-          : appliedPatch || completion || checks.some((check) => check.artifact_id === row.id)
+          : appliedPatch ||
+              completion ||
+              deliverables.has(String(row.id)) ||
+              checks.some((check) => check.artifact_id === row.id)
             ? 'produced'
             : 'observed';
     return { ...row, disposition };

@@ -1,3 +1,4 @@
+import { planUpdate, toolMetadata, toolTitle } from './acp-outcome.js';
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import type { TaskWork, WorkTask } from './task-work.js';
@@ -499,6 +500,20 @@ export class AgentPodWork {
       links[0]!.step_id !== task.steps.find((s) => s.attempt_id === attempt.id)?.id
     )
       return null;
+    const units = this.noLedgeredEffects(session, task);
+    if (!units) return null;
+    return {
+      block: blocks[0],
+      activity,
+      model: models[0],
+      policy: policies[0],
+      link: links[0],
+      unbound_stopped_units: units,
+    };
+  }
+  /** Every execution/effect ledger, including read calls, is empty for this session and task,
+   * and any station unit is unbound with a complete durable stop proof. Returns those units. */
+  private noLedgeredEffects(session: string, task: WorkTask): Record<string, any>[] | null {
     // These are all independent execution/effect ledgers, including read calls.
     for (const table of [
       'operations',
@@ -579,11 +594,160 @@ export class AgentPodWork {
       )
         return null;
     }
+    return units;
+  }
+  /** An attempt the owner's authority revocation cancelled (for example a hub restart) before
+   * any ledgered effect. The only tool activity allowed is closed operator MCP calls, each
+   * journaled with argument and result digests; they are preserved as the known effects. */
+  private revokeCancelledFailure(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    const attempt = attempts[0];
+    if (
+      task.state !== 'blocked' ||
+      !runtime ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      runtime.verification_runs ||
+      attempts.length !== 1 ||
+      !attempt ||
+      attempt.state !== 'cancelled' ||
+      attempt.resolved_by !== null ||
+      attempt.continues_attempt_id !== null ||
+      attempt.result !== null ||
+      !attempt.outcome
+    )
+      return null;
+    const outcome = JSON.parse(String(attempt.outcome));
+    if (
+      outcome.version !== 1 ||
+      outcome.stopReason !== 'cancelled' ||
+      outcome.failure?.kind !== 'cancelled' ||
+      outcome.failure.code !== 'attempt_cancelled' ||
+      outcome.failure.retryable !== false ||
+      outcome.failure.sessionId !== session ||
+      outcome.failure.attemptId !== attempt.id
+    )
+      return null;
+    const steps = task.steps.filter((s) => s.attempt_id === attempt.id);
+    if (
+      steps.length !== 1 ||
+      steps[0]!.state !== 'cancelled' ||
+      task.steps.some((s) => s !== steps[0] && (s.state !== 'pending' || s.attempt_id !== null))
+    )
+      return null;
+    const links = this.store.db
+      .prepare(
+        'SELECT b.* FROM task_step_attempts b JOIN task_steps s ON s.id=b.step_id WHERE s.task_id=?',
+      )
+      .all(task.id);
+    if (
+      links.length !== 1 ||
+      links[0]!.attempt_id !== attempt.id ||
+      links[0]!.plan_revision !== task.plan_revision ||
+      links[0]!.step_id !== steps[0]!.id
+    )
+      return null;
+    // The cancellation came from the node's revocation of this session, not a local operator.
+    const cancellations = this.store.db
+      .prepare('SELECT * FROM cancellations WHERE attempt_id=?')
+      .all(String(attempt.id));
+    const revocations = this.store.db
+      .prepare('SELECT * FROM session_revocations WHERE session_id=?')
+      .all(session);
+    if (
+      cancellations.length !== 1 ||
+      cancellations[0]!.requested_by !== 'agentpod-node' ||
+      revocations.length !== 1
+    )
+      return null;
+    const revocation = JSON.parse(String(revocations[0]!.receipt));
+    if (
+      revocation.revoked !== true ||
+      revocation.session_id !== session ||
+      canonical(revocation.session_ids) !== canonical([session]) ||
+      canonical(revocation.attempt_ids) !== canonical([attempt.id]) ||
+      canonical(revocation.unresolved_operations) !== canonical([]) ||
+      typeof revocation.request_id !== 'string' ||
+      !revocation.request_id
+    )
+      return null;
+    const marks = this.store.db
+      .prepare(
+        "SELECT seq,kind,payload,causation_id FROM events WHERE session_id=? AND kind IN ('attempt.cancel_requested','execution.revoked','attempt.cancelled') ORDER BY seq",
+      )
+      .all(session);
+    const only = (kind: string) => {
+      const found = marks.filter((e) => e.kind === kind);
+      return found.length === 1 ? found[0]! : null;
+    };
+    const requested = only('attempt.cancel_requested'),
+      revoked = only('execution.revoked'),
+      cancelled = only('attempt.cancelled');
+    if (
+      marks.length !== 3 ||
+      !requested ||
+      !revoked ||
+      !cancelled ||
+      requested.causation_id !== 'agentpod-revocation' ||
+      JSON.parse(String(requested.payload)).attempt_id !== attempt.id ||
+      revoked.causation_id !== revocation.request_id ||
+      JSON.parse(String(revoked.payload)).owner_session !== session ||
+      JSON.parse(String(cancelled.payload)).attempt_id !== attempt.id ||
+      !(Number(requested.seq) < Number(revoked.seq) && Number(revoked.seq) < Number(cancelled.seq))
+    )
+      return null;
+    // Tool activity: only operator MCP tools, each closed before the revocation, each holding
+    // at most one journaled call (none for a catalog read), and no call outside a tool.
+    const activity = this.store.db
+      .prepare(
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','operator_mcp.call','policy.allowed','policy.denied') ORDER BY seq",
+      )
+      .all(session);
+    const calls: Record<string, any>[] = [];
+    let open: { id: string; calls: number } | null = null;
+    for (const event of activity) {
+      const payload = JSON.parse(String(event.payload));
+      if (Number(event.seq) >= Number(requested.seq)) return null;
+      if (payload.attempt_id !== attempt.id) return null;
+      if (event.kind === 'tool.started') {
+        if (
+          open ||
+          payload.tool !== 'salaam_operator_mcp' ||
+          typeof payload.tool_call_id !== 'string' ||
+          !payload.tool_call_id ||
+          payload.parent_tool_call_id
+        )
+          return null;
+        open = { id: payload.tool_call_id, calls: 0 };
+      } else if (event.kind === 'tool.finished') {
+        if (!open || payload.tool_call_id !== open.id || payload.tool !== 'salaam_operator_mcp')
+          return null;
+        open = null;
+      } else if (event.kind === 'operator_mcp.call') {
+        if (
+          !open ||
+          ++open.calls > 1 ||
+          !['returned', 'tool_error', 'failed'].includes(String(payload.outcome))
+        )
+          return null;
+        calls.push({ seq: event.seq, ...payload });
+      } else if (event.kind === 'policy.allowed') {
+        if (!open || payload.tool !== 'salaam_operator_mcp') return null;
+      } else return null;
+    }
+    if (open) return null;
+    const units = this.noLedgeredEffects(session, task);
+    if (!units) return null;
     return {
-      block: blocks[0],
-      activity,
-      model: models[0],
-      policy: policies[0],
+      revocation,
+      cancellation: cancellations[0],
+      events: marks,
+      operator_mcp_calls: calls,
       link: links[0],
       unbound_stopped_units: units,
     };
@@ -2095,8 +2259,12 @@ export class AgentPodWork {
           runtime,
           attempts,
         );
+        const revokeCancelled = zeroEffect
+          ? null
+          : this.revokeCancelledFailure(root.session_id, task, runtime, attempts);
         if (
           !zeroEffect &&
+          !revokeCancelled &&
           !knownReadOnly &&
           (task.state !== 'blocked' ||
             !runtime ||
@@ -2146,7 +2314,7 @@ export class AgentPodWork {
         )
           throw new ServiceError(
             'work_settlement_unsafe',
-            'Only exact known approved-patch, zero-effect child denial, or closed historical read-only evidence can retire',
+            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, or closed historical read-only evidence can retire',
           );
         const evidence_digest = digest({
           binding: root.binding,
@@ -2158,6 +2326,7 @@ export class AgentPodWork {
           approval: approval ?? null,
           call: call ?? null,
           ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
+          ...(revokeCancelled ? { revoke_cancelled: revokeCancelled } : {}),
           ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
         });
         driver.cancelInTransaction(task.id, task.revision, stopped);
@@ -2398,7 +2567,34 @@ export class AgentPodWork {
       plan_revision: this.tasks.get(task.id).plan_revision,
       binding_digest: digest(root.binding),
       auto_enabled: !!view.runtime.auto_enabled,
+      activity: this.activity(root.session_id),
+      plan: planUpdate(view),
     };
+  }
+  /** The latest tool steps, oldest first, for the owner to show as card activity while the work
+   * runs. Observation only: it carries no authority and changes nothing. Input is clipped. */
+  activity(session: string) {
+    return this.store.db
+      .prepare(
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished') ORDER BY seq DESC LIMIT 64",
+      )
+      .all(session)
+      .reverse()
+      .map((row) => {
+        const p = JSON.parse(String(row.payload)) as Record<string, unknown>;
+        const started = row.kind === 'tool.started',
+          tool = typeof p.tool === 'string' ? p.tool : '';
+        const input = typeof p.input === 'string' ? p.input.slice(0, 2048) : null;
+        return {
+          seq: Number(row.seq),
+          phase: started ? ('started' as const) : ('finished' as const),
+          tool_call_id: typeof p.tool_call_id === 'string' ? p.tool_call_id : '',
+          title: tool ? toolTitle(tool, p.input) : 'Tool',
+          kind: started ? String(p.kind ?? toolMetadata(tool, p.input).kind) : null,
+          input: started ? input : null,
+          failed: !started && p.failed === true,
+        };
+      });
   }
   progress(
     binding: unknown,
