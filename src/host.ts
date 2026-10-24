@@ -83,6 +83,8 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
   operator_access?: OperatorAccess;
   /** Operator-declared MCP servers (docs/mcp.md), pinned by declaration digest. */
   operator_mcp?: { config: string; digest: string };
+  /** How long a strict approval offer stays answerable; the daemon default when absent. */
+  approval_ttl_ms?: number;
 }
 export interface OperatorAccess {
   group: string;
@@ -104,6 +106,15 @@ export function resolveOperatorGroup(group: unknown): OperatorAccess {
   if (name !== group || !Number.isInteger(gid) || gid <= 0)
     throw Error('operator_group must name a non-root group');
   return { group, gid };
+}
+/** One minute to one day: long enough for a person to answer, short enough to free the station. */
+function approvalTtl(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 60000 || (value as number) > 86400000)
+    throw Error('approval_ttl_ms must be an integer from 60000 to 86400000');
+  return value as number;
+}
+export function hostApprovalTtlMs(m: HostManifest): number | undefined {
+  return m.schema === 6 ? m.approval_ttl_ms : undefined;
 }
 export function hostOperatorAccess(m: HostManifest): OperatorAccess | undefined {
   return m.schema === 6 ? m.operator_access : undefined;
@@ -178,6 +189,7 @@ async function planAgentPod(
     'strict_work_version',
     'operator_group',
     'operator_mcp_config',
+    'approval_ttl_ms',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -202,6 +214,12 @@ async function planAgentPod(
     if (!isAbsolute(config) || realpathSync(config) !== config)
       throw Error('Use a canonical absolute operator MCP config path');
     operatorMcp = { config, digest: OperatorMcp.load(config).digest };
+  }
+  let ttl: number | undefined;
+  if (c.approval_ttl_ms !== undefined) {
+    if (c.strict_work_version !== 1)
+      throw Error('approval_ttl_ms is only for the strict work host profile');
+    ttl = approvalTtl(c.approval_ttl_ms);
   }
   const state = privateState(string(c.state, 'state'), access?.gid);
   const config = string(c.agentpod_config, 'agentpod_config');
@@ -260,6 +278,7 @@ async function planAgentPod(
                 strict_work: { version: 1 as const },
                 ...(access ? { operator_access: access } : {}),
                 ...(operatorMcp ? { operator_mcp: operatorMcp } : {}),
+                ...(ttl !== undefined ? { approval_ttl_ms: ttl } : {}),
               }
             : { schema: 5 as const }),
           station_execution: station,
@@ -392,6 +411,7 @@ export function readHost(path: string): HostManifest {
       ...(m.schema === 6 ? ['strict_work'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_access') ? ['operator_access'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_mcp') ? ['operator_mcp'] : []),
+      ...(m.schema === 6 && Object.hasOwn(m, 'approval_ttl_ms') ? ['approval_ttl_ms'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
@@ -410,6 +430,7 @@ export function readHost(path: string): HostManifest {
         throw Error('Host operator group changed');
     }
     privateState(m.state, access?.gid);
+    if (m.schema === 6 && Object.hasOwn(m, 'approval_ttl_ms')) approvalTtl(m.approval_ttl_ms);
     if (m.schema === 6 && Object.hasOwn(m, 'operator_mcp')) {
       const o = object(m.operator_mcp);
       if (

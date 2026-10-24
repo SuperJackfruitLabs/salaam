@@ -20,7 +20,7 @@ import {
   stationHash,
 } from '../../src/station-config.js';
 import { digest } from '../../src/protocol.js';
-import { planHost, readHost } from '../../src/host.js';
+import { hostApprovalTtlMs, planHost, readHost } from '../../src/host.js';
 import { Store } from '../../src/store.js';
 
 function fixture() {
@@ -216,6 +216,57 @@ test('v25 migration preserves requests/events and creates empty station ownershi
     try {
       store.close();
     } catch {}
+    f.close();
+  }
+});
+
+test('a strict host may set its approval expiry; it is pinned, bounded and strict-work only', async () => {
+  const f = fixture();
+  try {
+    const pins = join(f.state, 'pins.json');
+    writeFileSync(
+      pins,
+      JSON.stringify({
+        version: 1,
+        organization_id: 'org_00000000000000000000',
+        node_id: 'node_fixture',
+        station_key: 'salaam:' + stationHash(Buffer.from(f.workspace)).slice(0, 16),
+        workspace: f.workspace,
+      }),
+      { mode: 0o600 },
+    );
+    const input = {
+      mode: 'agentpod',
+      state: f.state,
+      agentpod_config: pins,
+      station_config: f.config,
+      strict_work_version: 1,
+    };
+    const file = join(f.state, 'host.json');
+    const plain = await planHost(input);
+    expect(plain).not.toHaveProperty('approval_ttl_ms');
+    expect(hostApprovalTtlMs(plain)).toBeUndefined();
+    const longer = await planHost({ ...input, approval_ttl_ms: 1800000 });
+    expect(longer).toMatchObject({ schema: 6, approval_ttl_ms: 1800000 });
+    writeFileSync(file, JSON.stringify(longer), { mode: 0o600 });
+    expect(readHost(file)).toEqual(longer);
+    expect(hostApprovalTtlMs(readHost(file))).toBe(1800000);
+    // Bounded on both sides, and only an integer number of milliseconds.
+    for (const approval_ttl_ms of [0, 59999, 86400001, 1800000.5, '1800000', null])
+      await expect(planHost({ ...input, approval_ttl_ms })).rejects.toThrow('approval_ttl_ms');
+    for (const approval_ttl_ms of [59999, 86400001, '1800000', null]) {
+      writeFileSync(file, JSON.stringify({ ...longer, approval_ttl_ms }), { mode: 0o600 });
+      expect(() => readHost(file)).toThrow();
+    }
+    // Only the strict work profile has strict approvals to expire.
+    const { strict_work_version: _, ...station } = input;
+    await expect(planHost({ ...station, approval_ttl_ms: 1800000 })).rejects.toThrow(
+      'approval_ttl_ms',
+    );
+    const schema5 = await planHost(station);
+    writeFileSync(file, JSON.stringify({ ...schema5, approval_ttl_ms: 1800000 }), { mode: 0o600 });
+    expect(() => readHost(file)).toThrow();
+  } finally {
     f.close();
   }
 });
