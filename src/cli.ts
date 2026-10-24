@@ -507,7 +507,7 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'host') {
-    const { planHost, readHost, hostUnit, runHost, hostReceipt, hostToolsUser } =
+    const { planHost, readHost, hostUnit, runHost, hostReceipt, hostToolsUser, hostApprovalTtlMs } =
       await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
@@ -647,6 +647,7 @@ async function main(): Promise<void> {
           hostReceipt: hostReceipt(m),
           toolsUser: hostToolsUser(m),
           providerRoute: m.provider,
+          approvalTtlMs: hostApprovalTtlMs(m),
         });
       if (process.connected) process.once('disconnect', () => void service.close());
       for (const signal of ['SIGTERM', 'SIGINT'] as const)
