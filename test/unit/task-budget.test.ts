@@ -279,3 +279,43 @@ test.each([false, true])(
     }
   },
 );
+
+// A strict step is one attempt. Its model requests are bounded by the task's declared request
+// limit, not the generic 16-request attempt default that stopped run_b9fe15afda3f40c7 at 16 of 60.
+test('a task step attempt may spend the task request limit, and no more', async () => {
+  const f = await taskFixture();
+  try {
+    f.service.dispatcher.pause();
+    await f.service.taskDriver.close();
+    await f.plan({ ...checkedPlan(), limits: { requests: 20, token_units: null } });
+    const accepted = await f.run();
+    const store = f.service.store;
+    const admit = (key: string) =>
+      store.usage.admit(f.session.id, accepted.attempt_id, key, 'salaam-proof', 'scripted', {
+        input: 100,
+        output: 1024,
+      });
+    for (let i = 0; i < 20; i++) admit('step-' + i);
+    expect((await f.task()).runtime.requests_spent).toBe(20);
+    expect(() => admit('step-over')).toThrow('Task request limit reached');
+  } finally {
+    await f.close();
+  }
+});
+
+test('an attempt outside any task keeps the default request cap', async () => {
+  const f = await taskFixture();
+  try {
+    f.service.dispatcher.pause();
+    const store = f.service.store;
+    const plain = store.create(f.source, 'plain'),
+      attempt = store.accept(plain.id, 'plain-instruction', plain.revision, 'Read only');
+    for (let i = 0; i < 16; i++)
+      store.usage.admit(plain.id, attempt.attempt_id, 'plain-' + i, 'salaam-proof', 'scripted');
+    expect(() =>
+      store.usage.admit(plain.id, attempt.attempt_id, 'plain-over', 'salaam-proof', 'scripted'),
+    ).toThrow('No model request budget remains');
+  } finally {
+    await f.close();
+  }
+});

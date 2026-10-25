@@ -59,6 +59,8 @@ export class Store {
     output: number,
   ) => void;
   taskBudgetDenied?: (session: string, error: unknown) => void;
+  /** A durable task's own attempts are bounded by the task's request limit, not the attempt default. */
+  taskAttemptRequestLimit?: (session: string) => number | undefined;
   taskChildReserve?: (session: string, attempt: string, count: number) => void;
   taskChildFinished?: (attempt: string) => void;
   taskCommandAdmission?: (session: string) => void;
