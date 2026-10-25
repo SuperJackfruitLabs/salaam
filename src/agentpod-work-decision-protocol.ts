@@ -12,7 +12,21 @@ export interface WorkDecision {
   approval_revision: number;
   expires_at: number;
   question: string;
+  /** Readable approvals: what is being approved, as structured fields. */
+  detail?: WorkDecisionDetail;
   options: [{ id: 'approve'; title: string }, { id: 'deny'; title: string }];
+}
+export interface WorkDecisionDetail {
+  version: 1;
+  summary: string;
+  reason: string | null;
+  files: {
+    path: string;
+    change: 'create' | 'edit' | 'delete';
+    bytes: number | null;
+    preview: string | null;
+  }[];
+  digest: string;
 }
 export interface WorkDecisionAnswer {
   version: 1;
@@ -57,7 +71,9 @@ export function workDecision(value: unknown): WorkDecision {
     'expires_at',
     'question',
     'options',
+    ...('detail' in v ? ['detail'] : []),
   ]);
+  if ('detail' in v) workDecisionDetail(v.detail);
   if (
     v.version !== 1 ||
     !['request_id', 'work_request_id', 'task_id', 'operation_id', 'approval_id'].every((k) =>
@@ -110,4 +126,31 @@ export function workDecisionAnswer(value: unknown): WorkDecisionAnswer {
   )
     fail();
   return v as unknown as WorkDecisionAnswer;
+}
+
+function workDecisionDetail(value: unknown): WorkDecisionDetail {
+  const d = object(value);
+  keys(d, ['version', 'summary', 'reason', 'files', 'digest']);
+  if (
+    d.version !== 1 ||
+    !text(d.summary, 200) ||
+    (d.reason !== null && !text(d.reason, 300)) ||
+    typeof d.digest !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(d.digest) ||
+    !Array.isArray(d.files) ||
+    d.files.length > 16
+  )
+    fail();
+  for (const f of d.files as unknown[]) {
+    const file = object(f);
+    keys(file, ['path', 'change', 'bytes', 'preview']);
+    if (
+      !text(file.path, 512) ||
+      !['create', 'edit', 'delete'].includes(String(file.change)) ||
+      (file.bytes !== null && (!Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)) ||
+      (file.preview !== null && (typeof file.preview !== 'string' || file.preview.length > 1200))
+    )
+      fail();
+  }
+  return d as unknown as WorkDecisionDetail;
 }

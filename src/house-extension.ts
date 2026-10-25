@@ -197,7 +197,7 @@ export default function house(pi: ExtensionAPI): void {
       name: 'salaam_station',
       label: 'Protected station workspace',
       description:
-        'Inspect/list/read the declared station workspace progressively. Patch requires exact expected_tree, expected_hash (null for a new file), content (null to delete), and an operation-bound human approval. Check runs in an isolated OS identity with no network against a read-only filtered snapshot, and succeeds only while the original root revision stays current. No arbitrary mounts, environment, credentials or control sockets are exposed.',
+        'Inspect/list/read the declared station workspace progressively. Patch requires exact expected_tree, expected_hash (null for a new file), content (null to delete), an optional one-line reason shown to the person approving it, and an operation-bound human approval. Check runs in an isolated OS identity with no network against a read-only filtered snapshot, and succeeds only while the original root revision stays current. No arbitrary mounts, environment, credentials or control sockets are exposed.',
       parameters: Type.Object({
         action: Type.Union(
           ['inspect', 'list', 'search', 'read', 'patch', 'check'].map((a) => Type.Literal(a)),
@@ -210,6 +210,8 @@ export default function house(pi: ExtensionAPI): void {
           Type.Union([Type.String({ pattern: '^[a-f0-9]{64}$' }), Type.Null()]),
         ),
         content: Type.Optional(Type.Union([Type.String({ maxLength: 16384 }), Type.Null()])),
+        // One line, for the person approving the patch: why this write.
+        reason: Type.Optional(Type.String({ maxLength: 300 })),
         command: Type.Optional(Type.String({ maxLength: 8192 })),
       }),
       async execute(toolCallId, params, signal, _update, ctx) {
