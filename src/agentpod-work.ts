@@ -825,6 +825,187 @@ export class AgentPodWork {
       unbound_stopped_units: units,
     };
   }
+  /** An attempt the request-budget control interrupted after its approved work had succeeded:
+   * each workspace write approved, applied through exactly one returned patch call and recorded
+   * with that call's own receipt, and any review approved and read-only. Every other station call
+   * is a closed read or a returned check whose unit stopped with a complete proof, and no tool ran
+   * after the stop. The applied writes and the review are the known effects. */
+  private requestBudgetStopKnownEffectsFailure(
+    session: string,
+    binding: unknown,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    const reason = 'Required control failed: No model request budget remains',
+      attempt = attempts.find((a) => a.state === 'interrupted');
+    if (
+      task.state !== 'blocked' ||
+      !runtime ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      runtime.verification_runs ||
+      attempts.length !== 1 ||
+      !attempt ||
+      attempt.error !== reason ||
+      attempt.resolved_by !== null ||
+      attempt.continues_attempt_id !== null ||
+      attempt.result !== null
+    )
+      return null;
+    const steps = task.steps.filter((s) => s.attempt_id === attempt.id);
+    if (
+      steps.length !== 1 ||
+      steps[0]!.state !== 'interrupted' ||
+      task.steps.some((s) => s !== steps[0] && (s.state !== 'pending' || s.attempt_id !== null))
+    )
+      return null;
+    if (
+      this.store.db
+        .prepare('SELECT 1 FROM cancellations WHERE attempt_id=?')
+        .get(String(attempt.id))
+    )
+      return null;
+    const events = this.store.db
+      .prepare('SELECT seq,kind,payload FROM events WHERE session_id=? ORDER BY seq')
+      .all(session);
+    const of = (e: Record<string, any>) => JSON.parse(String(e.payload));
+    const unhealthy = events.filter((e) => e.kind === 'worker.unhealthy'),
+      interrupted = events.filter((e) => e.kind === 'attempt.interrupted');
+    if (
+      unhealthy.length !== 1 ||
+      interrupted.length !== 1 ||
+      of(unhealthy[0]!).error !== reason ||
+      of(interrupted[0]!).attempt_id !== attempt.id ||
+      of(interrupted[0]!).error !== reason ||
+      Number(unhealthy[0]!.seq) >= Number(interrupted[0]!.seq)
+    )
+      return null;
+    const ops = this.store.db
+      .prepare('SELECT * FROM operations WHERE session_id=? ORDER BY rowid')
+      .all(session);
+    const calls = this.store.db
+      .prepare('SELECT * FROM station_calls WHERE session_id=? ORDER BY rowid')
+      .all(session);
+    if (!ops.length) return null;
+    const root = digest(binding),
+      effects: Record<string, unknown>[] = [];
+    for (const op of ops) {
+      const approval = this.store.db
+        .prepare('SELECT * FROM approvals WHERE operation_id=?')
+        .get(String(op.id));
+      const linked = calls.filter((c) => c.operation_id === op.id);
+      if (
+        op.attempt_id !== attempt.id ||
+        op.state !== 'succeeded' ||
+        !approval ||
+        approval.state !== 'decided' ||
+        approval.decision !== 'approve' ||
+        approval.operation_digest !== op.operation_digest ||
+        !op.receipt
+      )
+        return null;
+      if (op.kind === 'workspace') {
+        const call = linked[0],
+          effect = JSON.parse(String(op.receipt));
+        if (
+          op.resolution !== 'workspace-content-receipt-v1' ||
+          // station_calls.operation_id is unique, so a write has at most one call.
+          !call ||
+          call.kind !== 'patch' ||
+          call.state !== 'returned' ||
+          call.helper_state !== 'stopped' ||
+          call.attempt_id !== attempt.id ||
+          !call.result_json ||
+          effect.version !== 1 ||
+          effect.scope !== 'station-workspace' ||
+          effect.call_id !== call.id ||
+          effect.root_digest !== root ||
+          effect.root_digest !== call.root_digest ||
+          effect.configuration_digest !== call.configuration_digest ||
+          effect.input_digest !== call.input_digest ||
+          canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
+          effect.result?.ok !== true
+        )
+          return null;
+        effects.push({
+          operation_id: op.id,
+          operation_digest: op.operation_digest,
+          call_id: call.id,
+          effect,
+        });
+      } else if (op.kind === 'review') {
+        if (
+          op.connector !== 'local-review-v1' ||
+          op.replay !== 'read-only' ||
+          op.resolution !== 'local-review-receipt' ||
+          linked.length
+        )
+          return null;
+        effects.push({ operation_id: op.id, operation_digest: op.operation_digest, review: true });
+      } else return null;
+    }
+    // Other station calls: closed reads, or returned checks whose own unit stopped with proof.
+    const others = calls.filter((c) => c.operation_id === null);
+    if (
+      others.some(
+        (c) =>
+          c.state !== 'returned' ||
+          !(c.kind === 'read' || (c.kind === 'check' && c.helper_state === 'stopped')),
+      )
+    )
+      return null;
+    const checks = others.filter((c) => c.kind === 'check').map((c) => String(c.id));
+    const mcp: Record<string, any>[] = [];
+    const open = new Map<string, { tool: string; calls: number }>();
+    for (const e of events) {
+      if (!['tool.started', 'tool.finished', 'operator_mcp.call'].includes(String(e.kind)))
+        continue;
+      const payload = of(e);
+      if (Number(e.seq) >= Number(unhealthy[0]!.seq) || payload.attempt_id !== attempt.id)
+        return null;
+      if (e.kind === 'tool.started') {
+        if (
+          !['salaam_operator_mcp', 'salaam_station', 'salaam_review'].includes(
+            String(payload.tool),
+          ) ||
+          typeof payload.tool_call_id !== 'string' ||
+          !payload.tool_call_id ||
+          payload.parent_tool_call_id
+        )
+          return null;
+        open.set(payload.tool_call_id, { tool: String(payload.tool), calls: 0 });
+      } else if (e.kind === 'tool.finished') {
+        const started = open.get(String(payload.tool_call_id));
+        if (!started || payload.tool !== started.tool) return null;
+        open.delete(String(payload.tool_call_id));
+      } else {
+        const free = [...open.values()].find(
+          (t) => t.tool === 'salaam_operator_mcp' && t.calls === 0,
+        );
+        if (!free || !['returned', 'failed', 'tool_error'].includes(String(payload.outcome)))
+          return null;
+        free.calls++;
+        mcp.push({ seq: e.seq, ...payload });
+      }
+    }
+    if (open.size) return null;
+    const units = this.noLedgeredEffects(session, task, {
+      operations: true,
+      stationCalls: true,
+      checkUnits: checks,
+    });
+    if (!units) return null;
+    return {
+      unhealthy: unhealthy[0],
+      interrupted: interrupted[0],
+      known_effects: effects,
+      station_calls: others.map((c) => ({ id: c.id, kind: c.kind, input_digest: c.input_digest })),
+      operator_mcp_calls: mcp,
+      unbound_stopped_units: units,
+    };
+  }
   /** A disjoint failure profile: the native child was denied before any effect
    * ledger was created. Stopped resources alone never establish zero effects. */
   private zeroEffectConcurrencyFailure(
@@ -947,7 +1128,12 @@ export class AgentPodWork {
   private noLedgeredEffects(
     session: string,
     task: WorkTask,
-    checked: { operations?: boolean; stationReads?: boolean; stationCalls?: boolean } = {},
+    checked: {
+      operations?: boolean;
+      stationReads?: boolean;
+      stationCalls?: boolean;
+      checkUnits?: string[];
+    } = {},
   ): Record<string, any>[] | null {
     // These are all independent execution/effect ledgers, including read calls.
     for (const table of [
@@ -1024,9 +1210,13 @@ export class AgentPodWork {
       .prepare('SELECT * FROM station_units WHERE session_id=? OR session_id IS NULL')
       .all(session);
     for (const unit of units) {
+      // A proven returned check's own unit belongs to this session; it still needs its stop proof.
+      const ownCheck =
+        unit.session_id === session &&
+        typeof unit.call_id === 'string' &&
+        !!checked.checkUnits?.includes(unit.call_id);
       if (
-        unit.session_id !== null ||
-        unit.call_id !== null ||
+        (!ownCheck && (unit.session_id !== null || unit.call_id !== null)) ||
         unit.state !== 'stopped' ||
         !unit.stop_json
       )
@@ -2718,11 +2908,22 @@ export class AgentPodWork {
           zeroEffect || revokeCancelled || budgetStop
             ? null
             : this.runtimeStopRefusedWritesFailure(root.session_id, task, runtime, attempts);
+        const budgetKnown =
+          zeroEffect || revokeCancelled || budgetStop || refusedWrites
+            ? null
+            : this.requestBudgetStopKnownEffectsFailure(
+                root.session_id,
+                root.binding,
+                task,
+                runtime,
+                attempts,
+              );
         if (
           !zeroEffect &&
           !revokeCancelled &&
           !budgetStop &&
           !refusedWrites &&
+          !budgetKnown &&
           !knownReadOnly &&
           (task.state !== 'blocked' ||
             !runtime ||
@@ -2772,7 +2973,7 @@ export class AgentPodWork {
         )
           throw new ServiceError(
             'work_settlement_unsafe',
-            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, or closed historical read-only evidence can retire',
+            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, or closed historical read-only evidence can retire',
           );
         const evidence_digest = digest({
           binding: root.binding,
@@ -2787,6 +2988,7 @@ export class AgentPodWork {
           ...(revokeCancelled ? { revoke_cancelled: revokeCancelled } : {}),
           ...(budgetStop ? { request_budget_stop: budgetStop } : {}),
           ...(refusedWrites ? { runtime_stop_refused_writes: refusedWrites } : {}),
+          ...(budgetKnown ? { request_budget_stop_known_effects: budgetKnown } : {}),
           ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
         });
         driver.cancelInTransaction(task.id, task.revision, stopped);
