@@ -843,7 +843,13 @@ export class StationWork {
     if (c.kind === 'patch') {
       const result = await this.helper(
         {
-          ...args,
+          // Only the helper's own fields: it refuses any field it does not know (the agent's
+          // reason is for the approval detail and stays in the operation's arguments).
+          action: args.action,
+          path: args.path,
+          expected_tree: args.expected_tree,
+          expected_hash: args.expected_hash,
+          content: args.content,
           request_id: id,
           deadline_ms: Date.now() + this.authority.leaseWindow(c.session_id, c.root_digest, 5000),
         },

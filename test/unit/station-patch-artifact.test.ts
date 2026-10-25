@@ -7,7 +7,10 @@ import { StationWork } from '../../src/station-work.js';
 import { canonical, textDigest } from '../../src/protocol.js';
 
 // Controlled helper completion: filesystem protocol validation has its own corpus.
-function fixture(content: string | null = 'reviewed test source\n') {
+function fixture(
+  content: string | null = 'reviewed test source\n',
+  extra: Record<string, unknown> = {},
+) {
   const dir = mkdtempSync('/tmp/sal-patch-artifact-');
   let store = new Store(join(dir, 'journal.sqlite'));
   const artifacts = new Artifacts(join(dir, 'artifacts'), store);
@@ -18,6 +21,7 @@ function fixture(content: string | null = 'reviewed test source\n') {
     content,
     expected_tree: 'a'.repeat(64),
     expected_hash: 'b'.repeat(64),
+    ...extra,
   };
   const attempt = store.accept(session.id, 'attempt', session.revision, 'fixture').attempt_id;
   store.db
@@ -51,7 +55,7 @@ function fixture(content: string | null = 'reviewed test source\n') {
       .prepare("UPDATE operations SET state='succeeded',receipt=? WHERE id=?")
       .run(canonical(_receipt), _id);
   });
-  const helper = vi.fn(async () => result);
+  const helper = vi.fn(async (_request: Record<string, unknown>) => result);
   const work = Object.assign(Object.create(StationWork.prototype), {
     store,
     artifacts,
@@ -157,3 +161,44 @@ for (const failure of ['helper uncertain', 'foreign root', 'transaction rejected
       f.close();
     }
   });
+
+// The station helper decodes its request with DisallowUnknownFields: a field it does not know refuses
+// the whole patch as station_request_invalid, which Salaam can only record as an unconfirmed
+// outcome. #65 added the agent's `reason` to the patch arguments and perform() forwarded every
+// argument, so the first approved write after it (run_b304a14ad7454fda) became outcome_unknown.
+const HELPER_PATCH_FIELDS = [
+  'action',
+  'path',
+  'expected_tree',
+  'expected_hash',
+  'content',
+  'request_id',
+  'deadline_ms',
+];
+test("a patch forwards only the helper's own fields; the agent's reason never reaches it", async () => {
+  const f = fixture('reviewed test source\n', {
+    reason: 'Write the quoted sentence the card asks for.',
+  });
+  try {
+    // A fake helper as strict as the real one.
+    f.helper.mockImplementation(async (request: Record<string, unknown>) => {
+      const unknown = Object.keys(request).filter((k) => !HELPER_PATCH_FIELDS.includes(k));
+      if (unknown.length) throw Error('station_request_invalid: ' + unknown.join(','));
+      return f.result;
+    });
+    await f.work.perform('call');
+    const sent = f.helper.mock.calls[0]![0];
+    expect(Object.keys(sent).sort()).toEqual([...HELPER_PATCH_FIELDS].sort());
+    expect(sent).toMatchObject({
+      action: 'patch',
+      path: f.args.path,
+      expected_tree: f.args.expected_tree,
+      expected_hash: f.args.expected_hash,
+      content: f.args.content,
+      request_id: 'call',
+    });
+    expect(f.call().state).toBe('returned');
+  } finally {
+    f.close();
+  }
+});
