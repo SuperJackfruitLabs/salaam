@@ -31,7 +31,7 @@ export class UsageLedger {
         this.store.execution.assert(session);
         this.store.taskModelAdmission?.(session, attempt, bounds?.input ?? 0, bounds?.output ?? 0);
         if (attempt) {
-          this.budget(attempt);
+          this.budget(attempt, this.store.taskAttemptRequestLimit?.(session) ?? 16);
           const changed = this.store.db
             .prepare(
               'UPDATE attempt_budgets SET spent_requests=spent_requests+1 WHERE attempt_id=? AND spent_requests+reserved_requests<limit_requests',

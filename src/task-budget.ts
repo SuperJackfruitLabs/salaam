@@ -29,6 +29,8 @@ export class TaskBudget {
     store.taskChildFinished = (attempt) => this.releaseChild(attempt);
     store.taskCommandAdmission = (session) => this.command(session);
     store.taskRemainingRuntime = (session) => this.remaining(session);
+    // Only the task's own session: a child's attempt keeps the budget its reservation set.
+    store.taskAttemptRequestLimit = (session) => this.tasks.forSession(session)?.limits.requests;
   }
   task(session: string): WorkTask | null {
     const direct = this.tasks.forSession(session);
