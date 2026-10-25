@@ -4217,3 +4217,34 @@ test.each([
     f.close();
   }
 });
+
+// Approval scopes: an operation the run grant answered is recorded on the card with the grant.
+test('work status shows a write the run grant approved, and which grant allowed it', async () => {
+  const f = fixture();
+  try {
+    f.run();
+    f.store.transaction(() =>
+      f.store.event(f.session, 'permission.auto-approved', {
+        rule: 'run-grant',
+        grant_id: 'grant-1',
+        granted_by: 'prn_human',
+        operation_id: 'op-1',
+        operation_digest: 'd'.repeat(64),
+      }),
+    );
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      activity: Record<string, unknown>[];
+    };
+    expect(status.activity.at(-1)).toEqual({
+      seq: expect.any(Number),
+      phase: 'finished',
+      tool_call_id: 'approval:op-1',
+      title: 'Approved by the run grant (granted by prn_human)',
+      kind: null,
+      input: null,
+      failed: false,
+    });
+  } finally {
+    f.close();
+  }
+});

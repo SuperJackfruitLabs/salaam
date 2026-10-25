@@ -33,6 +33,7 @@ import {
   type StationConfig,
 } from './station-config.js';
 import { stationFileResult } from './station-files.js';
+import { type RunGrants, runGrantCovers, runGrantPrefix } from './run-grants.js';
 import { StationSystemd, type StationUnit } from './station-systemd.js';
 
 export interface StationBinding {
@@ -88,6 +89,11 @@ const terminal = (s: string) => ['returned', 'failed', 'outcome_unknown', 'cance
  * traversal-resistant node primitive; arbitrary checks get a separate OS identity,
  * mount/root/network boundary and bounded, owned systemd cgroup. */
 export class StationWork {
+  /** "Approve for this run" grants and the task each session's run belongs to (service wiring). */
+  grants?: RunGrants;
+  grantScope?: (
+    session: string,
+  ) => { task_id: string; plan_revision: number; task_state: string } | null;
   readonly config: StationConfig;
   readonly configurationDigest: string;
   private readonly directory: string;
@@ -781,7 +787,54 @@ export class StationWork {
         input_digest: row.input_digest,
       });
     });
+    const prepared = this.get(id);
+    if (kind === 'patch' && prepared.operation_id)
+      this.answerFromGrant(prepared.operation_id, session, args);
     return this.view(id);
+  }
+  /** A write the run's grant covers is answered by it, checked again at decision time. The
+   * operation is still prepared, digest-bound and journaled on its own; deletes always ask. */
+  private answerFromGrant(operation: string, session: string, args: Record<string, unknown>): void {
+    if (!this.grants || !this.grantScope) return;
+    const binding = this.authority.binding(session) as { run?: { id?: unknown } } | null;
+    const prefix = runGrantPrefix(typeof binding?.run?.id === 'string' ? binding.run.id : '');
+    const live = () => {
+      const scope = this.grantScope!(session);
+      if (!scope || !prefix || !runGrantCovers(prefix, args)) return null;
+      const g = this.grants!.active({
+        session_id: session,
+        binding_digest: digest(binding),
+        ...scope,
+      });
+      return g;
+    };
+    const grant = live();
+    if (!grant) return;
+    const approval = this.managed.forOperation(operation);
+    if (approval.state !== 'pending') return;
+    this.managed.decide(
+      approval.id,
+      'run-grant:' + operation,
+      approval.revision,
+      approval.operation_digest,
+      'approve',
+      {
+        decidedBy: 'run-grant:' + grant.id,
+        receipt: {
+          rule: 'run-grant',
+          grant_id: grant.id,
+          granted_by: grant.granted_by,
+          granted_on: grant.approval_id,
+        },
+        authorize: () => {
+          if (live()?.id !== grant.id)
+            throw new ServiceError(
+              'permission_changed',
+              'The run grant no longer covers this write',
+            );
+        },
+      },
+    );
   }
   run(id: string): unknown {
     const c = this.get(id);

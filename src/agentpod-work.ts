@@ -3238,12 +3238,27 @@ export class AgentPodWork {
   activity(session: string) {
     return this.store.db
       .prepare(
-        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished') ORDER BY seq DESC LIMIT 64",
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','permission.auto-approved') ORDER BY seq DESC LIMIT 64",
       )
       .all(session)
       .reverse()
       .map((row) => {
         const p = JSON.parse(String(row.payload)) as Record<string, unknown>;
+        // Approval scopes: a write the run grant answered says so on the card, with the grant.
+        if (row.kind === 'permission.auto-approved')
+          return {
+            seq: Number(row.seq),
+            phase: 'finished' as const,
+            tool_call_id: 'approval:' + String(p.operation_id ?? ''),
+            title:
+              p.rule === 'run-grant'
+                ? 'Approved by the run grant' +
+                  (typeof p.granted_by === 'string' ? ` (granted by ${p.granted_by})` : '')
+                : 'Approved by a standing rule',
+            kind: null,
+            input: null,
+            failed: false,
+          };
         const started = row.kind === 'tool.started',
           tool = typeof p.tool === 'string' ? p.tool : '';
         const input = typeof p.input === 'string' ? p.input.slice(0, 2048) : null;

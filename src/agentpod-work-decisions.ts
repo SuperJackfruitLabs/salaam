@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentPodWork } from './agentpod-work.js';
 import type { ManagedWork } from './managed.js';
 import { canonical, digest, ServiceError } from './protocol.js';
+import { type RunGrants, runGrantCovers, runGrantPrefix } from './run-grants.js';
 import {
   workDecisionAnswer,
   type WorkDecision,
@@ -13,7 +14,21 @@ export class AgentPodWorkDecisions {
   constructor(
     readonly work: AgentPodWork,
     readonly managed: ManagedWork,
+    readonly grants?: RunGrants,
   ) {}
+  /** The run directory a grant for this operation would cover, when it is a covered write. */
+  private grantable(binding: unknown, op: { kind: string; value: string }): string | null {
+    if (!this.grants || op.kind !== 'workspace') return null;
+    const run = (binding as { run?: { id?: unknown } } | null)?.run;
+    const prefix = runGrantPrefix(typeof run?.id === 'string' ? run.id : '');
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(op.value) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    return prefix && runGrantCovers(prefix, args) ? prefix : null;
+  }
   private owner(binding: unknown) {
     const root = this.work.authority.inspect(binding);
     const row = this.work.store.db
@@ -57,10 +72,16 @@ export class AgentPodWorkDecisions {
             ...identity,
             question: approvalDetail(op).summary + '?',
             detail: approvalDetail(op),
-            options: [
-              { id: 'approve', title: 'Approve once' },
-              { id: 'deny', title: 'Deny' },
-            ],
+            options: this.grantable(root.binding, op)
+              ? [
+                  { id: 'approve', title: 'Approve once' },
+                  { id: 'approve-run', title: 'Approve for this run' },
+                  { id: 'deny', title: 'Deny' },
+                ]
+              : [
+                  { id: 'approve', title: 'Approve once' },
+                  { id: 'deny', title: 'Deny' },
+                ],
           }),
         );
       });
@@ -102,13 +123,35 @@ export class AgentPodWorkDecisions {
           approval.expires_at !== offered.expires_at
         )
           throw new ServiceError('approval_mismatch', 'Approval ownership changed');
+        // "Approve for this run" must have been offered, and still be grantable, to be chosen.
+        const prefix =
+          answer.option_id === 'approve-run'
+            ? this.grantable(root.binding, this.managed.operation(offered.operation_id))
+            : null;
+        if (
+          answer.option_id === 'approve-run' &&
+          (!prefix || !offered.options.some((o) => o.id === 'approve-run'))
+        )
+          throw new ServiceError('approval_mismatch', 'This approval cannot cover the run');
         this.managed.decide(
           offered.approval_id,
           answer.request_id,
           offered.approval_revision,
           offered.operation_digest,
-          answer.option_id,
+          answer.option_id === 'deny' ? 'deny' : 'approve',
         );
+        const grant =
+          answer.option_id === 'approve-run'
+            ? this.grants!.createInTransaction({
+                session_id: root.session_id,
+                task_id: task.id,
+                plan_revision: offered.plan_revision,
+                binding_digest: offered.binding_digest,
+                path_prefix: prefix!,
+                approval_id: offered.approval_id,
+                granted_by: answer.answered_by,
+              })
+            : null;
         this.work.store.execution.assert(root.session_id);
         return {
           version: 1 as const,
@@ -116,6 +159,7 @@ export class AgentPodWorkDecisions {
           decision_digest: answer.decision_digest,
           approval_id: offered.approval_id,
           decision: answer.option_id,
+          ...(grant ? { grant_id: grant.id } : {}),
         };
       },
     );

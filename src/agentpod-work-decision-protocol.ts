@@ -14,7 +14,13 @@ export interface WorkDecision {
   question: string;
   /** Readable approvals: what is being approved, as structured fields. */
   detail?: WorkDecisionDetail;
-  options: [{ id: 'approve'; title: string }, { id: 'deny'; title: string }];
+  options:
+    | [{ id: 'approve'; title: string }, { id: 'deny'; title: string }]
+    | [
+        { id: 'approve'; title: string },
+        { id: 'approve-run'; title: string },
+        { id: 'deny'; title: string },
+      ];
 }
 export interface WorkDecisionDetail {
   version: 1;
@@ -34,7 +40,7 @@ export interface WorkDecisionAnswer {
   decision: WorkDecision;
   decision_digest: string;
   elicitation_id: string;
-  option_id: 'approve' | 'deny';
+  option_id: 'approve' | 'approve-run' | 'deny';
   answered_by: string;
   answered_at: string;
 }
@@ -87,13 +93,15 @@ export function workDecision(value: unknown): WorkDecision {
     ) ||
     !text(v.question, 8192) ||
     !Array.isArray(v.options) ||
-    v.options.length !== 2
+    ![2, 3].includes(v.options.length)
   )
     fail();
-  for (let i = 0; i < 2; i++) {
+  // approve, deny; or approve, approve-run (this run's writes), deny. Nothing else, in that order.
+  const ids = v.options.length === 3 ? ['approve', 'approve-run', 'deny'] : ['approve', 'deny'];
+  for (let i = 0; i < ids.length; i++) {
     const opt = object(v.options[i]);
     keys(opt, ['id', 'title']);
-    if (opt.id !== ['approve', 'deny'][i] || !text(opt.title, 256)) fail();
+    if (opt.id !== ids[i] || !text(opt.title, 256)) fail();
   }
   return v as unknown as WorkDecision;
 }
@@ -117,7 +125,7 @@ export function workDecisionAnswer(value: unknown): WorkDecisionAnswer {
     !/^[a-f0-9]{64}$/.test(v.decision_digest) ||
     !text(v.elicitation_id, 128) ||
     !/^elc_[A-Za-z0-9]{6,}$/.test(v.elicitation_id) ||
-    !['approve', 'deny'].includes(String(v.option_id)) ||
+    !['approve', 'approve-run', 'deny'].includes(String(v.option_id)) ||
     !text(v.answered_by, 128) ||
     typeof v.answered_at !== 'string' ||
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(v.answered_at) ||

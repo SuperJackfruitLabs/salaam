@@ -503,7 +503,7 @@ export class ManagedWork {
     revision: number,
     binding: string,
     decision: 'approve' | 'deny',
-    scoped?: { receipt: Record<string, unknown>; authorize: () => void },
+    scoped?: { receipt: Record<string, unknown>; authorize: () => void; decidedBy?: string },
   ): Approval {
     const requestWork = this.store.db.isTransaction
       ? this.store.requestInTransaction.bind(this.store)
@@ -553,7 +553,7 @@ export class ManagedWork {
           .prepare(
             "UPDATE approvals SET state='decided',decision=?,decided_by=?,revision=revision+1 WHERE id=?",
           )
-          .run(decision, scoped ? 'scoped-policy' : 'local-operator', id);
+          .run(decision, scoped ? (scoped.decidedBy ?? 'scoped-policy') : 'local-operator', id);
         if (decision === 'deny')
           this.transition(op, 'cancelled_before_dispatch', 'Denied by operator');
         this.store.event(
