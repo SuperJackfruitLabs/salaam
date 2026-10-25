@@ -16,6 +16,7 @@ import { SLASH_COMMANDS } from './tui-commands.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
 import { AgentPodWorkDecisions } from './agentpod-work-decisions.js';
+import { RunGrants } from './run-grants.js';
 import { AgentPodWork } from './agentpod-work.js';
 import { agentpodWorkAdmission } from './agentpod-work-protocol.js';
 import { TaskVerification } from './task-verification.js';
@@ -507,6 +508,16 @@ export class SalaamService {
             },
           );
           this.supervisor.station = this.station;
+          // "Approve for this run": one grant store for decisions and the station.
+          this.station.grants = this.runGrants();
+          this.station.grantScope = (session) => {
+            const row = this.store.db
+              .prepare('SELECT task_id FROM agentpod_work WHERE session_id=?')
+              .get(session) as { task_id?: string } | undefined;
+            if (!row?.task_id) return null;
+            const task = this.taskWork.get(row.task_id);
+            return { task_id: task.id, plan_revision: task.plan_revision, task_state: task.state };
+          };
           this.taskVerification.installStation(this.station);
           this.agentpodWork = new AgentPodWork(
             this.store,
@@ -755,6 +766,11 @@ export class SalaamService {
         resolve();
       });
     });
+  }
+  private grantStore?: RunGrants;
+  /** One "Approve for this run" grant store, shared by decisions and the station. */
+  private runGrants(): RunGrants {
+    return (this.grantStore ??= new RunGrants(this.store));
   }
   private send(res: ServerResponse, status: number, value: unknown): void {
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -1070,7 +1086,11 @@ export class SalaamService {
           const answering = parts[2] === 'work-decision';
           if (Object.keys(body).sort().join(',') !== (answering ? 'answer,binding' : 'binding'))
             throw new ServiceError('invalid_work_decision', 'Closed decision payload required');
-          const decisions = new AgentPodWorkDecisions(this.agentpodWork, this.managed);
+          const decisions = new AgentPodWorkDecisions(
+            this.agentpodWork,
+            this.managed,
+            this.runGrants(),
+          );
           this.send(
             res,
             200,

@@ -5,6 +5,7 @@ import { Store } from '../../src/store.js';
 import { ManagedWork } from '../../src/managed.js';
 import type { AgentPodWork } from '../../src/agentpod-work.js';
 import { AgentPodWorkDecisions, approvalDetail } from '../../src/agentpod-work-decisions.js';
+import { RunGrants } from '../../src/run-grants.js';
 import { workDecision, workDecisionAnswer } from '../../src/agentpod-work-decision-protocol.js';
 import { digest } from '../../src/protocol.js';
 const corpus = JSON.parse(
@@ -221,4 +222,150 @@ test('the decision schema accepts a detail and refuses a malformed one', () => {
     { ...detail, summary: '' },
   ])
     expect(() => workDecision({ ...corpus.decision, detail: bad })).toThrow();
+});
+
+// "Approve for this run" (approval scopes B): offered only for a write inside the run's directory.
+function grantFixture() {
+  const store = new Store(':memory:'),
+    session = store.create('/tmp', 'create'),
+    submission = store.accept(session.id, 'submit', session.revision, 'Test'),
+    epoch = store.allocate(session.id, 'boot');
+  store.state(session.id, epoch, 'ready');
+  store.claim(session.id, epoch);
+  store.running(submission.attempt_id);
+  const managed = new ManagedWork(store, {
+    assertActive: () => {},
+    assertMcpOperation: () => {},
+    reply: () => {},
+    failed: () => {},
+  });
+  const binding = {
+      fixture: 'private authority',
+      run: { source: 'superpipeline', id: 'run_abc12345', epoch: 1 },
+    },
+    task = { id: randomUUID(), plan_revision: 1, state: 'running' };
+  store.db.exec(
+    'CREATE TABLE agentpod_work(session_id TEXT,task_id TEXT,request_id TEXT,admission_json TEXT)',
+  );
+  store.db
+    .prepare('INSERT INTO agentpod_work VALUES (?,?,?,?)')
+    .run(session.id, task.id, randomUUID(), JSON.stringify({ binding }));
+  const work = {
+    store,
+    authority: { inspect: () => ({ session_id: session.id, binding }) },
+    tasks: { get: () => task },
+  } as unknown as AgentPodWork;
+  const grants = new RunGrants(store);
+  const controller = new AgentPodWorkDecisions(work, managed, grants);
+  let n = 0;
+  const write = (path: string, content: string | null = 'answer') =>
+    store.transaction(() =>
+      (managed as any).insertPrepared(
+        session.id,
+        epoch,
+        submission.attempt_id,
+        'call-' + ++n,
+        'workspace',
+        'station:' + path,
+        JSON.stringify({
+          action: 'patch',
+          path,
+          content,
+          expected_hash: content === null ? 'e'.repeat(64) : null,
+          expected_tree: 'a'.repeat(64),
+        }),
+        'a'.repeat(64),
+      ),
+    );
+  const answer = (offer: any, option: string) => ({
+    version: 1,
+    request_id: randomUUID(),
+    decision: offer,
+    decision_digest: digest(offer),
+    elicitation_id: 'elc_123456',
+    option_id: option,
+    answered_by: 'prn_human',
+    answered_at: new Date().toISOString(),
+  });
+  return { store, managed, controller, grants, binding, session, task, write, answer };
+}
+const offerFor = (f: ReturnType<typeof grantFixture>, operation: string) =>
+  f.controller.list(f.binding).decisions.find((d: any) => d.operation_id === operation)!;
+
+test('a write inside the run directory offers "Approve for this run" between approve and deny', () => {
+  const f = grantFixture();
+  const { operation } = f.write('runs/run_abc12345/answer.md');
+  expect(offerFor(f, operation.id).options).toEqual([
+    { id: 'approve', title: 'Approve once' },
+    { id: 'approve-run', title: 'Approve for this run' },
+    { id: 'deny', title: 'Deny' },
+  ]);
+  expect(workDecision(offerFor(f, operation.id))).toEqual(offerFor(f, operation.id));
+});
+
+test('a delete, a write outside the run directory or a hidden file offers only approve or deny', () => {
+  const f = grantFixture();
+  for (const [path, content] of [
+    ['runs/run_abc12345/answer.md', null],
+    ['answer.md', 'x'],
+    ['runs/run_abc12345/.env', 'x'],
+  ] as const) {
+    const { operation } = f.write(path, content);
+    expect(offerFor(f, operation.id).options.map((o: any) => o.id)).toEqual(['approve', 'deny']);
+  }
+});
+
+test('answering "Approve for this run" approves this write and records the run grant', () => {
+  const f = grantFixture();
+  const { operation, approval } = f.write('runs/run_abc12345/answer.md');
+  const receipt = f.controller.answer(f.binding, answer2(f, operation.id, 'approve-run'));
+  expect(receipt).toMatchObject({ decision: 'approve-run', approval_id: approval.id });
+  expect(f.managed.approval(approval.id)).toMatchObject({ state: 'decided', decision: 'approve' });
+  const grant = f.grants.active({
+    session_id: f.session.id,
+    task_id: f.task.id,
+    plan_revision: 1,
+    binding_digest: digest(f.binding),
+    task_state: 'running',
+  });
+  expect(grant).toMatchObject({
+    path_prefix: 'runs/run_abc12345/',
+    approval_id: approval.id,
+    granted_by: 'prn_human',
+  });
+  expect((receipt as any).grant_id).toBe(grant!.id);
+});
+
+test('"Approve for this run" is refused where it was not offered', () => {
+  const f = grantFixture();
+  const { operation } = f.write('answer.md');
+  expect(() => f.controller.answer(f.binding, answer2(f, operation.id, 'approve-run'))).toThrow();
+  expect(f.store.db.prepare('SELECT count(*) AS n FROM run_grants').get()!.n).toBe(0);
+});
+function answer2(f: ReturnType<typeof grantFixture>, operation: string, option: string) {
+  return f.answer(offerFor(f, operation), option);
+}
+
+test('deny stays deny, and records no grant', () => {
+  const f = grantFixture();
+  const { operation, approval } = f.write('runs/run_abc12345/answer.md');
+  const receipt = f.controller.answer(f.binding, answer2(f, operation.id, 'deny'));
+  expect(receipt).toMatchObject({ decision: 'deny' });
+  expect(f.managed.approval(approval.id)).toMatchObject({ state: 'decided', decision: 'deny' });
+  expect(f.store.db.prepare('SELECT count(*) AS n FROM run_grants').get()!.n).toBe(0);
+});
+
+test('an offer saved without "Approve for this run" cannot be answered with it, even for a covered write', () => {
+  const f = grantFixture();
+  const { operation, approval } = f.write('runs/run_abc12345/answer.md');
+  const offer = offerFor(f, operation.id) as any;
+  // The offer as it was saved before this option existed: approve or deny only.
+  const older = { ...offer, options: [offer.options[0], offer.options[2]] };
+  f.store.db
+    .prepare("UPDATE requests SET response=? WHERE actor='agentpod-work-decision-offer' AND id=?")
+    .run(JSON.stringify(older), approval.id);
+  expect(() => f.controller.answer(f.binding, f.answer(older, 'approve-run'))).toThrow(
+    'cannot cover the run',
+  );
+  expect(f.managed.approval(approval.id).state).toBe('pending');
 });
