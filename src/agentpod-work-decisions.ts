@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { AgentPodWork } from './agentpod-work.js';
 import type { ManagedWork } from './managed.js';
 import { canonical, digest, ServiceError } from './protocol.js';
-import { workDecisionAnswer, type WorkDecision } from './agentpod-work-decision-protocol.js';
+import {
+  workDecisionAnswer,
+  type WorkDecision,
+  type WorkDecisionDetail,
+} from './agentpod-work-decision-protocol.js';
 /** Private authenticated Hub control only. Answers choose an existing approval;
  * they never execute an operation or supply a second effect grant. */
 export class AgentPodWorkDecisions {
@@ -51,7 +55,8 @@ export class AgentPodWorkDecisions {
             version: 1,
             request_id: randomUUID(),
             ...identity,
-            question: 'Approve this exact operation? ' + op.kind + ' ' + op.action_key,
+            question: approvalDetail(op).summary + '?',
+            detail: approvalDetail(op),
             options: [
               { id: 'approve', title: 'Approve once' },
               { id: 'deny', title: 'Deny' },
@@ -115,4 +120,47 @@ export class AgentPodWorkDecisions {
       },
     );
   }
+}
+
+/** Readable approvals: what a person approves, from the operation's own canonical arguments only.
+ * A workspace write names its file, the change, its size, a short preview and the agent's one-line
+ * reason; anything else names its kind and target. The digest still binds the exact operation. */
+export function approvalDetail(op: {
+  kind: string;
+  action_key: string;
+  target: string;
+  value: string;
+  operation_digest: string;
+}): WorkDecisionDetail {
+  const base = { version: 1 as const, reason: null, files: [], digest: op.operation_digest };
+  if (op.kind === 'review') return { ...base, summary: 'Accept this step for review' };
+  if (op.kind !== 'workspace')
+    return { ...base, summary: ('Run ' + op.kind + ' ' + op.target).slice(0, 200) };
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(op.value) as Record<string, unknown>;
+  } catch {
+    /* not a patch: the generic form below */
+  }
+  const path = typeof args.path === 'string' ? args.path : op.target.replace(/^station:/, '');
+  const content = typeof args.content === 'string' ? args.content : null;
+  const change = args.content === null ? 'delete' : args.expected_hash === null ? 'create' : 'edit';
+  const verb = { create: 'Create', edit: 'Edit', delete: 'Delete' }[change];
+  const reason =
+    typeof args.reason === 'string' && args.reason.trim()
+      ? args.reason.replace(/\s+/g, ' ').trim().slice(0, 300)
+      : null;
+  return {
+    ...base,
+    summary: (verb + ' ' + path + ' in the workspace').slice(0, 200),
+    reason,
+    files: [
+      {
+        path: path.slice(0, 512),
+        change,
+        bytes: content === null ? null : Buffer.byteLength(content),
+        preview: content === null ? null : content.slice(0, 1200),
+      },
+    ],
+  };
 }

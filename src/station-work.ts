@@ -668,7 +668,7 @@ export class StationWork {
       throw new ServiceError('invalid_field', 'Unsupported station mutation');
     const allowed =
       kind === 'patch'
-        ? ['action', 'path', 'expected_tree', 'expected_hash', 'content']
+        ? ['action', 'path', 'expected_tree', 'expected_hash', 'content', 'reason']
         : ['action', 'expected_tree', 'command'];
     if (
       Object.keys(args).some((k) => !allowed.includes(k)) ||

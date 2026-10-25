@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Store } from '../../src/store.js';
 import { ManagedWork } from '../../src/managed.js';
 import type { AgentPodWork } from '../../src/agentpod-work.js';
-import { AgentPodWorkDecisions } from '../../src/agentpod-work-decisions.js';
+import { AgentPodWorkDecisions, approvalDetail } from '../../src/agentpod-work-decisions.js';
 import { workDecision, workDecisionAnswer } from '../../src/agentpod-work-decision-protocol.js';
 import { digest } from '../../src/protocol.js';
 const corpus = JSON.parse(
@@ -81,6 +81,14 @@ test('private decision exact replay is atomic with existing permission, rejects 
       'a'.repeat(64),
     );
     const offer = controller.list(binding).decisions[0]!;
+    // Readable approvals: the offer says what is being approved, not only its digest.
+    expect(offer.detail).toMatchObject({
+      version: 1,
+      digest: first.operation.operation_digest,
+      files: [],
+    });
+    expect(offer.detail!.summary).toContain('library/fixture');
+    expect(offer.question).not.toMatch(/^Approve this exact operation\? mcp/);
     expect(controller.list(binding).decisions[0]).toEqual(offer);
     const answer = {
       version: 1,
@@ -118,4 +126,99 @@ test('private decision exact replay is atomic with existing permission, rejects 
     await managed.close();
     store.close();
   }
+});
+
+// The operation's own canonical arguments are the only source: path, change, size, preview, reason.
+const digest64 = 'd'.repeat(64);
+const op = (value: Record<string, unknown>, kind = 'workspace') =>
+  ({
+    kind,
+    action_key: 'k',
+    target: 'station:' + String(value.path),
+    value: JSON.stringify(value),
+    operation_digest: digest64,
+  }) as never;
+test('a workspace write reads as a plain-words approval: create, edit and delete', () => {
+  const content = '# RFC 9110: 502 Bad Gateway\n' + 'x'.repeat(5000);
+  const created = approvalDetail(
+    op({
+      action: 'patch',
+      path: 'runs/r/answer.md',
+      expected_hash: null,
+      content,
+      expected_tree: digest64,
+      reason: 'Write the quoted sentence.',
+    }),
+  );
+  expect(created).toEqual({
+    version: 1,
+    summary: 'Create runs/r/answer.md in the workspace',
+    reason: 'Write the quoted sentence.',
+    files: [
+      {
+        path: 'runs/r/answer.md',
+        change: 'create',
+        bytes: Buffer.byteLength(content),
+        preview: content.slice(0, 1200),
+      },
+    ],
+    digest: digest64,
+  });
+  const edited = approvalDetail(
+    op({
+      action: 'patch',
+      path: 'a.md',
+      expected_hash: digest64,
+      content: 'new',
+      expected_tree: digest64,
+    }),
+  );
+  expect(edited.summary).toBe('Edit a.md in the workspace');
+  expect(edited.reason).toBeNull();
+  expect(edited.files[0]).toMatchObject({ change: 'edit', bytes: 3, preview: 'new' });
+  const deleted = approvalDetail(
+    op({
+      action: 'patch',
+      path: 'old.md',
+      expected_hash: digest64,
+      content: null,
+      expected_tree: digest64,
+    }),
+  );
+  expect(deleted.summary).toBe('Delete old.md in the workspace');
+  expect(deleted.files[0]).toMatchObject({ change: 'delete', bytes: null, preview: null });
+});
+test('a reason is one line of at most 300 characters, and a review reads as one', () => {
+  const long = approvalDetail(
+    op({
+      action: 'patch',
+      path: 'a.md',
+      expected_hash: null,
+      content: 'x',
+      expected_tree: digest64,
+      reason: 'line one\nline two ' + 'y'.repeat(400),
+    }),
+  );
+  expect(long.reason).toBe(('line one line two ' + 'y'.repeat(400)).slice(0, 300));
+  expect(approvalDetail(op({}, 'review')).summary).toBe('Accept this step for review');
+});
+test('the decision schema accepts a detail and refuses a malformed one', () => {
+  const detail = approvalDetail(
+    op({
+      action: 'patch',
+      path: 'a.md',
+      expected_hash: null,
+      content: 'x',
+      expected_tree: digest64,
+    }),
+  );
+  expect(workDecision({ ...corpus.decision, detail }).detail).toEqual(detail);
+  for (const bad of [
+    { ...detail, version: 2 },
+    { ...detail, digest: 'x' },
+    { ...detail, extra: true },
+    { ...detail, files: [{ ...detail.files[0], change: 'rename' }] },
+    { ...detail, summary: '' },
+  ])
+    expect(() => workDecision({ ...corpus.decision, detail: bad })).toThrow();
 });
