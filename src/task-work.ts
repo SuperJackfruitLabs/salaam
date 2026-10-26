@@ -98,6 +98,38 @@ export class TaskWork {
       .prepare('UPDATE task_runtime SET remaining_steps=remaining_steps-1 WHERE task_id=?')
       .run(task.id);
   }
+  /** Re-run a step the provider rate-limited, as a fresh attempt under its own progression grant
+   * (re-prepared, with a request of its own, so it is never a replay of the refused attempt). */
+  retryStep(taskId: string, stepId: string, n: number, epoch: number): unknown {
+    const task = this.get(taskId);
+    const grant = this.store.db
+      .prepare(
+        "SELECT id FROM task_grants WHERE task_id=? AND step_id=? AND plan_revision=? AND epoch=? AND state='accepted'",
+      )
+      .get(task.id, stepId, task.plan_revision, epoch) as { id: string } | undefined;
+    if (!grant || task.steps.find((s) => s.id === stepId)?.state !== 'failed')
+      throw new ServiceError('task_authority', 'No settled grant for this rate-limited step');
+    this.store.transaction(() => {
+      this.store.db.prepare("UPDATE task_grants SET state='prepared' WHERE id=?").run(grant.id);
+      this.store.event(task.session_id, 'work_task.step_retried', {
+        task_id: task.id,
+        step_id: stepId,
+        grant_id: grant.id,
+        retry: n,
+        reason: 'Provider rate limit',
+      });
+    });
+    return this.run(
+      task.id,
+      stepId,
+      'task-grant:' + grant.id + ':rate-limit-retry:' + n,
+      task.revision,
+      null,
+      null,
+      null,
+      grant.id,
+    );
+  }
   advance(grantId: string): unknown {
     const grant = this.store.db.prepare('SELECT * FROM task_grants WHERE id=?').get(grantId) as
       { task_id: string; step_id: string; expected_revision: number } | undefined;
