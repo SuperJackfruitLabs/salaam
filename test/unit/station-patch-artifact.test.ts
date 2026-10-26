@@ -202,3 +202,64 @@ test("a patch forwards only the helper's own fields; the agent's reason never re
     f.close();
   }
 });
+
+// Fix 2: a helper refusal of the request itself, before it executes anything, records the write as
+// a definite failure with that reason; an unconfirmed helper still leaves the outcome unknown.
+for (const [refusal, definite] of [
+  ['station_request_invalid', true],
+  ['uncertain', false],
+] as const)
+  test(
+    'run records a ' +
+      refusal +
+      ' helper failure as ' +
+      (definite ? 'failed_definite' : 'outcome_unknown'),
+    async () => {
+      const f = fixture();
+      try {
+        f.store.db
+          .prepare('UPDATE station_calls SET state=\x27prepared\x27 WHERE id=\x27call\x27')
+          .run();
+        const known = vi.fn(),
+          unknown = vi.fn();
+        Object.assign(f.work, {
+          managed: {
+            takePermissionInTransaction: () => true,
+            workspaceDefiniteFailureInTransaction: known,
+            workspaceUnknownInTransaction: unknown,
+          },
+          options: { failed: () => {} },
+          unconfirmed: () => [],
+          change: (_: unknown, state: string, value?: unknown) =>
+            f.store.db
+              .prepare(
+                "UPDATE station_calls SET state=?,result_json=coalesce(?,result_json) WHERE id='call'",
+              )
+              .run(state, value === undefined ? null : canonical(value)),
+          stopUnit: async () => {},
+        });
+        f.helper.mockImplementation(async () => {
+          if (!definite) throw Error('uncertain');
+          const { definiteHelperRefusal } = await import('../../src/station-work.js');
+          const code = definiteHelperRefusal(1, false, { version: 1, ok: false, code: refusal });
+          const failure = Object.assign(
+            Object.create(
+              (await import('../../src/station-work.js')).StationFilesDefiniteFailure.prototype,
+            ),
+            { code },
+          );
+          throw failure;
+        });
+        f.work.run('call');
+        await f.work.jobs.get('call');
+        expect(f.call().state).toBe(definite ? 'failed' : 'outcome_unknown');
+        expect(JSON.parse(String(f.call().result_json))).toEqual({
+          code: definite ? refusal : 'station_execution_unconfirmed',
+        });
+        expect(known).toHaveBeenCalledTimes(definite ? 1 : 0);
+        expect(unknown).toHaveBeenCalledTimes(definite ? 0 : 1);
+      } finally {
+        f.close();
+      }
+    },
+  );

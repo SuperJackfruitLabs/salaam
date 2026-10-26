@@ -78,10 +78,28 @@ interface UnitRow {
   stop_json: string | null;
 }
 const hashes = /^[a-f0-9]{64}$/;
-class StationFilesDefiniteFailure extends ServiceError {
-  constructor() {
-    super('station_files_changed', 'Protected file primitive refused before mutation');
+export class StationFilesDefiniteFailure extends ServiceError {
+  constructor(code: string) {
+    super(code, 'Protected file primitive refused before mutation');
   }
+}
+/** A helper refusal that provably changed nothing, as the code recorded for it, or null. The
+ * helper writes station_request_invalid as exactly {version, ok, code} and only while decoding,
+ * before it executes anything; any other shape (an effect_state, extra fields) is not definite. */
+export function definiteHelperRefusal(
+  exitCode: number | null,
+  transportFailed: boolean,
+  result: Record<string, unknown>,
+): string | null {
+  if (transportFailed || exitCode !== 1 || result.version !== 1 || result.ok !== false) return null;
+  if (result.code === 'station_files_unavailable' && result.effect_state === 'not_started')
+    return 'station_files_changed';
+  if (
+    result.code === 'station_request_invalid' &&
+    Object.keys(result).sort().join(',') === 'code,ok,version'
+  )
+    return 'station_request_invalid';
+  return null;
 }
 const terminal = (s: string) => ['returned', 'failed', 'outcome_unknown', 'cancelled'].includes(s);
 
@@ -371,15 +389,8 @@ export class StationWork {
             if (!exited) stationUnavailable();
           }
           const result = object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-          if (
-            !failed &&
-            code === 1 &&
-            result.version === 1 &&
-            result.ok === false &&
-            result.code === 'station_files_unavailable' &&
-            result.effect_state === 'not_started'
-          )
-            throw new StationFilesDefiniteFailure();
+          const refusal = definiteHelperRefusal(code, failed, result);
+          if (refusal) throw new StationFilesDefiniteFailure(refusal);
           if (failed || code !== 0 || result.version !== 1 || result.ok !== true)
             stationUnavailable();
           accept(
@@ -894,7 +905,7 @@ export class StationWork {
             this.change(
               current,
               current.kind === 'patch' && !definite ? 'outcome_unknown' : 'failed',
-              { code: definite ? 'station_files_changed' : 'station_execution_unconfirmed' },
+              { code: definite ? error.code : 'station_execution_unconfirmed' },
             );
             if (current.operation_id) {
               if (definite)
