@@ -98,6 +98,48 @@ export class TaskWork {
       .prepare('UPDATE task_runtime SET remaining_steps=remaining_steps-1 WHERE task_id=?')
       .run(task.id);
   }
+  /** Item 8: re-run the last completed step with the critic's findings added to its instruction,
+   * under its own re-prepared progression grant and a request of its own. */
+  reopenForCritic(
+    taskId: string,
+    stepId: string,
+    round: number,
+    epoch: number,
+    findings: string,
+  ): unknown {
+    const task = this.get(taskId);
+    const step = task.steps.find((s) => s.id === stepId);
+    const grant = this.store.db
+      .prepare(
+        "SELECT id FROM task_grants WHERE task_id=? AND step_id=? AND plan_revision=? AND epoch=? AND state='accepted'",
+      )
+      .get(task.id, stepId, task.plan_revision, epoch) as { id: string } | undefined;
+    if (!grant || !step || step.state !== 'completed' || task.steps.at(-1)?.id !== stepId)
+      throw new ServiceError('task_authority', 'Only the completed last step can be reopened');
+    this.store.transaction(() => {
+      this.store.db.prepare("UPDATE task_steps SET state='pending' WHERE id=?").run(stepId);
+      this.store.db.prepare("UPDATE task_grants SET state='prepared' WHERE id=?").run(grant.id);
+      this.store.event(task.session_id, 'work_task.step_reopened', {
+        task_id: task.id,
+        step_id: stepId,
+        grant_id: grant.id,
+        round,
+        reason: 'Critic requested changes',
+      });
+    });
+    return this.run(
+      task.id,
+      stepId,
+      'task-grant:' + grant.id + ':critic-reopen:' + round,
+      this.get(task.id).revision,
+      step.instruction +
+        '\n\nBefore this work is accepted, a reviewer asked for these changes:\n' +
+        findings,
+      null,
+      null,
+      grant.id,
+    );
+  }
   /** Re-run a step the provider rate-limited, as a fresh attempt under its own progression grant
    * (re-prepared, with a request of its own, so it is never a replay of the refused attempt). */
   retryStep(taskId: string, stepId: string, n: number, epoch: number): unknown {

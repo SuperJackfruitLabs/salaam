@@ -20,7 +20,8 @@ export interface TaskLimits {
 /** Item 8: checks required at completion, next to the acceptance checks. The critic is not yet
  * admitted, so it is always null. */
 export interface CompletionGate {
-  critic: null;
+  /** The built-in reviewer judges the verified deliverables against this rubric. */
+  critic: { rubric: string } | null;
   hooks: TaskCheck[];
 }
 export interface TaskPolicy {
@@ -110,20 +111,29 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
   if (value.completion_gate !== undefined) {
     const g = object(value.completion_gate);
     const hooks = g.hooks;
+    const c = g.critic;
+    const critic =
+      c === null
+        ? null
+        : (() => {
+            const v = object(c);
+            if (Object.keys(v).join(',') !== 'rubric')
+              throw new ServiceError('invalid_plan', 'A critic names only its rubric', 400);
+            return { rubric: string(v.rubric, 'critic rubric', 4096) };
+          })();
     if (
       Object.keys(g).sort().join(',') !== 'critic,hooks' ||
-      g.critic !== null ||
       !Array.isArray(hooks) ||
-      hooks.length < 1 ||
-      hooks.length > 8
+      hooks.length > 8 ||
+      (!critic && hooks.length < 1)
     )
       throw new ServiceError(
         'invalid_plan',
-        'A completion gate has a null critic and 1–8 hooks',
+        'A completion gate has a critic or 1–8 hooks, and at most 8 hooks',
         400,
       );
     const hookKeys = new Set<string>();
-    completion_gate = { critic: null, hooks: hooks.map((v) => check(v, hookKeys, 'Hook')) };
+    completion_gate = { critic, hooks: hooks.map((v) => check(v, hookKeys, 'Hook')) };
     if (
       requiredChecks({ acceptance, completion_gate }).length !==
       new Set(requiredChecks({ acceptance, completion_gate }).map((c) => c.key)).size

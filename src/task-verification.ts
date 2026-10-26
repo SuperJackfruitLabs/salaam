@@ -1,3 +1,4 @@
+import type { TaskCritic, CriticVerdict } from './task-critic.js';
 import { requiredChecks } from './task-policy.js';
 import { StationTaskVerification, type StationCheckEvidence } from './station-task-verification.js';
 import type { StationWork } from './station-work.js';
@@ -486,6 +487,32 @@ export class TaskVerification {
       );
     return this.finishRecorded(id, request, expected, exception, authorize);
   }
+  /** Item 8: the completion critic, when the service has one. */
+  critic?: TaskCritic;
+  /** The critic's verdict on the current fresh verified evidence, starting it the first time.
+   * Reads the evidence outside the finishing transaction, so starting the reviewer can never be
+   * rolled back with a refused finish; the finish itself re-checks the verdict against its own
+   * evidence. */
+  async criticGateAsync(task: WorkTask): Promise<CriticVerdict> {
+    if (!task.completion_gate?.critic) return { state: 'pass' };
+    if (!this.critic || !this.station)
+      return { state: 'failed', reason: 'A critic needs the station verification boundary' };
+    const checks = requiredChecks(task).map((c) => this.latest(task, c.key, null));
+    if (checks.some((c) => !c || c.state !== 'passed')) return { state: 'pending' };
+    const fresh = await this.station.withFreshMany(
+      checks.map((c) => c!.id),
+      task.deliverables,
+      (evidence, deliverables) => ({ evidence, deliverables }),
+    );
+    return this.critic.gate(
+      task,
+      digest(fresh.evidence),
+      (fresh.deliverables as { path: string; content: string }[]).map(({ path, content }) => ({
+        path,
+        content,
+      })),
+    );
+  }
   async finishAsync(
     id: string,
     request: string,
@@ -628,6 +655,12 @@ export class TaskVerification {
       } catch (error) {
         missing.push('Workspace verification unavailable: ' + (error as Error).message);
       }
+      // Item 8: a declared critic must have passed this exact verified evidence.
+      if (
+        task.completion_gate?.critic &&
+        !(protectedResult && this.critic?.passed(task, digest(protectedResult.evidence)))
+      )
+        missing.push('Critic review required');
       if (missing.length && !exception)
         throw new ServiceError('verification_required', missing.join('; '));
       if (exception) {

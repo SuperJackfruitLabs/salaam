@@ -1,3 +1,4 @@
+import { CRITIC_REOPENS } from './task-critic.js';
 import { requiredChecks } from './task-policy.js';
 import { RATE_LIMIT_STOP, RateLimitRetries } from './rate-limit-retries.js';
 import { randomUUID } from 'node:crypto';
@@ -446,6 +447,33 @@ export class TaskDriver {
         return;
       for (const check of requiredChecks(task))
         if (!(await this.check(task, check.key, null))) return;
+      // Item 8: a declared critic reviews the verified deliverables before completion.
+      if (task.completion_gate?.critic) {
+        const verdict = await this.verification.criticGateAsync(task);
+        if (verdict.state === 'pending') return;
+        if (verdict.state === 'failed') {
+          this.stop(task, 'Critic review failed: ' + verdict.reason);
+          return;
+        }
+        if (verdict.state === 'changes_needed') {
+          const round = this.verification.critic!.reopens(task);
+          if (round > CRITIC_REOPENS || Number(r.remaining_steps) < 1) {
+            this.stop(task, 'Critic requested changes');
+            return;
+          }
+          if (!(await this.worker(task)) || this.stopped) return;
+          this.tasks.reopenForCritic(
+            task.id,
+            task.steps.at(-1)!.id,
+            round,
+            Number(r.auto_epoch),
+            verdict.findings
+              .map((f) => `- ${f.path}:${f.line} (${f.severity}) ${f.message}`)
+              .join('\n'),
+          );
+          return;
+        }
+      }
       await this.verification.finishAsync(
         task.id,
         'auto-finish:' + task.id + ':' + task.plan_revision,
