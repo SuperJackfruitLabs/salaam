@@ -1,3 +1,4 @@
+import { requiredChecks } from './task-policy.js';
 import { StationTaskVerification, type StationCheckEvidence } from './station-task-verification.js';
 import type { StationWork } from './station-work.js';
 import { randomUUID } from 'node:crypto';
@@ -156,7 +157,7 @@ export class TaskVerification {
           throw new ServiceError('task_settled', 'Revise a cancelled task before completing it');
         this.assertIdle(task);
         if (!this.station) this.coding.assertSafe(task.session_id);
-        if (!task.acceptance.some((c) => c.key === key))
+        if (!requiredChecks(task).some((c) => c.key === key))
           throw new ServiceError('invalid_check', 'Check is not in this task plan');
         if (
           step &&
@@ -215,7 +216,7 @@ export class TaskVerification {
       return;
     }
     const task = this.tasks.get(receipt.task_id),
-      check = task.acceptance.find((c) => c.key === receipt.check_key);
+      check = requiredChecks(task).find((c) => c.key === receipt.check_key);
     try {
       const existing = this.store.db
         .prepare('SELECT id FROM command_runs WHERE session_id=? AND step_key=?')
@@ -521,7 +522,7 @@ export class TaskVerification {
         'verification_required',
         'Configured checks and deliverables required',
       );
-    const checks = task.acceptance.map((c) => this.latest(task, c.key, null));
+    const checks = requiredChecks(task).map((c) => this.latest(task, c.key, null));
     if (checks.some((c) => !c || c.state !== 'passed'))
       throw new ServiceError('verification_required', 'Passed configured checks required');
     return this.station.withFreshMany(
@@ -541,7 +542,7 @@ export class TaskVerification {
     if (view.completion?.state === 'succeeded') {
       try {
         const evidence = JSON.parse(this.artifacts.read(String(view.completion.artifact_id)));
-        const checks = task.acceptance.map((c) => this.latest(task, c.key, null));
+        const checks = requiredChecks(task).map((c) => this.latest(task, c.key, null));
         if (checks.some((c) => !c || c.state !== 'passed' || !evidence.checks.includes(c.id)))
           throw Error('Changed checks');
         view.completion.fresh = await this.station.withFreshMany(
@@ -578,7 +579,7 @@ export class TaskVerification {
       this.assertIdle(task);
       if (task.steps.some((s) => s.state !== 'completed'))
         throw new ServiceError('verification_required', 'Every step must be reviewed or verified');
-      const checks = task.acceptance.map((c) => this.latest(task, c.key, null));
+      const checks = requiredChecks(task).map((c) => this.latest(task, c.key, null));
       const missing: string[] = [];
       if (!task.acceptance.length) missing.push('No configured acceptance checks');
       if (!task.deliverables.length) missing.push('No configured deliverable paths');
@@ -589,7 +590,7 @@ export class TaskVerification {
             ? !protectedResult.evidence.some((e) => e.check_id === checks[n]!.id)
             : !this.fresh(checks[n]!))
         )
-          missing.push('Fresh check required: ' + task.acceptance[n]!.key);
+          missing.push('Fresh check required: ' + requiredChecks(task)[n]!.key);
       let workspace: { id: string; revision: number; digest: string } | null = null,
         deliverables: unknown[] = [],
         diff: unknown = null;
@@ -712,7 +713,7 @@ export class TaskVerification {
           if (completion.state === 'succeeded')
             fresh =
               fresh &&
-              task.acceptance.every((check) => {
+              requiredChecks(task).every((check) => {
                 const latest = this.latest(task, check.key, null);
                 return !!latest && evidence.checks.includes(latest.id) && this.fresh(latest);
               });

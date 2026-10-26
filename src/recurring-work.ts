@@ -165,6 +165,7 @@ export class RecurringWork {
           checks,
         })),
         acceptance: task.acceptance,
+        ...(task.completion_gate ? { completion_gate: task.completion_gate } : {}),
         deliverables: task.deliverables,
         limits: task.limits,
       };

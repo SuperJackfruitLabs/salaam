@@ -17,11 +17,40 @@ export interface TaskLimits {
   output_token_bound: number | null;
   verification_runs: number;
 }
+/** Item 8: checks required at completion, next to the acceptance checks. The critic is not yet
+ * admitted, so it is always null. */
+export interface CompletionGate {
+  critic: null;
+  hooks: TaskCheck[];
+}
 export interface TaskPolicy {
   acceptance: TaskCheck[];
   deliverables: string[];
   limits: TaskLimits;
+  /** Present only when the plan declares one, so a plan without it keeps its exact shape. */
+  completion_gate?: CompletionGate;
 }
+/** Every check completion requires: the acceptance checks, then each hook as hook-<key>. */
+export function requiredChecks(
+  policy: Pick<TaskPolicy, 'acceptance' | 'completion_gate'>,
+): TaskCheck[] {
+  return [
+    ...policy.acceptance,
+    ...(policy.completion_gate?.hooks ?? []).map((h) => ({ ...h, key: 'hook-' + h.key })),
+  ];
+}
+const check = (v: unknown, keys: Set<string>, what: string): TaskCheck => {
+  const c = object(v),
+    key = string(c.key, what + ' key', 64);
+  if (!/^[a-zA-Z0-9_-]+$/.test(key) || keys.has(key))
+    throw new ServiceError('invalid_plan', what + ' keys must be unique identifiers', 400);
+  keys.add(key);
+  return {
+    key,
+    command: string(c.command, what + ' command', 4096),
+    cwd: c.cwd === undefined || c.cwd === '.' ? '.' : filePath(c.cwd),
+  };
+};
 export const DEFAULT_TASK_LIMITS: TaskLimits = {
   requests: 64,
   runtime_ms: 900000,
@@ -36,18 +65,7 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
   if (!Array.isArray(raw) || raw.length > 8)
     throw new ServiceError('invalid_plan', 'Supply at most eight acceptance checks', 400);
   const keys = new Set<string>();
-  const acceptance = raw.map((v) => {
-    const c = object(v),
-      key = string(c.key, 'check key', 64);
-    if (!/^[a-zA-Z0-9_-]+$/.test(key) || keys.has(key))
-      throw new ServiceError('invalid_plan', 'Acceptance keys must be unique identifiers', 400);
-    keys.add(key);
-    return {
-      key,
-      command: string(c.command, 'check command', 4096),
-      cwd: c.cwd === undefined || c.cwd === '.' ? '.' : filePath(c.cwd),
-    };
-  });
+  const acceptance = raw.map((v) => check(v, keys, 'Acceptance'));
   const paths = value.deliverables ?? [];
   if (!Array.isArray(paths) || paths.length > 32)
     throw new ServiceError('invalid_plan', 'Supply at most 32 deliverable paths', 400);
@@ -88,5 +106,29 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
       throw new ServiceError('invalid_budget', 'Invocation limit must be 1–64', 400);
     limits.invocations = n;
   }
-  return { acceptance, deliverables, limits };
+  let completion_gate: CompletionGate | undefined;
+  if (value.completion_gate !== undefined) {
+    const g = object(value.completion_gate);
+    const hooks = g.hooks;
+    if (
+      Object.keys(g).sort().join(',') !== 'critic,hooks' ||
+      g.critic !== null ||
+      !Array.isArray(hooks) ||
+      hooks.length < 1 ||
+      hooks.length > 8
+    )
+      throw new ServiceError(
+        'invalid_plan',
+        'A completion gate has a null critic and 1–8 hooks',
+        400,
+      );
+    const hookKeys = new Set<string>();
+    completion_gate = { critic: null, hooks: hooks.map((v) => check(v, hookKeys, 'Hook')) };
+    if (
+      requiredChecks({ acceptance, completion_gate }).length !==
+      new Set(requiredChecks({ acceptance, completion_gate }).map((c) => c.key)).size
+    )
+      throw new ServiceError('invalid_plan', 'A hook collides with an acceptance check', 400);
+  }
+  return { acceptance, deliverables, limits, ...(completion_gate ? { completion_gate } : {}) };
 }

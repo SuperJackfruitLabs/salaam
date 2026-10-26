@@ -1,3 +1,4 @@
+import { requiredChecks } from './task-policy.js';
 import type { Store } from './store.js';
 import type { TaskWork, WorkTask } from './task-work.js';
 import type { TaskVerification, CheckReceipt } from './task-verification.js';
@@ -163,7 +164,7 @@ export class StationTaskVerification {
   private async dispatchOwned(id: string): Promise<void> {
     const receipt = this.verification.get(id),
       task = this.tasks.get(receipt.task_id);
-    const configured = task.acceptance.find((c) => c.key === receipt.check_key);
+    const configured = requiredChecks(task).find((c) => c.key === receipt.check_key);
     if (!configured || configured.cwd !== '.') this.fail();
     const binding = this.station.ready(task.session_id);
     const validate = (inspection?: string) => {
@@ -265,6 +266,7 @@ export class StationTaskVerification {
       objective: task.objective,
       constraints: task.constraints,
       acceptance: task.acceptance,
+      ...(task.completion_gate ? { completion_gate: task.completion_gate } : {}),
       deliverables: task.deliverables,
       limits: task.limits,
       steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
@@ -300,7 +302,7 @@ export class StationTaskVerification {
     });
   }
   private matches(check: CheckReceipt, task: WorkTask, call: StationCall): void {
-    const configured = task.acceptance.find((c) => c.key === check.check_key);
+    const configured = requiredChecks(task).find((c) => c.key === check.check_key);
     const args = JSON.parse(call.args_json);
     if (
       check.task_id !== task.id ||

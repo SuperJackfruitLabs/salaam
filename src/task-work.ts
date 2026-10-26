@@ -693,6 +693,7 @@ export class TaskWork {
           objective: task.objective,
           constraints: task.constraints,
           acceptance: task.acceptance,
+          ...(task.completion_gate ? { completion_gate: task.completion_gate } : {}),
           deliverables: task.deliverables,
           limits: task.limits,
           active_step_id: task.steps.find((s) => s.state === 'running')?.id ?? null,
