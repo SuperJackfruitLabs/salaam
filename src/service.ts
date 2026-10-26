@@ -891,6 +891,25 @@ export class SalaamService {
           });
           return;
         }
+        // Item 11: read-only checkpoints of the bound run and one checkpoint's diff.
+        if (parts[2] === 'work-checkpoints' || parts[2] === 'work-checkpoint-diff') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict work is not enabled');
+          const keys = parts[2] === 'work-checkpoints' ? 'binding' : 'binding,checkpoint_id';
+          if (Object.keys(body).sort().join(',') !== keys)
+            throw new ServiceError('invalid_work_payload', 'Closed checkpoint request required');
+          this.send(
+            res,
+            200,
+            parts[2] === 'work-checkpoints'
+              ? this.agentpodWork.checkpoints(body.binding)
+              : this.agentpodWork.checkpointDiff(
+                  body.binding,
+                  string(body.checkpoint_id, 'checkpoint_id', 128),
+                ),
+          );
+          return;
+        }
         if (parts[2] === 'work-status' || parts[2] === 'work-progress') {
           if (!this.agentpodWork || !this.agentpodWorkProgression)
             throw new ServiceError('work_disabled', 'Strict progression is not enabled');
