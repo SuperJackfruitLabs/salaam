@@ -3265,13 +3265,24 @@ export class AgentPodWork {
   activity(session: string) {
     return this.store.db
       .prepare(
-        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','permission.auto-approved') ORDER BY seq DESC LIMIT 64",
+        "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','permission.auto-approved','fetch.host_paused') ORDER BY seq DESC LIMIT 64",
       )
       .all(session)
       .reverse()
       .map((row) => {
         const p = JSON.parse(String(row.payload)) as Record<string, unknown>;
         // Approval scopes: a write the run grant answered says so on the card, with the grant.
+        // A fetch host paused by the breaker: one line, and the run carries on.
+        if (row.kind === 'fetch.host_paused')
+          return {
+            seq: Number(row.seq),
+            phase: 'finished' as const,
+            tool_call_id: 'fetch-pause:' + String(row.seq),
+            title: `Paused requests to ${String(p.host)} for ${Math.round(Number(p.pause_ms) / 1000)}s after ${Number(p.failures)} failures`,
+            kind: null,
+            input: null,
+            failed: false,
+          };
         if (row.kind === 'permission.auto-approved')
           return {
             seq: Number(row.seq),

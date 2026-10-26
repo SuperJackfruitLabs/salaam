@@ -4359,3 +4359,28 @@ test.each(['execution-running', 'plan-changed'])(
     }
   },
 );
+
+test('work status shows a paused fetch host on the card, and the run goes on', async () => {
+  const f = fixture();
+  try {
+    f.run();
+    f.store.transaction(() =>
+      f.store.event(f.session, 'fetch.host_paused', {
+        attempt_id: 'a1',
+        host: 'flaky.example',
+        failures: 3,
+        pause_ms: 60000,
+      }),
+    );
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      activity: Record<string, unknown>[];
+    };
+    expect(status.activity.at(-1)).toMatchObject({
+      phase: 'finished',
+      title: 'Paused requests to flaky.example for 60s after 3 failures',
+      failed: false,
+    });
+  } finally {
+    f.close();
+  }
+});

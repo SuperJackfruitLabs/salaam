@@ -1,3 +1,4 @@
+import { HostBreaker, callThroughBreaker } from './host-breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -177,6 +178,7 @@ export class Supervisor extends EventEmitter {
   localCoding?: import('./local-coding.js').LocalCoding;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
+  private readonly fetchBreaker = new HostBreaker();
   managed?: ManagedWork;
   mcp?: McpWork;
   operatorMcp?: OperatorMcp;
@@ -942,32 +944,45 @@ export class Supervisor extends EventEmitter {
         const args = body.arguments ?? {};
         const server = String(body.server ?? ''),
           tool = String(body.tool ?? '');
-        try {
-          const result = await this.operatorMcp!.call(id, body.server, body.tool, args);
-          this.store.transaction(() =>
-            this.store.event(id, 'operator_mcp.call', {
-              attempt_id: attempt,
-              server,
-              tool,
-              argument_digest: digest(args),
-              outcome: result.is_error ? 'tool_error' : 'returned',
-              result_digest: digest(result),
-            }),
-          );
-          return result;
-        } catch (error) {
-          this.store.transaction(() =>
-            this.store.event(id, 'operator_mcp.call', {
-              attempt_id: attempt,
-              server,
-              tool,
-              argument_digest: digest(args),
-              outcome: 'failed',
-              error: (error as ServiceError).code ?? 'mcp_server_failed',
-            }),
-          );
-          throw error;
-        }
+        // A host failing again and again is paused briefly (never called, so no operator MCP call
+        // is recorded); the agent gets a tool error and the run carries on.
+        return await callThroughBreaker(
+          this.fetchBreaker,
+          id,
+          args,
+          (paused) =>
+            this.store.transaction(() =>
+              this.store.event(id, 'fetch.host_paused', { attempt_id: attempt, ...paused }),
+            ),
+          async () => {
+            try {
+              const result = await this.operatorMcp!.call(id, body.server, body.tool, args);
+              this.store.transaction(() =>
+                this.store.event(id, 'operator_mcp.call', {
+                  attempt_id: attempt,
+                  server,
+                  tool,
+                  argument_digest: digest(args),
+                  outcome: result.is_error ? 'tool_error' : 'returned',
+                  result_digest: digest(result),
+                }),
+              );
+              return result;
+            } catch (error) {
+              this.store.transaction(() =>
+                this.store.event(id, 'operator_mcp.call', {
+                  attempt_id: attempt,
+                  server,
+                  tool,
+                  argument_digest: digest(args),
+                  outcome: 'failed',
+                  error: (error as ServiceError).code ?? 'mcp_server_failed',
+                }),
+              );
+              throw error;
+            }
+          },
+        );
       }
       if (method.startsWith('toolkit.')) {
         if (!this.toolkit || !w.toolkit || !w.attempt || this.children?.owned(id))
