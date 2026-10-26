@@ -4273,3 +4273,89 @@ test('work status shows a write an agent rule allowed, and who set the rule', as
     f.close();
   }
 });
+
+// Card 9 (card_81a3e7a5f62b4564): the owner settles a stopped run automatically only when Salaam
+// says up front it can prove it. Status carries that verdict, computed by the same checks as fail,
+// and changes nothing.
+test('work status says when a stopped run can retire with known effects, and changes nothing', async () => {
+  const x = refusedWritesFixture();
+  try {
+    const status = (await x.f.work.status(x.f.binding, settlementDriver(x.f))) as unknown as {
+      settlement_ready?: string;
+    };
+    expect(status.settlement_ready).toBe('known_effects_failure');
+    expect(x.f.tasks.get(x.admitted.task_id).state).toBe('blocked');
+    expect(
+      x.f.store.db
+        .prepare('SELECT count(*) AS n FROM events WHERE kind=\x27agentpod.work_failed\x27')
+        .get()!.n,
+    ).toBe(0);
+    expect(failRefused(x)).toMatchObject({ effects: 'known_effects_preserved' });
+  } finally {
+    x.f.close();
+  }
+});
+
+test.each(['runtime-not-exceeded', 'other-block'])(
+  'work status gives no settlement verdict for a run fail would refuse (%s)',
+  async (failure) => {
+    const x = refusedWritesFixture();
+    try {
+      if (failure === 'runtime-not-exceeded')
+        x.f.store.db.prepare('UPDATE task_runtime SET started_at=?').run(Date.now());
+      else
+        x.f.store.db
+          .prepare('UPDATE task_runtime SET blocked_reason=\x27Task request limit reached\x27')
+          .run();
+      const status = (await x.f.work.status(
+        x.f.binding,
+        settlementDriver(x.f),
+      )) as unknown as Record<string, unknown>;
+      expect('settlement_ready' in status).toBe(false);
+      expect(() => failRefused(x)).toThrow();
+    } finally {
+      x.f.close();
+    }
+  },
+);
+
+test('a live run has no settlement verdict', async () => {
+  const f = fixture();
+  try {
+    f.run();
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('settlement_ready' in status).toBe(false);
+  } finally {
+    f.close();
+  }
+});
+
+test.each(['execution-running', 'plan-changed'])(
+  'work status gives no settlement verdict when the stop or the plan does not hold (%s)',
+  async (failure) => {
+    const x = refusedWritesFixture();
+    try {
+      if (failure === 'execution-running')
+        x.f.store.db.prepare('DELETE FROM session_revocations WHERE session_id=?').run(x.f.session);
+      else {
+        const row = x.f.store.db
+          .prepare('SELECT admission_json FROM agentpod_work WHERE session_id=?')
+          .get(x.f.session)!;
+        const admission = JSON.parse(String(row.admission_json));
+        admission.work.plan_digest = 'f'.repeat(64);
+        x.f.store.db
+          .prepare('UPDATE agentpod_work SET admission_json=? WHERE session_id=?')
+          .run(JSON.stringify(admission), x.f.session);
+      }
+      const status = (await x.f.work
+        .status(x.f.binding, settlementDriver(x.f))
+        .catch(() => ({}))) as Record<string, unknown>;
+      expect('settlement_ready' in status).toBe(false);
+    } finally {
+      x.f.close();
+    }
+  },
+);
