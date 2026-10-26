@@ -1,4 +1,5 @@
 import { requiredChecks } from './task-policy.js';
+import { RATE_LIMIT_STOP, RateLimitRetries } from './rate-limit-retries.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { TaskWork, WorkTask } from './task-work.js';
@@ -16,6 +17,7 @@ export class TaskDriver {
   awaitingAuthorityRenewal?: (session: string) => boolean;
   private active?: Promise<void>;
   private stopped = true;
+  readonly rateLimits: RateLimitRetries;
   constructor(
     readonly store: Store,
     readonly tasks: TaskWork,
@@ -25,6 +27,7 @@ export class TaskDriver {
     readonly children: ChildWork,
     readonly coding: CodingWork,
   ) {
+    this.rateLimits = new RateLimitRetries(store);
     tasks.assertProgressionBinding = (task, binding) => {
       if (canonical(this.verification.binding(task)) !== binding)
         throw new ServiceError(
@@ -375,6 +378,20 @@ export class TaskDriver {
       return;
     }
     if (task.steps.some((s) => ['interrupted', 'failed', 'cancelled'].includes(s.state))) {
+      // A provider 429 is retried as a fresh attempt of the step after a backoff; past the limit,
+      // or with no progression step left, the task stops with a block recovery can settle.
+      const retry = this.rateLimits.decide(task);
+      if (retry.action === 'wait') return;
+      if (retry.action === 'retry' && Number(r.remaining_steps) >= 1) {
+        if (!(await this.worker(task)) || this.stopped) return;
+        this.tasks.retryStep(task.id, retry.step, retry.n, Number(r.auto_epoch));
+        return;
+      }
+      if (retry.action !== 'none') {
+        this.budget.block(task.session_id, RATE_LIMIT_STOP);
+        this.stop(task, RATE_LIMIT_STOP);
+        return;
+      }
       this.stop(task, 'An interrupted or failed step requires explicit operator review');
       return;
     }
