@@ -1,3 +1,4 @@
+import { StationCheckpoints } from './station-checkpoints.js';
 import { requiredChecks } from './task-policy.js';
 import { RATE_LIMIT_STOP, RateLimitRetries } from './rate-limit-retries.js';
 import { planUpdate, toolMetadata, toolTitle } from './acp-outcome.js';
@@ -3312,6 +3313,26 @@ export class AgentPodWork {
         return receipt;
       },
     );
+  }
+  /** Item 11: the run's checkpoints, from its own recorded station writes. Read-only. */
+  checkpoints(binding: unknown) {
+    const { task } = this.owned(binding);
+    this.authority.inspect(binding);
+    return {
+      version: 1 as const,
+      task_id: task.id,
+      checkpoints: new StationCheckpoints(this.store).list(task),
+    };
+  }
+  /** Item 11: what restoring a checkpoint would do to each file written after it. Read-only. */
+  checkpointDiff(binding: unknown, checkpoint: string) {
+    const { task } = this.owned(binding);
+    this.authority.inspect(binding);
+    return {
+      version: 1 as const,
+      task_id: task.id,
+      ...new StationCheckpoints(this.store).diff(task, checkpoint),
+    };
   }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);

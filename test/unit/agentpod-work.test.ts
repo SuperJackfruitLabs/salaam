@@ -4542,3 +4542,53 @@ test('a progression grant is the plan steps or the steps plus the re-run allowan
     }
   }
 });
+
+// Item 11: the owner reads a run's checkpoints and a checkpoint's diff; nothing changes.
+test("work checkpoints list each completed step's checkpoint and its diff, read-only", () => {
+  const f = fixture();
+  try {
+    const admitted = f.run();
+    const task = f.tasks.get(admitted.task_id),
+      step = task.steps[0]!;
+    expect(f.work.checkpoints(f.binding)).toEqual({
+      version: 1,
+      task_id: task.id,
+      checkpoints: [],
+    });
+    f.store.db.exec('PRAGMA foreign_keys=OFF');
+    f.store.db
+      .prepare("INSERT INTO task_step_attempts VALUES ('att-1',?,?,'x')")
+      .run(step.id, task.plan_revision);
+    f.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,operation_id,state,result_json) VALUES ('c1',?,1,'att-1','t1','patch','i','r','c',?,NULL,'returned',?)",
+      )
+      .run(
+        f.session,
+        JSON.stringify({
+          action: 'patch',
+          path: 'runs/r/a.md',
+          content: 'v1',
+          expected_hash: null,
+        }),
+        JSON.stringify({ ok: true, before_tree_digest: 't0', tree_digest: 't1' }),
+      );
+    f.store.db.exec('PRAGMA foreign_keys=ON');
+    f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE id=?").run(step.id);
+    const listed = f.work.checkpoints(f.binding) as {
+      checkpoints: { id: string; tree_digest: string; files_changed: string[] }[];
+    };
+    expect(listed.checkpoints).toHaveLength(1);
+    expect(listed.checkpoints[0]).toMatchObject({
+      tree_digest: 't1',
+      files_changed: ['runs/r/a.md'],
+    });
+    const diff = f.work.checkpointDiff(f.binding, listed.checkpoints[0]!.id) as {
+      files: unknown[];
+    };
+    expect(diff.files).toEqual([]);
+    expect(() => f.work.checkpointDiff(f.binding, 'nope')).toThrow('No such checkpoint');
+  } finally {
+    f.close();
+  }
+});
