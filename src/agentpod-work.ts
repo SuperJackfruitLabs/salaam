@@ -1,3 +1,4 @@
+import { requiredChecks } from './task-policy.js';
 import { planUpdate, toolMetadata, toolTitle } from './acp-outcome.js';
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
@@ -54,6 +55,7 @@ export class AgentPodWork {
       objective: task.objective,
       constraints: task.constraints,
       acceptance: task.acceptance,
+      ...(task.completion_gate ? { completion_gate: task.completion_gate } : {}),
       deliverables: task.deliverables,
       limits: task.limits,
       steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
@@ -2369,6 +2371,7 @@ export class AgentPodWork {
         objective: task.objective,
         constraints: task.constraints,
         acceptance: task.acceptance,
+        ...(task.completion_gate ? { completion_gate: task.completion_gate } : {}),
         deliverables: task.deliverables,
         limits: task.limits,
         steps: task.steps.map(({ key, title, instruction, depends_on, checks }) => ({
@@ -2404,7 +2407,7 @@ export class AgentPodWork {
         const bindingArtifact = JSON.parse(String(saved!.response)),
           bound = artifact(bindingArtifact, session);
         const call = calls.find((c) => c.id === bound.call_id),
-          configured = task.acceptance.find((c) => c.key === check.check_key);
+          configured = requiredChecks(task).find((c) => c.key === check.check_key);
         require(
           check.state === 'passed' &&
             check.plan_revision === task.plan_revision &&
@@ -3204,7 +3207,7 @@ export class AgentPodWork {
         });
         if (
           evidence.checks.some((id: unknown) => !checks.some((c) => c.id === id)) ||
-          task.acceptance.some(
+          requiredChecks(task).some(
             (a) => !checks.some((c) => c.step_id === null && c.check_key === a.key),
           ) ||
           calls.some((c) => c.kind === 'check' && !checkEvidence.some((e) => e.call_id === c.id))

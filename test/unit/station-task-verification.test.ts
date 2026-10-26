@@ -22,7 +22,7 @@ import { canonical, digest } from '../../src/protocol.js';
 
 // Synthetic station boundary double: these tests prove receipt joining and
 // transactional revalidation, never Linux/systemd execution or a live canary.
-function fixture(keys = ['tests']) {
+function fixture(keys = ['tests'], gate?: Record<string, unknown>) {
   const dir = mkdtempSync('/tmp/sal-station-task-');
   const store = new Store(join(dir, 'journal.sqlite'));
   const artifacts = new Artifacts(join(dir, 'artifacts'), store);
@@ -53,6 +53,7 @@ function fixture(keys = ['tests']) {
           cwd: '.',
         })),
         deliverables: ['app.js'],
+        ...(gate ? { completion_gate: gate } : {}),
       },
       () => {},
     ),
@@ -446,10 +447,17 @@ test('check binding survives journal reopen but cannot reuse a pre-restart fresh
   }
 });
 
-test.each([false, true])(
+test.each([false, true, 'hook' as const])(
   'installed controller enforces native evidence and missing deliverable=%s (synthetic station)',
   async (missing) => {
-    const f = fixture();
+    // Item 8: with a completion hook, the hook is a required completion check of its own.
+    const f =
+      missing === 'hook'
+        ? fixture(['tests'], {
+            critic: null,
+            hooks: [{ key: 'lint', command: 'node lint', cwd: '.' }],
+          })
+        : fixture();
     try {
       // This is the real task controller and SQLite ledger with a synthetic native
       // runner. Actual systemd/primitive acceptance remains a separate Linux proof.
@@ -501,7 +509,7 @@ test.each([false, true])(
       const observe = f.station.verificationTree;
       f.station.verificationTree = async (source, validate, request) => {
         const result = await observe(source, validate);
-        if (missing && request?.action === 'read') throw Error('deliverable missing');
+        if (missing === true && request?.action === 'read') throw Error('deliverable missing');
         return request?.action === 'read'
           ? {
               ...result,
@@ -550,6 +558,30 @@ test.each([false, true])(
       ).toBe(1);
       f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE task_id=?").run(task.id);
       const expected = f.tasks.get(task.id).revision;
+      if (missing === 'hook') {
+        await expect(
+          f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {}),
+        ).rejects.toThrow('Passed configured checks required');
+        f.verification.start(
+          task.id,
+          'hook-lint',
+          null,
+          'hook-request',
+          f.tasks.get(task.id).revision,
+          () => {},
+        );
+        await f.adapter.drain();
+        await f.verification.reconcileAsync();
+        const done = await f.verification.finishAsync(
+          task.id,
+          'finish-request-2',
+          f.tasks.get(task.id).revision,
+          null,
+          () => {},
+        );
+        expect(done.state).toBe('succeeded');
+        return;
+      }
       if (missing) {
         await expect(
           f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {}),

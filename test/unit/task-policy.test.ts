@@ -32,3 +32,34 @@ test.each([
 ])('invalid or ambiguous token opt-outs cannot disable other required limits: %j', (limits) => {
   expect(() => taskPolicy({ limits })).toThrow();
 });
+
+// Item 8: completion hooks are checks required at completion, keyed hook-<key>. A plan without a
+// gate keeps its exact shape (and so its digest).
+import { requiredChecks } from '../../src/task-policy.js';
+const hook = (key: string) => ({ key, command: 'true', cwd: '.' });
+test('a completion gate parses, round-trips, and adds its hooks to the required checks', () => {
+  const policy = taskPolicy({
+    acceptance: [hook('tests')],
+    completion_gate: { critic: null, hooks: [hook('lint')] },
+  });
+  expect(policy.completion_gate).toEqual({ critic: null, hooks: [hook('lint')] });
+  expect(taskPolicy(JSON.parse(JSON.stringify(policy)))).toEqual(policy);
+  expect(requiredChecks(policy).map((c) => c.key)).toEqual(['tests', 'hook-lint']);
+  expect(policy.acceptance.map((c) => c.key)).toEqual(['tests']);
+  const plain = taskPolicy({ acceptance: [hook('tests')] });
+  expect('completion_gate' in plain).toBe(false);
+  expect(requiredChecks(plain)).toEqual(plain.acceptance);
+});
+
+test.each([
+  ['no hooks', { critic: null, hooks: [] }],
+  ['too many', { critic: null, hooks: Array.from({ length: 9 }, (_, n) => hook('h' + n)) }],
+  ['duplicate', { critic: null, hooks: [hook('a'), hook('a')] }],
+  ['a critic (not yet admitted)', { critic: { rubric: 'x' }, hooks: [hook('a')] }],
+  ['extra field', { critic: null, hooks: [hook('a')], extra: 1 }],
+  ['critic missing', { hooks: [hook('a')] }],
+  ['bad hook key', { critic: null, hooks: [hook('a b')] }],
+  ['collides with an acceptance check', { critic: null, hooks: [hook('x')] }],
+])('a completion gate is refused: %s', (_why, gate) => {
+  expect(() => taskPolicy({ acceptance: [hook('hook-x')], completion_gate: gate })).toThrow();
+});

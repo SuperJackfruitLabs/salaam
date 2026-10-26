@@ -1,3 +1,4 @@
+import { requiredChecks } from './task-policy.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { TaskWork, WorkTask } from './task-work.js';
@@ -420,13 +421,14 @@ export class TaskDriver {
       // the native workspace. Wait for the whole set before testing freshness;
       // finishAsync still performs the final transactional evidence validation.
       if (
-        task.acceptance.some((check) => {
+        requiredChecks(task).some((check) => {
           const receipt = this.verification.latest(task, check.key, null);
           return receipt?.state === 'accepted' || receipt?.state === 'running';
         })
       )
         return;
-      for (const check of task.acceptance) if (!(await this.check(task, check.key, null))) return;
+      for (const check of requiredChecks(task))
+        if (!(await this.check(task, check.key, null))) return;
       await this.verification.finishAsync(
         task.id,
         'auto-finish:' + task.id + ':' + task.plan_revision,
