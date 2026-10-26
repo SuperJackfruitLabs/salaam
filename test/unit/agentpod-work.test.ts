@@ -4503,3 +4503,42 @@ test.each([
     x.f.close();
   }
 });
+
+// The re-run allowance: a progression grant may be the plan's steps or the steps plus three, the
+// capped allowance for re-running a rate-limited or reopened step. Nothing else.
+test('a progression grant is the plan steps or the steps plus the re-run allowance, nothing else', () => {
+  for (const [steps, ok] of [
+    [1, true],
+    [4, true],
+    [2, false],
+    [3, false],
+    [5, false],
+  ] as const) {
+    const f = fixture();
+    try {
+      const receipt = f.run();
+      let granted: number | null = null;
+      const driver = {
+        configureInTransaction: (
+          _i: string,
+          _r: number,
+          n: number,
+          _c: boolean,
+          authorize: () => void,
+        ) => {
+          authorize();
+          granted = n;
+        },
+        kick: () => {},
+      } as unknown as TaskDriver;
+      const call = () =>
+        f.work.progress(f.binding, randomUUID(), receipt.request_id, steps, driver);
+      if (ok) {
+        call();
+        expect(granted).toBe(steps);
+      } else expect(call, String(steps)).toThrow('every admitted');
+    } finally {
+      f.close();
+    }
+  }
+});

@@ -32,6 +32,8 @@ export interface AgentPodWorkReceipt {
  * adapter must supply its own session and independently admitted work identity.
  * This receipt records task admission, never successful work or permission to run.
  */
+/** Extra progression steps a strict grant may carry, only ever spent on re-running a step. */
+export const RERUN_ALLOWANCE = 3;
 export class AgentPodWork {
   constructor(
     readonly store: Store,
@@ -3409,7 +3411,13 @@ export class AgentPodWork {
       () => {
         this.store.execution.assert(root.session_id);
         this.assertPlan(task, JSON.parse(String(row.admission_json)));
-        if (steps !== task.steps.length || steps < 1 || steps > 32)
+        // Exactly the plan's steps, or those plus the capped re-run allowance that funds a
+        // rate-limited retry or a reopened step; steps complete once, so it never adds work.
+        if (
+          (steps !== task.steps.length && steps !== task.steps.length + RERUN_ALLOWANCE) ||
+          steps < 1 ||
+          steps > 32 + RERUN_ALLOWANCE
+        )
           throw new ServiceError(
             'invalid_limit',
             'Progression must bind every admitted step within32',
