@@ -27,11 +27,12 @@ function fixture() {
   };
   const scope = { task_id: randomUUID(), plan_revision: 1, task_state: 'running' };
   const grants = new RunGrants(store);
+  const rules: { id: string; scope: 'workspace-write'; set_by: string }[] = [];
   const station = Object.assign(Object.create(StationWork.prototype), {
     store,
     managed,
     grants,
-    authority: { binding: () => binding },
+    authority: { binding: () => binding, approvalRules: () => rules },
     grantScope: () => scope,
   }) as StationWork;
   let n = 0;
@@ -69,7 +70,7 @@ function fixture() {
         granted_by: 'prn_human',
       }),
     );
-  return { store, managed, station, scope, write, grant, session };
+  return { store, managed, station, scope, write, grant, session, rules };
 }
 
 test('a covered write is answered by the run grant and records which grant allowed it', () => {
@@ -123,4 +124,45 @@ test('a grant for another task, plan revision or a settled task answers nothing'
     (f.station as any).answerFromGrant(w.operation.id, f.session.id, w.args);
     expect(f.managed.approval(w.approval.id).state, JSON.stringify(change)).toBe('pending');
   }
+});
+
+// Approval scopes B part 2: an agent's standing rule answers a workspace write anywhere in the
+// workspace, except deletes and hidden paths, while the rule is pinned and not revoked.
+test('a standing rule answers a workspace write and records which rule allowed it', () => {
+  const f = fixture();
+  const id = randomUUID();
+  f.rules.push({ id, scope: 'workspace-write', set_by: 'prn_owner' });
+  const w = f.write('src/app.js');
+  (f.station as any).answerFromGrant(w.operation.id, f.session.id, w.args);
+  expect(f.managed.approval(w.approval.id)).toMatchObject({
+    state: 'decided',
+    decision: 'approve',
+    decided_by: 'rule:' + id,
+  });
+  const event = f.store.db
+    .prepare("SELECT payload FROM events WHERE kind='permission.auto-approved'")
+    .get()!;
+  expect(JSON.parse(String(event.payload))).toMatchObject({
+    rule: 'agent-rule',
+    rule_id: id,
+    set_by: 'prn_owner',
+  });
+});
+
+test('a standing rule never answers a delete or a hidden path, and a revoked rule answers nothing', () => {
+  const f = fixture();
+  f.rules.push({ id: randomUUID(), scope: 'workspace-write', set_by: 'prn_owner' });
+  for (const [path, content] of [
+    ['src/app.js', null],
+    ['.env', 'x'],
+    ['src/.git/config', 'x'],
+  ] as const) {
+    const w = f.write(path, content);
+    (f.station as any).answerFromGrant(w.operation.id, f.session.id, w.args);
+    expect(f.managed.approval(w.approval.id).state, path).toBe('pending');
+  }
+  f.rules.length = 0;
+  const w = f.write('src/app.js');
+  (f.station as any).answerFromGrant(w.operation.id, f.session.id, w.args);
+  expect(f.managed.approval(w.approval.id).state).toBe('pending');
 });

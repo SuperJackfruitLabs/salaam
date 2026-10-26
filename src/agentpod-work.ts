@@ -3254,7 +3254,10 @@ export class AgentPodWork {
               p.rule === 'run-grant'
                 ? 'Approved by the run grant' +
                   (typeof p.granted_by === 'string' ? ` (granted by ${p.granted_by})` : '')
-                : 'Approved by a standing rule',
+                : p.rule === 'agent-rule'
+                  ? "Allowed by the agent's standing rule" +
+                    (typeof p.set_by === 'string' ? ` (set by ${p.set_by})` : '')
+                  : 'Approved by a standing policy',
             kind: null,
             input: null,
             failed: false,

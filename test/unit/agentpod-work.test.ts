@@ -4248,3 +4248,28 @@ test('work status shows a write the run grant approved, and which grant allowed 
     f.close();
   }
 });
+
+test('work status shows a write an agent rule allowed, and who set the rule', async () => {
+  const f = fixture();
+  try {
+    f.run();
+    f.store.transaction(() =>
+      f.store.event(f.session, 'permission.auto-approved', {
+        rule: 'agent-rule',
+        rule_id: 'r1',
+        set_by: 'prn_owner',
+        operation_id: 'op-2',
+        operation_digest: 'd'.repeat(64),
+      }),
+    );
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      activity: Record<string, unknown>[];
+    };
+    expect(status.activity.at(-1)).toMatchObject({
+      tool_call_id: 'approval:op-2',
+      title: "Allowed by the agent's standing rule (set by prn_owner)",
+    });
+  } finally {
+    f.close();
+  }
+});

@@ -82,6 +82,40 @@ export function readAgentPodPins(configPath: string, state: string): AgentPodPin
 }
 
 /** A local node admission, not an Accounts token issuer or a provider login. */
+/** An agent's standing "Always allow" rule (approval scopes). v1 knows one scope: workspace
+ * writes, never deletes, hidden paths, commands, network or anything outside the workspace. */
+export interface ApprovalRule {
+  id: string;
+  scope: 'workspace-write';
+  set_by: string;
+}
+const ruleId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Closed: 1 to 16 rules, exact keys, a known scope, unique ids. Absent means none. */
+export function approvalRules(value: unknown): ApprovalRule[] {
+  if (value === undefined) return [];
+  const bad = () => {
+    throw new ServiceError('invalid_approval_rules', 'Malformed approval rules', 400);
+  };
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16) bad();
+  const rules = (value as unknown[]).map((r) => {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) bad();
+    const v = r as Record<string, unknown>;
+    if (
+      Object.keys(v).sort().join(',') !== 'id,scope,set_by' ||
+      typeof v.id !== 'string' ||
+      !ruleId.test(v.id) ||
+      v.scope !== 'workspace-write' ||
+      typeof v.set_by !== 'string' ||
+      v.set_by.length < 1 ||
+      v.set_by.length > 128 ||
+      /[\u0000-\u001f\u007f]/.test(v.set_by)
+    )
+      bad();
+    return { id: v.id as string, scope: 'workspace-write' as const, set_by: v.set_by as string };
+  });
+  if (new Set(rules.map((r) => r.id)).size !== rules.length) bad();
+  return rules.sort((a, b) => a.id.localeCompare(b.id));
+}
 export class AgentPodAuthority {
   readonly boot = randomUUID();
   readonly pins: AgentPodPins;
@@ -116,6 +150,9 @@ export class AgentPodAuthority {
     }
     this.key = privateBytes(keyPath);
     if (this.key.length !== 32) throw Error('Invalid AgentPod control key');
+    store.db.exec(
+      'CREATE TABLE IF NOT EXISTS agentpod_approval_rules(admission_id TEXT NOT NULL,rule_id TEXT NOT NULL,scope TEXT NOT NULL,set_by TEXT NOT NULL,revoked_at TEXT,PRIMARY KEY(admission_id,rule_id))',
+    );
     store.agentpodAuthorityCheck = (session) => this.assert(this.bySession(session));
     store.requireAgentPodAuthority = true;
   }
@@ -161,6 +198,19 @@ export class AgentPodAuthority {
         'AgentPod authority lease has no remaining native grant window',
       );
     return remaining;
+  }
+  /** The session's pinned approval rules that no renewal has revoked. */
+  approvalRules(session: string): ApprovalRule[] {
+    return this.store.db
+      .prepare(
+        'SELECT r.rule_id AS id,r.scope,r.set_by FROM agentpod_approval_rules r JOIN agentpod_admissions a ON a.id=r.admission_id WHERE a.session_id=? AND r.revoked_at IS NULL ORDER BY r.rule_id',
+      )
+      .all(session)
+      .map((r) => ({
+        id: String(r.id),
+        scope: 'workspace-write' as const,
+        set_by: String(r.set_by),
+      }));
   }
   private checked(input: unknown): AgentPodBinding {
     const b = agentpodBinding(input);
@@ -258,8 +308,9 @@ export class AgentPodAuthority {
    * transcript and its entries. Only a revoked, stopped and reconciled interactive admission for
    * the same organization, station, occupant and workspace can be continued, and only once.
    */
-  admit(input: unknown, request: string, continueFrom?: string) {
+  admit(input: unknown, request: string, continueFrom?: string, rulesInput?: unknown) {
     const b = this.checked(input);
+    const rules = approvalRules(rulesInput);
     if (
       continueFrom !== undefined &&
       (typeof continueFrom !== 'string' || !continueFrom || continueFrom.length > 128)
@@ -272,6 +323,7 @@ export class AgentPodAuthority {
         kind: 'admit',
         binding: b,
         ...(continueFrom === undefined ? {} : { continue_from: continueFrom }),
+        ...(rules.length ? { approval_rules: rules } : {}),
       },
       () => {
         const old = this.store.db
@@ -387,6 +439,11 @@ export class AgentPodAuthority {
             digest(this.pins),
             Date.now() + AGENTPOD_LEASE_MS,
           );
+        // The agent's standing rules, pinned for this run: a rule set later never joins it.
+        for (const r of rules)
+          this.store.db
+            .prepare('INSERT INTO agentpod_approval_rules VALUES (?,?,?,?,NULL)')
+            .run(id, r.id, r.scope, r.set_by);
         this.store.event(
           session,
           'agentpod.admitted',
@@ -404,13 +461,14 @@ export class AgentPodAuthority {
     const row = this.row(admitted.admission_id);
     return { ...this.status(row), token: this.token(row.id) };
   }
-  renew(input: unknown, request: string, sequence: number) {
+  renew(input: unknown, request: string, sequence: number, rulesInput?: unknown) {
     const b = this.checked(input);
     integer(sequence, 'lease_sequence');
+    const rules = approvalRules(rulesInput);
     return this.store.request(
       'agentpod-node',
       request,
-      { kind: 'renew', binding: b, sequence },
+      { kind: 'renew', binding: b, sequence, ...(rules.length ? { approval_rules: rules } : {}) },
       () => {
         const row = this.bound(b);
         if (
@@ -439,6 +497,26 @@ export class AgentPodAuthority {
             performance.now() + AGENTPOD_LEASE_MS,
             row.id,
           );
+        // Revocation is immediate: a pinned rule the hub no longer lists ends now, for good.
+        const listed = new Set(rules.map((r) => r.id));
+        for (const pinned of this.store.db
+          .prepare(
+            'SELECT rule_id FROM agentpod_approval_rules WHERE admission_id=? AND revoked_at IS NULL',
+          )
+          .all(row.id)) {
+          if (listed.has(String(pinned.rule_id))) continue;
+          this.store.db
+            .prepare(
+              'UPDATE agentpod_approval_rules SET revoked_at=? WHERE admission_id=? AND rule_id=?',
+            )
+            .run(new Date().toISOString(), row.id, String(pinned.rule_id));
+          this.store.event(
+            row.session_id,
+            'approval_rule.revoked',
+            { admission_id: row.id, rule_id: pinned.rule_id },
+            request,
+          );
+        }
         this.store.event(
           row.session_id,
           'agentpod.renewed',

@@ -794,6 +794,36 @@ export class StationWork {
   }
   /** A write the run's grant covers is answered by it, checked again at decision time. The
    * operation is still prepared, digest-bound and journaled on its own; deletes always ask. */
+  /** An agent's standing "Always allow" rule (pinned at admission, dropped at the renewal that no
+   * longer lists it) answers a workspace write anywhere in the workspace, never a delete or a
+   * hidden path. Checked again at decision time, so a rule revoked meanwhile answers nothing. */
+  private answerFromRule(operation: string, session: string, args: Record<string, unknown>): void {
+    if (!runGrantCovers('', args)) return;
+    const live = () =>
+      this.authority.approvalRules(session).find((r) => r.scope === 'workspace-write');
+    const rule = live();
+    if (!rule) return;
+    const approval = this.managed.forOperation(operation);
+    if (approval.state !== 'pending') return;
+    this.managed.decide(
+      approval.id,
+      'rule:' + operation,
+      approval.revision,
+      approval.operation_digest,
+      'approve',
+      {
+        decidedBy: 'rule:' + rule.id,
+        receipt: { rule: 'agent-rule', rule_id: rule.id, set_by: rule.set_by },
+        authorize: () => {
+          if (live()?.id !== rule.id)
+            throw new ServiceError(
+              'permission_changed',
+              'The approval rule no longer covers this write',
+            );
+        },
+      },
+    );
+  }
   private answerFromGrant(operation: string, session: string, args: Record<string, unknown>): void {
     if (!this.grants || !this.grantScope) return;
     const binding = this.authority.binding(session) as { run?: { id?: unknown } } | null;
@@ -809,7 +839,7 @@ export class StationWork {
       return g;
     };
     const grant = live();
-    if (!grant) return;
+    if (!grant) return this.answerFromRule(operation, session, args);
     const approval = this.managed.forOperation(operation);
     if (approval.state !== 'pending') return;
     this.managed.decide(

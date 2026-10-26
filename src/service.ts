@@ -1178,6 +1178,7 @@ export class SalaamService {
               body.continue_from === undefined
                 ? undefined
                 : string(body.continue_from, 'continue_from', 128),
+              body.approval_rules,
             ),
           );
           return;
@@ -1190,6 +1191,7 @@ export class SalaamService {
               body.binding,
               request,
               integer(body.lease_sequence, 'lease_sequence'),
+              body.approval_rules,
             ),
           );
           return;
