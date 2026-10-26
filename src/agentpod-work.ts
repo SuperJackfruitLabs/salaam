@@ -2809,20 +2809,7 @@ export class AgentPodWork {
         'work_settlement_conflict',
         'Exact original work and terminal digest required',
       );
-    const stopped = () => {
-      const current = this.authority.inspect(binding);
-      if (
-        !current.revoked ||
-        current.authorized ||
-        !current.owned_execution_stopped ||
-        current.unresolved_operations.length ||
-        current.active_attempts.length
-      )
-        throw new ServiceError(
-          'work_settlement_unsafe',
-          'Revoked stopped root with known effects required',
-        );
-    };
+    const stopped = () => this.assertKnownEffectsStop(binding);
     stopped();
     return this.store.request(
       'agentpod-work-failure',
@@ -2836,161 +2823,7 @@ export class AgentPodWork {
       () => {
         stopped();
         this.assertPlan(task, JSON.parse(String(row.admission_json)));
-        const runtime = this.store.db
-          .prepare('SELECT * FROM task_runtime WHERE task_id=?')
-          .get(task.id);
-        const attempts = this.store.db
-          .prepare('SELECT * FROM attempts WHERE session_id=?')
-          .all(root.session_id);
-        const ops = this.store.db
-          .prepare('SELECT * FROM operations WHERE session_id=?')
-          .all(root.session_id);
-        const calls = this.store.db
-          .prepare("SELECT * FROM station_calls WHERE session_id=? AND kind!='read'")
-          .all(root.session_id);
-        const op = ops[0],
-          attempt = attempts[0],
-          call = calls[0];
-        const approval = op
-          ? this.store.db.prepare('SELECT * FROM approvals WHERE operation_id=?').get(String(op.id))
-          : undefined;
-        const effect = op?.receipt ? JSON.parse(String(op.receipt)) : null;
-        const bound = 'Provider payload exceeds declared per-request token bounds';
-        const originalBlock = this.store.db
-          .prepare(
-            "SELECT seq,payload FROM events WHERE session_id=? AND kind='work_task.budget_blocked' AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.reason')=? ORDER BY seq LIMIT 1",
-          )
-          .get(root.session_id, task.id, bound);
-        const runtimeExpired =
-          runtime?.blocked_reason === 'Task runtime limit reached' &&
-          runtime.started_at !== null &&
-          Number.isFinite(Number(runtime.started_at)) &&
-          Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
-
-        const savedInvalidatedOffer =
-          approval?.state === 'invalidated'
-            ? this.store.db
-                .prepare(
-                  "SELECT response FROM requests WHERE actor='agentpod-work-decision-offer' AND id=?",
-                )
-                .get(String(approval.id))
-            : undefined;
-        const knownReadOnly =
-          this.historicalKnownReadOnlyFailure(root.binding, task, runtime) ??
-          (ops.length === 1 && op && approval && savedInvalidatedOffer
-            ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, {
-                operation: op,
-                approval,
-                offered: JSON.parse(String(savedInvalidatedOffer.response)),
-                invalidated: true,
-              })
-            : null) ??
-          (ops.length === 1 && op && approval
-            ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, undefined, {
-                operation: op,
-                approval,
-              })
-            : null);
-        const zeroEffect = this.zeroEffectConcurrencyFailure(
-          root.session_id,
-          task,
-          runtime,
-          attempts,
-        );
-        const revokeCancelled = zeroEffect
-          ? null
-          : this.revokeCancelledFailure(root.session_id, task, runtime, attempts);
-        const budgetStop =
-          zeroEffect || revokeCancelled
-            ? null
-            : this.requestBudgetStopFailure(root.session_id, task, runtime, attempts);
-        const refusedWrites =
-          zeroEffect || revokeCancelled || budgetStop
-            ? null
-            : this.runtimeStopRefusedWritesFailure(root.session_id, task, runtime, attempts);
-        const budgetKnown =
-          zeroEffect || revokeCancelled || budgetStop || refusedWrites
-            ? null
-            : this.requestBudgetStopKnownEffectsFailure(
-                root.session_id,
-                root.binding,
-                task,
-                runtime,
-                attempts,
-              );
-        if (
-          !zeroEffect &&
-          !revokeCancelled &&
-          !budgetStop &&
-          !refusedWrites &&
-          !budgetKnown &&
-          !knownReadOnly &&
-          (task.state !== 'blocked' ||
-            !runtime ||
-            !originalBlock ||
-            (runtime.blocked_reason !== bound && !runtimeExpired) ||
-            attempt?.error !== 'Required control failed: ' + bound ||
-            runtime.auto_enabled ||
-            runtime.reserved_requests ||
-            runtime.reserved_tokens ||
-            runtime.verification_runs ||
-            attempts.length !== 1 ||
-            attempt?.state !== 'interrupted' ||
-            attempt.resolved_by !== null ||
-            ops.length !== 1 ||
-            op?.kind !== 'workspace' ||
-            op.state !== 'succeeded' ||
-            op.attempt_id !== attempt.id ||
-            op.resolution !== 'workspace-content-receipt-v1' ||
-            calls.length !== 1 ||
-            call?.kind !== 'patch' ||
-            call.state !== 'returned' ||
-            call.helper_state !== 'stopped' ||
-            call.operation_id !== op.id ||
-            call.attempt_id !== attempt.id ||
-            !call.result_json ||
-            !approval ||
-            approval.state !== 'decided' ||
-            approval.decision !== 'approve' ||
-            approval.operation_digest !== op.operation_digest ||
-            !effect ||
-            effect.version !== 1 ||
-            effect.scope !== 'station-workspace' ||
-            effect.call_id !== call.id ||
-            effect.root_digest !== digest(root.binding) ||
-            effect.root_digest !== call.root_digest ||
-            effect.configuration_digest !== call.configuration_digest ||
-            effect.input_digest !== call.input_digest ||
-            canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
-            effect.result?.ok !== true ||
-            task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted')
-              .length !== 1 ||
-            task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||
-            this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
-            this.store.db
-              .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
-              .get(root.session_id))
-        )
-          throw new ServiceError(
-            'work_settlement_unsafe',
-            'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, or closed historical read-only evidence can retire',
-          );
-        const evidence_digest = digest({
-          binding: root.binding,
-          task_id: task.id,
-          plan_revision: task.plan_revision,
-          blocked_reason: runtime!.blocked_reason,
-          attempt,
-          operation: op ?? null,
-          approval: approval ?? null,
-          call: call ?? null,
-          ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
-          ...(revokeCancelled ? { revoke_cancelled: revokeCancelled } : {}),
-          ...(budgetStop ? { request_budget_stop: budgetStop } : {}),
-          ...(refusedWrites ? { runtime_stop_refused_writes: refusedWrites } : {}),
-          ...(budgetKnown ? { request_budget_stop_known_effects: budgetKnown } : {}),
-          ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
-        });
+        const evidence_digest = this.failureEvidence(root, task);
         driver.cancelInTransaction(task.id, task.revision, stopped);
         const receipt = {
           version: 1 as const,
@@ -3009,6 +2842,195 @@ export class AgentPodWork {
         return receipt;
       },
     );
+  }
+  /** A revoked root whose execution stopped with nothing unresolved or still running. */
+  private assertKnownEffectsStop(binding: unknown): void {
+    const current = this.authority.inspect(binding);
+    if (
+      !current.revoked ||
+      current.authorized ||
+      !current.owned_execution_stopped ||
+      current.unresolved_operations.length ||
+      current.active_attempts.length
+    )
+      throw new ServiceError(
+        'work_settlement_unsafe',
+        'Revoked stopped root with known effects required',
+      );
+  }
+  /** The evidence a known-effects retirement records, or work_settlement_unsafe when the stopped
+   * run is not one of the exact shapes Salaam can prove. Reads only; fail() and status share it. */
+  private failureEvidence(
+    root: { session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding },
+    task: WorkTask,
+  ): string {
+    const runtime = this.store.db
+      .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+      .get(task.id);
+    const attempts = this.store.db
+      .prepare('SELECT * FROM attempts WHERE session_id=?')
+      .all(root.session_id);
+    const ops = this.store.db
+      .prepare('SELECT * FROM operations WHERE session_id=?')
+      .all(root.session_id);
+    const calls = this.store.db
+      .prepare("SELECT * FROM station_calls WHERE session_id=? AND kind!='read'")
+      .all(root.session_id);
+    const op = ops[0],
+      attempt = attempts[0],
+      call = calls[0];
+    const approval = op
+      ? this.store.db.prepare('SELECT * FROM approvals WHERE operation_id=?').get(String(op.id))
+      : undefined;
+    const effect = op?.receipt ? JSON.parse(String(op.receipt)) : null;
+    const bound = 'Provider payload exceeds declared per-request token bounds';
+    const originalBlock = this.store.db
+      .prepare(
+        "SELECT seq,payload FROM events WHERE session_id=? AND kind='work_task.budget_blocked' AND json_extract(payload,'$.task_id')=? AND json_extract(payload,'$.reason')=? ORDER BY seq LIMIT 1",
+      )
+      .get(root.session_id, task.id, bound);
+    const runtimeExpired =
+      runtime?.blocked_reason === 'Task runtime limit reached' &&
+      runtime.started_at !== null &&
+      Number.isFinite(Number(runtime.started_at)) &&
+      Date.now() - Number(runtime.started_at) >= task.limits.runtime_ms;
+
+    const savedInvalidatedOffer =
+      approval?.state === 'invalidated'
+        ? this.store.db
+            .prepare(
+              "SELECT response FROM requests WHERE actor='agentpod-work-decision-offer' AND id=?",
+            )
+            .get(String(approval.id))
+        : undefined;
+    const knownReadOnly =
+      this.historicalKnownReadOnlyFailure(root.binding, task, runtime) ??
+      (ops.length === 1 && op && approval && savedInvalidatedOffer
+        ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, {
+            operation: op,
+            approval,
+            offered: JSON.parse(String(savedInvalidatedOffer.response)),
+            invalidated: true,
+          })
+        : null) ??
+      (ops.length === 1 && op && approval
+        ? this.historicalKnownReadOnlyFailure(root.binding, task, runtime, undefined, {
+            operation: op,
+            approval,
+          })
+        : null);
+    const zeroEffect = this.zeroEffectConcurrencyFailure(root.session_id, task, runtime, attempts);
+    const revokeCancelled = zeroEffect
+      ? null
+      : this.revokeCancelledFailure(root.session_id, task, runtime, attempts);
+    const budgetStop =
+      zeroEffect || revokeCancelled
+        ? null
+        : this.requestBudgetStopFailure(root.session_id, task, runtime, attempts);
+    const refusedWrites =
+      zeroEffect || revokeCancelled || budgetStop
+        ? null
+        : this.runtimeStopRefusedWritesFailure(root.session_id, task, runtime, attempts);
+    const budgetKnown =
+      zeroEffect || revokeCancelled || budgetStop || refusedWrites
+        ? null
+        : this.requestBudgetStopKnownEffectsFailure(
+            root.session_id,
+            root.binding,
+            task,
+            runtime,
+            attempts,
+          );
+    if (
+      !zeroEffect &&
+      !revokeCancelled &&
+      !budgetStop &&
+      !refusedWrites &&
+      !budgetKnown &&
+      !knownReadOnly &&
+      (task.state !== 'blocked' ||
+        !runtime ||
+        !originalBlock ||
+        (runtime.blocked_reason !== bound && !runtimeExpired) ||
+        attempt?.error !== 'Required control failed: ' + bound ||
+        runtime.auto_enabled ||
+        runtime.reserved_requests ||
+        runtime.reserved_tokens ||
+        runtime.verification_runs ||
+        attempts.length !== 1 ||
+        attempt?.state !== 'interrupted' ||
+        attempt.resolved_by !== null ||
+        ops.length !== 1 ||
+        op?.kind !== 'workspace' ||
+        op.state !== 'succeeded' ||
+        op.attempt_id !== attempt.id ||
+        op.resolution !== 'workspace-content-receipt-v1' ||
+        calls.length !== 1 ||
+        call?.kind !== 'patch' ||
+        call.state !== 'returned' ||
+        call.helper_state !== 'stopped' ||
+        call.operation_id !== op.id ||
+        call.attempt_id !== attempt.id ||
+        !call.result_json ||
+        !approval ||
+        approval.state !== 'decided' ||
+        approval.decision !== 'approve' ||
+        approval.operation_digest !== op.operation_digest ||
+        !effect ||
+        effect.version !== 1 ||
+        effect.scope !== 'station-workspace' ||
+        effect.call_id !== call.id ||
+        effect.root_digest !== digest(root.binding) ||
+        effect.root_digest !== call.root_digest ||
+        effect.configuration_digest !== call.configuration_digest ||
+        effect.input_digest !== call.input_digest ||
+        canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
+        effect.result?.ok !== true ||
+        task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted')
+          .length !== 1 ||
+        task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||
+        this.store.db.prepare('SELECT 1 FROM task_checks WHERE task_id=?').get(task.id) ||
+        this.store.db
+          .prepare('SELECT 1 FROM child_tasks WHERE parent_session=?')
+          .get(root.session_id))
+    )
+      throw new ServiceError(
+        'work_settlement_unsafe',
+        'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, or closed historical read-only evidence can retire',
+      );
+    const evidence_digest = digest({
+      binding: root.binding,
+      task_id: task.id,
+      plan_revision: task.plan_revision,
+      blocked_reason: runtime!.blocked_reason,
+      attempt,
+      operation: op ?? null,
+      approval: approval ?? null,
+      call: call ?? null,
+      ...(zeroEffect ? { zero_effect_concurrency: zeroEffect } : {}),
+      ...(revokeCancelled ? { revoke_cancelled: revokeCancelled } : {}),
+      ...(budgetStop ? { request_budget_stop: budgetStop } : {}),
+      ...(refusedWrites ? { runtime_stop_refused_writes: refusedWrites } : {}),
+      ...(budgetKnown ? { request_budget_stop_known_effects: budgetKnown } : {}),
+      ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
+    });
+    return evidence_digest;
+  }
+  /** Status's read-only verdict: "known_effects_failure" when fail() would retire this run now. */
+  private settlementReady(
+    binding: unknown,
+    root: { session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding },
+    row: Record<string, unknown>,
+    task: WorkTask,
+  ): 'known_effects_failure' | null {
+    try {
+      this.assertKnownEffectsStop(binding);
+      this.assertPlan(task, JSON.parse(String(row.admission_json)));
+      this.failureEvidence(root, task);
+      return 'known_effects_failure';
+    } catch {
+      return null;
+    }
   }
   abandon(binding: unknown, request: string, workRequest: string, terminalDigest: string) {
     const { root, row, task } = this.owned(binding);
@@ -3231,6 +3253,11 @@ export class AgentPodWork {
       auto_enabled: !!view.runtime.auto_enabled,
       activity: this.activity(root.session_id),
       plan: planUpdate(view),
+      // The owner may settle a stopped run automatically only on this verdict.
+      ...(() => {
+        const ready = this.settlementReady(binding, root, row, task);
+        return ready ? { settlement_ready: ready } : {};
+      })(),
     };
   }
   /** The latest tool steps, oldest first, for the owner to show as card activity while the work
