@@ -291,3 +291,116 @@ test('failed process ownership persistence never releases the command', async ()
     await f.close();
   }
 });
+
+// Item 10: local commands run sandboxed where the host can, and say plainly when it cannot.
+import type { LocalSandbox } from '../../src/local-coding.js';
+function sandboxed(sandbox: LocalSandbox) {
+  const f = setup();
+  (f.local as unknown as { sandbox: LocalSandbox }).sandbox = sandbox;
+  return f;
+}
+const bwrap = { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' };
+
+test('a bubblewrap host binds the sandbox into the approval and runs the command inside it', async () => {
+  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('bubblewrap sandbox (workspace-write)');
+    expect(created.operation.value).not.toContain('unsandboxed');
+    expect(
+      JSON.parse(
+        String(
+          f.store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(created.call.id)!.args,
+        ),
+      ),
+    ).toMatchObject({
+      sandbox: { kind: 'bwrap', level: 'workspace-write', bwrap: 'bubblewrap 0.11.1' },
+    });
+    const argv = (
+      f.local as unknown as { commandArgv(root: string, script: string): string[] }
+    ).commandArgv(f.root, 'echo hi');
+    expect(argv[0]).toBe('/usr/bin/bwrap');
+    expect(argv).toContain('--unshare-net');
+    expect(argv.slice(-3)).toEqual(['/bin/sh', '-c', 'echo hi']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('the tools user still reports its own host process group, then runs bubblewrap', async () => {
+  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap });
+  try {
+    (f.local as unknown as { tools: { mode: string; user: string; uid: number } }).tools = {
+      mode: 'tools-user',
+      user: 'salaam-tools',
+      uid: 1234,
+      prefix: ['/usr/bin/sudo', '-n', '-u', 'salaam-tools', '--'],
+      warning: null,
+    } as never;
+    const argv = (
+      f.local as unknown as { commandArgv(root: string, script: string): string[] }
+    ).commandArgv(f.root, 'echo hi');
+    const outer = argv.indexOf('/usr/bin/setsid');
+    expect(outer).toBeGreaterThan(-1);
+    const shell = argv.slice(outer).join(' ');
+    // The host-side shell prints its own pid (the group leader) before exec-ing bubblewrap.
+    expect(shell).toMatch(/salaam-tool-pgid:%s.*exec "\$@"/s);
+    expect(argv.indexOf('/usr/bin/bwrap')).toBeGreaterThan(outer);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a Linux host without a usable bubblewrap falls back to none, like macOS', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  expect(chooseLocalSandbox('workspace-write', 'linux', () => null)).toEqual({
+    kind: 'none',
+    level: 'workspace-write',
+    bwrap: null,
+  });
+  expect(chooseLocalSandbox('workspace-write', 'linux', () => bwrap).kind).toBe('bwrap');
+  expect(chooseLocalSandbox('workspace-write', 'darwin', () => bwrap).kind).toBe('none');
+  expect(chooseLocalSandbox('full-access', 'linux', () => bwrap).kind).toBe('none');
+});
+
+test('a host with no sandbox labels every command approval unsandboxed and binds kind none', async () => {
+  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain(
+      'unsandboxed: this host has no usable command sandbox',
+    );
+    expect(
+      JSON.parse(
+        String(
+          f.store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(created.call.id)!.args,
+        ),
+      ).sandbox,
+    ).toEqual({ kind: 'none', level: 'workspace-write', bwrap: null });
+  } finally {
+    await f.close();
+  }
+});
+
+test('an unsandboxed command records sandbox none in its execution result', async () => {
+  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
+  try {
+    const call = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    f.approve(call);
+    f.local.run(call.call.id);
+    const done = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(done.result).toMatchObject({ sandbox: 'none', isolation: 'local-user-no-os-sandbox' });
+  } finally {
+    await f.close();
+  }
+});
+
+test('host plan names the command sandbox kind and labels none unsandboxed', async () => {
+  const { hostLocalSandbox } = await import('../../src/host.js');
+  expect(hostLocalSandbox('linux', () => null)).toEqual({ kind: 'none', label: 'unsandboxed' });
+  expect(hostLocalSandbox('darwin', () => bwrap)).toEqual({ kind: 'none', label: 'unsandboxed' });
+  expect(hostLocalSandbox('linux', () => bwrap)).toEqual({ kind: 'bwrap', label: 'bubblewrap' });
+});

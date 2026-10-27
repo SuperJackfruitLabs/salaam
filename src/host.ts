@@ -31,6 +31,7 @@ import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { OperatorMcp } from './operator-mcp.js';
+import { chooseLocalSandbox, sandboxLabel } from './command-sandbox.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -54,6 +55,7 @@ interface AgentPodHostIdentity extends HostIdentity {
   pins_digest: string;
   workspace: string;
   cli_digest: string;
+  local_sandbox?: HostLocalSandbox;
 }
 export interface AgentPodHostManifest extends AgentPodHostIdentity {
   schema: 2;
@@ -85,6 +87,18 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
   operator_mcp?: { config: string; digest: string };
   /** How long a strict approval offer stays answerable; the daemon default when absent. */
   approval_ttl_ms?: number;
+}
+/** Item 10: the command sandbox this host gives local commands, as reviewed at host plan. */
+export interface HostLocalSandbox {
+  kind: 'bwrap' | 'none';
+  label: string;
+}
+export function hostLocalSandbox(
+  platform: NodeJS.Platform = process.platform,
+  find?: Parameters<typeof chooseLocalSandbox>[2],
+): HostLocalSandbox {
+  const { kind } = chooseLocalSandbox('workspace-write', platform, find);
+  return { kind, label: sandboxLabel(kind) };
 }
 export interface OperatorAccess {
   group: string;
@@ -305,6 +319,7 @@ async function planAgentPod(
     pins_digest: digest(pins),
     workspace: pins.workspace,
     cli_digest: digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')),
+    local_sandbox: hostLocalSandbox(),
   };
 }
 export function hostDigests() {
@@ -412,6 +427,7 @@ export function readHost(path: string): HostManifest {
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_access') ? ['operator_access'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_mcp') ? ['operator_mcp'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'approval_ttl_ms') ? ['approval_ttl_ms'] : []),
+      ...(Object.hasOwn(m, 'local_sandbox') ? ['local_sandbox'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
@@ -444,6 +460,11 @@ export function readHost(path: string): HostManifest {
     }
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');
+    if (
+      Object.hasOwn(m, 'local_sandbox') &&
+      canonical(m.local_sandbox) !== canonical(hostLocalSandbox())
+    )
+      throw Error('Host command sandbox changed; run host plan again');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
     const managed = hostMcp(m);
     if (m.schema === 3 || ([4, 5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {
