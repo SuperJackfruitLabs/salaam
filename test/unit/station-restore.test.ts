@@ -21,6 +21,9 @@ function fixture(fail?: { at: number; definite: boolean }) {
     configurationDigest: 'c'.repeat(64),
     helper: async (request: Record<string, unknown>) => {
       if (request.action === 'inspect') return { tree_digest: live };
+      // The real helper (agentpod stationfs) refuses any patch whose request id is not 64 hex.
+      if (!/^[a-f0-9]{64}$/.test(String(request.request_id)))
+        throw new StationFilesDefiniteFailure('station_request_invalid');
       sent.push(request);
       if (fail && ++patches === fail.at)
         throw fail.definite

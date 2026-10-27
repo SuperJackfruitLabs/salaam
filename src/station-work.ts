@@ -989,7 +989,8 @@ export class StationWork {
         expected_tree: tree,
         expected_hash: w.expected_hash,
         content: w.content,
-        request_id: id + ':' + n,
+        // The helper accepts only a 64-hex request id: one per restore write, stable on replay.
+        request_id: digest({ restore: id, write: n }),
         deadline_ms: Date.now() + 5000,
       };
       this.store.transaction(() =>
