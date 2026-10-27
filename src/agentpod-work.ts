@@ -3153,14 +3153,17 @@ export class AgentPodWork {
     root: { session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding },
     row: Record<string, unknown>,
     task: WorkTask,
-  ): 'known_effects_failure' | null {
+  ): 'known_effects_failure' | { refused: string } {
     try {
       this.assertKnownEffectsStop(binding);
       this.assertPlan(task, JSON.parse(String(row.admission_json)));
       this.failureEvidence(root, task);
       return 'known_effects_failure';
-    } catch {
-      return null;
+    } catch (error) {
+      return {
+        refused:
+          error instanceof ServiceError ? error.code + ': ' + error.message : 'settlement_unproven',
+      };
     }
   }
   abandon(binding: unknown, request: string, workRequest: string, terminalDigest: string) {
@@ -3471,7 +3474,12 @@ export class AgentPodWork {
       // The owner may settle a stopped run automatically only on this verdict.
       ...(() => {
         const ready = this.settlementReady(binding, root, row, task);
-        return ready ? { settlement_ready: ready } : {};
+        if (ready === 'known_effects_failure') return { settlement_ready: ready };
+        // Which guard refused, for a stopped run only: the owner logs it, so an unsettled run
+        // says why instead of "cannot prove". Codes and fixed messages only; no data.
+        return ready && this.authority.inspect(binding).revoked
+          ? { settlement_refused: ready.refused }
+          : {};
       })(),
     };
   }
