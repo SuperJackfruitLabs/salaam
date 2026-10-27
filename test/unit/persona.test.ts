@@ -1,10 +1,11 @@
 import { test, expect, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, realpathSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadPersona, personaSection } from '../../src/persona.js';
 
 // Item 9: the host's persona is an operator file, pinned by digest, appended last to the prompt.
-const dir = () => mkdtempSync('/tmp/sal-persona-');
+// realpath: macOS /tmp is a symlink, and a persona path must be canonical.
+const dir = () => realpathSync(mkdtempSync('/tmp/sal-persona-'));
 
 test('a persona is a canonical, small, non-empty UTF-8 file, pinned by its content', () => {
   const d = dir();
