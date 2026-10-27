@@ -62,7 +62,7 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
-import { findBwrap, type SandboxLevel } from './command-sandbox.js';
+import { chooseLocalSandbox, type SandboxLevel } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
@@ -354,13 +354,11 @@ export class SalaamService {
               : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
-        // Item 10: Linux runs local commands under bubblewrap (an unusable bubblewrap refuses the
-        // sandboxed levels); a host with no sandbox yet (macOS, until Seatbelt) says so plainly.
-        const level = options.localSandbox ?? 'workspace-write';
-        const localSandbox: LocalSandbox =
-          process.platform === 'linux'
-            ? { kind: 'bwrap', level, bwrap: level === 'full-access' ? null : findBwrap() }
-            : { kind: 'none', level, bwrap: null };
+        // Item 10: Linux runs local commands under bubblewrap when usable; any other host runs
+        // them unsandboxed and says so in every approval.
+        const localSandbox: LocalSandbox = chooseLocalSandbox(
+          options.localSandbox ?? 'workspace-write',
+        );
         this.localCoding = new LocalCoding(
           this.store,
           this.managed,

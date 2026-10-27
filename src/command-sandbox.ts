@@ -8,8 +8,9 @@ import { ServiceError } from './protocol.js';
  * the command under bubblewrap: an empty root, the system read-only, a private /tmp, the workspace
  * bound read-write or read-only, no network unless declared, and user, PID, IPC, UTS and network
  * namespaces unshared, dying with its parent. `full-access` runs it as is and must be chosen
- * explicitly by the operator. A host without a usable bubblewrap refuses the sandboxed levels; it
- * never falls back silently.
+ * explicitly by the operator. A host without a usable bubblewrap (or with no sandbox yet, macOS
+ * until Seatbelt) runs commands unsandboxed and says so: "unsandboxed" in host plan and in every
+ * approval, and kind `none` in the approved arguments and the execution result.
  */
 export const SANDBOX_LEVELS = ['read-only', 'workspace-write', 'full-access'] as const;
 export type SandboxLevel = (typeof SANDBOX_LEVELS)[number];
@@ -96,4 +97,19 @@ export function sandboxArgv(
     '--',
     ...argv,
   ];
+}
+
+/** The sandbox this host gives local commands: bubblewrap on Linux when usable, otherwise none. */
+export function chooseLocalSandbox(
+  level: SandboxLevel,
+  platform: NodeJS.Platform = process.platform,
+  find: () => Bwrap | null = findBwrap,
+): { kind: 'bwrap' | 'none'; level: SandboxLevel; bwrap: Bwrap | null } {
+  if (platform !== 'linux' || level === 'full-access') return { kind: 'none', level, bwrap: null };
+  const bwrap = find();
+  return bwrap ? { kind: 'bwrap', level, bwrap } : { kind: 'none', level, bwrap: null };
+}
+/** How host plan and approvals name a sandbox kind. */
+export function sandboxLabel(kind: 'bwrap' | 'none'): string {
+  return kind === 'bwrap' ? 'bubblewrap' : 'unsandboxed';
 }

@@ -306,7 +306,7 @@ test('a bubblewrap host binds the sandbox into the approval and runs the command
   try {
     const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
     expect(created.operation.value).toContain('bubblewrap sandbox (workspace-write)');
-    expect(created.operation.value).not.toContain('outside an OS sandbox');
+    expect(created.operation.value).not.toContain('unsandboxed');
     expect(
       JSON.parse(
         String(
@@ -351,23 +351,56 @@ test('the tools user still reports its own host process group, then runs bubblew
   }
 });
 
-test('a Linux host without a usable bubblewrap refuses a sandboxed command before any approval', async () => {
-  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap: null });
+test('a Linux host without a usable bubblewrap falls back to none, like macOS', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  expect(chooseLocalSandbox('workspace-write', 'linux', () => null)).toEqual({
+    kind: 'none',
+    level: 'workspace-write',
+    bwrap: null,
+  });
+  expect(chooseLocalSandbox('workspace-write', 'linux', () => bwrap).kind).toBe('bwrap');
+  expect(chooseLocalSandbox('workspace-write', 'darwin', () => bwrap).kind).toBe('none');
+  expect(chooseLocalSandbox('full-access', 'linux', () => bwrap).kind).toBe('none');
+});
+
+test('a host with no sandbox labels every command approval unsandboxed and binds kind none', async () => {
+  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
   try {
-    expect(() => f.prepare('c1', { action: 'command', command: 'echo hi' })).toThrow('bubblewrap');
-    expect(f.store.db.prepare('SELECT count(*) AS n FROM approvals').get()!.n).toBe(0);
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain(
+      'unsandboxed: this host has no usable command sandbox',
+    );
+    expect(
+      JSON.parse(
+        String(
+          f.store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(created.call.id)!.args,
+        ),
+      ).sandbox,
+    ).toEqual({ kind: 'none', level: 'workspace-write', bwrap: null });
   } finally {
     await f.close();
   }
 });
 
-test('a host with no sandbox says so in every command approval', async () => {
+test('an unsandboxed command records sandbox none in its execution result', async () => {
   const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
   try {
-    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
-    expect(created.operation.value).toContain('outside an OS sandbox');
-    expect(created.operation.value).toContain('This host has no command sandbox');
+    const call = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    f.approve(call);
+    f.local.run(call.call.id);
+    const done = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(done.result).toMatchObject({ sandbox: 'none', isolation: 'local-user-no-os-sandbox' });
   } finally {
     await f.close();
   }
+});
+
+test('host plan names the command sandbox kind and labels none unsandboxed', async () => {
+  const { hostLocalSandbox } = await import('../../src/host.js');
+  expect(hostLocalSandbox('linux', () => null)).toEqual({ kind: 'none', label: 'unsandboxed' });
+  expect(hostLocalSandbox('darwin', () => bwrap)).toEqual({ kind: 'none', label: 'unsandboxed' });
+  expect(hostLocalSandbox('linux', () => bwrap)).toEqual({ kind: 'bwrap', label: 'bubblewrap' });
 });

@@ -44,9 +44,9 @@ interface LocalCall {
 }
 /**
  * Item 10: how this host runs local commands. `bwrap`: under bubblewrap at `level` (full-access
- * only by explicit operator setting); a Linux host whose bubblewrap is unusable refuses the
- * sandboxed levels. `none`: a host with no sandbox yet (macOS until Seatbelt lands), which runs
- * commands as before and says so plainly in every approval.
+ * only by explicit operator setting). `none`: a host with no usable sandbox (macOS until Seatbelt
+ * lands, or Linux without a working bubblewrap), which runs commands unsandboxed and says so in
+ * every approval.
  */
 export interface LocalSandbox {
   kind: 'bwrap' | 'none';
@@ -365,10 +365,10 @@ export class LocalCoding {
   }
   private sandboxText(): string {
     const { kind, level } = this.sandbox;
-    if (kind === 'none')
-      return 'outside an OS sandbox. This host has no command sandbox, so the command may access files and network beyond this workspace.';
     if (level === 'full-access')
-      return 'outside an OS sandbox: the operator chose full access. May access files and network beyond this workspace.';
+      return 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.';
+    if (kind === 'none')
+      return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
     return level === 'read-only'
       ? 'in a bubblewrap sandbox (read-only): it can read this workspace but write nothing, and has no network.'
       : 'in a bubblewrap sandbox (workspace-write): it can write only inside this workspace and has no network.';
@@ -549,7 +549,15 @@ export class LocalCoding {
           output,
           state,
           error: error ? 'Command could not start' : null,
-          isolation: tools ? 'tools-user-no-os-sandbox' : 'local-user-no-os-sandbox',
+          isolation:
+            (tools ? 'tools-user-' : 'local-user-') +
+            (this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access'
+              ? 'bwrap-' + this.sandbox.level
+              : 'no-os-sandbox'),
+          sandbox:
+            this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access'
+              ? 'bwrap'
+              : 'none',
           tool_uid: this.tools.uid,
         };
         this.store.transaction(() => {
