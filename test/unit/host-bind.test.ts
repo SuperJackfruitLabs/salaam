@@ -95,6 +95,13 @@ testIf(root)(
       expect(readHost(withMcp.manifest)).toMatchObject({ operator_mcp: { config: mcp } });
       writeFileSync(mcp, servers('https://mcp.example.com/b'), { mode: 0o600 });
       expect(() => readHost(withMcp.manifest)).toThrow('Operator MCP declarations changed');
+      // Item 9: the persona is pinned by content; a changed file refuses the manifest.
+      const persona = join(dir, 'persona.md');
+      writeFileSync(persona, 'Warm and brief.\n', { mode: 0o600 });
+      const withPersona = await bindHost({ ...input, persona });
+      expect(readHost(withPersona.manifest)).toMatchObject({ persona: { config: persona } });
+      writeFileSync(persona, 'Curt.\n', { mode: 0o600 });
+      expect(() => readHost(withPersona.manifest)).toThrow('Host persona changed');
       for (const tools_user of ['root', 'no-such-user-x', '../x'])
         await expect(bindHost({ ...input, tools_user })).rejects.toThrow('tools user');
     } finally {
