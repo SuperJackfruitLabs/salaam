@@ -4296,6 +4296,23 @@ test('work status says when a stopped run can retire with known effects, and cha
   }
 });
 
+test('work status names the guard that refuses a stopped run', async () => {
+  const x = refusedWritesFixture();
+  try {
+    x.f.store.db
+      .prepare("UPDATE task_runtime SET blocked_reason='Task request limit reached'")
+      .run();
+    const status = (await x.f.work.status(x.f.binding, settlementDriver(x.f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('settlement_ready' in status).toBe(false);
+    expect(String(status.settlement_refused)).toMatch(/^work_settlement_unsafe: Only exact/);
+  } finally {
+    x.f.close();
+  }
+});
+
 test.each(['runtime-not-exceeded', 'other-block'])(
   'work status gives no settlement verdict for a run fail would refuse (%s)',
   async (failure) => {
