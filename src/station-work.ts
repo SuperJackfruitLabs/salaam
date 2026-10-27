@@ -877,6 +877,172 @@ export class StationWork {
       },
     );
   }
+  /** Item 11b: the restore journal. Each write is recorded before it is sent, so a daemon stop
+   * mid-restore leaves an honest unknown, never a silent effect. */
+  private restoreTables(): void {
+    this.store.db.exec(`CREATE TABLE IF NOT EXISTS station_restores(
+      id TEXT PRIMARY KEY NOT NULL, session_id TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE,
+      restore_digest TEXT NOT NULL, approved_by TEXT NOT NULL, state TEXT NOT NULL, receipt TEXT);
+    CREATE TABLE IF NOT EXISTS station_restore_writes(
+      restore_id TEXT NOT NULL REFERENCES station_restores(id), n INTEGER NOT NULL, path TEXT NOT NULL,
+      args_json TEXT NOT NULL, state TEXT NOT NULL, result_json TEXT, artifact_id TEXT,
+      PRIMARY KEY(restore_id, n));`);
+  }
+  /** At start: a restore write that was in flight has an unknown outcome; its restore is partial. */
+  recoverRestores(): void {
+    this.restoreTables();
+    this.store.transaction(() => {
+      for (const w of this.store.db
+        .prepare("SELECT restore_id,n FROM station_restore_writes WHERE state='dispatching'")
+        .all()) {
+        this.store.db
+          .prepare(
+            "UPDATE station_restore_writes SET state='outcome_unknown' WHERE restore_id=? AND n=?",
+          )
+          .run(String(w.restore_id), Number(w.n));
+        this.store.db
+          .prepare("UPDATE station_restores SET state='partial' WHERE id=?")
+          .run(String(w.restore_id));
+      }
+    });
+  }
+  /**
+   * Item 11b: restore files exactly as planned and approved, after the run has ended. The caller
+   * checks the ended run and the approval; this writes. It refuses a workspace whose live tree is
+   * not the reviewed one, then sends each write through the protected helper in order, chaining
+   * the expected tree and each file's current hash, with a receipt per file. The same request
+   * replays its receipt. A failure stops the restore; nothing is retried.
+   */
+  async restore(
+    session: string,
+    rootDigest: string,
+    plan: {
+      restore_digest: string;
+      current_tree: string;
+      writes: { path: string; content: string | null; expected_hash: string | null }[];
+    },
+    request: string,
+    approvedBy: string,
+  ): Promise<unknown> {
+    this.restoreTables();
+    const saved = this.store.db
+      .prepare('SELECT * FROM station_restores WHERE request_id=?')
+      .get(request);
+    if (saved) {
+      if (saved.restore_digest !== plan.restore_digest || saved.session_id !== session)
+        throw new ServiceError(
+          'request_conflict',
+          'This restore request was used for another restore',
+        );
+      if (saved.receipt) return JSON.parse(String(saved.receipt));
+      throw new ServiceError('restore_unconfirmed', 'This restore did not finish; review it again');
+    }
+    const live = (await this.helper({ action: 'inspect' })) as { tree_digest?: unknown };
+    if (live.tree_digest !== plan.current_tree)
+      throw new ServiceError(
+        'restore_changed',
+        'The workspace changed since this restore was reviewed',
+      );
+    const id = randomUUID();
+    this.store.transaction(() =>
+      this.store.db
+        .prepare("INSERT INTO station_restores VALUES (?,?,?,?,?,'running',NULL)")
+        .run(id, session, request, plan.restore_digest, approvedBy),
+    );
+    let tree = plan.current_tree;
+    const done: { path: string; artifact_id: string }[] = [];
+    let stopped: string | null = null;
+    for (const [n, w] of plan.writes.entries()) {
+      const args = {
+        action: 'patch',
+        path: w.path,
+        expected_tree: tree,
+        expected_hash: w.expected_hash,
+        content: w.content,
+        request_id: id + ':' + n,
+        deadline_ms: Date.now() + 5000,
+      };
+      this.store.transaction(() =>
+        this.store.db
+          .prepare("INSERT INTO station_restore_writes VALUES (?,?,?,?,'dispatching',NULL,NULL)")
+          .run(id, n, w.path, canonical(args)),
+      );
+      let result: Record<string, unknown>;
+      try {
+        result = (await this.helper(args)) as Record<string, unknown>;
+      } catch (error) {
+        const definite = error instanceof StationFilesDefiniteFailure;
+        this.store.transaction(() =>
+          this.store.db
+            .prepare(
+              'UPDATE station_restore_writes SET state=?,result_json=? WHERE restore_id=? AND n=?',
+            )
+            .run(
+              definite ? 'failed' : 'outcome_unknown',
+              canonical({
+                code: definite ? (error as ServiceError).code : 'station_execution_unconfirmed',
+              }),
+              id,
+              n,
+            ),
+        );
+        stopped = w.path;
+        break;
+      }
+      const artifact = this.artifacts.prepare(
+        session,
+        canonical({
+          version: 1,
+          kind: 'station-restore-receipt',
+          restore_id: id,
+          request_id: request,
+          restore_digest: plan.restore_digest,
+          approved_by: approvedBy,
+          session_id: session,
+          root_digest: rootDigest,
+          configuration_digest: this.configurationDigest,
+          path: w.path,
+          patch: {
+            content: w.content,
+            expected_tree: args.expected_tree,
+            expected_hash: w.expected_hash,
+          },
+          result,
+        }),
+      );
+      this.store.transaction(() => {
+        artifact.commit();
+        this.store.db
+          .prepare(
+            "UPDATE station_restore_writes SET state='returned',result_json=?,artifact_id=? WHERE restore_id=? AND n=?",
+          )
+          .run(canonical(result), artifact.id, id, n);
+      });
+      done.push({ path: w.path, artifact_id: artifact.id });
+      tree = String(result.tree_digest);
+    }
+    const receipt = {
+      version: 1 as const,
+      state: stopped ? ('partial' as const) : ('restored' as const),
+      restore_id: id,
+      restore_digest: plan.restore_digest,
+      tree_digest: tree,
+      writes: done,
+      ...(stopped ? { stopped_at: stopped } : {}),
+    };
+    this.store.transaction(() => {
+      this.store.db
+        .prepare('UPDATE station_restores SET state=?,receipt=? WHERE id=?')
+        .run(receipt.state, canonical(receipt), id);
+      this.store.event(session, 'station.restored', {
+        restore_id: id,
+        restore_digest: plan.restore_digest,
+        approved_by: approvedBy,
+        state: receipt.state,
+      });
+    });
+    return receipt;
+  }
   run(id: string): unknown {
     const c = this.get(id);
     if (terminal(c.state) || this.jobs.has(id)) return this.view(id);
@@ -1167,6 +1333,7 @@ export class StationWork {
   }
   async initialize(): Promise<void> {
     this.proven = false;
+    this.recoverRestores();
     for (const row of this.store.db
       .prepare(
         "SELECT id FROM station_calls WHERE helper_state NOT IN ('none','stopped') ORDER BY rowid",

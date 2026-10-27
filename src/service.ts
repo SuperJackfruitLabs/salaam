@@ -912,6 +912,31 @@ export class SalaamService {
           });
           return;
         }
+        // Item 11b: restore a checkpoint's files, exactly as approved, for an ended run.
+        if (parts[2] === 'work-restore') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict work is not enabled');
+          if (
+            Object.keys(body).sort().join(',') !==
+            'approved_by,binding,checkpoint_id,request_id,restore_digest'
+          )
+            throw new ServiceError('invalid_work_payload', 'Closed restore request required');
+          const restoreDigest = string(body.restore_digest, 'restore_digest', 64);
+          if (!/^[a-f0-9]{64}$/.test(restoreDigest))
+            throw new ServiceError('invalid_work_payload', 'A restore names its exact digest');
+          this.send(
+            res,
+            200,
+            await this.agentpodWork.restore(
+              body.binding,
+              string(body.request_id, 'request_id', 128),
+              string(body.checkpoint_id, 'checkpoint_id', 128),
+              restoreDigest,
+              string(body.approved_by, 'approved_by', 128),
+            ),
+          );
+          return;
+        }
         // Item 11: read-only checkpoints of the bound run and one checkpoint's diff.
         if (parts[2] === 'work-checkpoints' || parts[2] === 'work-checkpoint-diff') {
           if (!this.agentpodWork)
