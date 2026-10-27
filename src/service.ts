@@ -1,4 +1,5 @@
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
+import { loadPersona } from './persona.js';
 import {
   mkdirSync,
   chmodSync,
@@ -79,6 +80,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   agentpodConfig?: string;
   /** Operator-declared MCP file (never a workspace path); absent means none declared. */
   operatorMcpConfig?: string;
+  /** Item 9: the host's pinned persona file and the digest host plan reviewed. */
+  personaConfig?: { config: string; digest: string };
   /** Environment that ${VAR} references resolve from; defaults to process.env. */
   operatorMcpEnvironment?: NodeJS.ProcessEnv;
   managedMcp?: { config: string; profile_digest: string };
@@ -322,6 +325,12 @@ export class SalaamService {
           effectsEnabled: !!options.effectConnector,
         });
         this.supervisor.tasks = this.tasks;
+        if (options.personaConfig) {
+          const persona = loadPersona(options.personaConfig.config);
+          if (persona.digest !== options.personaConfig.digest)
+            throw Error('Host persona changed; run host plan again');
+          this.supervisor.persona = persona;
+        }
         if (options.operatorMcpConfig) {
           this.operatorMcpPath = options.operatorMcpConfig;
           this.supervisor.operatorMcp = OperatorMcp.load(
@@ -1826,6 +1835,9 @@ export class SalaamService {
           context_admission: { version: 1, automatic_discovery: false, child_inheritance: false },
           agentpod_config: this.agentpod?.configPath ?? null,
           agentpod_pins_digest: this.agentpod ? digest(this.agentpod.pins) : null,
+          persona: this.supervisor.persona
+            ? { digest: this.supervisor.persona.digest, text: this.supervisor.persona.text }
+            : null,
           operator_mcp: this.operatorMcpPath
             ? {
                 config: this.operatorMcpPath,

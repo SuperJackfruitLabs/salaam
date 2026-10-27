@@ -31,6 +31,7 @@ import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { OperatorMcp } from './operator-mcp.js';
+import { loadPersona } from './persona.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -83,6 +84,8 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
   operator_access?: OperatorAccess;
   /** Operator-declared MCP servers (docs/mcp.md), pinned by declaration digest. */
   operator_mcp?: { config: string; digest: string };
+  /** Item 9: the operator's persona file, pinned by content digest. */
+  persona?: { config: string; digest: string };
   /** How long a strict approval offer stays answerable; the daemon default when absent. */
   approval_ttl_ms?: number;
 }
@@ -189,6 +192,7 @@ async function planAgentPod(
     'strict_work_version',
     'operator_group',
     'operator_mcp_config',
+    'persona_config',
     'approval_ttl_ms',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
@@ -214,6 +218,13 @@ async function planAgentPod(
     if (!isAbsolute(config) || realpathSync(config) !== config)
       throw Error('Use a canonical absolute operator MCP config path');
     operatorMcp = { config, digest: OperatorMcp.load(config).digest };
+  }
+  let persona: { config: string; digest: string } | undefined;
+  if (c.persona_config !== undefined) {
+    if (c.strict_work_version !== 1)
+      throw Error('persona_config is only for the strict work host profile');
+    const config = string(c.persona_config, 'persona_config');
+    persona = { config, digest: loadPersona(config).digest };
   }
   let ttl: number | undefined;
   if (c.approval_ttl_ms !== undefined) {
@@ -278,6 +289,7 @@ async function planAgentPod(
                 strict_work: { version: 1 as const },
                 ...(access ? { operator_access: access } : {}),
                 ...(operatorMcp ? { operator_mcp: operatorMcp } : {}),
+                ...(persona ? { persona } : {}),
                 ...(ttl !== undefined ? { approval_ttl_ms: ttl } : {}),
               }
             : { schema: 5 as const }),
@@ -411,6 +423,7 @@ export function readHost(path: string): HostManifest {
       ...(m.schema === 6 ? ['strict_work'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_access') ? ['operator_access'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'operator_mcp') ? ['operator_mcp'] : []),
+      ...(m.schema === 6 && Object.hasOwn(m, 'persona') ? ['persona'] : []),
       ...(m.schema === 6 && Object.hasOwn(m, 'approval_ttl_ms') ? ['approval_ttl_ms'] : []),
     ];
     if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
@@ -441,6 +454,17 @@ export function readHost(path: string): HostManifest {
         OperatorMcp.load(o.config).digest !== o.digest
       )
         throw Error('Operator MCP declarations changed');
+    }
+    if (m.schema === 6 && Object.hasOwn(m, 'persona')) {
+      const p = object(m.persona);
+      let current: string | null = null;
+      try {
+        current = loadPersona(String(p.config)).digest;
+      } catch {
+        current = null;
+      }
+      if (Object.keys(p).sort().join(',') !== 'config,digest' || current !== p.digest)
+        throw Error('Host persona changed; run host plan again');
     }
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
       throw Error('Host CLI changed');

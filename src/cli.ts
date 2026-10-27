@@ -564,6 +564,7 @@ async function main(): Promise<void> {
             provider: option('--provider'),
             model: option('--model'),
             mcp_config: option('--mcp-config'),
+            persona: option('--persona'),
             managed_mcp_config: option('--managed-mcp-config'),
           }),
         ),
@@ -642,6 +643,7 @@ async function main(): Promise<void> {
                 ...(m.schema === 6 && m.operator_mcp
                   ? { operatorMcpConfig: m.operator_mcp.config }
                   : {}),
+                ...(m.schema === 6 && m.persona ? { personaConfig: m.persona } : {}),
               }),
           hostManifestDigest: digest(m),
           hostReceipt: hostReceipt(m),
