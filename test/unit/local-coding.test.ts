@@ -291,3 +291,83 @@ test('failed process ownership persistence never releases the command', async ()
     await f.close();
   }
 });
+
+// Item 10: local commands run sandboxed where the host can, and say plainly when it cannot.
+import type { LocalSandbox } from '../../src/local-coding.js';
+function sandboxed(sandbox: LocalSandbox) {
+  const f = setup();
+  (f.local as unknown as { sandbox: LocalSandbox }).sandbox = sandbox;
+  return f;
+}
+const bwrap = { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' };
+
+test('a bubblewrap host binds the sandbox into the approval and runs the command inside it', async () => {
+  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('bubblewrap sandbox (workspace-write)');
+    expect(created.operation.value).not.toContain('outside an OS sandbox');
+    expect(
+      JSON.parse(
+        String(
+          f.store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(created.call.id)!.args,
+        ),
+      ),
+    ).toMatchObject({
+      sandbox: { kind: 'bwrap', level: 'workspace-write', bwrap: 'bubblewrap 0.11.1' },
+    });
+    const argv = (
+      f.local as unknown as { commandArgv(root: string, script: string): string[] }
+    ).commandArgv(f.root, 'echo hi');
+    expect(argv[0]).toBe('/usr/bin/bwrap');
+    expect(argv).toContain('--unshare-net');
+    expect(argv.slice(-3)).toEqual(['/bin/sh', '-c', 'echo hi']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('the tools user still reports its own host process group, then runs bubblewrap', async () => {
+  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap });
+  try {
+    (f.local as unknown as { tools: { mode: string; user: string; uid: number } }).tools = {
+      mode: 'tools-user',
+      user: 'salaam-tools',
+      uid: 1234,
+      prefix: ['/usr/bin/sudo', '-n', '-u', 'salaam-tools', '--'],
+      warning: null,
+    } as never;
+    const argv = (
+      f.local as unknown as { commandArgv(root: string, script: string): string[] }
+    ).commandArgv(f.root, 'echo hi');
+    const outer = argv.indexOf('/usr/bin/setsid');
+    expect(outer).toBeGreaterThan(-1);
+    const shell = argv.slice(outer).join(' ');
+    // The host-side shell prints its own pid (the group leader) before exec-ing bubblewrap.
+    expect(shell).toMatch(/salaam-tool-pgid:%s.*exec "\$@"/s);
+    expect(argv.indexOf('/usr/bin/bwrap')).toBeGreaterThan(outer);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a Linux host without a usable bubblewrap refuses a sandboxed command before any approval', async () => {
+  const f = sandboxed({ kind: 'bwrap', level: 'workspace-write', bwrap: null });
+  try {
+    expect(() => f.prepare('c1', { action: 'command', command: 'echo hi' })).toThrow('bubblewrap');
+    expect(f.store.db.prepare('SELECT count(*) AS n FROM approvals').get()!.n).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a host with no sandbox says so in every command approval', async () => {
+  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('outside an OS sandbox');
+    expect(created.operation.value).toContain('This host has no command sandbox');
+  } finally {
+    await f.close();
+  }
+});

@@ -1,3 +1,4 @@
+import { sandboxArgv, type Bwrap, type SandboxLevel } from './command-sandbox.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
@@ -41,6 +42,17 @@ interface LocalCall {
   pid: number | null;
   identity: string | null;
 }
+/**
+ * Item 10: how this host runs local commands. `bwrap`: under bubblewrap at `level` (full-access
+ * only by explicit operator setting); a Linux host whose bubblewrap is unusable refuses the
+ * sandboxed levels. `none`: a host with no sandbox yet (macOS until Seatbelt lands), which runs
+ * commands as before and says so plainly in every approval.
+ */
+export interface LocalSandbox {
+  kind: 'bwrap' | 'none';
+  level: SandboxLevel;
+  bwrap: Bwrap | null;
+}
 export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
   private closed = false;
@@ -50,6 +62,8 @@ export class LocalCoding {
     readonly managed: ManagedWork,
     readonly active: (s: string, e: number, a: string) => void,
     readonly tools: ToolIdentity = serviceToolIdentity(),
+    /** Chosen by the service from the host and the operator's setting. */
+    public sandbox: LocalSandbox = { kind: 'none', level: 'full-access', bwrap: null },
   ) {
     this.unregister = managed.registerMcpController('local-coding-v1', {
       owns: (op) => !!store.db.prepare('SELECT 1 FROM local_calls WHERE operation_id=?').get(op.id),
@@ -168,16 +182,36 @@ export class LocalCoding {
     const kind = string(input.action, 'action');
     let args:
       | { action: 'edit'; edits: LocalEdit[] }
-      | { action: 'command'; command: string; timeout_ms: number };
+      | {
+          action: 'command';
+          command: string;
+          timeout_ms: number;
+          sandbox: { kind: string; level: string; bwrap: string | null };
+        };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
     else if (kind === 'command') {
       const timeout = input.timeout_ms ?? 30000;
       if (!Number.isInteger(timeout) || Number(timeout) < 100 || Number(timeout) > 120000)
         throw new ServiceError('invalid_field', 'Command timeout must be 100–120000 ms');
+      if (
+        this.sandbox.kind === 'bwrap' &&
+        this.sandbox.level !== 'full-access' &&
+        !this.sandbox.bwrap
+      )
+        throw new ServiceError(
+          'sandbox_unavailable',
+          'This host has no usable bubblewrap, so it cannot run a sandboxed command; an operator can choose full access explicitly',
+        );
       args = {
         action: 'command',
         command: string(input.command, 'command', 8192),
         timeout_ms: Number(timeout),
+        // Bound into the approval and the operation digest: the sandbox is part of what is approved.
+        sandbox: {
+          kind: this.sandbox.kind,
+          level: this.sandbox.level,
+          bwrap: this.sandbox.bwrap?.version ?? null,
+        },
       };
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
     c.args = JSON.stringify(args);
@@ -187,7 +221,7 @@ export class LocalCoding {
           ? args.edits
               .map((e) => `--- ${e.path}\n${e.before ?? '(new file)'}\n+++ ${e.path}\n${e.after}`)
               .join('\n\n')
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, outside an OS sandbox. May access files and network beyond this workspace.\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText()}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -329,6 +363,41 @@ export class LocalCoding {
     } else this.command(c, String(args.command), Number(args.timeout_ms));
     return this.view(id);
   }
+  private sandboxText(): string {
+    const { kind, level } = this.sandbox;
+    if (kind === 'none')
+      return 'outside an OS sandbox. This host has no command sandbox, so the command may access files and network beyond this workspace.';
+    if (level === 'full-access')
+      return 'outside an OS sandbox: the operator chose full access. May access files and network beyond this workspace.';
+    return level === 'read-only'
+      ? 'in a bubblewrap sandbox (read-only): it can read this workspace but write nothing, and has no network.'
+      : 'in a bubblewrap sandbox (workspace-write): it can write only inside this workspace and has no network.';
+  }
+  /** The process a command runs as. Under the tools user, the host-side shell reports its own
+   * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
+   * otherwise report a number that means nothing on the host. */
+  private commandArgv(root: string, script: string): string[] {
+    const sandboxed = this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access';
+    const inner = (s: string) =>
+      sandboxed
+        ? sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
+            network: false,
+          })
+        : ['/bin/sh', '-c', s];
+    if (this.tools.mode !== 'tools-user') return inner(script);
+    const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
+    return sandboxed
+      ? toolArgv(this.tools, [
+          '/usr/bin/setsid',
+          '-w',
+          '/bin/sh',
+          '-c',
+          marker + 'exec "$@"',
+          'sh',
+          ...inner(script),
+        ])
+      : toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
+  }
   private command(c: LocalCall, command: string, timeout: number): void {
     let stop = () => {};
     const done = new Promise<void>((resolve) => {
@@ -339,14 +408,9 @@ export class LocalCoding {
       // Deliberately do not inherit the daemon's provider credentials or service tokens.
       // Hold the shell before any user instruction until its identity is durably owned.
       const tools = this.tools.mode === 'tools-user';
-      const script =
-        (tools ? 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n' : '') +
-        'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' +
-        command;
+      const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = tools
-        ? toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', script])
-        : ['/bin/sh', '-c', script];
+      const argv = this.commandArgv(c.root, script);
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;

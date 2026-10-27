@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { SANDBOX_LEVELS, type SandboxLevel } from './command-sandbox.js';
 import { acp } from './acp.js';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -1617,7 +1618,10 @@ async function main(): Promise<void> {
         option('--agentpod-config') ?? defaultAgentPodConfig(process.env, existsSync),
       a2aListenConfig = option('--a2a-listen-config'),
       mcpConfig = resolve(option('--mcp-config') ?? operatorMcpPath(process.env)),
-      toolsUser = option('--tools-user') ?? (process.env.SALAAM_TOOLS_USER || undefined);
+      toolsUser = option('--tools-user') ?? (process.env.SALAAM_TOOLS_USER || undefined),
+      localSandbox = option('--local-sandbox') ?? (process.env.SALAAM_LOCAL_SANDBOX || undefined);
+    if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))
+      throw Error('--local-sandbox is read-only, workspace-write or full-access');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
@@ -1630,6 +1634,7 @@ async function main(): Promise<void> {
         a2aConfig: a2aConfig ? resolve(a2aConfig) : undefined,
         a2aListenConfig: a2aListenConfig ? resolve(a2aListenConfig) : undefined,
         toolsUser,
+        ...(localSandbox ? { localSandbox: localSandbox as SandboxLevel } : {}),
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1721,6 +1726,7 @@ async function main(): Promise<void> {
         '--mcp-config',
         mcpConfig,
         ...(toolsUser ? ['--tools-user', toolsUser] : []),
+        ...(localSandbox ? ['--local-sandbox', localSandbox] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

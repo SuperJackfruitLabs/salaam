@@ -62,7 +62,8 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
-import { LocalCoding } from './local-coding.js';
+import { findBwrap, type SandboxLevel } from './command-sandbox.js';
+import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
@@ -105,6 +106,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   codingRoot?: string;
   /** Unprivileged OS user for agent-initiated local commands and edits (Linux, sudo -n -u). */
   toolsUser?: string;
+  /** Item 10: the sandbox level for agent-initiated local commands (default workspace-write).
+   * full-access is unsandboxed and must be chosen explicitly. */
+  localSandbox?: SandboxLevel;
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -350,11 +354,19 @@ export class SalaamService {
               : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
+        // Item 10: Linux runs local commands under bubblewrap (an unusable bubblewrap refuses the
+        // sandboxed levels); a host with no sandbox yet (macOS, until Seatbelt) says so plainly.
+        const level = options.localSandbox ?? 'workspace-write';
+        const localSandbox: LocalSandbox =
+          process.platform === 'linux'
+            ? { kind: 'bwrap', level, bwrap: level === 'full-access' ? null : findBwrap() }
+            : { kind: 'none', level, bwrap: null };
         this.localCoding = new LocalCoding(
           this.store,
           this.managed,
           (id, epoch, attempt) => this.supervisor.assertActive(id, epoch, attempt),
           this.toolIdentity,
+          localSandbox,
         );
         this.supervisor.localCoding = this.localCoding;
         this.agents = new AgentProfiles(

@@ -268,8 +268,15 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.19.0 --ignore-scripts
       - run: npm ci --ignore-scripts
+      # Item 10: the local command sandbox proof runs for real on Linux, never skipped.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - run: npm run test:acceptance -- --profile "$ACCEPTANCE_PROFILE"
         env:
+          SALAAM_REQUIRE_BWRAP: ${{ runner.os == 'Linux' && '1' || '' }}
           ACCEPTANCE_PROFILE: ${{ needs.plan.outputs.profile == 'full' && 'baseline' || 'quick' }}
       - run: npm run setup:cli
       - run: salaam --help
