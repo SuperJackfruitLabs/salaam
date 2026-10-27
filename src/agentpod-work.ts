@@ -2930,6 +2930,55 @@ export class AgentPodWork {
       calls,
     };
   }
+  /** A task its verification budget stopped after every step finished (staging run_54648a07).
+   * Everything is closed and definite: every attempt completed or failed, every step completed or
+   * failed, every operation succeeded or failed definitely with no approval pending, every station
+   * call settled with its helper stopped, nothing reserved, no children. */
+  private verificationLimitStopFailure(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    if (
+      !['blocked', 'partially_completed'].includes(task.state) ||
+      !runtime ||
+      runtime.blocked_reason !== 'Task verification run limit reached' ||
+      runtime.auto_enabled ||
+      runtime.reserved_requests ||
+      runtime.reserved_tokens ||
+      !attempts.length ||
+      attempts.some((a) => !['completed', 'failed'].includes(String(a.state))) ||
+      task.steps.some((s) => !['completed', 'failed'].includes(s.state))
+    )
+      return null;
+    const db = this.store.db;
+    const operations = db
+      .prepare('SELECT id,state FROM operations WHERE session_id=? ORDER BY rowid')
+      .all(session);
+    const calls = db
+      .prepare(
+        'SELECT id,kind,state,helper_state FROM station_calls WHERE session_id=? ORDER BY rowid',
+      )
+      .all(session);
+    if (
+      operations.some((o) => !['succeeded', 'failed_definite'].includes(String(o.state))) ||
+      db.prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'").get(session) ||
+      calls.some(
+        (c) =>
+          ['prepared', 'dispatching', 'outcome_unknown'].includes(String(c.state)) ||
+          !['none', 'stopped'].includes(String(c.helper_state)),
+      ) ||
+      db.prepare('SELECT 1 FROM child_tasks WHERE parent_session=?').get(session)
+    )
+      return null;
+    return {
+      steps: task.steps.map((s) => ({ id: s.id, state: s.state })),
+      attempts: attempts.map((a) => ({ id: a.id, state: a.state })),
+      operations,
+      calls,
+    };
+  }
   private failureEvidence(
     root: { session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding },
     task: WorkTask,
@@ -3015,12 +3064,17 @@ export class AgentPodWork {
       zeroEffect || revokeCancelled || budgetStop || refusedWrites || budgetKnown
         ? null
         : this.rateLimitStopFailure(root.session_id, task, runtime, attempts);
+    const verificationLimit =
+      zeroEffect || revokeCancelled || budgetStop || refusedWrites || budgetKnown || rateLimit
+        ? null
+        : this.verificationLimitStopFailure(root.session_id, task, runtime, attempts);
     if (
       !zeroEffect &&
       !revokeCancelled &&
       !budgetStop &&
       !refusedWrites &&
       !rateLimit &&
+      !verificationLimit &&
       !budgetKnown &&
       !knownReadOnly &&
       (task.state !== 'blocked' ||
@@ -3071,7 +3125,7 @@ export class AgentPodWork {
     )
       throw new ServiceError(
         'work_settlement_unsafe',
-        'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, or closed historical read-only evidence can retire',
+        'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit or verification-budget stop, or closed historical read-only evidence can retire',
       );
     const evidence_digest = digest({
       binding: root.binding,
@@ -3088,6 +3142,7 @@ export class AgentPodWork {
       ...(refusedWrites ? { runtime_stop_refused_writes: refusedWrites } : {}),
       ...(budgetKnown ? { request_budget_stop_known_effects: budgetKnown } : {}),
       ...(rateLimit ? { rate_limit_stop: rateLimit } : {}),
+      ...(verificationLimit ? { verification_limit_stop: verificationLimit } : {}),
       ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
     });
     return evidence_digest;
