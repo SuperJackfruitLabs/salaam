@@ -959,7 +959,7 @@ export class SalaamService {
             200,
             parts[2] === 'work-checkpoints'
               ? this.agentpodWork.checkpoints(body.binding)
-              : this.agentpodWork.checkpointDiff(
+              : await this.agentpodWork.checkpointDiff(
                   body.binding,
                   string(body.checkpoint_id, 'checkpoint_id', 128),
                 ),

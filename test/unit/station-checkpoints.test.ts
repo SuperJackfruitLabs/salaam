@@ -5,7 +5,20 @@ import { Store } from '../../src/store.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { TaskContext } from '../../src/task-context.js';
 import { TaskWork } from '../../src/task-work.js';
-import { StationCheckpoints } from '../../src/station-checkpoints.js';
+import { StationCheckpoints, type FileNow } from '../../src/station-checkpoints.js';
+/** A live workspace as the helper would report it: a tree digest and each file's bytes (hashes
+ * are the fixture's stand-in 'h-' + content, as the recorded writes use). */
+function live(tree: string, files: Record<string, string | null>) {
+  return {
+    tree,
+    file: async (path: string): Promise<FileNow> => {
+      const c = files[path];
+      return c === undefined || c === null
+        ? { state: 'absent' }
+        : { state: 'content', content: c, sha256: 'h-' + c };
+    },
+  };
+}
 import { canonical } from '../../src/protocol.js';
 
 // Item 11: checkpoints of a station task come from its own recorded writes.
@@ -91,7 +104,7 @@ test('each completed step ends at a checkpoint with its tree and the files it ch
   expect(new Set(list.map((c) => c.id)).size).toBe(2);
 });
 
-test('the diff to a checkpoint reverts, deletes, brings back, and refuses what it never saw', () => {
+test('the diff to a checkpoint reverts, deletes, brings back, and refuses what it never saw', async () => {
   const f = fixture();
   f.write(0, 'runs/r/a.md', 'v1', null);
   f.write(0, 'runs/r/gone.md', 'keep me', null);
@@ -103,8 +116,13 @@ test('the diff to a checkpoint reverts, deletes, brings back, and refuses what i
   f.complete(1);
   const task = f.tasks.get(f.task.id);
   const [draft] = f.checkpoints.list(task);
-  const diff = f.checkpoints.diff(task, draft!.id);
+  const diff = await f.checkpoints.diff(
+    task,
+    draft!.id,
+    live('t6', { 'runs/r/a.md': 'v2', 'runs/r/b.md': 'new', 'README.md': 'edited later' }),
+  );
   expect(diff.current_tree).toBe('t6');
+  expect(diff.drift).toBe(false);
   expect(Object.fromEntries(diff.files.map((x) => [x.path, x.change]))).toEqual({
     'README.md': 'not_restorable',
     'runs/r/a.md': 'revert',
@@ -115,7 +133,59 @@ test('the diff to a checkpoint reverts, deletes, brings back, and refuses what i
     state: 'content',
     content: 'v1',
   });
-  expect(() => f.checkpoints.diff(task, 'nope')).toThrow('No such checkpoint');
+  await expect(f.checkpoints.diff(task, 'nope', live('t6', {}))).rejects.toThrow(
+    'No such checkpoint',
+  );
+});
+
+test('the diff reads the live tree: a change made outside the run shows, and the digest binds it', async () => {
+  const f = fixture();
+  f.write(0, 'runs/r/a.md', 'v1', null);
+  f.complete(0);
+  f.write(1, 'runs/r/a.md', 'v2', 'h1');
+  f.complete(1);
+  const task = f.tasks.get(f.task.id);
+  const [, polish] = f.checkpoints.list(task);
+  // Receipts alone say nothing changed since the last checkpoint.
+  const clean = await f.checkpoints.diff(task, polish!.id, live('t2', { 'runs/r/a.md': 'v2' }));
+  expect(clean.files).toEqual([]);
+  expect(clean.drift).toBe(false);
+  // Someone edits the file outside the run: the live tree moved and the diff shows the revert.
+  const drifted = await f.checkpoints.diff(
+    task,
+    polish!.id,
+    live('live-1', { 'runs/r/a.md': 'edited by hand' }),
+  );
+  expect(drifted.current_tree).toBe('live-1');
+  expect(drifted.recorded_tree).toBe('t2');
+  expect(drifted.drift).toBe(true);
+  expect(drifted.files).toEqual([
+    expect.objectContaining({
+      path: 'runs/r/a.md',
+      change: 'revert',
+      current: 'edited by hand',
+      at_checkpoint: { state: 'content', content: 'v2' },
+    }),
+  ]);
+  expect(drifted.writes).toEqual([
+    {
+      path: 'runs/r/a.md',
+      content: 'v2',
+      expected_hash: 'h-edited by hand',
+    },
+  ]);
+  expect(drifted.restore_digest).not.toBe(clean.restore_digest);
+  // A file deleted by hand comes back; the tree alone moving (same bytes) changes only the digest.
+  const deleted = await f.checkpoints.diff(task, polish!.id, live('live-2', {}));
+  expect(deleted.files.map((x) => [x.path, x.change])).toEqual([['runs/r/a.md', 'bring_back']]);
+  const touched = await f.checkpoints.diff(
+    task,
+    polish!.id,
+    live('live-3', { 'runs/r/a.md': 'v2' }),
+  );
+  expect(touched.files).toEqual([]);
+  expect(touched.drift).toBe(true);
+  expect(touched.restore_digest).not.toBe(clean.restore_digest);
 });
 
 test('an unfinished step has no checkpoint, and a failed or unreturned write is ignored', () => {
@@ -131,7 +201,7 @@ test('an unfinished step has no checkpoint, and a failed or unreturned write is 
 
 // Item 11b: the restore plan is exact. Its digest binds the checkpoint, the current tree and every
 // file change; the writes carry each file's current hash, so the helper refuses a drifted file.
-test('a restore plan lists exact writes, and its digest moves with any change', () => {
+test('a restore plan lists exact writes, and its digest moves with any change', async () => {
   const f = fixture();
   f.write(0, 'runs/r/a.md', 'v1', null);
   f.write(0, 'runs/r/gone.md', 'keep me', null);
@@ -143,8 +213,13 @@ test('a restore plan lists exact writes, and its digest moves with any change', 
   f.complete(1);
   const task = f.tasks.get(f.task.id);
   const [draft] = f.checkpoints.list(task);
-  const diff = f.checkpoints.diff(task, draft!.id);
-  const plan = f.checkpoints.restorePlan(task, draft!.id);
+  const now = live('t6', {
+    'runs/r/a.md': 'v2',
+    'runs/r/b.md': 'new',
+    'README.md': 'edited later',
+  });
+  const diff = await f.checkpoints.diff(task, draft!.id, now);
+  const plan = await f.checkpoints.restorePlan(task, draft!.id, now);
   expect(plan.restore_digest).toBe(diff.restore_digest);
   expect(plan.current_tree).toBe('t6');
   expect(plan.writes).toEqual([
@@ -156,22 +231,36 @@ test('a restore plan lists exact writes, and its digest moves with any change', 
   expect(plan.writes.some((w) => w.path === 'README.md')).toBe(false);
   // A later write changes the current tree, so the earlier approval no longer matches.
   f.write(1, 'runs/r/c.md', 'more', null);
-  expect(f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id).restore_digest).not.toBe(
-    plan.restore_digest,
-  );
+  const later = live('t7', {
+    'runs/r/a.md': 'v2',
+    'runs/r/b.md': 'new',
+    'runs/r/c.md': 'more',
+    'README.md': 'edited later',
+  });
+  expect(
+    (await f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id, later)).restore_digest,
+  ).not.toBe(plan.restore_digest);
 });
 
-test('the restore digest moves when only the current tree moves', () => {
+test('the restore digest moves when only the current tree moves', async () => {
   const f = fixture();
   f.write(0, 'runs/r/a.md', 'v1', null);
   f.complete(0);
   f.write(1, 'runs/r/a.md', 'v2', 'h-v1');
   f.complete(1);
   const [draft] = f.checkpoints.list(f.tasks.get(f.task.id));
-  const before = f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id);
+  const before = await f.checkpoints.restorePlan(
+    f.tasks.get(f.task.id),
+    draft!.id,
+    live('t2', { 'runs/r/a.md': 'v2' }),
+  );
   // The same bytes written again: the file plan is identical, only the tree has moved on.
   f.write(1, 'runs/r/a.md', 'v2', 'h-v2');
-  const after = f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id);
+  const after = await f.checkpoints.restorePlan(
+    f.tasks.get(f.task.id),
+    draft!.id,
+    live('t3', { 'runs/r/a.md': 'v2' }),
+  );
   expect(after.writes).toEqual(before.writes);
   expect(after.current_tree).not.toBe(before.current_tree);
   expect(after.restore_digest).not.toBe(before.restore_digest);

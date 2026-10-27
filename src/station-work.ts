@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { FileNow, LiveTree } from './station-checkpoints.js';
 import {
   mkdirSync,
   mkdtempSync,
@@ -887,6 +888,35 @@ export class StationWork {
       restore_id TEXT NOT NULL REFERENCES station_restores(id), n INTEGER NOT NULL, path TEXT NOT NULL,
       args_json TEXT NOT NULL, state TEXT NOT NULL, result_json TEXT, artifact_id TEXT,
       PRIMARY KEY(restore_id, n));`);
+  }
+  /** Item 11b: the live workspace through the helper's closed verbs (inspect, search, read). A
+   * path is absent only when an exact search finds no entry for it; a file the helper refuses to
+   * read (too large, not text) is unreadable, never guessed. */
+  async live(): Promise<LiveTree> {
+    const inspected = await this.helper({ action: 'inspect' });
+    return {
+      tree: String(inspected.tree_digest),
+      file: async (path: string): Promise<FileNow> => {
+        let offset: number | null = 0,
+          found = false;
+        while (offset !== null && !found) {
+          const page: Record<string, any> = await this.helper({
+            action: 'search',
+            query: path,
+            offset,
+          });
+          found = (page.entries as { path: string }[]).some((e) => e.path === path);
+          offset = page.next_offset ?? null;
+        }
+        if (!found) return { state: 'absent' };
+        try {
+          const read = await this.helper({ action: 'read', path });
+          return { state: 'content', content: String(read.content), sha256: String(read.sha256) };
+        } catch {
+          return { state: 'unreadable' };
+        }
+      },
+    };
   }
   /** At start: a restore write that was in flight has an unknown outcome; its restore is partial. */
   recoverRestores(): void {

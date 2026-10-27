@@ -4544,7 +4544,7 @@ test('a progression grant is the plan steps or the steps plus the re-run allowan
 });
 
 // Item 11: the owner reads a run's checkpoints and a checkpoint's diff; nothing changes.
-test("work checkpoints list each completed step's checkpoint and its diff, read-only", () => {
+test("work checkpoints list each completed step's checkpoint and its diff, read-only", async () => {
   const f = fixture();
   try {
     const admitted = f.run();
@@ -4583,11 +4583,11 @@ test("work checkpoints list each completed step's checkpoint and its diff, read-
       tree_digest: 't1',
       files_changed: ['runs/r/a.md'],
     });
-    const diff = f.work.checkpointDiff(f.binding, listed.checkpoints[0]!.id) as {
-      files: unknown[];
-    };
-    expect(diff.files).toEqual([]);
-    expect(() => f.work.checkpointDiff(f.binding, 'nope')).toThrow('No such checkpoint');
+    // The diff reads the live workspace, so without the station boundary it says so.
+    await expect(f.work.checkpointDiff(f.binding, listed.checkpoints[0]!.id)).rejects.toThrow(
+      'station boundary',
+    );
+    await expect(f.work.checkpointDiff(f.binding, 'nope')).rejects.toThrow('No such checkpoint');
   } finally {
     f.close();
   }
@@ -4635,6 +4635,11 @@ function restoreFixture() {
   f.work.verification.station = {
     station: {
       restore: async (...a: unknown[]) => (restored.push(a), { version: 1, state: 'restored' }),
+      // The live workspace the diff reads: the run's last write, as the helper would report it.
+      live: async () => ({
+        tree: 't2',
+        file: async () => ({ state: 'content', content: 'v2', sha256: 'h-v2' }),
+      }),
     },
   } as never;
   const end = () => {
@@ -4643,8 +4648,8 @@ function restoreFixture() {
   };
   const checkpoint = () =>
     (f.work.checkpoints(f.binding) as { checkpoints: { id: string }[] }).checkpoints[0]!.id;
-  const digestOf = (id: string) =>
-    (f.work.checkpointDiff(f.binding, id) as { restore_digest: string }).restore_digest;
+  const digestOf = async (id: string) =>
+    ((await f.work.checkpointDiff(f.binding, id)) as { restore_digest: string }).restore_digest;
   return { f, restored, end, checkpoint, digestOf };
 }
 
@@ -4652,7 +4657,7 @@ test('a restore of an ended run goes to the station exactly as reviewed', async 
   const x = restoreFixture();
   try {
     const id = x.checkpoint(),
-      d = x.digestOf(id);
+      d = await x.digestOf(id);
     await expect(x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin')).rejects.toThrow(
       'ended',
     );
@@ -4684,7 +4689,7 @@ test('no restore while another run is active on the station', async () => {
   const x = restoreFixture();
   try {
     const id = x.checkpoint(),
-      d = x.digestOf(id);
+      d = await x.digestOf(id);
     x.end();
     x.f.store.db
       .prepare(
