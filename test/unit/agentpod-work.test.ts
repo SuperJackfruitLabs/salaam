@@ -4685,6 +4685,56 @@ test('a restore of an ended run goes to the station exactly as reviewed', async 
   }
 });
 
+// Item 11b: a replay returns the same receipt. After a completed restore the live tree has moved,
+// so the plan recomputed now would not match; the journal answers first.
+test('a replay of a completed restore returns its saved receipt, though the workspace moved', async () => {
+  const x = restoreFixture();
+  try {
+    let tree = 't2',
+      content: string | null = 'v2';
+    const real = Object.assign(Object.create(StationWork.prototype), {
+      store: x.f.store,
+      artifacts: new Artifacts(mkdtempSync('/tmp/sal-rr-'), x.f.store),
+      configurationDigest: 'c'.repeat(64),
+      helper: async (request: Record<string, unknown>) => {
+        if (request.action === 'inspect') return { tree_digest: tree };
+        tree = 'restored-' + String(request.path);
+        content = request.content === null ? null : String(request.content);
+        return {
+          ok: true,
+          path: request.path,
+          before_tree_digest: request.expected_tree,
+          tree_digest: tree,
+          sha256: null,
+        };
+      },
+      live: async () => ({
+        tree,
+        file: async () =>
+          content === null
+            ? { state: 'absent' as const }
+            : { state: 'content' as const, content, sha256: 'h-' + content },
+      }),
+    }) as StationWork;
+    x.f.work.verification.station = { station: real } as never;
+    const id = x.checkpoint(),
+      d = await x.digestOf(id);
+    x.end();
+    const first = await x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin');
+    expect(first).toMatchObject({ state: 'restored' });
+    expect(content).toBe('v1');
+    // The same approval again: the saved receipt, not a refusal, and nothing written twice.
+    expect(await x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin')).toEqual(first);
+    expect(tree).toBe('restored-runs/r/a.md');
+    // The same request id for a different digest is still a conflict.
+    await expect(
+      x.f.work.restore(x.f.binding, 'restore:1', id, 'e'.repeat(64), 'prn_admin'),
+    ).rejects.toThrow('another restore');
+  } finally {
+    x.f.close();
+  }
+});
+
 test('no restore while another run is active on the station', async () => {
   const x = restoreFixture();
   try {

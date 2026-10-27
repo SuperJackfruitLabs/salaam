@@ -3347,6 +3347,10 @@ export class AgentPodWork {
     const station = this.stationBoundary();
     if (!station)
       throw new ServiceError('restore_unavailable', 'Restore needs the station boundary');
+    // A replay of a restore already journaled returns its receipt: the live tree it moved is no
+    // reason to refuse the very approval that moved it.
+    const replay = station.replayed?.(root.session_id, request, restoreDigest) ?? null;
+    if (replay !== null) return replay;
     const plan = await new StationCheckpoints(this.store).restorePlan(
       task,
       checkpoint,
@@ -3385,7 +3389,14 @@ export class AgentPodWork {
   private stationBoundary() {
     return (
       this.verification.station as unknown as
-        { station?: { restore: StationWork['restore']; live: StationWork['live'] } } | undefined
+        | {
+            station?: {
+              restore: StationWork['restore'];
+              live: StationWork['live'];
+              replayed?: StationWork['replayed'];
+            };
+          }
+        | undefined
     )?.station;
   }
   async status(binding: unknown, driver: TaskDriver) {

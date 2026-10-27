@@ -918,6 +918,23 @@ export class StationWork {
       },
     };
   }
+  /** Item 11b: the journal's answer for a restore request already seen, or null for a new one.
+   * A replay returns the saved receipt exactly; the same request for another restore is a
+   * conflict; an unfinished one says so. Checked before any plan is recomputed. */
+  replayed(session: string, request: string, restoreDigest: string): unknown | null {
+    this.restoreTables();
+    const saved = this.store.db
+      .prepare('SELECT * FROM station_restores WHERE request_id=?')
+      .get(request);
+    if (!saved) return null;
+    if (saved.restore_digest !== restoreDigest || saved.session_id !== session)
+      throw new ServiceError(
+        'request_conflict',
+        'This restore request was used for another restore',
+      );
+    if (saved.receipt) return JSON.parse(String(saved.receipt));
+    throw new ServiceError('restore_unconfirmed', 'This restore did not finish; review it again');
+  }
   /** At start: a restore write that was in flight has an unknown outcome; its restore is partial. */
   recoverRestores(): void {
     this.restoreTables();

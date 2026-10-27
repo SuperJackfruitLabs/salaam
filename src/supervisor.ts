@@ -182,6 +182,8 @@ export class Supervisor extends EventEmitter {
   managed?: ManagedWork;
   mcp?: McpWork;
   operatorMcp?: OperatorMcp;
+  /** Item 9: the host's pinned persona, given to every worker on this host. */
+  persona?: import('./persona.js').Persona;
   toolkit?: ToolkitWork;
   station?: StationWork;
   children?: ChildWork;
@@ -491,6 +493,7 @@ export class Supervisor extends EventEmitter {
         ...(worker.mcpServers ? { mcp_servers: worker.mcpServers } : {}),
         ...(worker.toolkit ? { toolkit: worker.toolkit } : {}),
         ...(worker.station ? { station: worker.station } : {}),
+        ...(this.persona ? { persona: this.persona } : {}),
       };
       const args = [
         PI_CLI,
@@ -827,6 +830,8 @@ export class Supervisor extends EventEmitter {
             : {}),
           ...(w.toolkit ? { toolkit: w.toolkit } : {}),
           ...(w.station ? { station: w.station } : {}),
+          // Item 9: the worker proves it runs with the host's pinned persona.
+          ...(this.persona ? { persona_digest: this.persona.digest } : {}),
         };
         for (const [key, value] of Object.entries(expected))
           if (canonical(body[key]) !== canonical(value))

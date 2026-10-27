@@ -36,6 +36,8 @@ export interface BindInput {
   provider?: string;
   model?: string;
   mcp_config?: string;
+  /** Item 9: the operator's persona file (root-owned, outside the workspace). */
+  persona?: string;
   /** AgentPod-managed MCP profile: HTTP mcpServers the node assigns to admitted sessions. */
   managed_mcp_config?: string;
   /** Defaults to /usr/bin/systemd-run and /usr/bin/systemctl. */
@@ -129,6 +131,7 @@ export async function bindHost(input: BindInput) {
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.mcp_config ? { operator_mcp_config: realpathSync(input.mcp_config) } : {}),
+    ...(input.persona ? { persona_config: realpathSync(input.persona) } : {}),
     ...(input.managed_mcp_config ? { mcp_config: realpathSync(input.managed_mcp_config) } : {}),
   };
   changed = put(configPath, config) || changed;
