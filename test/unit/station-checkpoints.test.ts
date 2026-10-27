@@ -61,7 +61,13 @@ function fixture() {
         attempt,
         'tool-' + n,
         canonical({ action: 'patch', path, content, expected_hash, expected_tree: before }),
-        canonical({ ok: true, path, before_tree_digest: before, tree_digest: tree, sha256: null }),
+        canonical({
+          ok: true,
+          path,
+          before_tree_digest: before,
+          tree_digest: tree,
+          sha256: content === null ? null : 'h-' + content,
+        }),
       );
   };
   const complete = (step: number) =>
@@ -121,4 +127,52 @@ test('an unfinished step has no checkpoint, and a failed or unreturned write is 
   const list = f.checkpoints.list(f.tasks.get(f.task.id));
   expect(list).toHaveLength(1);
   expect(list[0]!.files_changed).toEqual([]);
+});
+
+// Item 11b: the restore plan is exact. Its digest binds the checkpoint, the current tree and every
+// file change; the writes carry each file's current hash, so the helper refuses a drifted file.
+test('a restore plan lists exact writes, and its digest moves with any change', () => {
+  const f = fixture();
+  f.write(0, 'runs/r/a.md', 'v1', null);
+  f.write(0, 'runs/r/gone.md', 'keep me', null);
+  f.complete(0);
+  f.write(1, 'runs/r/a.md', 'v2', 'h-v1');
+  f.write(1, 'runs/r/b.md', 'new', null);
+  f.write(1, 'runs/r/gone.md', null, 'h-keep me');
+  f.write(1, 'README.md', 'edited later', 'h0');
+  f.complete(1);
+  const task = f.tasks.get(f.task.id);
+  const [draft] = f.checkpoints.list(task);
+  const diff = f.checkpoints.diff(task, draft!.id);
+  const plan = f.checkpoints.restorePlan(task, draft!.id);
+  expect(plan.restore_digest).toBe(diff.restore_digest);
+  expect(plan.current_tree).toBe('t6');
+  expect(plan.writes).toEqual([
+    { path: 'runs/r/a.md', content: 'v1', expected_hash: 'h-v2' },
+    { path: 'runs/r/b.md', content: null, expected_hash: 'h-new' },
+    { path: 'runs/r/gone.md', content: 'keep me', expected_hash: null },
+  ]);
+  // README.md existed before the run: it is left as it is, never written.
+  expect(plan.writes.some((w) => w.path === 'README.md')).toBe(false);
+  // A later write changes the current tree, so the earlier approval no longer matches.
+  f.write(1, 'runs/r/c.md', 'more', null);
+  expect(f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id).restore_digest).not.toBe(
+    plan.restore_digest,
+  );
+});
+
+test('the restore digest moves when only the current tree moves', () => {
+  const f = fixture();
+  f.write(0, 'runs/r/a.md', 'v1', null);
+  f.complete(0);
+  f.write(1, 'runs/r/a.md', 'v2', 'h-v1');
+  f.complete(1);
+  const [draft] = f.checkpoints.list(f.tasks.get(f.task.id));
+  const before = f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id);
+  // The same bytes written again: the file plan is identical, only the tree has moved on.
+  f.write(1, 'runs/r/a.md', 'v2', 'h-v2');
+  const after = f.checkpoints.restorePlan(f.tasks.get(f.task.id), draft!.id);
+  expect(after.writes).toEqual(before.writes);
+  expect(after.current_tree).not.toBe(before.current_tree);
+  expect(after.restore_digest).not.toBe(before.restore_digest);
 });

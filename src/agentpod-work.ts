@@ -1,3 +1,4 @@
+import type { StationWork } from './station-work.js';
 import { StationCheckpoints } from './station-checkpoints.js';
 import { requiredChecks } from './task-policy.js';
 import { RATE_LIMIT_STOP, RateLimitRetries } from './rate-limit-retries.js';
@@ -3313,6 +3314,46 @@ export class AgentPodWork {
         return receipt;
       },
     );
+  }
+  /** Item 11b: restore a checkpoint's files, operator-approved, only for a run that has ended (its
+   * execution revoked and stopped with nothing unresolved), never while another run is active on
+   * the station, and only exactly as reviewed: the restore digest is recomputed and must match. */
+  async restore(
+    binding: unknown,
+    request: string,
+    checkpoint: string,
+    restoreDigest: string,
+    approvedBy: string,
+  ) {
+    const { root, task } = this.owned(binding);
+    const current = this.authority.inspect(binding);
+    if (
+      !current.revoked ||
+      current.authorized ||
+      !current.owned_execution_stopped ||
+      current.unresolved_operations.length ||
+      current.active_attempts.length
+    )
+      throw new ServiceError(
+        'restore_unsafe',
+        'Restore is only for a run that has ended and stopped',
+      );
+    if (
+      this.store.db
+        .prepare("SELECT 1 FROM agentpod_admissions WHERE state!='revoked' AND session_id<>?")
+        .get(root.session_id)
+    )
+      throw new ServiceError('restore_busy', 'Another run is active on this station');
+    const plan = new StationCheckpoints(this.store).restorePlan(task, checkpoint);
+    if (plan.restore_digest !== restoreDigest)
+      throw new ServiceError('restore_changed', 'This restore no longer matches what was reviewed');
+    const station = (
+      this.verification.station as unknown as
+        { station?: { restore: StationWork['restore'] } } | undefined
+    )?.station;
+    if (!station)
+      throw new ServiceError('restore_unavailable', 'Restore needs the station boundary');
+    return station.restore(root.session_id, digest(root.binding), plan, request, approvedBy);
   }
   /** Item 11: the run's checkpoints, from its own recorded station writes. Read-only. */
   checkpoints(binding: unknown) {

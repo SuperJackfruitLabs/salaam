@@ -4592,3 +4592,110 @@ test("work checkpoints list each completed step's checkpoint and its diff, read-
     f.close();
   }
 });
+
+// Item 11b: restore is only for a run that has ended, only exactly as reviewed, never on a busy station.
+function restoreFixture() {
+  const f = fixture();
+  const admitted = f.run();
+  const task = f.tasks.get(admitted.task_id),
+    step = task.steps[0]!;
+  f.store.db.exec('PRAGMA foreign_keys=OFF');
+  f.store.db
+    .prepare("INSERT INTO task_step_attempts VALUES ('att-r',?,?,'x')")
+    .run(step.id, task.plan_revision);
+  const patch = (
+    id: string,
+    content: string | null,
+    before: string,
+    after: string,
+    hash: string | null,
+    attempt = 'att-r',
+  ) =>
+    f.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,operation_id,state,result_json) VALUES (?,?,1,?,?,'patch','i','r','c',?,NULL,'returned',?)",
+      )
+      .run(
+        id,
+        f.session,
+        attempt,
+        'tool-' + id,
+        JSON.stringify({ action: 'patch', path: 'runs/r/a.md', content, expected_hash: hash }),
+        JSON.stringify({
+          ok: true,
+          before_tree_digest: before,
+          tree_digest: after,
+          sha256: content && 'h-' + content,
+        }),
+      );
+  patch('c1', 'v1', 't0', 't1', null);
+  f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE id=?").run(step.id);
+  patch('c2', 'v2', 't1', 't2', 'h-v1', 'att-later');
+  const restored: unknown[][] = [];
+  f.work.verification.station = {
+    station: {
+      restore: async (...a: unknown[]) => (restored.push(a), { version: 1, state: 'restored' }),
+    },
+  } as never;
+  const end = () => {
+    f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+    f.authority.revoke(f.binding, 'end-' + randomUUID(), 'Run ended');
+  };
+  const checkpoint = () =>
+    (f.work.checkpoints(f.binding) as { checkpoints: { id: string }[] }).checkpoints[0]!.id;
+  const digestOf = (id: string) =>
+    (f.work.checkpointDiff(f.binding, id) as { restore_digest: string }).restore_digest;
+  return { f, restored, end, checkpoint, digestOf };
+}
+
+test('a restore of an ended run goes to the station exactly as reviewed', async () => {
+  const x = restoreFixture();
+  try {
+    const id = x.checkpoint(),
+      d = x.digestOf(id);
+    await expect(x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin')).rejects.toThrow(
+      'ended',
+    );
+    x.end();
+    await expect(
+      x.f.work.restore(x.f.binding, 'restore:1', id, 'e'.repeat(64), 'prn_admin'),
+    ).rejects.toThrow('no longer matches');
+    expect(x.restored).toHaveLength(0);
+    expect(await x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin')).toMatchObject({
+      state: 'restored',
+    });
+    const [session, , plan, request, approver] = x.restored[0]! as [
+      string,
+      string,
+      { writes: unknown[]; restore_digest: string },
+      string,
+      string,
+    ];
+    expect(session).toBe(x.f.session);
+    expect(plan.restore_digest).toBe(d);
+    expect(plan.writes).toEqual([{ path: 'runs/r/a.md', content: 'v1', expected_hash: 'h-v2' }]);
+    expect([request, approver]).toEqual(['restore:1', 'prn_admin']);
+  } finally {
+    x.f.close();
+  }
+});
+
+test('no restore while another run is active on the station', async () => {
+  const x = restoreFixture();
+  try {
+    const id = x.checkpoint(),
+      d = x.digestOf(id);
+    x.end();
+    x.f.store.db
+      .prepare(
+        "INSERT INTO agentpod_admissions(id,session_id,hub_session_id,run_key,binding,digest,pins_digest,expires_at,state) VALUES ('other',?,'hub-other','k-other','{}','d','p',0,'active')",
+      )
+      .run(x.f.store.create('/tmp', 'other').id);
+    await expect(x.f.work.restore(x.f.binding, 'restore:1', id, d, 'prn_admin')).rejects.toThrow(
+      'Another run',
+    );
+    expect(x.restored).toHaveLength(0);
+  } finally {
+    x.f.close();
+  }
+});

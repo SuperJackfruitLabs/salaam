@@ -24,6 +24,7 @@ type Patch = {
   expected_hash: string | null;
   before_tree: string;
   tree: string;
+  sha256: string | null;
 };
 export type FileAtCheckpoint =
   { state: 'content'; content: string } | { state: 'absent' } | { state: 'unknown' };
@@ -46,6 +47,7 @@ export class StationCheckpoints {
           expected_hash: typeof args.expected_hash === 'string' ? args.expected_hash : null,
           before_tree: String(result.before_tree_digest),
           tree: String(result.tree_digest),
+          sha256: typeof result.sha256 === 'string' ? result.sha256 : null,
           attempt: String(r.attempt_id),
         } as Patch & { attempt: string };
       });
@@ -103,28 +105,56 @@ export class StationCheckpoints {
       ...new Set(patches.filter((p) => p.rowid > checkpoint.at).map((p) => p.path)),
     ].sort();
     const current = patches.at(-1)?.tree ?? checkpoint.tree_digest;
+    const files = later.map((path) => {
+      const now = patches.filter((p) => p.path === path).at(-1)!;
+      const then = this.fileAt(task, checkpoint.at, path);
+      return {
+        path,
+        current: now.content === null ? null : now.content,
+        at_checkpoint: then,
+        change:
+          then.state === 'unknown'
+            ? ('not_restorable' as const)
+            : then.state === 'absent'
+              ? now.content === null
+                ? ('unchanged' as const)
+                : ('delete' as const)
+              : now.content === null
+                ? ('bring_back' as const)
+                : ('revert' as const),
+        expected_hash: now.content === null ? null : now.sha256,
+      };
+    });
+    const restore_digest = digest({
+      task: task.id,
+      plan_revision: task.plan_revision,
+      checkpoint: checkpoint.id,
+      checkpoint_tree: checkpoint.tree_digest,
+      current_tree: current,
+      files: files.map((f) => ({
+        path: f.path,
+        change: f.change,
+        target: f.at_checkpoint,
+        expected: f.expected_hash,
+      })),
+    });
     return {
       checkpoint,
       current_tree: current,
-      files: later.map((path) => {
-        const now = patches.filter((p) => p.path === path).at(-1)!;
-        const then = this.fileAt(task, checkpoint.at, path);
-        return {
-          path,
-          current: now.content === null ? null : now.content,
-          at_checkpoint: then,
-          change:
-            then.state === 'unknown'
-              ? ('not_restorable' as const)
-              : then.state === 'absent'
-                ? now.content === null
-                  ? ('unchanged' as const)
-                  : ('delete' as const)
-                : now.content === null
-                  ? ('bring_back' as const)
-                  : ('revert' as const),
-        };
-      }),
+      restore_digest,
+      files: files.map(({ expected_hash: _, ...f }) => f),
+      writes: files
+        .filter((f) => ['revert', 'delete', 'bring_back'].includes(f.change))
+        .map((f) => ({
+          path: f.path,
+          content: f.at_checkpoint.state === 'content' ? f.at_checkpoint.content : null,
+          expected_hash: f.expected_hash,
+        })),
     };
+  }
+  /** Item 11b: exactly what a restore of this checkpoint writes, and the digest that binds it. */
+  restorePlan(task: WorkTask, id: string) {
+    const { restore_digest, current_tree, writes, checkpoint } = this.diff(task, id);
+    return { restore_digest, current_tree, writes, checkpoint };
   }
 }
