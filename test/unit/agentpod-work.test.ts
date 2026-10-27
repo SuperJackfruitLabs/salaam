@@ -4504,6 +4504,107 @@ test.each([
   }
 });
 
+// A run stopped by its verification budget after every step completed (staging run_54648a07):
+// everything is closed and definite, so it retires with its known effects, unattended.
+const VERIFICATION_STOP = 'Task verification run limit reached';
+function verificationStopFixture() {
+  const f = fixture();
+  const admitted = f.run();
+  const task = f.tasks.get(admitted.task_id);
+  for (const step of task.steps) {
+    const attempt = f.store.transaction(() => {
+      const a = f.store.enqueue(
+        f.session,
+        randomUUID(),
+        step.instruction,
+        undefined,
+        null,
+        step.id,
+      );
+      f.store.db
+        .prepare('INSERT INTO task_step_attempts VALUES(?,?,?,?)')
+        .run(a.attempt_id, step.id, task.plan_revision, step.instruction);
+      return a.attempt_id;
+    });
+    f.store.db.prepare("UPDATE attempts SET state='completed' WHERE id=?").run(attempt);
+    f.store.db.prepare("UPDATE submissions SET state='completed' WHERE attempt_id=?").run(attempt);
+    f.store.db
+      .prepare("UPDATE task_steps SET state='completed',attempt_id=? WHERE id=?")
+      .run(attempt, step.id);
+  }
+  f.work.verification.budget.block(f.session, VERIFICATION_STOP);
+  f.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(task.id);
+  f.store.db
+    .prepare("UPDATE durable_tasks SET state='partially_completed' WHERE id=?")
+    .run(task.id);
+  f.store.db.prepare("UPDATE workers SET state='exited' WHERE session_id=?").run(f.session);
+  f.authority.revoke(f.binding, 'verification-revoke', 'Bounded progression stopped');
+  return { f, admitted, task };
+}
+
+test('a verification-budget stop is provable: status says so and it retires with known effects', async () => {
+  const x = verificationStopFixture();
+  try {
+    const status = (await x.f.work.status(x.f.binding, settlementDriver(x.f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(status.settlement_ready).toBe('known_effects_failure');
+    expect(
+      x.f.work.fail(
+        x.f.binding,
+        'vl-retire',
+        x.admitted.request_id,
+        'a'.repeat(64),
+        settlementDriver(x.f),
+      ),
+    ).toMatchObject({ effects: 'known_effects_preserved' });
+  } finally {
+    x.f.close();
+  }
+});
+
+test.each(['other-reason', 'running-attempt', 'unfinished-step', 'unknown-operation', 'auto-on'])(
+  'a verification-budget stop is refused when it does not hold (%s)',
+  async (failure) => {
+    const x = verificationStopFixture();
+    try {
+      const db = x.f.store.db;
+      if (failure === 'other-reason')
+        db.prepare("UPDATE task_runtime SET blocked_reason='Task request limit reached'").run();
+      if (failure === 'running-attempt')
+        db.prepare(
+          "UPDATE attempts SET state='interrupted' WHERE id=(SELECT id FROM attempts WHERE session_id=? LIMIT 1)",
+        ).run(x.f.session);
+      if (failure === 'unfinished-step')
+        db.prepare("UPDATE task_steps SET state='running' WHERE id=?").run(x.task.steps[0]!.id);
+      if (failure === 'auto-on') db.prepare('UPDATE task_runtime SET auto_enabled=1').run();
+      if (failure === 'unknown-operation') {
+        db.exec('PRAGMA foreign_keys=OFF');
+        db.prepare(
+          "INSERT INTO operations(id,session_id,attempt_id,worker_epoch,tool_call_id,kind,action_key,argument_digest,operation_digest,target,value,target_version,policy_digest,connector,replay,state) VALUES('op-x',?,(SELECT id FROM attempts WHERE session_id=? LIMIT 1),1,'c','workspace','k','a','d','t','v','tv','p','station-workspace-v1','opaque','denied')",
+        ).run(x.f.session, x.f.session);
+        db.exec('PRAGMA foreign_keys=ON');
+      }
+      const status = (await x.f.work
+        .status(x.f.binding, settlementDriver(x.f))
+        .catch(() => ({}))) as Record<string, unknown>;
+      expect('settlement_ready' in status).toBe(false);
+      expect(() =>
+        x.f.work.fail(
+          x.f.binding,
+          'vl-retire',
+          x.admitted.request_id,
+          'a'.repeat(64),
+          settlementDriver(x.f),
+        ),
+      ).toThrow();
+    } finally {
+      x.f.close();
+    }
+  },
+);
+
 // The re-run allowance: a progression grant may be the plan's steps or the steps plus three, the
 // capped allowance for re-running a rate-limited or reopened step. Nothing else.
 test('a progression grant is the plan steps or the steps plus the re-run allowance, nothing else', () => {
