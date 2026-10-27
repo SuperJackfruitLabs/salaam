@@ -2934,24 +2934,44 @@ export class AgentPodWork {
    * Everything is closed and definite: every attempt completed or failed, every step completed or
    * failed, every operation succeeded or failed definitely with no approval pending, every station
    * call settled with its helper stopped, nothing reserved, no children. */
+  /** Which part of the verification-budget stop shape a run misses: a closed set of codes, so a
+   * refusal can say why without carrying any data. */
+  static readonly VERIFICATION_LIMIT_MISSES = [
+    'vl:task_state',
+    'vl:reason',
+    'vl:auto',
+    'vl:reserved',
+    'vl:attempts',
+    'vl:steps',
+    'vl:operations',
+    'vl:approvals',
+    'vl:calls',
+    'vl:children',
+  ] as const;
+  private verificationLimitMiss: (typeof AgentPodWork.VERIFICATION_LIMIT_MISSES)[number] | null =
+    null;
   private verificationLimitStopFailure(
     session: string,
     task: WorkTask,
     runtime: Record<string, any> | undefined,
     attempts: Record<string, any>[],
   ) {
-    if (
-      !['blocked', 'partially_completed'].includes(task.state) ||
-      !runtime ||
-      runtime.blocked_reason !== 'Task verification run limit reached' ||
-      runtime.auto_enabled ||
-      runtime.reserved_requests ||
-      runtime.reserved_tokens ||
-      !attempts.length ||
-      attempts.some((a) => !['completed', 'failed'].includes(String(a.state))) ||
-      task.steps.some((s) => !['completed', 'failed'].includes(s.state))
-    )
+    const miss = (code: (typeof AgentPodWork.VERIFICATION_LIMIT_MISSES)[number]) => {
+      this.verificationLimitMiss = code;
       return null;
+    };
+    this.verificationLimitMiss = null;
+    if (!runtime || runtime.blocked_reason !== 'Task verification run limit reached')
+      return miss('vl:reason');
+    if (!['blocked', 'partially_completed'].includes(task.state)) return miss('vl:task_state');
+    if (runtime.auto_enabled) return miss('vl:auto');
+    if (runtime.reserved_requests || runtime.reserved_tokens) return miss('vl:reserved');
+    if (
+      !attempts.length ||
+      attempts.some((a) => !['completed', 'failed'].includes(String(a.state)))
+    )
+      return miss('vl:attempts');
+    if (task.steps.some((s) => !['completed', 'failed'].includes(s.state))) return miss('vl:steps');
     const db = this.store.db;
     const operations = db
       .prepare('SELECT id,state FROM operations WHERE session_id=? ORDER BY rowid')
@@ -2961,17 +2981,20 @@ export class AgentPodWork {
         'SELECT id,kind,state,helper_state FROM station_calls WHERE session_id=? ORDER BY rowid',
       )
       .all(session);
+    if (operations.some((o) => !['succeeded', 'failed_definite'].includes(String(o.state))))
+      return miss('vl:operations');
+    if (db.prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'").get(session))
+      return miss('vl:approvals');
     if (
-      operations.some((o) => !['succeeded', 'failed_definite'].includes(String(o.state))) ||
-      db.prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'").get(session) ||
       calls.some(
         (c) =>
           ['prepared', 'dispatching', 'outcome_unknown'].includes(String(c.state)) ||
           !['none', 'stopped'].includes(String(c.helper_state)),
-      ) ||
-      db.prepare('SELECT 1 FROM child_tasks WHERE parent_session=?').get(session)
+      )
     )
-      return null;
+      return miss('vl:calls');
+    if (db.prepare('SELECT 1 FROM child_tasks WHERE parent_session=?').get(session))
+      return miss('vl:children');
     return {
       steps: task.steps.map((s) => ({ id: s.id, state: s.state })),
       attempts: attempts.map((a) => ({ id: a.id, state: a.state })),
@@ -3125,7 +3148,10 @@ export class AgentPodWork {
     )
       throw new ServiceError(
         'work_settlement_unsafe',
-        'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit or verification-budget stop, or closed historical read-only evidence can retire',
+        runtime?.blocked_reason === 'Task verification run limit reached' &&
+          this.verificationLimitMiss
+          ? 'Verification-budget stop not provable: ' + this.verificationLimitMiss
+          : 'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit or verification-budget stop, or closed historical read-only evidence can retire',
       );
     const evidence_digest = digest({
       binding: root.binding,

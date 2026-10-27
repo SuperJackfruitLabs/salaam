@@ -4622,6 +4622,36 @@ test.each(['other-reason', 'running-attempt', 'unfinished-step', 'unknown-operat
   },
 );
 
+test.each([
+  [
+    'vl:steps',
+    "UPDATE task_steps SET state='running' WHERE task_id=(SELECT task_id FROM task_steps LIMIT 1) AND rowid=(SELECT min(rowid) FROM task_steps)",
+  ],
+  ['vl:auto', 'UPDATE task_runtime SET auto_enabled=1'],
+  [
+    'vl:attempts',
+    "UPDATE attempts SET state='interrupted' WHERE rowid=(SELECT min(rowid) FROM attempts)",
+  ],
+])(
+  'a refused verification-budget stop names the closed sub-check it misses (%s)',
+  async (code, sql) => {
+    const x = verificationStopFixture();
+    try {
+      x.f.store.db.prepare(sql).run();
+      const status = (await x.f.work.status(
+        x.f.binding,
+        settlementDriver(x.f),
+      )) as unknown as Record<string, unknown>;
+      expect('settlement_ready' in status).toBe(false);
+      expect(status.settlement_refused).toBe(
+        'work_settlement_unsafe: Verification-budget stop not provable: ' + code,
+      );
+    } finally {
+      x.f.close();
+    }
+  },
+);
+
 // The re-run allowance: a progression grant may be the plan's steps or the steps plus three, the
 // capped allowance for re-running a rate-limited or reopened step. Nothing else.
 test('a progression grant is the plan steps or the steps plus the re-run allowance, nothing else', () => {
