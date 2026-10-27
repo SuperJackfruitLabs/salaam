@@ -208,6 +208,54 @@ export class AgentProfiles {
     if (!profile) throw new ServiceError('not_found', 'Agent profile not found', 404);
     return profile;
   }
+  /**
+   * The task critic's grant (item 8): always the built-in salaam/reviewer, never another profile,
+   * with no facts. It is granted under the work admission, not by an operator controller, and
+   * only while the caller's authorize holds (the admitted plan declares a critic). The reviewer
+   * reads only the immutable snapshot it is given and can only report findings.
+   */
+  async admitCritic(session: string, request: string, authorize: () => void): Promise<AgentGrant> {
+    const profileId = 'salaam/reviewer';
+    const profile = this.inspect(session, profileId);
+    const expectedDigest = digest(profile);
+    const input = { kind: 'critic-admit', session, profileId, expectedDigest };
+    const saved = this.store.cachedRequest<AgentGrant>('task-critic', request, input);
+    if (saved) return saved;
+    if (!BUILTIN_PROFILES.some((p) => p.id === profileId && digest(p) === expectedDigest))
+      throw new ServiceError('profile_changed', 'The critic must be the built-in reviewer');
+    const prepared = await this.prepareRoute(this.route, session);
+    return this.store.request('task-critic', request, input, () => {
+      authorize();
+      const grant: AgentGrant = {
+        schema_version: 1,
+        id: randomUUID(),
+        owner_session: session,
+        profile,
+        profile_digest: expectedDigest,
+        route: prepared.route,
+        output_cap: prepared.output_cap,
+        facts: [],
+      };
+      this.store.db
+        .prepare(
+          'INSERT INTO agent_grants(id,owner_session,profile_id,document,digest,state) VALUES (?,?,?,?,?,?)',
+        )
+        .run(grant.id, session, profileId, canonical(grant), digest(grant), 'active');
+      this.store.db
+        .prepare(
+          'INSERT OR IGNORE INTO worker_profiles(id,revision,digest,document) VALUES (?,?,?,?)',
+        )
+        .run(profile.id, profile.revision, expectedDigest, canonical(profile));
+      this.store.event(session, 'agent.admitted', {
+        grant_id: grant.id,
+        profile_id: profileId,
+        profile_digest: expectedDigest,
+        route: prepared.route,
+        critic: true,
+      });
+      return grant;
+    });
+  }
   async admit(
     session: string,
     request: string,

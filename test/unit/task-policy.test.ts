@@ -55,11 +55,31 @@ test.each([
   ['no hooks', { critic: null, hooks: [] }],
   ['too many', { critic: null, hooks: Array.from({ length: 9 }, (_, n) => hook('h' + n)) }],
   ['duplicate', { critic: null, hooks: [hook('a'), hook('a')] }],
-  ['a critic (not yet admitted)', { critic: { rubric: 'x' }, hooks: [hook('a')] }],
+  [
+    'a critic naming anything but a rubric',
+    { critic: { rubric: 'x', profile: 'salaam/builder' }, hooks: [] },
+  ],
+  ['an empty rubric', { critic: { rubric: '' }, hooks: [] }],
+  ['a rubric too long', { critic: { rubric: 'x'.repeat(4097) }, hooks: [] }],
   ['extra field', { critic: null, hooks: [hook('a')], extra: 1 }],
   ['critic missing', { hooks: [hook('a')] }],
   ['bad hook key', { critic: null, hooks: [hook('a b')] }],
   ['collides with an acceptance check', { critic: null, hooks: [hook('x')] }],
 ])('a completion gate is refused: %s', (_why, gate) => {
   expect(() => taskPolicy({ acceptance: [hook('hook-x')], completion_gate: gate })).toThrow();
+});
+
+test('a completion gate may declare a critic rubric, with or without hooks', () => {
+  const alone = taskPolicy({
+    acceptance: [hook('tests')],
+    completion_gate: { critic: { rubric: 'Cite RFC 9110.' }, hooks: [] },
+  });
+  expect(alone.completion_gate).toEqual({ critic: { rubric: 'Cite RFC 9110.' }, hooks: [] });
+  expect(taskPolicy(JSON.parse(JSON.stringify(alone)))).toEqual(alone);
+  expect(requiredChecks(alone).map((c) => c.key)).toEqual(['tests']);
+  const both = taskPolicy({
+    acceptance: [hook('tests')],
+    completion_gate: { critic: { rubric: 'r' }, hooks: [hook('lint')] },
+  });
+  expect(requiredChecks(both).map((c) => c.key)).toEqual(['tests', 'hook-lint']);
 });

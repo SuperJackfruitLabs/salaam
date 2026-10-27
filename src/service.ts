@@ -17,6 +17,7 @@ import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
 import { AgentPodWorkDecisions } from './agentpod-work-decisions.js';
 import { RunGrants } from './run-grants.js';
+import { TaskCritic } from './task-critic.js';
 import { AgentPodWork } from './agentpod-work.js';
 import { agentpodWorkAdmission } from './agentpod-work-protocol.js';
 import { TaskVerification } from './task-verification.js';
@@ -287,6 +288,26 @@ export class SalaamService {
           this.coding,
           this.artifacts,
         );
+        // Item 8: the completion critic. Its reviewer grant is the narrow built-in one, admitted
+        // only while the task's admitted plan still declares a critic.
+        this.taskVerification.critic = new TaskCritic(this.store, this.artifacts, {
+          admit: (task, request) =>
+            this.agents.admitCritic(task.session_id, request, () => {
+              if (!this.taskWork.get(task.id).completion_gate?.critic)
+                throw new ServiceError('authority_denied', 'The admitted plan declares no critic');
+            }),
+          spawn: (task, parentAttempt, step, prompt, budget, grant, snapshot) =>
+            this.children.spawnCritic(
+              task.session_id,
+              parentAttempt,
+              step,
+              prompt,
+              budget,
+              grant,
+              snapshot,
+            ),
+          workerId: (childId) => this.store.workerBoundary.view(childId).binding.worker_id,
+        });
         this.taskCheckpoints = new TaskCheckpoints(
           this.store,
           this.taskWork,

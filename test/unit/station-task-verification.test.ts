@@ -447,17 +447,19 @@ test('check binding survives journal reopen but cannot reuse a pre-restart fresh
   }
 });
 
-test.each([false, true, 'hook' as const])(
+test.each([false, true, 'hook' as const, 'critic' as const])(
   'installed controller enforces native evidence and missing deliverable=%s (synthetic station)',
   async (missing) => {
     // Item 8: with a completion hook, the hook is a required completion check of its own.
     const f =
-      missing === 'hook'
-        ? fixture(['tests'], {
-            critic: null,
-            hooks: [{ key: 'lint', command: 'node lint', cwd: '.' }],
-          })
-        : fixture();
+      missing === 'critic'
+        ? fixture(['tests'], { critic: { rubric: 'Cite RFC 9110.' }, hooks: [] })
+        : missing === 'hook'
+          ? fixture(['tests'], {
+              critic: null,
+              hooks: [{ key: 'lint', command: 'node lint', cwd: '.' }],
+            })
+          : fixture();
     try {
       // This is the real task controller and SQLite ledger with a synthetic native
       // runner. Actual systemd/primitive acceptance remains a separate Linux proof.
@@ -558,6 +560,35 @@ test.each([false, true, 'hook' as const])(
       ).toBe(1);
       f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE task_id=?").run(task.id);
       const expected = f.tasks.get(task.id).revision;
+      if (missing === 'critic') {
+        // Item 8: without a passing critic verdict on this exact evidence, nothing completes.
+        const seen: { evidence: string; deliverables: unknown }[] = [];
+        let passed = false;
+        f.verification.critic = {
+          gate: async (_t: unknown, evidence: string, deliverables: unknown) => {
+            seen.push({ evidence, deliverables });
+            return { state: 'pending' };
+          },
+          passed: (_t: unknown, evidence: string) => passed && evidence === seen[0]?.evidence,
+        } as never;
+        expect(await f.verification.criticGateAsync(f.tasks.get(task.id))).toEqual({
+          state: 'pending',
+        });
+        expect(seen[0]!.deliverables).toEqual([{ path: 'app.js', content: 'fixture' }]);
+        await expect(
+          f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {}),
+        ).rejects.toThrow('Critic review required');
+        passed = true;
+        const done = await f.verification.finishAsync(
+          task.id,
+          'finish-request-2',
+          f.tasks.get(task.id).revision,
+          null,
+          () => {},
+        );
+        expect(done.state).toBe('succeeded');
+        return;
+      }
       if (missing === 'hook') {
         await expect(
           f.verification.finishAsync(task.id, 'finish-request', expected, null, () => {}),

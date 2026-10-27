@@ -7,6 +7,8 @@ import type { RepositorySnapshots } from './repository-snapshots.js';
 import type { WorkerWorkspaces } from './worker-workspaces.js';
 import type { ExternalRuntime } from './external-runtime.js';
 import type { ExternalWork } from './external-work.js';
+import type { AgentGrant } from './agent-profiles.js';
+import type { WorkspaceTree } from './workspaces.js';
 
 export class ChildWork {
   external?: ExternalWork;
@@ -220,6 +222,116 @@ export class ChildWork {
       this.store.attempt(child.child_attempt).state === 'accepted'
     )
       this.start(child);
+    return child;
+  }
+  /**
+   * The task critic (item 8): a reviewer child over an immutable snapshot of the verified
+   * deliverables. No parent attempt is active at completion, so it is linked to the task's last
+   * step attempt and charged to its own bounded budget, never to an attempt's reservation. The
+   * grant must be the built-in reviewer; the child can read the snapshot and report findings only.
+   */
+  spawnCritic(
+    parent: string,
+    parentAttempt: string,
+    step: string,
+    prompt: string,
+    budget: number,
+    grant: AgentGrant,
+    snapshot: WorkspaceTree,
+  ): ChildTask {
+    if (!Number.isSafeInteger(budget) || budget < 1 || budget > 8)
+      throw new ServiceError('invalid_budget', 'Critic request budget must be 1–8');
+    if (grant.profile.id !== 'salaam/reviewer' || grant.owner_session !== parent)
+      throw new ServiceError('authority_denied', 'The critic must be the built-in reviewer');
+    if (!Object.keys(snapshot).length)
+      throw new ServiceError(
+        'invalid_child',
+        'A critic needs a snapshot of the verified deliverables',
+      );
+    if (!prompt.trim() || prompt.length > 32768)
+      throw new ServiceError('invalid_child', 'Invalid critic prompt');
+    const authority = [...grant.profile.tools].sort();
+    const input = digest({
+      prompt,
+      budget,
+      critic: grant.profile_digest,
+      snapshot: digest(snapshot),
+    });
+    const prepare = () => {
+      const old = this.store.db
+        .prepare('SELECT * FROM child_tasks WHERE parent_session=? AND step_key=?')
+        .get(parent, step) as unknown as ChildTask | undefined;
+      if (old) {
+        if (old.input_digest !== input)
+          throw new ServiceError('spawn_conflict', 'Critic step already binds a different review');
+        return { child: old, fresh: false };
+      }
+      if (this.paused) throw new ServiceError('stopping', 'Child dispatch is stopping');
+      this.store.execution.assert(parent);
+      if (this.activeCount() >= 8)
+        throw new ServiceError('child_limit', 'Daemon worker admission limit reached');
+      const effectivePrompt = `${grant.profile.prompt}\n\nGoal:\n${prompt}`;
+      const id = randomUUID(),
+        session = randomUUID(),
+        submission = randomUUID(),
+        childAttempt = randomUUID();
+      this.store.db
+        .prepare('INSERT INTO sessions(id,cwd,pi_session_id) VALUES (?,?,?)')
+        .run(session, this.store.session(parent).cwd, session);
+      this.store.db
+        .prepare('INSERT INTO submissions(id,session_id,text,attempt_id) VALUES (?,?,?,?)')
+        .run(submission, session, effectivePrompt, childAttempt);
+      this.store.db
+        .prepare(
+          "INSERT INTO attempts(id,session_id,submission_id,state) VALUES (?,?,?,'accepted')",
+        )
+        .run(childAttempt, session, submission);
+      this.store.db
+        .prepare(
+          "INSERT INTO child_tasks(id,parent_session,parent_attempt,step_key,input_digest,child_session,child_attempt,authority,budget,state) VALUES (?,?,?,?,?,?,?,?,?,'accepted')",
+        )
+        .run(
+          id,
+          parent,
+          parentAttempt,
+          step,
+          input,
+          session,
+          childAttempt,
+          JSON.stringify(authority),
+          budget,
+        );
+      this.store.taskChildReserve?.(parent, childAttempt, budget);
+      this.store.usage.budget(childAttempt, budget);
+      const artifact = this.artifacts.prepare(session, effectivePrompt);
+      artifact.commit();
+      // The reviewed snapshot is the verified bytes; its base is empty, so its diff is all of it.
+      const current = this.artifacts.prepare(session, JSON.stringify(snapshot)),
+        base = this.artifacts.prepare(session, JSON.stringify({}));
+      current.commit();
+      base.commit();
+      this.store.workerBoundary.freeze(this.owned(session)!, artifact.id, false, grant, {
+        artifact_id: current.id,
+        base_artifact: base.id,
+        digest: digest(snapshot),
+      });
+      this.store.event(session, 'session.created', { parent_session: parent, child_id: id });
+      this.store.event(session, 'submission.accepted', {
+        attempt_id: childAttempt,
+        submission_id: submission,
+      });
+      this.store.event(parent, 'child.spawned', {
+        child_id: id,
+        child_session: session,
+        step_key: step,
+        budget,
+        authority,
+        critic: true,
+      });
+      return { child: this.inspect(parent, id), fresh: true };
+    };
+    const { child, fresh } = this.store.transaction(prepare);
+    if (fresh) this.start(child);
     return child;
   }
   activeCount(parent?: string): number {
