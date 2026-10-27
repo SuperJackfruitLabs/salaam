@@ -153,3 +153,42 @@ test('a write still in flight when the daemon stopped becomes an honest unknown'
   );
   expect(f.store.db.prepare('SELECT state FROM station_restores').get()!.state).toBe('partial');
 });
+
+// The checkpoint diff reads the live workspace through the helper's closed verbs only.
+test('the live workspace comes from inspect, an exact search and a read, and guesses nothing', async () => {
+  const asked: Record<string, unknown>[] = [];
+  const files: Record<string, string> = {
+    'runs/r/a.md': 'by hand',
+    'runs/r/a.md.bak': 'x',
+    'runs/r/big.bin': '',
+  };
+  const work = Object.assign(Object.create(StationWork.prototype), {
+    helper: async (request: Record<string, unknown>) => {
+      asked.push(request);
+      if (request.action === 'inspect') return { tree_digest: 'live-tree' };
+      if (request.action === 'search')
+        return {
+          entries: Object.keys(files)
+            .filter((p) => p.includes(String(request.query)))
+            .map((path) => ({ path })),
+          next_offset: null,
+        };
+      if (request.action === 'read') {
+        if (request.path === 'runs/r/big.bin') throw new Error('refused');
+        return { path: request.path, content: files[String(request.path)], sha256: 'h' };
+      }
+      throw new Error('unexpected ' + String(request.action));
+    },
+  }) as StationWork;
+  const live = await work.live();
+  expect(live.tree).toBe('live-tree');
+  expect(await live.file('runs/r/a.md')).toEqual({
+    state: 'content',
+    content: 'by hand',
+    sha256: 'h',
+  });
+  // A path that only appears inside a longer one is absent, not found.
+  expect(await live.file('runs/r/a')).toEqual({ state: 'absent' });
+  expect(await live.file('runs/r/big.bin')).toEqual({ state: 'unreadable' });
+  expect(new Set(asked.map((r) => r.action))).toEqual(new Set(['inspect', 'search', 'read']));
+});

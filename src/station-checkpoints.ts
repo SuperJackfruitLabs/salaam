@@ -28,6 +28,16 @@ type Patch = {
 };
 export type FileAtCheckpoint =
   { state: 'content'; content: string } | { state: 'absent' } | { state: 'unknown' };
+/** A file as the workspace holds it now, read through the protected helper's closed verbs. */
+export type FileNow =
+  | { state: 'content'; content: string; sha256: string }
+  | { state: 'absent' }
+  | { state: 'unreadable' };
+/** The live workspace: its tree digest now, and each file's bytes now. */
+export interface LiveTree {
+  tree: string;
+  file(path: string): Promise<FileNow>;
+}
 
 export class StationCheckpoints {
   constructor(private readonly store: Store) {}
@@ -97,41 +107,52 @@ export class StationCheckpoints {
     const first = patches.find((p) => p.rowid > at);
     return first && first.expected_hash === null ? { state: 'absent' } : { state: 'unknown' };
   }
-  /** What restoring this checkpoint would do to each path written after it. */
-  diff(task: WorkTask, id: string) {
+  /**
+   * What restoring this checkpoint would do, against the LIVE workspace (never the run's own
+   * receipts alone): every path this run wrote is read as it is now, so a change made outside the
+   * run since (an edit, a deletion, a file put back) shows as what the restore would undo. The
+   * restore digest binds the live tree, so a restore refuses a workspace that moved after review.
+   * Files this run never wrote are left as they are; `drift` says when the tree moved outside it.
+   */
+  async diff(task: WorkTask, id: string, live: LiveTree) {
     const checkpoint = this.get(task, id);
     const patches = this.patches(task.session_id);
-    const later = [
-      ...new Set(patches.filter((p) => p.rowid > checkpoint.at).map((p) => p.path)),
-    ].sort();
-    const current = patches.at(-1)?.tree ?? checkpoint.tree_digest;
-    const files = later.map((path) => {
-      const now = patches.filter((p) => p.path === path).at(-1)!;
+    const recorded = patches.at(-1)?.tree ?? checkpoint.tree_digest;
+    const paths = [...new Set(patches.map((p) => p.path))].sort();
+    const files = [];
+    for (const path of paths) {
+      const now = await live.file(path);
       const then = this.fileAt(task, checkpoint.at, path);
-      return {
-        path,
-        current: now.content === null ? null : now.content,
-        at_checkpoint: then,
-        change:
-          then.state === 'unknown'
-            ? ('not_restorable' as const)
-            : then.state === 'absent'
-              ? now.content === null
+      const change =
+        now.state === 'unreadable' || then.state === 'unknown'
+          ? ('not_restorable' as const)
+          : then.state === 'absent'
+            ? now.state === 'absent'
+              ? ('unchanged' as const)
+              : ('delete' as const)
+            : now.state === 'absent'
+              ? ('bring_back' as const)
+              : now.content === then.content
                 ? ('unchanged' as const)
-                : ('delete' as const)
-              : now.content === null
-                ? ('bring_back' as const)
-                : ('revert' as const),
-        expected_hash: now.content === null ? null : now.sha256,
-      };
-    });
+                : ('revert' as const);
+      files.push({
+        path,
+        current: now.state === 'content' ? now.content : null,
+        current_state: now.state,
+        at_checkpoint: then,
+        change,
+        expected_hash: now.state === 'content' ? now.sha256 : null,
+      });
+    }
+    const shown = files.filter((f) => f.change !== 'unchanged');
     const restore_digest = digest({
       task: task.id,
       plan_revision: task.plan_revision,
       checkpoint: checkpoint.id,
       checkpoint_tree: checkpoint.tree_digest,
-      current_tree: current,
-      files: files.map((f) => ({
+      recorded_tree: recorded,
+      current_tree: live.tree,
+      files: shown.map((f) => ({
         path: f.path,
         change: f.change,
         target: f.at_checkpoint,
@@ -140,10 +161,12 @@ export class StationCheckpoints {
     });
     return {
       checkpoint,
-      current_tree: current,
+      current_tree: live.tree,
+      recorded_tree: recorded,
+      drift: live.tree !== recorded,
       restore_digest,
-      files: files.map(({ expected_hash: _, ...f }) => f),
-      writes: files
+      files: shown.map(({ expected_hash: _, ...f }) => f),
+      writes: shown
         .filter((f) => ['revert', 'delete', 'bring_back'].includes(f.change))
         .map((f) => ({
           path: f.path,
@@ -153,8 +176,8 @@ export class StationCheckpoints {
     };
   }
   /** Item 11b: exactly what a restore of this checkpoint writes, and the digest that binds it. */
-  restorePlan(task: WorkTask, id: string) {
-    const { restore_digest, current_tree, writes, checkpoint } = this.diff(task, id);
+  async restorePlan(task: WorkTask, id: string, live: LiveTree) {
+    const { restore_digest, current_tree, writes, checkpoint } = await this.diff(task, id, live);
     return { restore_digest, current_tree, writes, checkpoint };
   }
 }

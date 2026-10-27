@@ -3344,15 +3344,16 @@ export class AgentPodWork {
         .get(root.session_id)
     )
       throw new ServiceError('restore_busy', 'Another run is active on this station');
-    const plan = new StationCheckpoints(this.store).restorePlan(task, checkpoint);
-    if (plan.restore_digest !== restoreDigest)
-      throw new ServiceError('restore_changed', 'This restore no longer matches what was reviewed');
-    const station = (
-      this.verification.station as unknown as
-        { station?: { restore: StationWork['restore'] } } | undefined
-    )?.station;
+    const station = this.stationBoundary();
     if (!station)
       throw new ServiceError('restore_unavailable', 'Restore needs the station boundary');
+    const plan = await new StationCheckpoints(this.store).restorePlan(
+      task,
+      checkpoint,
+      await station.live(),
+    );
+    if (plan.restore_digest !== restoreDigest)
+      throw new ServiceError('restore_changed', 'This restore no longer matches what was reviewed');
     return station.restore(root.session_id, digest(root.binding), plan, request, approvedBy);
   }
   /** Item 11: the run's checkpoints, from its own recorded station writes. Read-only. */
@@ -3366,14 +3367,26 @@ export class AgentPodWork {
     };
   }
   /** Item 11: what restoring a checkpoint would do to each file written after it. Read-only. */
-  checkpointDiff(binding: unknown, checkpoint: string) {
+  async checkpointDiff(binding: unknown, checkpoint: string) {
     const { task } = this.owned(binding);
     this.authority.inspect(binding);
+    const checkpoints = new StationCheckpoints(this.store);
+    checkpoints.get(task, checkpoint);
+    const station = this.stationBoundary();
+    if (!station)
+      throw new ServiceError('restore_unavailable', 'A checkpoint diff needs the station boundary');
     return {
       version: 1 as const,
       task_id: task.id,
-      ...new StationCheckpoints(this.store).diff(task, checkpoint),
+      ...(await checkpoints.diff(task, checkpoint, await station.live())),
     };
+  }
+  /** The station boundary, which reads the live workspace and writes restores. */
+  private stationBoundary() {
+    return (
+      this.verification.station as unknown as
+        { station?: { restore: StationWork['restore']; live: StationWork['live'] } } | undefined
+    )?.station;
   }
   async status(binding: unknown, driver: TaskDriver) {
     const { root, row, task } = this.owned(binding);
