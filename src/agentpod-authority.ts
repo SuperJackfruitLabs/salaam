@@ -439,7 +439,7 @@ export class AgentPodAuthority {
             digest(this.pins),
             Date.now() + AGENTPOD_LEASE_MS,
           );
-        // The agent's standing rules, pinned for this run: a rule set later never joins it.
+        // The agent's standing rules, pinned for this run; a renewal may add or revoke one.
         for (const r of rules)
           this.store.db
             .prepare('INSERT INTO agentpod_approval_rules VALUES (?,?,?,?,NULL)')
@@ -514,6 +514,24 @@ export class AgentPodAuthority {
             row.session_id,
             'approval_rule.revoked',
             { admission_id: row.id, rule_id: pinned.rule_id },
+            request,
+          );
+        }
+        // A rule the hub newly lists joins the run now (operator ruling 2026-10-28: a person who
+        // chose "Always allow" mid-run is not asked again). One this run already holds, or held
+        // and lost to revocation, is left as it is: revocation stays final for the run.
+        for (const r of rules) {
+          const known = this.store.db
+            .prepare('SELECT 1 FROM agentpod_approval_rules WHERE admission_id=? AND rule_id=?')
+            .get(row.id, r.id);
+          if (known) continue;
+          this.store.db
+            .prepare('INSERT INTO agentpod_approval_rules VALUES (?,?,?,?,NULL)')
+            .run(row.id, r.id, r.scope, r.set_by);
+          this.store.event(
+            row.session_id,
+            'approval_rule.added',
+            { admission_id: row.id, rule_id: r.id, scope: r.scope, set_by: r.set_by },
             request,
           );
         }
