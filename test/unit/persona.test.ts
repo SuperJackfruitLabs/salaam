@@ -40,7 +40,10 @@ afterEach(() => {
   if (saved === undefined) delete process.env.SALAAM_WORKER_CONFIG;
   else process.env.SALAAM_WORKER_CONFIG = saved;
 });
-async function promptWith(persona?: { text: string; digest: string }) {
+async function promptWith(
+  persona?: { text: string; digest: string },
+  extra: Record<string, unknown> = {},
+) {
   process.env.SALAAM_WORKER_CONFIG = JSON.stringify({
     socket: '/nonexistent',
     token: 't',
@@ -50,6 +53,7 @@ async function promptWith(persona?: { text: string; digest: string }) {
     policy: 'p',
     frame: 'f',
     ...(persona ? { persona } : {}),
+    ...extra,
   });
   const handlers: ((e: unknown) => unknown)[] = [];
   const pi = new Proxy(
@@ -104,4 +108,20 @@ test('the daemon refuses a persona that changed since host plan, and gives worke
   } finally {
     await service.close();
   }
+});
+
+// 2026-10-28 (cards F and G): a station worker reads its card and the library before it writes,
+// as a standing first step of board work, not a suggestion; the persona still comes last.
+test('a station worker is told to read its card and search the library first, before the persona', async () => {
+  const p = await promptWith({ text: 'Persona last.', digest: 'd' }, { station: { root: '/w' } });
+  expect(p).toContain(
+    'On board work, before you write anything: call salaam_board with action card, then salaam_board with action library_search and the card title as the query.',
+  );
+  expect(p.indexOf('salaam_board with action card')).toBeLessThan(p.indexOf('Persona last.'));
+  expect(p.endsWith('Persona last.')).toBe(true);
+  // A worker with no station, and a child worker, are not told to use a tool they do not have.
+  expect(await promptWith()).not.toContain('salaam_board');
+  expect(await promptWith(undefined, { station: { root: '/w' }, child: true })).not.toContain(
+    'salaam_board',
+  );
 });

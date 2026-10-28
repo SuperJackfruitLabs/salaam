@@ -623,7 +623,9 @@ export class AgentPodWork {
         return null;
       if (e.kind === 'tool.started') {
         if (
-          !['salaam_operator_mcp', 'salaam_station'].includes(String(payload.tool)) ||
+          !['salaam_operator_mcp', 'salaam_station', 'salaam_board'].includes(
+            String(payload.tool),
+          ) ||
           typeof payload.tool_call_id !== 'string' ||
           !payload.tool_call_id ||
           payload.parent_tool_call_id
@@ -799,7 +801,9 @@ export class AgentPodWork {
       if (e.kind === 'tool.started') {
         if (
           Number(e.seq) >= Number(requested[0]!.seq) ||
-          !['salaam_operator_mcp', 'salaam_station'].includes(String(payload.tool)) ||
+          !['salaam_operator_mcp', 'salaam_station', 'salaam_board'].includes(
+            String(payload.tool),
+          ) ||
           typeof payload.tool_call_id !== 'string' ||
           !payload.tool_call_id ||
           payload.parent_tool_call_id
@@ -975,7 +979,7 @@ export class AgentPodWork {
         return null;
       if (e.kind === 'tool.started') {
         if (
-          !['salaam_operator_mcp', 'salaam_station', 'salaam_review'].includes(
+          !['salaam_operator_mcp', 'salaam_station', 'salaam_board', 'salaam_review'].includes(
             String(payload.tool),
           ) ||
           typeof payload.tool_call_id !== 'string' ||

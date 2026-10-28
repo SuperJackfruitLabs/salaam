@@ -70,7 +70,8 @@ export function workerTools(
         ...(coding?.commands ? ['salaam_command'] : []),
         ...(mcp ? ['salaam_mcp'] : []),
         ...(toolkit ? ['salaam_toolkit'] : []),
-        ...(station ? ['salaam_station'] : []),
+        // salaam_board: read-only board reads, served by the hub (operator ruling 2026-10-28).
+        ...(station ? ['salaam_board', 'salaam_station'] : []),
         ...(operatorMcp ? ['salaam_operator_mcp'] : []),
       ].sort();
 }
