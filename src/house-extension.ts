@@ -196,6 +196,45 @@ export default function house(pi: ExtensionAPI): void {
     });
   if (c.station && !c.child)
     pi.registerTool({
+      name: 'salaam_board',
+      label: 'This card, its runs and the library',
+      description:
+        "Read-only: read this run's own card and handoff (card), its earlier runs (attempts), or search and open library items (library_search {query}, library_get {item_id}). Served by the board through Salaam; you never name a card, board or credential, and it never asks for approval because it changes nothing.",
+      parameters: Type.Object({
+        action: Type.Union(
+          ['card', 'attempts', 'library_search', 'library_get'].map((a) => Type.Literal(a)),
+        ),
+        query: Type.Optional(Type.String({ maxLength: 500 })),
+        item_id: Type.Optional(Type.String({ pattern: '^itm_[0-9a-f]{16}$' })),
+      }),
+      async execute(toolCallId, params, signal) {
+        type Read = import('./board-reads.js').BoardRead;
+        let read = await bridge<Read>('board.read', { tool_call_id: toolCallId, args: params });
+        const deadline = Date.now() + 90_000;
+        while (read.state === 'pending') {
+          if (signal?.aborted) throw Error('Board read cancelled');
+          if (Date.now() > deadline)
+            return {
+              content: [
+                { type: 'text', text: 'The board did not answer in time; carry on without it.' },
+              ],
+              details: { read_id: read.id, state: 'timeout', ok: false as boolean | undefined },
+              isError: true,
+            };
+          await new Promise((r) => setTimeout(r, 500));
+          read = await bridge<Read>('board.status', { read_id: read.id });
+        }
+        return {
+          content: [
+            { type: 'text', text: read.ok ? (read.text ?? '') : (read.error ?? 'Refused') },
+          ],
+          details: { read_id: read.id, state: read.state, ok: read.ok },
+          isError: !read.ok,
+        };
+      },
+    });
+  if (c.station && !c.child)
+    pi.registerTool({
       name: 'salaam_station',
       label: 'Protected station workspace',
       description:

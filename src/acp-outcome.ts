@@ -336,19 +336,70 @@ function toolArgs(input: unknown): Record<string, unknown> {
 
 const label = (v: unknown) => (typeof v === 'string' && /^[\w.-]{1,128}$/.test(v) ? v : undefined);
 
+/** One line of what a tool acted on, for a card title: no control characters, at most `max`. */
+function shown(v: unknown, max: number): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const t = v
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return undefined;
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+/** A URL as host and path only: never its login, query or fragment (they may carry a secret). */
+function shownUrl(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
+    return u.host + (u.pathname === '/' ? '' : u.pathname);
+  } catch {
+    return undefined;
+  }
+}
+const titled = (verb: string, what: string | undefined) => {
+  if (!what) return verb;
+  const t = `${verb}: ${what}`;
+  return t.length > 80 ? t.slice(0, 79) + '…' : t;
+};
+
 /**
- * The ACP title for a tool call. Every operator MCP call goes through the one wrapper tool, so
- * its own name says nothing: a client showed six identical "salaam_operator_mcp" cards for six
- * fetches. Name the server and tool instead. Other tools keep their own name.
+ * The ACP title for a tool call, the way a board agent's card reads: the tool and what it acted on
+ * ("fetch: host/path", "write: runs/r/answer.md"). Every operator MCP call goes through one wrapper
+ * tool, so it is titled by the MCP tool itself. Only plain identifiers, URL host and path, paths,
+ * queries and commands are echoed, clipped to one line of 80 characters.
  */
 export function toolTitle(name: string, input: unknown): string {
-  if (name !== 'salaam_operator_mcp') return name;
   const args = toolArgs(input);
-  const server = label(args.server);
-  const tool = label(args.tool);
-  if (args.action === 'call' && server && tool) return `${server} · ${tool}`;
-  if (args.action === 'catalog') return server ? `MCP catalog · ${server}` : 'MCP catalog';
-  return 'Operator MCP';
+  const action = typeof args.action === 'string' ? args.action : '';
+  if (name === 'salaam_operator_mcp') {
+    const server = label(args.server);
+    const tool = label(args.tool);
+    if (action === 'call' && server && tool) {
+      const a = toolArgs(args.arguments);
+      return titled(tool, shownUrl(a.url) ?? shown(a.query ?? a.path ?? a.pattern, 80));
+    }
+    if (action === 'catalog') return titled('MCP catalog', server);
+    return 'Operator MCP';
+  }
+  if (name === 'salaam_board') {
+    if (action === 'card') return 'read this card';
+    if (action === 'attempts') return 'read this card’s runs';
+    if (action === 'library_search') return titled('library_search', shown(args.query, 80));
+    if (action === 'library_get') return titled('library_get', shown(args.item_id, 32));
+    return name;
+  }
+  if (['salaam_station', 'salaam_files', 'salaam_repository'].includes(name)) {
+    if (action === 'patch')
+      return titled(args.content === null ? 'delete' : 'write', shown(args.path, 80));
+    if (action === 'inspect' && args.path === undefined) return 'inspect workspace';
+    if (action === 'check') return titled('check', shown(args.command, 80));
+    if (['read', 'list', 'inspect', 'diff'].includes(action))
+      return titled(action, shown(args.path, 80));
+    if (action === 'search') return titled('search', shown(args.query ?? args.pattern, 80));
+    if (action) return action;
+  }
+  return name;
 }
 
 export function toolMetadata(
@@ -363,29 +414,31 @@ export function toolMetadata(
   } catch {}
   const action = String(args.action ?? '');
   const kind =
-    name === 'salaam_command' || (name === 'salaam_station' && action === 'check')
-      ? ['start', 'cancel', 'check'].includes(action)
-        ? 'execute'
-        : ['status', 'logs'].includes(action)
-          ? 'read'
-          : 'other'
-      : ['salaam_files', 'salaam_station'].includes(name) && action === 'patch'
-        ? args.content === null
-          ? 'delete'
-          : 'edit'
-        : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
-            ['search', 'list'].includes(action)
-          ? 'search'
-          : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
-              ['read', 'inspect', ...(name === 'salaam_repository' ? ['diff'] : [])].includes(
-                action,
-              )
+    name === 'salaam_board'
+      ? 'read'
+      : name === 'salaam_command' || (name === 'salaam_station' && action === 'check')
+        ? ['start', 'cancel', 'check'].includes(action)
+          ? 'execute'
+          : ['status', 'logs'].includes(action)
             ? 'read'
-            : ['salaam_history', 'inspect_child', 'consume_child_result'].includes(name)
+            : 'other'
+        : ['salaam_files', 'salaam_station'].includes(name) && action === 'patch'
+          ? args.content === null
+            ? 'delete'
+            : 'edit'
+          : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
+              ['search', 'list'].includes(action)
+            ? 'search'
+            : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
+                ['read', 'inspect', ...(name === 'salaam_repository' ? ['diff'] : [])].includes(
+                  action,
+                )
               ? 'read'
-              : name === 'salaam_operator_mcp'
-                ? operatorMcpKind(action, args.tool)
-                : 'other';
+              : ['salaam_history', 'inspect_child', 'consume_child_result'].includes(name)
+                ? 'read'
+                : name === 'salaam_operator_mcp'
+                  ? operatorMcpKind(action, args.tool)
+                  : 'other';
   const locations: { path: string; line?: number }[] = [];
   if (
     ['salaam_files', 'salaam_station'].includes(name) &&

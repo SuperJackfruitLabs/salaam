@@ -3227,7 +3227,7 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
       failed: false,
     });
     const started = tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'started')!;
-    expect(started).toMatchObject({ title: 'fetch · fetch', kind: 'fetch' });
+    expect(started).toMatchObject({ title: 'fetch: x', kind: 'fetch' });
     const read = tail.find((a) => a.tool_call_id === 'call-8' && a.phase === 'started')!;
     expect(read.title).toBe('salaam_station');
     expect(String(read.input).length).toBeLessThanOrEqual(2048);
@@ -4935,5 +4935,110 @@ test('no restore while another run is active on the station', async () => {
     expect(x.restored).toHaveLength(0);
   } finally {
     x.f.close();
+  }
+});
+
+// Board reads (operator ruling 2026-10-28, option iii): the owner sees what the agent is waiting
+// to read in work status, and answers it through work-read, for this run only.
+test('work status lists pending board reads, and only the owner of this run answers them', async () => {
+  const f = fixture();
+  try {
+    f.run();
+    const { BoardReads } = await import('../../src/board-reads.js');
+    const read = new BoardReads(f.store).request(f.session, 'call-br', { action: 'card' });
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      board_reads?: unknown[];
+    };
+    expect(status.board_reads).toEqual([{ id: read.id, action: 'card', args: {} }]);
+    expect(
+      f.work.answerBoardRead(f.binding, { read_id: read.id, ok: true, text: 'the card' }),
+    ).toMatchObject({
+      state: 'answered',
+      text: 'the card',
+    });
+    const after = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
+      board_reads?: unknown[];
+    };
+    expect(after.board_reads).toBeUndefined();
+    // Another run's binding cannot answer this run's read.
+    const other = new BoardReads(f.store).request(f.session, 'call-br2', { action: 'attempts' });
+    expect(() =>
+      f.work.answerBoardRead(
+        { ...f.binding, run: { ...f.binding.run, id: 'run_Other1' } },
+        { read_id: other.id, ok: true, text: 'x' },
+      ),
+    ).toThrow();
+  } finally {
+    f.close();
+  }
+});
+
+// The board-read contract the hub codes against (operator ruling 2026-10-28). Generated from what
+// Salaam itself emits and accepts; the hub keeps a byte copy (packages/contract/src/fixtures/
+// salaam-board-read-v1.json) and its tests fail when either side moves. Regenerate with
+// SALAAM_WRITE_FIXTURES=1.
+test('the board-read fixture is what Salaam emits in work status and accepts in work-read', async () => {
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const { BoardReads, BOARD_READ_MAX_BYTES } = await import('../../src/board-reads.js');
+  const f = fixture();
+  try {
+    f.run();
+    const before = (await f.work.status(f.binding, settlementDriver(f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    const reads = new BoardReads(f.store);
+    for (const [call, args] of [
+      ['c1', { action: 'card' }],
+      ['c2', { action: 'attempts' }],
+      ['c3', { action: 'library_search', query: 'gateway timeout' }],
+      ['c4', { action: 'library_get', item_id: 'itm_0123456789abcdef' }],
+    ] as const)
+      reads.request(f.session, call, args);
+    const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    // Exactly what pending reads add to work status, under whatever key Salaam emits them.
+    const added = Object.keys(status).filter((k) => !(k in before));
+    expect(added).toHaveLength(1);
+    const ids = (status as unknown as Record<string, { id: string }[]>)[added[0]!]!.map(
+      (r) => r.id,
+    );
+    const named = (list: { id: string }[]) => list.map((r, i) => ({ ...r, id: 'read-' + (i + 1) }));
+    const generated = {
+      version: 1,
+      // Ids are random per run; the fixture names them by position.
+      status_excerpt: {
+        [added[0]!]: named((status as unknown as Record<string, { id: string }[]>)[added[0]!]!),
+      },
+      answer_keys: { ok: ['ok', 'read_id', 'text'], refused: ['error', 'ok', 'read_id'] },
+      max_text_bytes: BOARD_READ_MAX_BYTES,
+      max_error_bytes: 2048,
+      answers: [
+        { read_id: 'read-1', ok: true, text: '{"card":{"id":"card_0123456789abcdef"}}' },
+        { read_id: 'read-2', ok: false, error: 'That library item belongs to another board.' },
+      ],
+    };
+    const url = new URL('../fixtures/agentpod-board-read-v1.json', import.meta.url);
+    const text = JSON.stringify(generated, null, 2) + '\n';
+    if (process.env.SALAAM_WRITE_FIXTURES === '1') writeFileSync(url, text);
+    expect(readFileSync(url, 'utf8')).toBe(text);
+    // Salaam accepts exactly the fixture's answers (ids mapped back), and refuses any other key.
+    const fx = JSON.parse(text) as typeof generated;
+    const real = (a: Record<string, unknown>) => ({
+      ...a,
+      read_id: ids[Number(String(a.read_id).slice(5)) - 1],
+    });
+    for (const a of fx.answers)
+      expect(f.work.answerBoardRead(f.binding, real(a))).toMatchObject({ state: 'answered' });
+    expect(() =>
+      f.work.answerBoardRead(f.binding, { readId: ids[2], ok: true, text: 'x' }),
+    ).toThrow();
+    expect(() =>
+      f.work.answerBoardRead(f.binding, { read_id: ids[2], ok: true, body: 'x' }),
+    ).toThrow();
+  } finally {
+    f.close();
   }
 });
