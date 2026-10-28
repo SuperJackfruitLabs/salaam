@@ -4622,6 +4622,41 @@ test.each(['other-reason', 'running-attempt', 'unfinished-step', 'unknown-operat
   },
 );
 
+test('a verification-budget stop stays provable after its runtime limit later overwrites the reason', async () => {
+  const x = verificationStopFixture();
+  try {
+    // Staging run_54648a07: blocked on its verification budget, then its runtime ran out while it
+    // sat parked, and the block reason became the runtime limit.
+    x.f.work.verification.budget.block(x.f.session, 'Task runtime limit reached');
+    const status = (await x.f.work.status(x.f.binding, settlementDriver(x.f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(status.settlement_ready).toBe('known_effects_failure');
+  } finally {
+    x.f.close();
+  }
+});
+
+test('a runtime-limit block that was never a verification-budget stop is not this shape', async () => {
+  const x = verificationStopFixture();
+  try {
+    x.f.store.db
+      .prepare("DELETE FROM events WHERE kind='work_task.budget_blocked' AND session_id=?")
+      .run(x.f.session);
+    x.f.store.db
+      .prepare("UPDATE task_runtime SET blocked_reason='Task runtime limit reached'")
+      .run();
+    const status = (await x.f.work.status(x.f.binding, settlementDriver(x.f))) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect('settlement_ready' in status).toBe(false);
+  } finally {
+    x.f.close();
+  }
+});
+
 test.each([
   [
     'vl:steps',

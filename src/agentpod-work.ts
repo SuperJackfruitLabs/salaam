@@ -2961,7 +2961,21 @@ export class AgentPodWork {
       return null;
     };
     this.verificationLimitMiss = null;
-    if (!runtime || runtime.blocked_reason !== 'Task verification run limit reached')
+    // The stop is the verification budget's: the current reason, or the run's first budget block
+    // when its runtime limit overwrote the reason later while it sat parked (staging run_54648a07).
+    const firstBlock = this.store.db
+      .prepare(
+        "SELECT json_extract(payload,'$.reason') AS reason FROM events WHERE session_id=? AND kind='work_task.budget_blocked' AND json_extract(payload,'$.task_id')=? ORDER BY seq LIMIT 1",
+      )
+      .get(session, task.id) as { reason?: string } | undefined;
+    if (
+      !runtime ||
+      !(
+        runtime.blocked_reason === 'Task verification run limit reached' ||
+        (runtime.blocked_reason === 'Task runtime limit reached' &&
+          firstBlock?.reason === 'Task verification run limit reached')
+      )
+    )
       return miss('vl:reason');
     if (!['blocked', 'partially_completed'].includes(task.state)) return miss('vl:task_state');
     if (runtime.auto_enabled) return miss('vl:auto');
@@ -3148,8 +3162,7 @@ export class AgentPodWork {
     )
       throw new ServiceError(
         'work_settlement_unsafe',
-        runtime?.blocked_reason === 'Task verification run limit reached' &&
-          this.verificationLimitMiss
+        this.verificationLimitMiss && this.verificationLimitMiss !== 'vl:reason'
           ? 'Verification-budget stop not provable: ' + this.verificationLimitMiss
           : 'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit or verification-budget stop, or closed historical read-only evidence can retire',
       );
