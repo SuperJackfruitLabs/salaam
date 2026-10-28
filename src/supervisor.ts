@@ -1,3 +1,4 @@
+import { BoardReads } from './board-reads.js';
 import { HostBreaker, callThroughBreaker } from './host-breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -289,6 +290,10 @@ export class Supervisor extends EventEmitter {
   }
   readonly bootId = randomUUID();
   private workers = new Map<string, Worker>();
+  private boardReadsStore?: BoardReads;
+  get boardReads(): BoardReads {
+    return (this.boardReadsStore ??= new BoardReads(this.store));
+  }
   private monitor: NodeJS.Timeout;
   readonly bundle: string;
   constructor(
@@ -1072,6 +1077,19 @@ export class Supervisor extends EventEmitter {
               }
             : {}),
         };
+      }
+      if (method === 'board.read' || method === 'board.status') {
+        // Read-only board reads, served by the hub (operator ruling 2026-10-28, option iii).
+        if (!this.station || !w.station || !w.attempt || this.children?.owned(id))
+          throw new ServiceError('station_disabled', 'Board reads need protected station work');
+        this.assertActive(id, w.epoch, w.attempt);
+        return method === 'board.read'
+          ? this.boardReads.request(
+              id,
+              string(body.tool_call_id, 'tool_call_id', 512),
+              object(body.args),
+            )
+          : this.boardReads.get(id, string(body.read_id, 'read_id', 64));
       }
       if (method.startsWith('station.')) {
         if (!this.station || !w.station || !w.attempt || this.children?.owned(id))

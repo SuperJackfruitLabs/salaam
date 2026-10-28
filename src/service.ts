@@ -1161,6 +1161,14 @@ export class SalaamService {
           this.send(res, 200, await this.agentpodWork.completion(body.binding));
           return;
         }
+        if (parts[2] === 'work-read') {
+          if (!this.agentpodWork)
+            throw new ServiceError('work_disabled', 'Strict progression is not enabled');
+          if (Object.keys(body).sort().join(',') !== 'answer,binding')
+            throw new ServiceError('invalid_board_read', 'Closed board read answer required');
+          this.send(res, 200, this.agentpodWork.answerBoardRead(body.binding, body.answer));
+          return;
+        }
         if (parts[2] === 'work-decisions' || parts[2] === 'work-decision') {
           if (!this.agentpodWork)
             throw new ServiceError(

@@ -1,3 +1,4 @@
+import { BoardReads } from './board-reads.js';
 import type { StationWork } from './station-work.js';
 import { StationCheckpoints } from './station-checkpoints.js';
 import { requiredChecks } from './task-policy.js';
@@ -3510,6 +3511,11 @@ export class AgentPodWork {
       auto_enabled: !!view.runtime.auto_enabled,
       activity: this.activity(root.session_id),
       plan: planUpdate(view),
+      // Board reads the agent is waiting on; the owner serves them (operator ruling 2026-10-28).
+      ...(() => {
+        const reads = new BoardReads(this.store).pending(root.session_id);
+        return reads.length ? { board_reads: reads } : {};
+      })(),
       // The owner may settle a stopped run automatically only on this verdict.
       ...(() => {
         const ready = this.settlementReady(binding, root, row, task);
@@ -3521,6 +3527,11 @@ export class AgentPodWork {
           : {};
       })(),
     };
+  }
+  /** The owner's answer to one of this run's board reads. */
+  answerBoardRead(binding: unknown, answer: unknown) {
+    const { root } = this.owned(binding);
+    return new BoardReads(this.store).answer(root.session_id, answer);
   }
   /** The latest tool steps, oldest first, for the owner to show as card activity while the work
    * runs. Observation only: it carries no authority and changes nothing. Input is clipped. */

@@ -135,24 +135,74 @@ test('approval kinds let AgentPod modes approve edits without approving commands
 });
 
 // Staging E2E 2026-10-23: six fetches showed as six "salaam_operator_mcp" cards of kind "other".
-test('operator MCP calls are titled by server and tool, and a fetch is a fetch', () => {
-  const call = { action: 'call', server: 'fetch', tool: 'fetch', arguments: { url: 'https://x' } };
-  expect(toolTitle('salaam_operator_mcp', call)).toBe('fetch · fetch');
-  expect(toolTitle('salaam_operator_mcp', JSON.stringify(call))).toBe('fetch · fetch');
+// Parity with a board agent (operator ruling 2026-10-28): a card reads "tool: what it acted on".
+test('operator MCP calls are titled by tool and key argument, and a fetch is a fetch', () => {
+  const call = {
+    action: 'call',
+    server: 'fetch',
+    tool: 'fetch',
+    arguments: { url: 'https://x.test/a/b' },
+  };
+  expect(toolTitle('salaam_operator_mcp', call)).toBe('fetch: x.test/a/b');
+  expect(toolTitle('salaam_operator_mcp', JSON.stringify(call))).toBe('fetch: x.test/a/b');
   expect(toolMetadata('salaam_operator_mcp', call).kind).toBe('fetch');
   expect(toolMetadata('salaam_operator_mcp', { ...call, tool: 'search_issues' }).kind).toBe(
     'other',
   );
   expect(toolTitle('salaam_operator_mcp', { action: 'catalog' })).toBe('MCP catalog');
   expect(toolTitle('salaam_operator_mcp', { action: 'catalog', server: 'fetch' })).toBe(
-    'MCP catalog · fetch',
+    'MCP catalog: fetch',
   );
   expect(toolMetadata('salaam_operator_mcp', { action: 'catalog' }).kind).toBe('read');
   // A name that is not a plain identifier is not echoed into the title.
   expect(
     toolTitle('salaam_operator_mcp', { action: 'call', server: 'x\n<b>', tool: 'fetch' }),
   ).toBe('Operator MCP');
-  expect(toolTitle('salaam_files', { action: 'read' })).toBe('salaam_files');
+  expect(toolTitle('salaam_files', { action: 'read' })).toBe('read');
+});
+
+test('workspace and board tools name what they acted on, the way a board agent does', () => {
+  expect(
+    toolTitle('salaam_station', { action: 'patch', path: 'runs/r/answer.md', content: 'x' }),
+  ).toBe('write: runs/r/answer.md');
+  expect(toolTitle('salaam_station', { action: 'patch', path: 'old.md', content: null })).toBe(
+    'delete: old.md',
+  );
+  expect(toolTitle('salaam_station', { action: 'read', path: 'src/a.ts' })).toBe('read: src/a.ts');
+  expect(toolTitle('salaam_station', { action: 'search', query: 'TODO' })).toBe('search: TODO');
+  expect(toolTitle('salaam_station', { action: 'inspect' })).toBe('inspect workspace');
+  expect(toolTitle('salaam_station', { action: 'check', command: 'npm test -- --run' })).toBe(
+    'check: npm test -- --run',
+  );
+  expect(toolTitle('salaam_board', { action: 'card' })).toBe('read this card');
+  expect(toolTitle('salaam_board', { action: 'attempts' })).toBe('read this card’s runs');
+  expect(toolTitle('salaam_board', { action: 'library_search', query: 'gateway timeout' })).toBe(
+    'library_search: gateway timeout',
+  );
+  expect(
+    toolTitle('salaam_board', { action: 'library_get', item_id: 'itm_0123456789abcdef' }),
+  ).toBe('library_get: itm_0123456789abcdef');
+  expect(toolTitle('salaam_review', {})).toBe('salaam_review');
+  expect(toolMetadata('salaam_board', { action: 'library_search', query: 'x' }).kind).toBe('read');
+});
+
+test('a title never carries a secret from a URL, a control character, or more than 80 characters', () => {
+  const call = (url: string) => ({
+    action: 'call',
+    server: 'fetch',
+    tool: 'fetch',
+    arguments: { url },
+  });
+  expect(toolTitle('salaam_operator_mcp', call('https://user:pass@x.test/p?token=abc#frag'))).toBe(
+    'fetch: x.test/p',
+  );
+  expect(toolTitle('salaam_operator_mcp', call('not a url'))).toBe('fetch');
+  expect(toolTitle('salaam_station', { action: 'read', path: 'a\n\u0007b.md' })).toBe(
+    'read: a b.md',
+  );
+  const long = toolTitle('salaam_station', { action: 'read', path: 'd/'.repeat(100) + 'f.md' });
+  expect(long.length).toBeLessThanOrEqual(80);
+  expect(long.endsWith('…')).toBe(true);
 });
 
 test('a failed tool names itself, and only a plain identifier is echoed', async () => {
