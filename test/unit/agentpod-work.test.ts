@@ -3229,7 +3229,7 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
     const started = tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'started')!;
     expect(started).toMatchObject({ title: 'fetch: x', kind: 'fetch' });
     const read = tail.find((a) => a.tool_call_id === 'call-8' && a.phase === 'started')!;
-    expect(read.title).toBe('salaam_station');
+    expect(read.title).toBe('read: notes.md');
     expect(String(read.input).length).toBeLessThanOrEqual(2048);
     expect(Object.keys(read).sort()).toEqual(
       ['failed', 'input', 'kind', 'phase', 'seq', 'title', 'tool_call_id'].sort(),
