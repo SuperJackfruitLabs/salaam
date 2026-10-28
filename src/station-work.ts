@@ -806,7 +806,7 @@ export class StationWork {
   }
   /** A write the run's grant covers is answered by it, checked again at decision time. The
    * operation is still prepared, digest-bound and journaled on its own; deletes always ask. */
-  /** An agent's standing "Always allow" rule (pinned at admission, dropped at the renewal that no
+  /** An agent's standing "Always allow" rule (pinned at admission or added by a renewal, dropped at the renewal that no
    * longer lists it) answers a workspace write anywhere in the workspace, never a delete or a
    * hidden path. Checked again at decision time, so a rule revoked meanwhile answers nothing. */
   private answerFromRule(operation: string, session: string, args: Record<string, unknown>): void {

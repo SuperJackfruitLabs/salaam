@@ -6,7 +6,9 @@ import { Store } from '../../src/store.js';
 import { AgentPodAuthority } from '../../src/agentpod-authority.js';
 
 // Approval scopes B part 2: an agent's standing "Always allow" rules are pinned at admission and
-// checked again at every renewal. A renewal can only drop a rule, never add one.
+// checked again at every renewal. Operator ruling 2026-10-28: a renewal also ADDS a rule the hub
+// newly lists (a person chose "Always allow" mid-run), so the run is not asked again; a revoked
+// rule still ends at once and for good.
 function fixture() {
   const base = realpathSync(mkdtempSync('/tmp/sal-rules-'));
   const workspace = join(base, 'source'),
@@ -60,7 +62,7 @@ test('rules given at admission are pinned for the session', () => {
   expect(plain.authority.approvalRules(none.session_id)).toEqual([]);
 });
 
-test('a renewal that no longer lists a rule revokes it at once, and cannot add one', () => {
+test('a renewal revokes a rule it no longer lists, and adds one it newly lists', () => {
   const f = fixture();
   const a = rule(),
     b = rule();
@@ -72,20 +74,29 @@ test('a renewal that no longer lists a rule revokes it at once, and cannot add o
       .map((r) => r.id)
       .sort(),
   ).toEqual([a.id, b.id].sort());
-  // b revoked, and a rule set mid-run (c) does not join the run.
+  // b revoked, and a rule set mid-run (c) joins the run at once.
   const c = rule();
   f.authority.renew(f.binding, 'renew-2', 2, [a, c]);
-  expect(f.authority.approvalRules(session_id)).toEqual([a]);
+  expect(f.authority.approvalRules(session_id)).toEqual(
+    [a, c].sort((x, y) => x.id.localeCompare(y.id)),
+  );
+  const added = f.store.db
+    .prepare("SELECT payload FROM events WHERE session_id=? AND kind='approval_rule.added'")
+    .all(session_id)
+    .map((e) => JSON.parse(String(e.payload)).rule_id);
+  expect(added).toEqual([c.id]);
   // b listed again later does not come back: revocation is final for the run.
-  f.authority.renew(f.binding, 'renew-3', 3, [a, b]);
-  expect(f.authority.approvalRules(session_id)).toEqual([a]);
+  f.authority.renew(f.binding, 'renew-3', 3, [a, b, c]);
+  expect(f.authority.approvalRules(session_id)).toEqual(
+    [a, c].sort((x, y) => x.id.localeCompare(y.id)),
+  );
   // A renewal without rules (none left, or an older hub) revokes everything.
   f.authority.renew(f.binding, 'renew-4', 4);
   expect(f.authority.approvalRules(session_id)).toEqual([]);
   const revoked = f.store.db
     .prepare("SELECT count(*) AS n FROM events WHERE session_id=? AND kind='approval_rule.revoked'")
     .get(session_id)!;
-  expect(Number(revoked.n)).toBe(2);
+  expect(Number(revoked.n)).toBe(3);
 });
 
 test('rules must be well formed: known scope, exact keys, unique ids, bounded count', () => {
@@ -121,4 +132,16 @@ test('replaying an admission with different rules conflicts', () => {
   f.authority.admit(f.binding, 'admit', undefined, [a]);
   expect(f.authority.admit(f.binding, 'admit', undefined, [a]).session_id).toBeTruthy();
   expect(() => f.authority.admit(f.binding, 'admit', undefined, [rule()])).toThrow();
+});
+
+test('a re-grant after a revoke is a new rule and joins the run (keyed by rule id, not scope)', () => {
+  const f = fixture();
+  const a = rule();
+  const { session_id } = f.authority.admit(f.binding, 'admit', undefined, [a]);
+  f.authority.renew(f.binding, 'renew-1', 1);
+  expect(f.authority.approvalRules(session_id)).toEqual([]);
+  // The same person turns "Always allow" on again: same scope, a new rule id.
+  const again = rule();
+  f.authority.renew(f.binding, 'renew-2', 2, [again]);
+  expect(f.authority.approvalRules(session_id)).toEqual([again]);
 });
