@@ -292,27 +292,74 @@ function grantFixture() {
 const offerFor = (f: ReturnType<typeof grantFixture>, operation: string) =>
   f.controller.list(f.binding).decisions.find((d: any) => d.operation_id === operation)!;
 
-test('a write inside the run directory offers "Approve for this run" between approve and deny', () => {
+const ALWAYS = {
+  id: 'always',
+  title: 'Always allow this agent to write in its workspace',
+  requires: 'workspace-admin',
+};
+test('a write inside the run directory offers approve once, for this run, always allow, and deny', () => {
   const f = grantFixture();
   const { operation } = f.write('runs/run_abc12345/answer.md');
   expect(offerFor(f, operation.id).options).toEqual([
     { id: 'approve', title: 'Approve once' },
     { id: 'approve-run', title: 'Approve for this run' },
+    ALWAYS,
     { id: 'deny', title: 'Deny' },
   ]);
   expect(workDecision(offerFor(f, operation.id))).toEqual(offerFor(f, operation.id));
 });
 
-test('a delete, a write outside the run directory or a hidden file offers only approve or deny', () => {
+test('a write outside the run directory offers always allow but not this run; a delete or hidden file only approve or deny', () => {
   const f = grantFixture();
+  const outside = f.write('answer.md', 'x');
+  expect(offerFor(f, outside.operation.id).options.map((o: any) => o.id)).toEqual([
+    'approve',
+    'always',
+    'deny',
+  ]);
   for (const [path, content] of [
     ['runs/run_abc12345/answer.md', null],
-    ['answer.md', 'x'],
     ['runs/run_abc12345/.env', 'x'],
   ] as const) {
     const { operation } = f.write(path, content);
     expect(offerFor(f, operation.id).options.map((o: any) => o.id)).toEqual(['approve', 'deny']);
   }
+});
+
+test('answering "Always allow" approves this write and records no run grant (the rule is the hub\'s)', () => {
+  const f = grantFixture();
+  const { operation, approval } = f.write('runs/run_abc12345/answer.md');
+  const receipt = f.controller.answer(f.binding, answer2(f, operation.id, 'always'));
+  expect(receipt).toMatchObject({ decision: 'always', approval_id: approval.id });
+  expect(f.managed.approval(approval.id)).toMatchObject({ state: 'decided', decision: 'approve' });
+  expect(f.store.db.prepare('SELECT count(*) AS n FROM run_grants').get()!.n).toBe(0);
+});
+
+test('"Always allow" is refused where it was not offered', () => {
+  const f = grantFixture();
+  const { operation } = f.write('runs/run_abc12345/answer.md', null);
+  expect(() => f.controller.answer(f.binding, answer2(f, operation.id, 'always'))).toThrow();
+});
+
+test('an always option must say it needs a workspace admin, and keep its place', () => {
+  const f = grantFixture();
+  const { operation } = f.write('runs/run_abc12345/answer.md');
+  const offer = offerFor(f, operation.id);
+  const without = {
+    ...offer,
+    options: offer.options.map((o: any) => (o.id === 'always' ? { id: o.id, title: o.title } : o)),
+  };
+  expect(() => workDecision(without)).toThrow();
+  const anyone = {
+    ...offer,
+    options: offer.options.map((o: any) => (o.id === 'always' ? { ...o, requires: 'anyone' } : o)),
+  };
+  expect(() => workDecision(anyone)).toThrow();
+  const moved = {
+    ...offer,
+    options: [offer.options[0], offer.options[2], offer.options[1], offer.options[3]],
+  };
+  expect(() => workDecision(moved)).toThrow();
 });
 
 test('answering "Approve for this run" approves this write and records the run grant', () => {
@@ -360,7 +407,7 @@ test('an offer saved without "Approve for this run" cannot be answered with it, 
   const { operation, approval } = f.write('runs/run_abc12345/answer.md');
   const offer = offerFor(f, operation.id) as any;
   // The offer as it was saved before this option existed: approve or deny only.
-  const older = { ...offer, options: [offer.options[0], offer.options[2]] };
+  const older = { ...offer, options: [offer.options[0], offer.options[3]] };
   f.store.db
     .prepare("UPDATE requests SET response=? WHERE actor='agentpod-work-decision-offer' AND id=?")
     .run(JSON.stringify(older), approval.id);

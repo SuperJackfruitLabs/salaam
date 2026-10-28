@@ -29,6 +29,16 @@ export class AgentPodWorkDecisions {
     }
     return prefix && runGrantCovers(prefix, args) ? prefix : null;
   }
+  /** "Always allow" covers exactly what the standing workspace-write rule answers: a workspace
+   * write anywhere in the workspace, never a delete or a hidden path. */
+  private alwaysAllowable(op: { kind: string; value: string }): boolean {
+    if (op.kind !== 'workspace') return false;
+    try {
+      return runGrantCovers('', JSON.parse(op.value) as Record<string, unknown>);
+    } catch {
+      return false;
+    }
+  }
   private owner(binding: unknown) {
     const root = this.work.authority.inspect(binding);
     const row = this.work.store.db
@@ -72,16 +82,22 @@ export class AgentPodWorkDecisions {
             ...identity,
             question: approvalDetail(op).summary + '?',
             detail: approvalDetail(op),
-            options: this.grantable(root.binding, op)
-              ? [
-                  { id: 'approve', title: 'Approve once' },
-                  { id: 'approve-run', title: 'Approve for this run' },
-                  { id: 'deny', title: 'Deny' },
-                ]
-              : [
-                  { id: 'approve', title: 'Approve once' },
-                  { id: 'deny', title: 'Deny' },
-                ],
+            options: [
+              { id: 'approve' as const, title: 'Approve once' },
+              ...(this.grantable(root.binding, op)
+                ? [{ id: 'approve-run' as const, title: 'Approve for this run' }]
+                : []),
+              ...(this.alwaysAllowable(op)
+                ? [
+                    {
+                      id: 'always' as const,
+                      title: 'Always allow this agent to write in its workspace',
+                      requires: 'workspace-admin' as const,
+                    },
+                  ]
+                : []),
+              { id: 'deny' as const, title: 'Deny' },
+            ],
           }),
         );
       });
@@ -133,6 +149,16 @@ export class AgentPodWorkDecisions {
           (!prefix || !offered.options.some((o) => o.id === 'approve-run'))
         )
           throw new ServiceError('approval_mismatch', 'This approval cannot cover the run');
+        // "Always allow" approves this write; the standing rule is the hub's, set before it forwards.
+        if (
+          answer.option_id === 'always' &&
+          (!offered.options.some((o) => o.id === 'always') ||
+            !this.alwaysAllowable(this.managed.operation(offered.operation_id)))
+        )
+          throw new ServiceError(
+            'approval_mismatch',
+            'Always allow was not offered for this write',
+          );
         this.managed.decide(
           offered.approval_id,
           answer.request_id,
