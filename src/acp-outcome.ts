@@ -407,7 +407,7 @@ export function toolTitle(name: string, input: unknown): string {
     }
     if (action === 'catalog') return titled('MCP catalog', server);
     if (action === 'call') return titled('MCP call', server ?? tool);
-    return 'Operator MCP';
+    return action ? titled('MCP request', label(action)) : 'MCP request (no input)';
   }
   if (name === 'salaam_board') {
     if (action === 'card') return 'read this card';

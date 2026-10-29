@@ -158,7 +158,12 @@ test('operator MCP calls are titled by tool and key argument, and a fetch is a f
   expect(
     toolTitle('salaam_operator_mcp', { action: 'call', server: 'x\n<b>', tool: 'fetch' }),
   ).toBe('MCP call: fetch');
-  expect(toolTitle('salaam_operator_mcp', { action: 'other' })).toBe('Operator MCP');
+  // No step reads as a bare tool name: a call that arrived without input, or with an action
+  // the tool does not know, still says so in plain words.
+  expect(toolTitle('salaam_operator_mcp', { action: 'other' })).toBe('MCP request: other');
+  expect(toolTitle('salaam_operator_mcp', undefined)).toBe('MCP request (no input)');
+  expect(toolTitle('salaam_operator_mcp', null)).toBe('MCP request (no input)');
+  expect(toolTitle('salaam_operator_mcp', {})).toBe('MCP request (no input)');
   expect(toolTitle('salaam_files', { action: 'read' })).toBe('read');
 });
 
