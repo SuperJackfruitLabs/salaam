@@ -3229,6 +3229,13 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
     });
     // A finished step without output carries no output field; the hub's tail shape is strict.
     const quiet = tail.find((a) => a.tool_call_id === 'call-37' && a.phase === 'finished')!;
+    // A finished step is titled like the call it finishes, not by its bare tool name.
+    expect(tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'finished')!.title).toBe(
+      'fetch: x',
+    );
+    expect(tail.find((a) => a.tool_call_id === 'call-8' && a.phase === 'finished')!.title).toBe(
+      'read: notes.md',
+    );
     expect('output' in quiet).toBe(false);
     const started = tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'started')!;
     expect(started).toMatchObject({ title: 'fetch: x', kind: 'fetch' });
