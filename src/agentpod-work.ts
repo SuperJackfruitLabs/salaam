@@ -3681,6 +3681,9 @@ export class AgentPodWork {
           kind: started ? String(p.kind ?? toolMetadata(tool, p.input).kind) : null,
           input: started ? input : null,
           failed: !started && p.failed === true,
+          // The tool's text output, already redacted and clipped by the worker, so the card shows
+          // what the step returned as Hermes does.
+          ...(!started && typeof p.output === 'string' ? { output: p.output.slice(0, 2048) } : {}),
         };
       });
   }

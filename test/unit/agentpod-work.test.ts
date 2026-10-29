@@ -3209,7 +3209,7 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
         ),
         kind: n % 2 ? 'fetch' : 'read',
       });
-      tool(n, 'finished', { failed: n === 3 });
+      tool(n, 'finished', { failed: n === 3, ...(n === 39 ? { output: 'HTTP/1.1 200 OK' } : {}) });
     }
     f.store.transaction(() => f.store.event(f.session, 'usage.observed', { attempt_id: attempt }));
     const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
@@ -3225,7 +3225,11 @@ test('work status carries a bounded, ordered tail of tool activity for card acti
       phase: 'finished',
       tool_call_id: 'call-39',
       failed: false,
+      output: 'HTTP/1.1 200 OK',
     });
+    // A finished step without output carries no output field; the hub's tail shape is strict.
+    const quiet = tail.find((a) => a.tool_call_id === 'call-37' && a.phase === 'finished')!;
+    expect('output' in quiet).toBe(false);
     const started = tail.find((a) => a.tool_call_id === 'call-9' && a.phase === 'started')!;
     expect(started).toMatchObject({ title: 'fetch: x', kind: 'fetch' });
     const read = tail.find((a) => a.tool_call_id === 'call-8' && a.phase === 'started')!;
