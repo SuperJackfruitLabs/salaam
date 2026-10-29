@@ -3633,6 +3633,13 @@ export class AgentPodWork {
   /** The latest tool steps, oldest first, for the owner to show as card activity while the work
    * runs. Observation only: it carries no authority and changes nothing. Input is clipped. */
   activity(session: string) {
+    const startedOf = this.store.db.prepare(
+      "SELECT json_extract(payload,'$.input') AS input FROM events WHERE session_id=? AND kind='tool.started' AND json_extract(payload,'$.tool_call_id')=? ORDER BY seq DESC LIMIT 1",
+    );
+    const startedInput = (id: unknown) =>
+      typeof id === 'string'
+        ? (startedOf.get(session, id) as { input?: unknown } | undefined)?.input
+        : undefined;
     return this.store.db
       .prepare(
         "SELECT seq,kind,payload FROM events WHERE session_id=? AND kind IN ('tool.started','tool.finished','permission.auto-approved','fetch.host_paused') ORDER BY seq DESC LIMIT 64",
@@ -3673,11 +3680,14 @@ export class AgentPodWork {
         const started = row.kind === 'tool.started',
           tool = typeof p.tool === 'string' ? p.tool : '';
         const input = typeof p.input === 'string' ? p.input.slice(0, 2048) : null;
+        // A finished step carries no input, so it is titled from the call it finishes: the card
+        // read a bare "salaam_station" under every station step (staging card_3a97983751784bf9).
+        const callInput = started ? p.input : startedInput(p.tool_call_id);
         return {
           seq: Number(row.seq),
           phase: started ? ('started' as const) : ('finished' as const),
           tool_call_id: typeof p.tool_call_id === 'string' ? p.tool_call_id : '',
-          title: tool ? toolTitle(tool, p.input) : 'Tool',
+          title: tool ? toolTitle(tool, callInput) : 'Tool',
           kind: started ? String(p.kind ?? toolMetadata(tool, p.input).kind) : null,
           input: started ? input : null,
           failed: !started && p.failed === true,
