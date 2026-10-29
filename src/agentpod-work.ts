@@ -3021,6 +3021,85 @@ export class AgentPodWork {
       calls,
     };
   }
+  /** A task its own acceptance check stopped (staging card_d74eac4509f1453c): the latest receipt
+   * for the check the stop names failed definitely, and the run is as closed as a
+   * verification-budget stop. The board then gets a failed run with that reason, not a park. */
+  static readonly CHECK_FAILED_MISSES = [
+    'cf:reason',
+    'cf:check',
+    'cf:task_state',
+    'cf:auto',
+    'cf:reserved',
+    'cf:attempts',
+    'cf:steps',
+    'cf:operations',
+    'cf:approvals',
+    'cf:calls',
+    'cf:children',
+  ] as const;
+  private checkFailedMiss: (typeof AgentPodWork.CHECK_FAILED_MISSES)[number] | null = null;
+  private checkFailedStopFailure(
+    session: string,
+    task: WorkTask,
+    runtime: Record<string, any> | undefined,
+    attempts: Record<string, any>[],
+  ) {
+    const miss = (code: (typeof AgentPodWork.CHECK_FAILED_MISSES)[number]) => {
+      this.checkFailedMiss = code;
+      return null;
+    };
+    this.checkFailedMiss = null;
+    const prefix = 'Verification failed or became stale: ';
+    const reason = String(runtime?.auto_error ?? '');
+    if (!runtime || runtime.blocked_reason || !reason.startsWith(prefix)) return miss('cf:reason');
+    const db = this.store.db;
+    const check = db
+      .prepare(
+        'SELECT id,state FROM task_checks WHERE task_id=? AND check_key=? AND plan_revision=? ORDER BY rowid DESC LIMIT 1',
+      )
+      .get(task.id, reason.slice(prefix.length), task.plan_revision) as
+      { id: string; state: string } | undefined;
+    if (check?.state !== 'failed') return miss('cf:check');
+    if (!['blocked', 'partially_completed'].includes(task.state)) return miss('cf:task_state');
+    if (runtime.auto_enabled) return miss('cf:auto');
+    if (runtime.reserved_requests || runtime.reserved_tokens) return miss('cf:reserved');
+    if (
+      !attempts.length ||
+      attempts.some((a) => !['completed', 'failed'].includes(String(a.state)))
+    )
+      return miss('cf:attempts');
+    if (task.steps.some((s) => !['completed', 'failed'].includes(s.state))) return miss('cf:steps');
+    const operations = db
+      .prepare('SELECT id,state FROM operations WHERE session_id=? ORDER BY rowid')
+      .all(session);
+    const calls = db
+      .prepare(
+        'SELECT id,kind,state,helper_state FROM station_calls WHERE session_id=? ORDER BY rowid',
+      )
+      .all(session);
+    if (operations.some((o) => !['succeeded', 'failed_definite'].includes(String(o.state))))
+      return miss('cf:operations');
+    if (db.prepare("SELECT 1 FROM approvals WHERE session_id=? AND state='pending'").get(session))
+      return miss('cf:approvals');
+    if (
+      calls.some(
+        (c) =>
+          ['prepared', 'dispatching', 'outcome_unknown'].includes(String(c.state)) ||
+          !['none', 'stopped'].includes(String(c.helper_state)),
+      )
+    )
+      return miss('cf:calls');
+    if (db.prepare('SELECT 1 FROM child_tasks WHERE parent_session=?').get(session))
+      return miss('cf:children');
+    return {
+      reason,
+      check: check.id,
+      steps: task.steps.map((s) => ({ id: s.id, state: s.state })),
+      attempts: attempts.map((a) => ({ id: a.id, state: a.state })),
+      operations,
+      calls,
+    };
+  }
   private failureEvidence(
     root: { session_id: string; binding: import('./agentpod-protocol.js').AgentPodBinding },
     task: WorkTask,
@@ -3110,6 +3189,16 @@ export class AgentPodWork {
       zeroEffect || revokeCancelled || budgetStop || refusedWrites || budgetKnown || rateLimit
         ? null
         : this.verificationLimitStopFailure(root.session_id, task, runtime, attempts);
+    const checkFailed =
+      zeroEffect ||
+      revokeCancelled ||
+      budgetStop ||
+      refusedWrites ||
+      budgetKnown ||
+      rateLimit ||
+      verificationLimit
+        ? null
+        : this.checkFailedStopFailure(root.session_id, task, runtime, attempts);
     if (
       !zeroEffect &&
       !revokeCancelled &&
@@ -3117,6 +3206,7 @@ export class AgentPodWork {
       !refusedWrites &&
       !rateLimit &&
       !verificationLimit &&
+      !checkFailed &&
       !budgetKnown &&
       !knownReadOnly &&
       (task.state !== 'blocked' ||
@@ -3169,7 +3259,9 @@ export class AgentPodWork {
         'work_settlement_unsafe',
         this.verificationLimitMiss && this.verificationLimitMiss !== 'vl:reason'
           ? 'Verification-budget stop not provable: ' + this.verificationLimitMiss
-          : 'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit or verification-budget stop, or closed historical read-only evidence can retire',
+          : this.checkFailedMiss && this.checkFailedMiss !== 'cf:reason'
+            ? 'Check-failed stop not provable: ' + this.checkFailedMiss
+            : 'Only exact known approved-patch, zero-effect child denial, revoke-cancelled operator MCP reads, request budget stopped operator MCP reads, runtime-stopped refused workspace writes, request budget stopped known effects, a closed rate-limit, verification-budget or check-failed stop, or closed historical read-only evidence can retire',
       );
     const evidence_digest = digest({
       binding: root.binding,
@@ -3187,6 +3279,7 @@ export class AgentPodWork {
       ...(budgetKnown ? { request_budget_stop_known_effects: budgetKnown } : {}),
       ...(rateLimit ? { rate_limit_stop: rateLimit } : {}),
       ...(verificationLimit ? { verification_limit_stop: verificationLimit } : {}),
+      ...(checkFailed ? { check_failed_stop: checkFailed } : {}),
       ...(knownReadOnly ? { historical_known_readonly: knownReadOnly } : {}),
     });
     return evidence_digest;
