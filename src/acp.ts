@@ -399,6 +399,7 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           tool?: string;
           input?: string;
           failed?: boolean;
+          output?: string;
           kind?: string;
           locations?: unknown[];
         };
@@ -418,6 +419,9 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
               : {}),
             status: started ? 'in_progress' : p.failed ? 'failed' : 'completed',
             ...(started && p.input ? { rawInput: p.input } : {}),
+            ...(!started && p.output
+              ? { content: [{ type: 'content', content: { type: 'text', text: p.output } }] }
+              : {}),
             ...(p.parent_tool_call_id
               ? { _meta: { 'salaam.dev/parentToolCallId': p.parent_tool_call_id } }
               : {}),

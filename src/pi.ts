@@ -1,3 +1,4 @@
+import { redactFailureText } from './acp-outcome.js';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -12,9 +13,30 @@ export interface ToolObservation {
   input_digest?: string;
   input_truncated?: boolean;
   failed?: boolean;
+  output?: string;
+  output_truncated?: boolean;
 }
 
 export class PiCommandError extends Error {}
+
+/**
+ * The text a finished tool returned, for the board's activity stream. A card showed every step
+ * with `result: null` because only the status crossed over. Images are left out, known secret
+ * shapes are redacted, and the text is clipped to 2 KiB.
+ */
+function toolOutput(result: unknown): Pick<ToolObservation, 'output' | 'output_truncated'> {
+  const content = (result as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return {};
+  const text = content
+    .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text as string)
+    .join('\n');
+  if (!text) return {};
+  const clean = redactFailureText(text);
+  return clean.length > 2048
+    ? { output: clean.slice(0, 2047) + '…', output_truncated: true }
+    : { output: clean };
+}
 
 // The upstream client does not expose process identity/group ownership or the
 // extension UI subprotocol. Keep this narrow transport behind the Pi adapter.
@@ -94,7 +116,7 @@ export class PiProcess extends EventEmitter {
                     input_digest: textDigest(input),
                     input_truncated: input.length > 8192,
                   }
-                : { failed: record.isError === true }),
+                : { failed: record.isError === true, ...toolOutput(record.result) }),
             } satisfies ToolObservation);
           }
           this.emit('record', record);
