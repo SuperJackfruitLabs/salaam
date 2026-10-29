@@ -29,3 +29,24 @@ test.each(['invalid', 'oversize'])('rejects malformed or oversized stdout (%s)',
     await pi.stop();
   }
 });
+
+test('a finished tool step carries its text output, redacted and clipped, so a board can show it', async () => {
+  const pi = new PiProcess(process.execPath, [join(ROOT, 'test/fixtures/protocol-pi.mjs')], ROOT, {
+    PROTOCOL_TOOL_END: '1',
+  });
+  const seen: Array<Record<string, unknown>> = [];
+  pi.on('activity', (o) => seen.push(o));
+  try {
+    await pi.command('get_state');
+    expect(seen).toHaveLength(1);
+    const o = seen[0]!;
+    const output = String(o.output);
+    expect(o.phase).toBe('finished');
+    expect(output.startsWith('HTTP/1.1 403 Forbidden\nAuthorization: [redacted]')).toBe(true);
+    expect(output).not.toContain('abc123secret');
+    expect(output.length).toBeLessThanOrEqual(2048);
+    expect(o.output_truncated).toBe(true);
+  } finally {
+    await pi.stop();
+  }
+});

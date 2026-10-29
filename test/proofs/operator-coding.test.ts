@@ -60,6 +60,17 @@ test('ACP creates a guarded coding session and the TUI reviews the same real fil
           m.params.update.status === 'completed',
       ),
     ).toBe(true);
+    // A finished live step carries what the tool returned, so a board does not show result: null.
+    expect(
+      a.messages.some(
+        (m) =>
+          m.params?.update?.sessionUpdate === 'tool_call_update' &&
+          typeof m.params.update.toolCallId === 'string' &&
+          !m.params.update.toolCallId.startsWith('salaam-operation:') &&
+          typeof m.params.update.title === 'string' &&
+          m.params.update.content?.[0]?.content?.text?.length > 0,
+      ),
+    ).toBe(true);
     await a.close();
     terminal = new PtyClient(
       [
