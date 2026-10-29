@@ -369,8 +369,34 @@ const titled = (verb: string, what: string | undefined) => {
  * tool, so it is titled by the MCP tool itself. Only plain identifiers, URL host and path, paths,
  * queries and commands are echoed, clipped to one line of 80 characters.
  */
+/** A clipped input no longer parses: read the leading plain string fields it still carries. */
+function clippedArgs(input: unknown): Record<string, unknown> {
+  if (typeof input !== 'string') return {};
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    'action',
+    'path',
+    'query',
+    'pattern',
+    'command',
+    'server',
+    'tool',
+    'item_id',
+  ]) {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.){0,512})"`).exec(input);
+    if (m) {
+      try {
+        out[key] = JSON.parse(`"${m[1]}"`);
+      } catch {}
+    }
+  }
+  // A clipped patch is a long one, so a write: a delete (content null) is short and never clipped.
+  return out;
+}
+
 export function toolTitle(name: string, input: unknown): string {
-  const args = toolArgs(input);
+  const parsed = toolArgs(input);
+  const args = Object.keys(parsed).length ? parsed : clippedArgs(input);
   const action = typeof args.action === 'string' ? args.action : '';
   if (name === 'salaam_operator_mcp') {
     const server = label(args.server);
@@ -380,6 +406,7 @@ export function toolTitle(name: string, input: unknown): string {
       return titled(tool, shownUrl(a.url) ?? shown(a.query ?? a.path ?? a.pattern, 80));
     }
     if (action === 'catalog') return titled('MCP catalog', server);
+    if (action === 'call') return titled('MCP call', server ?? tool);
     return 'Operator MCP';
   }
   if (name === 'salaam_board') {

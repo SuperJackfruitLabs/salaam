@@ -157,7 +157,8 @@ test('operator MCP calls are titled by tool and key argument, and a fetch is a f
   // A name that is not a plain identifier is not echoed into the title.
   expect(
     toolTitle('salaam_operator_mcp', { action: 'call', server: 'x\n<b>', tool: 'fetch' }),
-  ).toBe('Operator MCP');
+  ).toBe('MCP call: fetch');
+  expect(toolTitle('salaam_operator_mcp', { action: 'other' })).toBe('Operator MCP');
   expect(toolTitle('salaam_files', { action: 'read' })).toBe('read');
 });
 
@@ -252,4 +253,25 @@ test('a durable task plan is the ACP plan update the protocol defines', () => {
   });
   expect(planUpdate(null)).toBe(null);
   expect(planUpdate({ steps: [] } as never)).toBe(null);
+});
+
+// Cards F and G (2026-10-28): the last unreadable titles. A long patch's input is clipped before it
+// is titled, so it no longer parses as JSON; an operator MCP call may name only a server or a tool.
+test('a clipped tool input is still titled by what it acted on, and a partial MCP call says what it named', () => {
+  const clipped = JSON.stringify({
+    action: 'patch',
+    path: 'runs/r/answer.md',
+    content: 'x'.repeat(9000),
+  }).slice(0, 8192);
+  expect(toolTitle('salaam_station', clipped)).toBe('write: runs/r/answer.md');
+  const clippedRead = '{"action":"check","command":"npm test","content":"' + 'y'.repeat(9000);
+  expect(toolTitle('salaam_station', clippedRead)).toBe('check: npm test');
+  expect(toolTitle('salaam_station', 'not json at all')).toBe('salaam_station');
+  expect(toolTitle('salaam_operator_mcp', { action: 'call', server: 'fetch' })).toBe(
+    'MCP call: fetch',
+  );
+  expect(toolTitle('salaam_operator_mcp', { action: 'call', tool: 'fetch' })).toBe(
+    'MCP call: fetch',
+  );
+  expect(toolTitle('salaam_operator_mcp', { action: 'call' })).toBe('MCP call');
 });
