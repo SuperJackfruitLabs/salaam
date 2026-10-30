@@ -22,6 +22,10 @@ for local commands.
   restore exactly as approved.
 - Command sandbox: bubblewrap on Linux and Seatbelt on macOS. With no usable sandbox, local
   commands are refused unless the host config sets `unsandboxed_commands: "allow"`.
+- Command network through the broker: with `command_network: "broker"` in the host config, local
+  commands reach only the hosts the operator lists in the stk policy (`local-commands`
+  egress `hosts`). Everything direct stays blocked, and each command's result counts the hosts it
+  reached or was refused. Needs SuperToolkit v0.0.4.
 - Board parity: the work-status tool-step tail carries each step's output and a readable title;
   plan updates reach the card; board reads are served by the hub.
 - Operator persona pinned by digest in the host manifest.
