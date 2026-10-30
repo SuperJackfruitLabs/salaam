@@ -18,7 +18,7 @@ import { CodingWork } from '../../src/coding.js';
 import { Workspaces } from '../../src/workspaces.js';
 import { StationWork, type StationCall } from '../../src/station-work.js';
 import { StationTaskVerification } from '../../src/station-task-verification.js';
-import { canonical, digest } from '../../src/protocol.js';
+import { ServiceError, canonical, digest } from '../../src/protocol.js';
 
 // Synthetic station boundary double: these tests prove receipt joining and
 // transactional revalidation, never Linux/systemd execution or a live canary.
@@ -371,7 +371,7 @@ test.each([false, true])(
             const row = f.store.db
               .prepare('SELECT helper_state FROM station_calls WHERE id=?')
               .get(id);
-            if (!scheduled && row?.helper_state === 'launching') {
+            if (!scheduled && ['launching', 'running'].includes(String(row?.helper_state))) {
               scheduled = true;
               setTimeout(
                 () =>
@@ -861,6 +861,122 @@ const fs=require('node:fs');let input='';process.stdin.on('data',c=>input+=c);pr
     release();
     closeWatcher();
     await Promise.allSettled(pending);
+    f.close();
+  }
+});
+
+// Staging 2026-10-30 (card_06a619a3e2e94faf): the verification guard refused at spawn, before the
+// helper's pid was recorded, so the read stayed 'launching' with no pid, became 'unconfirmed', and
+// every later shutdown and daemon start failed on it.
+function syntheticHelperStation(f: ReturnType<typeof fixture>) {
+  const path = join(f.dir, 'synthetic-file-helper');
+  writeFileSync(
+    path,
+    `#!${process.execPath}\nlet input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const r=JSON.parse(input);setTimeout(()=>console.log(JSON.stringify({version:1,ok:true,tree_digest:'${'a'.repeat(64)}',root_identity:r.root_identity,files:1})),25);});\n`,
+    { mode: 0o700 },
+  );
+  Object.setPrototypeOf(f.station, StationWork.prototype);
+  Object.assign(f.station, {
+    store: f.store,
+    files: new Map(),
+    jobs: new Map(),
+    closing: false,
+    unregister: () => {},
+    config: { workspace_identity: 'd'.repeat(64), workspace: f.dir, files: { path } },
+    options: {
+      assertActive: () => {
+        throw Error('must not borrow model authority');
+      },
+    },
+  });
+  delete (f.station as unknown as Record<string, unknown>).verificationTree;
+  delete (f.station as unknown as Record<string, unknown>).assertVerificationSettled;
+  return path;
+}
+
+test('a verification read its guard refuses at spawn still records and stops its helper', async () => {
+  const f = fixture();
+  try {
+    syntheticHelperStation(f);
+    const observe = f.station.verificationTree.bind(f.station);
+    let refused = false;
+    f.station.verificationTree = (source, validate) =>
+      observe(source, (id) => {
+        const row = f.store.db.prepare('SELECT helper_state FROM station_calls WHERE id=?').get(id);
+        // The spawn-time guard (the first one once a helper exists): the task became busy, a
+        // critic child, between launch and spawn.
+        if (
+          !refused &&
+          ['launching', 'running'].includes(String(row?.helper_state)) &&
+          (refused = true)
+        )
+          throw new ServiceError(
+            'task_busy',
+            'Wait for attempts, children, commands and compaction to settle',
+          );
+        validate(id);
+      });
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    await expect(f.adapter.withFresh(f.check, () => undefined)).rejects.toThrow();
+    const read = f.store.db.prepare("SELECT * FROM station_calls WHERE kind='read'").get();
+    expect(Number(read!.helper_pid)).toBeGreaterThan(0);
+    await (f.station as unknown as { close(): Promise<void> }).close();
+    const after = f.store.db.prepare("SELECT * FROM station_calls WHERE kind='read'").get();
+    expect(after).toMatchObject({ helper_state: 'stopped' });
+    expect(JSON.parse(String(after!.helper_stop_json))).toMatchObject({ method: 'observed_exit' });
+  } finally {
+    f.close();
+  }
+});
+
+test('a helper left unconfirmed with no pid settles only when no station helper process exists', async () => {
+  const f = fixture();
+  try {
+    syntheticHelperStation(f);
+    f.adapter.bind(f.check, f.call);
+    f.returned();
+    const session = String(
+      f.store.db.prepare("SELECT session_id FROM station_calls WHERE kind='check'").get()!
+        .session_id,
+    );
+    const stuck = {
+      id: 'e'.repeat(64),
+      session,
+    };
+    f.store.db
+      .prepare(
+        "INSERT INTO station_calls(id,session_id,worker_epoch,attempt_id,tool_call_id,kind,input_digest,root_digest,configuration_digest,args_json,state,task_check_id,helper_state) SELECT ?,session_id,0,NULL,?,'read',input_digest,root_digest,configuration_digest,'{}','failed',?,'unconfirmed' FROM station_calls WHERE kind='check'",
+      )
+      .run(stuck.id, stuck.id, f.check);
+    // A live process of the station helper: absence is not proven, so the row stays fenced.
+    const live = spawn(
+      process.execPath,
+      ['-e', 'setInterval(()=>{},1000)', 'salaam-station-files-v1'],
+      {
+        stdio: 'ignore',
+      },
+    );
+    await new Promise((r) => live.once('spawn', r));
+    const close = () => (f.station as unknown as { close(): Promise<void> }).close();
+    try {
+      await expect(close()).rejects.toThrow();
+      expect(
+        f.store.db.prepare('SELECT helper_state FROM station_calls WHERE id=?').get(stuck.id),
+      ).toMatchObject({ helper_state: 'unconfirmed' });
+    } finally {
+      live.kill('SIGKILL');
+      await new Promise((r) => live.once('exit', r));
+    }
+    // No station helper process anywhere: the pid-less helper is proven absent and settles.
+    await close();
+    const settled = f.store.db.prepare('SELECT * FROM station_calls WHERE id=?').get(stuck.id);
+    expect(settled).toMatchObject({ helper_state: 'stopped' });
+    expect(JSON.parse(String(settled!.helper_stop_json))).toMatchObject({
+      method: 'no_helper_process',
+      scope: 'host_process_table',
+    });
+  } finally {
     f.close();
   }
 });
