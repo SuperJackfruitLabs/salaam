@@ -5,12 +5,16 @@ import { ServiceError } from './protocol.js';
 
 /**
  * Item 10: the sandbox a local command runs in. `workspace-write` (the default) and `read-only` run
- * the command under bubblewrap: an empty root, the system read-only, a private /tmp, the workspace
- * bound read-write or read-only, no network unless declared, and user, PID, IPC, UTS and network
- * namespaces unshared, dying with its parent. `full-access` runs it as is and must be chosen
- * explicitly by the operator. A host without a usable bubblewrap (or with no sandbox yet, macOS
- * until Seatbelt) runs commands unsandboxed and says so: "unsandboxed" in host plan and in every
- * approval, and kind `none` in the approved arguments and the execution result.
+ * the command under the host's OS sandbox, with the system read-only, a private tmp, the workspace
+ * writable or read-only, and no network unless declared:
+ * - Linux: bubblewrap, with an empty root and user, PID, IPC, UTS and network namespaces unshared,
+ *   dying with its parent;
+ * - macOS: Seatbelt (`sandbox-exec`), with a deny-by-default profile.
+ * `full-access` runs the command as is and must be chosen explicitly by the operator. A host with
+ * no usable sandbox refuses local commands (operator ruling 2026-10-30, option A) unless the host
+ * config sets `unsandboxed_commands: "allow"`; then it runs them unsandboxed and says so:
+ * "unsandboxed" in host plan and in every approval, and kind `none` in the approved arguments and
+ * the execution result.
  */
 export const SANDBOX_LEVELS = ['read-only', 'workspace-write', 'full-access'] as const;
 export type SandboxLevel = (typeof SANDBOX_LEVELS)[number];
@@ -18,6 +22,10 @@ export interface Bwrap {
   path: string;
   version: string;
 }
+export interface Seatbelt {
+  path: string;
+}
+export type SandboxKind = 'bwrap' | 'seatbelt' | 'none';
 
 /** The pinned bubblewrap: its absolute path and the version it reports, or null when unusable. */
 export function findBwrap(candidates = ['/usr/bin/bwrap', '/bin/bwrap']): Bwrap | null {
@@ -99,17 +107,131 @@ export function sandboxArgv(
   ];
 }
 
-/** The sandbox this host gives local commands: bubblewrap on Linux when usable, otherwise none. */
+/** The pinned Seatbelt launcher, or null when this host cannot apply a deny-by-default profile. */
+export function findSeatbelt(path = '/usr/bin/sandbox-exec'): Seatbelt | null {
+  if (!existsSync(path)) return null;
+  try {
+    // Usable means it applies a deny-by-default profile and the command still runs.
+    execFileSync(
+      path,
+      [
+        '-p',
+        '(version 1)(deny default)(allow process-exec process-fork)(allow file-read*)(allow sysctl-read)',
+        '/usr/bin/true',
+      ],
+      { timeout: 5000, stdio: 'ignore' },
+    );
+    return { path };
+  } catch {
+    return null;
+  }
+}
+
+/** A path Seatbelt can quote: absolute, with no quote, backslash or control character. */
+function sbplPath(path: string, what: string): string {
+  if (!isAbsolute(path) || /["\\\x00-\x1f\x7f]/.test(path))
+    throw new ServiceError('invalid_field', `A sandboxed command needs a plain absolute ${what}`);
+  return `"${path}"`;
+}
+
+/**
+ * The deny-by-default Seatbelt profile for a level. Reads: the system, developer tools and
+ * package prefixes, the workspace and the private tmp (file metadata anywhere, so paths resolve).
+ * Writes: the workspace (workspace-write only), the private tmp and the standard devices. No
+ * network unless declared, no mach services, no home directory.
+ */
+export function seatbeltProfile(
+  level: 'read-only' | 'workspace-write',
+  root: string,
+  tmp: string,
+  options: { network: boolean },
+): string {
+  const w = sbplPath(root, 'workspace path'),
+    t = sbplPath(tmp, 'tmp path');
+  const system = [
+    '/usr',
+    '/bin',
+    '/sbin',
+    '/System',
+    '/Library/Apple',
+    '/Library/Developer/CommandLineTools',
+    '/Applications/Xcode.app',
+    '/opt/homebrew',
+    '/usr/local',
+    '/private/etc',
+    '/private/var/db/dyld',
+    '/private/var/db/timezone',
+    '/dev',
+  ]
+    .map((p) => `(subpath "${p}")`)
+    .join(' ');
+  const devices = ['/dev/null', '/dev/zero', '/dev/stdout', '/dev/stderr', '/dev/tty']
+    .map((p) => `(literal "${p}")`)
+    .join(' ');
+  return [
+    '(version 1)',
+    '(deny default)',
+    '(allow process-exec process-fork)',
+    '(allow signal (target same-sandbox))',
+    '(allow sysctl-read)',
+    '(allow file-read-metadata)',
+    `(allow file-read* (literal "/") ${system} (subpath ${w}) (subpath ${t}))`,
+    level === 'workspace-write'
+      ? `(allow file-write* (subpath ${w}) (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`
+      : `(allow file-write* (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`,
+    `(allow file-ioctl ${devices} (regex #"^/dev/fd/"))`,
+    ...(options.network ? ['(allow network*)'] : []),
+  ].join('\n');
+}
+
+export function seatbeltArgv(
+  level: SandboxLevel,
+  root: string,
+  tmp: string,
+  argv: string[],
+  seatbelt: Seatbelt | null,
+  options: { network: boolean },
+): string[] {
+  if (level === 'full-access') return argv;
+  if (!seatbelt)
+    throw new ServiceError(
+      'sandbox_unavailable',
+      'This host has no usable Seatbelt, so it cannot run a sandboxed command; an operator can choose full access explicitly',
+    );
+  return [
+    seatbelt.path,
+    '-p',
+    seatbeltProfile(level, root, tmp, options),
+    '/usr/bin/env',
+    `TMPDIR=${tmp}/`,
+    ...argv,
+  ];
+}
+
+/** The sandbox this host gives local commands: bubblewrap on Linux and Seatbelt on macOS when
+ * usable, otherwise none. */
 export function chooseLocalSandbox(
   level: SandboxLevel,
   platform: NodeJS.Platform = process.platform,
   find: () => Bwrap | null = findBwrap,
-): { kind: 'bwrap' | 'none'; level: SandboxLevel; bwrap: Bwrap | null } {
-  if (platform !== 'linux' || level === 'full-access') return { kind: 'none', level, bwrap: null };
-  const bwrap = find();
-  return bwrap ? { kind: 'bwrap', level, bwrap } : { kind: 'none', level, bwrap: null };
+  findSb: () => Seatbelt | null = findSeatbelt,
+): { kind: SandboxKind; level: SandboxLevel; bwrap: Bwrap | null; seatbelt: Seatbelt | null } {
+  const none = { kind: 'none' as const, level, bwrap: null, seatbelt: null };
+  if (level === 'full-access') return none;
+  if (platform === 'linux') {
+    const bwrap = find();
+    return bwrap ? { ...none, kind: 'bwrap', bwrap } : none;
+  }
+  if (platform === 'darwin') {
+    const seatbelt = findSb();
+    return seatbelt ? { ...none, kind: 'seatbelt', seatbelt } : none;
+  }
+  return none;
 }
 /** How host plan and approvals name a sandbox kind. */
-export function sandboxLabel(kind: 'bwrap' | 'none'): string {
-  return kind === 'bwrap' ? 'bubblewrap' : 'unsandboxed';
+export function sandboxLabel(kind: SandboxKind): string {
+  return kind === 'bwrap' ? 'bubblewrap' : kind === 'seatbelt' ? 'seatbelt' : 'unsandboxed';
 }
+/** The refusal for a local command on a host with no usable sandbox and no operator opt-in. */
+export const UNSANDBOXED_REFUSAL =
+  'Local commands are refused: this host has no usable command sandbox (bubblewrap on Linux, Seatbelt on macOS). Install or repair bubblewrap, or have the operator set unsandboxed_commands: "allow" in the host config to run them unsandboxed.';

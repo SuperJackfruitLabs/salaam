@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
@@ -351,20 +352,134 @@ test('the tools user still reports its own host process group, then runs bubblew
   }
 });
 
-test('a Linux host without a usable bubblewrap falls back to none, like macOS', async () => {
+test('a Linux host without a usable bubblewrap chooses none; macOS chooses Seatbelt when usable', async () => {
   const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
-  expect(chooseLocalSandbox('workspace-write', 'linux', () => null)).toEqual({
+  expect(
+    chooseLocalSandbox(
+      'workspace-write',
+      'linux',
+      () => null,
+      () => null,
+    ),
+  ).toEqual({
     kind: 'none',
     level: 'workspace-write',
     bwrap: null,
+    seatbelt: null,
   });
-  expect(chooseLocalSandbox('workspace-write', 'linux', () => bwrap).kind).toBe('bwrap');
-  expect(chooseLocalSandbox('workspace-write', 'darwin', () => bwrap).kind).toBe('none');
-  expect(chooseLocalSandbox('full-access', 'linux', () => bwrap).kind).toBe('none');
+  expect(
+    chooseLocalSandbox(
+      'workspace-write',
+      'linux',
+      () => bwrap,
+      () => null,
+    ).kind,
+  ).toBe('bwrap');
+  expect(
+    chooseLocalSandbox(
+      'workspace-write',
+      'darwin',
+      () => bwrap,
+      () => ({
+        path: '/usr/bin/sandbox-exec',
+      }),
+    ).kind,
+  ).toBe('seatbelt');
+  expect(
+    chooseLocalSandbox(
+      'workspace-write',
+      'darwin',
+      () => bwrap,
+      () => null,
+    ).kind,
+  ).toBe('none');
+  expect(
+    chooseLocalSandbox(
+      'full-access',
+      'linux',
+      () => bwrap,
+      () => null,
+    ).kind,
+  ).toBe('none');
 });
 
-test('a host with no sandbox labels every command approval unsandboxed and binds kind none', async () => {
-  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
+// Operator ruling 2026-10-30 (option A): no usable sandbox means local commands are refused,
+// unless the operator set unsandboxed_commands: "allow" for this host.
+test('a host with no usable sandbox refuses a local command and names the fix', async () => {
+  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null, seatbelt: null });
+  try {
+    let error: unknown;
+    try {
+      f.prepare('c1', { action: 'command', command: 'echo hi' });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toMatchObject({ code: 'sandbox_unavailable' });
+    const message = String((error as Error).message);
+    expect(message).toContain('refused');
+    expect(message).toContain('bubblewrap');
+    expect(message).toContain('Seatbelt');
+    expect(message).toContain('unsandboxed_commands');
+    expect(
+      f.store.db.prepare('SELECT count(*) AS n FROM local_calls WHERE args IS NOT NULL').get(),
+    ).toEqual({
+      n: 0,
+    });
+    // An edit is not a command: it needs no OS sandbox and is still offered.
+    expect(() =>
+      f.prepare('e1', { action: 'edit', edits: [{ path: 'a.txt', sha256: null, content: 'x' }] }),
+    ).not.toThrow();
+  } finally {
+    await f.close();
+  }
+});
+
+test('full access the operator chose still runs as is on a host with no sandbox', async () => {
+  const f = sandboxed({ kind: 'none', level: 'full-access', bwrap: null, seatbelt: null });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('unsandboxed: the operator chose full access');
+  } finally {
+    await f.close();
+  }
+});
+
+test('a Seatbelt host binds the sandbox into the approval and runs the command under sandbox-exec', async () => {
+  const f = sandboxed({
+    kind: 'seatbelt',
+    level: 'workspace-write',
+    bwrap: null,
+    seatbelt: { path: '/usr/bin/sandbox-exec' },
+  });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('Seatbelt sandbox (workspace-write)');
+    expect(created.operation.value).not.toContain('unsandboxed');
+    expect(
+      JSON.parse(
+        String(
+          f.store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(created.call.id)!.args,
+        ),
+      ).sandbox,
+    ).toEqual({ kind: 'seatbelt', level: 'workspace-write', bwrap: null });
+    const argv = (
+      f.local as unknown as { commandArgv(root: string, script: string, tmp: string): string[] }
+    ).commandArgv(f.root, 'echo hi', '/private/tmp/salaam-cmd-t');
+    expect(argv.slice(0, 2)).toEqual(['/usr/bin/sandbox-exec', '-p']);
+    expect(argv.slice(-3)).toEqual(['/bin/sh', '-c', 'echo hi']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a host the operator opted in labels every command approval unsandboxed and binds kind none', async () => {
+  const f = sandboxed({
+    kind: 'none',
+    level: 'workspace-write',
+    bwrap: null,
+    seatbelt: null,
+    allowUnsandboxed: true,
+  });
   try {
     const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
     expect(created.operation.value).toContain(
@@ -383,7 +498,13 @@ test('a host with no sandbox labels every command approval unsandboxed and binds
 });
 
 test('an unsandboxed command records sandbox none in its execution result', async () => {
-  const f = sandboxed({ kind: 'none', level: 'workspace-write', bwrap: null });
+  const f = sandboxed({
+    kind: 'none',
+    level: 'workspace-write',
+    bwrap: null,
+    seatbelt: null,
+    allowUnsandboxed: true,
+  });
   try {
     const call = f.prepare('c1', { action: 'command', command: 'echo hi' });
     f.approve(call);
@@ -398,9 +519,94 @@ test('an unsandboxed command records sandbox none in its execution result', asyn
   }
 });
 
-test('host plan names the command sandbox kind and labels none unsandboxed', async () => {
+test('host plan names the command sandbox, refused without one unless the operator allows it', async () => {
   const { hostLocalSandbox } = await import('../../src/host.js');
-  expect(hostLocalSandbox('linux', () => null)).toEqual({ kind: 'none', label: 'unsandboxed' });
-  expect(hostLocalSandbox('darwin', () => bwrap)).toEqual({ kind: 'none', label: 'unsandboxed' });
-  expect(hostLocalSandbox('linux', () => bwrap)).toEqual({ kind: 'bwrap', label: 'bubblewrap' });
+  const sb = () => ({ path: '/usr/bin/sandbox-exec' });
+  expect(
+    hostLocalSandbox(
+      'linux',
+      () => null,
+      () => null,
+    ),
+  ).toEqual({ kind: 'none', label: 'refused' });
+  expect(
+    hostLocalSandbox(
+      'linux',
+      () => null,
+      () => null,
+      true,
+    ),
+  ).toEqual({
+    kind: 'none',
+    label: 'unsandboxed',
+    unsandboxed_commands: 'allow',
+  });
+  expect(
+    hostLocalSandbox(
+      'darwin',
+      () => bwrap,
+      () => null,
+    ),
+  ).toEqual({ kind: 'none', label: 'refused' });
+  expect(hostLocalSandbox('darwin', () => null, sb)).toEqual({
+    kind: 'seatbelt',
+    label: 'seatbelt',
+  });
+  expect(
+    hostLocalSandbox(
+      'linux',
+      () => bwrap,
+      () => null,
+    ),
+  ).toEqual({ kind: 'bwrap', label: 'bubblewrap' });
+  expect(
+    hostLocalSandbox(
+      'linux',
+      () => bwrap,
+      () => null,
+      true,
+    ),
+  ).toEqual({
+    kind: 'bwrap',
+    label: 'bubblewrap',
+    unsandboxed_commands: 'allow',
+  });
 });
+
+test.runIf(process.platform === 'darwin')(
+  'on macOS a real command runs under Seatbelt, records it, and its private tmp is removed',
+  async () => {
+    const { findSeatbelt } = await import('../../src/command-sandbox.js');
+    const seatbelt = findSeatbelt();
+    expect(seatbelt).not.toBeNull();
+    const f = sandboxed({ kind: 'seatbelt', level: 'workspace-write', bwrap: null, seatbelt });
+    try {
+      const call = f.prepare('c1', {
+        action: 'command',
+        command: 'echo hi > out.txt && echo "$TMPDIR" && echo bad > "$HOME/salaam-lc-escape"',
+      });
+      f.approve(call);
+      f.local.run(call.call.id);
+      const done = await until(
+        () => f.local.view(call.call.id),
+        (v) => v.call.state !== 'running',
+      );
+      expect(done.result).toMatchObject({
+        sandbox: 'seatbelt',
+        isolation: 'local-user-seatbelt-workspace-write',
+      });
+      expect(readFileSync(join(f.root, 'out.txt'), 'utf8')).toBe('hi\n');
+      const tmp = String((done.result as { output: string }).output).match(
+        /(\/\S*salaam-cmd-\S+?)\/?\n/,
+      )?.[1];
+      expect(tmp).toBeTruthy();
+      await until(
+        () => existsSync(tmp!),
+        (exists) => !exists,
+      );
+      expect(existsSync(join(process.env.HOME ?? '/nonexistent', 'salaam-lc-escape'))).toBe(false);
+    } finally {
+      await f.close();
+    }
+  },
+);

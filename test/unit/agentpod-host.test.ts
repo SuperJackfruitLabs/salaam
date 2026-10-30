@@ -95,3 +95,23 @@ test('managed MCP requires schema3 and a private authority-bound profile; old ho
   expect(() => readHost(file)).toThrow(/profile|private/i);
   await expect(planHost({ ...f.input, mcp_config: config })).rejects.toThrow();
 });
+
+// Item 10, operator ruling 2026-10-30 (option A): with no usable sandbox a host refuses local
+// commands; only an explicit host-config field allows them unsandboxed, and the manifest pins it.
+test('unsandboxed_commands "allow" is the only accepted value and is pinned in the manifest', async () => {
+  const f = fixture();
+  const sbx = (m: unknown) => (m as { local_sandbox: Record<string, unknown> }).local_sandbox;
+  const plain = await planHost(f.input);
+  expect(sbx(plain)).not.toHaveProperty('unsandboxed_commands');
+  const allowed = await planHost({ ...f.input, unsandboxed_commands: 'allow' });
+  expect(sbx(allowed)).toMatchObject({ unsandboxed_commands: 'allow' });
+  for (const unsandboxed_commands of ['yes', true, 'ALLOW', null, 1])
+    await expect(planHost({ ...f.input, unsandboxed_commands })).rejects.toThrow(
+      'unsandboxed_commands',
+    );
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(allowed), { mode: 0o600 });
+  expect(readHost(file)).toEqual(allowed);
+  // The opt-in is part of the reviewed manifest, so it changes the digest the owner sees.
+  expect(digest(allowed)).not.toBe(digest(plain));
+});

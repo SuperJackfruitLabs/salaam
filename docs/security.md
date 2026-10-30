@@ -85,6 +85,25 @@ This is not a VM boundary. Treat Docker access and the local executor broker as
 privileged host infrastructure. A compromised engine or trusted OS account is
 outside the isolation guarantee.
 
+Local commands (the `command` action of local coding) run under the host's OS
+sandbox at `read-only` or `workspace-write` (the default):
+
+- Linux uses bubblewrap: an empty root, the system read-only, a private `/tmp`,
+  the workspace bound writable or read-only, and unshared namespaces.
+- macOS uses Seatbelt (`sandbox-exec`) with a deny-by-default profile. It reads
+  the system, developer tools, package prefixes, the workspace and a private tmp.
+  It writes only the workspace (in `workspace-write`) and that tmp. It has no
+  home directory, no mach services and no network.
+
+Neither sandbox gives network unless a check declares it. `full-access` runs the
+command as is, and only when the operator chooses it.
+
+A host with no usable sandbox refuses local commands. To run them unsandboxed
+anyway, the operator sets `unsandboxed_commands: "allow"` in the host config,
+or passes `--unsandboxed-commands allow` to `salaam serve`. Host plan pins that
+choice in the manifest, and every approval says "unsandboxed". Edits are not
+commands and are unaffected.
+
 ## Approvals and recovery
 
 Approvals bind the target, normalized arguments, expected target version, policy,

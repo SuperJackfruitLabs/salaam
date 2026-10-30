@@ -31,7 +31,7 @@ import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { OperatorMcp } from './operator-mcp.js';
-import { chooseLocalSandbox, sandboxLabel } from './command-sandbox.js';
+import { chooseLocalSandbox, sandboxLabel, type SandboxKind } from './command-sandbox.js';
 import { loadPersona } from './persona.js';
 interface HostIdentity {
   node: string;
@@ -91,17 +91,32 @@ export interface AgentPodStrictWorkHostManifest extends Omit<
   /** How long a strict approval offer stays answerable; the daemon default when absent. */
   approval_ttl_ms?: number;
 }
-/** Item 10: the command sandbox this host gives local commands, as reviewed at host plan. */
+/** Item 10: the command sandbox this host gives local commands, as reviewed at host plan. With no
+ * usable sandbox the host refuses local commands (label "refused") unless the operator set
+ * `unsandboxed_commands: "allow"`, which the manifest pins (operator ruling 2026-10-30, option A). */
 export interface HostLocalSandbox {
-  kind: 'bwrap' | 'none';
+  kind: SandboxKind;
   label: string;
+  unsandboxed_commands?: 'allow';
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
   find?: Parameters<typeof chooseLocalSandbox>[2],
+  findSb?: Parameters<typeof chooseLocalSandbox>[3],
+  allowUnsandboxed = false,
 ): HostLocalSandbox {
-  const { kind } = chooseLocalSandbox('workspace-write', platform, find);
-  return { kind, label: sandboxLabel(kind) };
+  const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
+  return {
+    kind,
+    label: kind === 'none' && !allowUnsandboxed ? 'refused' : sandboxLabel(kind),
+    ...(allowUnsandboxed ? { unsandboxed_commands: 'allow' as const } : {}),
+  };
+}
+/** Whether the reviewed manifest lets local commands run unsandboxed on a host without a sandbox. */
+export function hostAllowsUnsandboxed(m: HostManifest): boolean {
+  return (
+    (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.unsandboxed_commands === 'allow'
+  );
 }
 export interface OperatorAccess {
   group: string;
@@ -208,6 +223,7 @@ async function planAgentPod(
     'operator_mcp_config',
     'persona_config',
     'approval_ttl_ms',
+    'unsandboxed_commands',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -246,6 +262,9 @@ async function planAgentPod(
       throw Error('approval_ttl_ms is only for the strict work host profile');
     ttl = approvalTtl(c.approval_ttl_ms);
   }
+  if (c.unsandboxed_commands !== undefined && c.unsandboxed_commands !== 'allow')
+    throw Error('unsandboxed_commands is "allow" or absent');
+  const allowUnsandboxed = c.unsandboxed_commands === 'allow';
   const state = privateState(string(c.state, 'state'), access?.gid);
   const config = string(c.agentpod_config, 'agentpod_config');
   if (!isAbsolute(config) || realpathSync(config) !== config)
@@ -331,7 +350,7 @@ async function planAgentPod(
     pins_digest: digest(pins),
     workspace: pins.workspace,
     cli_digest: digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')),
-    local_sandbox: hostLocalSandbox(),
+    local_sandbox: hostLocalSandbox(undefined, undefined, undefined, allowUnsandboxed),
   };
 }
 export function hostDigests() {
@@ -486,7 +505,8 @@ export function readHost(path: string): HostManifest {
       throw Error('Host CLI changed');
     if (
       Object.hasOwn(m, 'local_sandbox') &&
-      canonical(m.local_sandbox) !== canonical(hostLocalSandbox())
+      canonical(m.local_sandbox) !==
+        canonical(hostLocalSandbox(undefined, undefined, undefined, hostAllowsUnsandboxed(m)))
     )
       throw Error('Host command sandbox changed; run host plan again');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
