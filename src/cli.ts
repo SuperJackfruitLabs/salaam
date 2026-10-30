@@ -517,6 +517,7 @@ async function main(): Promise<void> {
       hostToolsUser,
       hostApprovalTtlMs,
       hostAllowsUnsandboxed,
+      hostCommandNetwork,
     } = await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
@@ -660,6 +661,7 @@ async function main(): Promise<void> {
           providerRoute: m.provider,
           approvalTtlMs: hostApprovalTtlMs(m),
           ...(hostAllowsUnsandboxed(m) ? { unsandboxedCommands: 'allow' as const } : {}),
+          ...(hostCommandNetwork(m) ? { commandNetwork: hostCommandNetwork(m)! } : {}),
         });
       if (process.connected) process.once('disconnect', () => void service.close());
       for (const signal of ['SIGTERM', 'SIGINT'] as const)

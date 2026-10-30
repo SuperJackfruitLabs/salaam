@@ -619,3 +619,102 @@ test('a real command runs under the host sandbox and records it, or is refused w
     await f.close();
   }
 });
+
+// Network allowlist (operator rulings 2026-10-30): with the broker configured, a sandboxed command
+// reaches the network only through stk's local-commands socket, and the approval says so.
+test('a broker-network host says in every approval that the network goes through the broker allowlist', () => {
+  const f = sandboxed({
+    kind: 'bwrap',
+    level: 'workspace-write',
+    bwrap,
+    network: { socket: '/run/stk/local-commands.sock' },
+  });
+  try {
+    const created = f.prepare('c1', { action: 'command', command: 'echo hi' });
+    expect(created.operation.value).toContain('network: through the broker allowlist');
+    expect(created.operation.value).not.toContain('has no network');
+  } finally {
+    void f.close();
+  }
+});
+
+// Every host runs this with its own sandbox and nothing is skipped: Seatbelt on macOS, bubblewrap on
+// a Linux host that has it; where no sandbox can start, the command is refused.
+test('a real broker-network command reaches only the allowlisted host, and nothing directly', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { fakeBroker, helloServer } = await import('../helpers/fake-broker.js');
+  const chosen = chooseLocalSandbox('workspace-write');
+  if (process.platform === 'darwin') expect(chosen.kind).toBe('seatbelt');
+  const up = await helloServer();
+  const broker = await fakeBroker('allowed.test', up.port);
+  const f = sandboxed({ ...chosen, network: { socket: broker.socket } });
+  try {
+    if (chosen.kind === 'none') {
+      expect(() => f.prepare('c1', { action: 'command', command: 'true' })).toThrow(
+        expect.objectContaining({ code: 'sandbox_unavailable' }),
+      );
+      return;
+    }
+    const call = f.prepare('c1', {
+      action: 'command',
+      command: [
+        'curl -sS --max-time 10 --proxytunnel -x "$HTTP_PROXY" http://allowed.test/; echo',
+        'curl -sS --max-time 10 --proxytunnel -x "$HTTP_PROXY" http://evil.test/ || echo refused-ok',
+        `curl -sS --max-time 3 --noproxy '*' http://127.0.0.1:${up.port}/ || echo direct-blocked`,
+      ].join('\n'),
+    });
+    f.approve(call);
+    f.local.run(call.call.id);
+    const done = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    const output = String((done.result as { output: string }).output);
+    expect(output).toContain('hello');
+    expect(output).toContain('refused-ok');
+    expect(output).toContain('direct-blocked');
+    expect(output).toContain('not in the local-commands allowlist');
+    expect((done.result as { network: unknown }).network).toMatchObject({
+      broker: 'available',
+      connections: expect.arrayContaining([
+        expect.objectContaining({ target: 'allowed.test:80', allowed: 1 }),
+        expect.objectContaining({ target: 'evil.test:80', refused: 1 }),
+      ]),
+    });
+  } finally {
+    await f.close();
+    await broker.close();
+    await up.close();
+  }
+}, 60000);
+
+test('a broker-network command with the broker socket missing still runs, with no network', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const chosen = chooseLocalSandbox('workspace-write');
+  const f = sandboxed({ ...chosen, network: { socket: '/nonexistent/salaam/broker.sock' } });
+  try {
+    if (chosen.kind === 'none') {
+      expect(() => f.prepare('c1', { action: 'command', command: 'true' })).toThrow(
+        expect.objectContaining({ code: 'sandbox_unavailable' }),
+      );
+      return;
+    }
+    const call = f.prepare('c1', {
+      action: 'command',
+      command:
+        'curl -sS --max-time 5 --proxytunnel -x "$HTTP_PROXY" http://allowed.test/ || echo no-net; echo ran',
+    });
+    f.approve(call);
+    f.local.run(call.call.id);
+    const done = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    const output = String((done.result as { output: string }).output);
+    expect(output).toContain('ran');
+    expect(output).toContain('no-net');
+    expect((done.result as { network: { broker: string } }).network.broker).toBe('unavailable');
+  } finally {
+    await f.close();
+  }
+}, 60000);
