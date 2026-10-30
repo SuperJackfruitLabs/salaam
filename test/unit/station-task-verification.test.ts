@@ -1034,7 +1034,15 @@ test('a helper left unconfirmed with no pid settles only when no station helper 
       live.kill('SIGKILL');
       await new Promise((r) => live.once('exit', r));
     }
-    // No station helper process anywhere: the pid-less helper is proven absent and settles.
+    // No station helper process anywhere. Absence can only be proven from Linux's /proc, so off
+    // Linux the pid-less helper stays fenced; on Linux it is proven absent and settles.
+    if (process.platform !== 'linux') {
+      await expect(close()).rejects.toThrow();
+      expect(
+        f.store.db.prepare('SELECT helper_state FROM station_calls WHERE id=?').get(stuck.id),
+      ).toMatchObject({ helper_state: 'unconfirmed' });
+      return;
+    }
     await close();
     const settled = f.store.db.prepare('SELECT * FROM station_calls WHERE id=?').get(stuck.id);
     expect(settled).toMatchObject({ helper_state: 'stopped' });
