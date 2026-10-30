@@ -7,6 +7,8 @@ import { ChildWork } from '../../src/children.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { AgentProfiles } from '../../src/agent-profiles.js';
 import type { Supervisor } from '../../src/supervisor.js';
+import { RepositorySnapshots } from '../../src/repository-snapshots.js';
+import { digest } from '../../src/protocol.js';
 
 // Item 8: the critic child. A reviewer over an immutable snapshot of the verified deliverables,
 // linked to the task's last step attempt (which has settled), charged to its own budget, started at once.
@@ -151,6 +153,48 @@ test('the critic child holds only read-only tools, and none of them can write or
     ]);
   } finally {
     f.store.close?.();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test('a critic reading its snapshot the way a model does gets a recordable result (card_5dcbd5d9be5c4183)', async () => {
+  const f = await setup();
+  try {
+    const child = f.children.spawnCritic(
+      f.parent.id,
+      f.attempt,
+      'critic-1',
+      'Review against: cite RFC 9110.',
+      4,
+      f.grant,
+      snapshot,
+    );
+    const binding = f.store.workerBoundary.view(child.id).binding;
+    // A snapshot-only reviewer has no workspace, so the result must not carry undefined fields:
+    // the supervisor digests every read result into the journal.
+    const repositories = new RepositorySnapshots(
+      f.store,
+      new Artifacts(join(f.dir, 'artifacts'), f.store),
+      {} as never,
+    );
+    for (const args of [
+      { action: 'inspect' },
+      { action: 'list' },
+      { action: 'read', path: 'runs/r/answer.md' },
+      { action: 'search', query: '502' },
+    ]) {
+      const result = repositories.read(binding, args);
+      expect(() => digest(result), args.action).not.toThrow();
+    }
+    // Its findings report records too, with an omitted end_line.
+    expect(() =>
+      repositories.report(binding, [
+        { path: 'runs/r/answer.md', line: 1, severity: 'low', message: 'cite the section' },
+      ]),
+    ).not.toThrow();
+  } finally {
+    await f.children.close();
+    f.store.close();
     rmSync(f.dir, { recursive: true, force: true });
   }
 });
