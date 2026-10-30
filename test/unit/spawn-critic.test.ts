@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
+import { READ_ONLY_REVIEW_TOOLS } from '../../src/task-budget.js';
 import { ChildWork } from '../../src/children.js';
 import { Artifacts } from '../../src/artifacts.js';
 import { AgentProfiles } from '../../src/agent-profiles.js';
@@ -113,6 +114,43 @@ test('a critic is only the built-in reviewer, with a bounded budget and a snapsh
   } finally {
     await f.children.close();
     f.store.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+// Operator ruling 2026-10-30 (option A): the review child is left out of the verification busy
+// check only because it cannot write. If the reviewer ever gains a writing tool, this fails.
+test('the critic child holds only read-only tools, and none of them can write or reach the station', async () => {
+  const f = await setup();
+  try {
+    const child = f.children.spawnCritic(
+      f.parent.id,
+      f.attempt,
+      'critic-1',
+      'Review.',
+      4,
+      f.grant,
+      snapshot,
+    );
+    const tools = JSON.parse(child.authority) as string[];
+    expect(tools.every((t) => (READ_ONLY_REVIEW_TOOLS as readonly string[]).includes(t))).toBe(
+      true,
+    );
+    for (const writer of [
+      'salaam_files',
+      'salaam_command',
+      'salaam_station',
+      'salaam_operator_mcp',
+      'salaam_board',
+    ])
+      expect(READ_ONLY_REVIEW_TOOLS as readonly string[]).not.toContain(writer);
+    expect([...READ_ONLY_REVIEW_TOOLS].sort()).toEqual([
+      'salaam_findings',
+      'salaam_probe',
+      'salaam_repository',
+    ]);
+  } finally {
+    f.store.close?.();
     rmSync(f.dir, { recursive: true, force: true });
   }
 });

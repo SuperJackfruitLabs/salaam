@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, watch } from 'node:fs
 import { join } from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { TaskDriver } from '../../src/task-driver.js';
+import { TaskCritic } from '../../src/task-critic.js';
 import type { Supervisor } from '../../src/supervisor.js';
 import type { ChildWork } from '../../src/children.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -561,6 +562,71 @@ test.each([false, true, 'hook' as const, 'critic' as const])(
       f.store.db.prepare("UPDATE task_steps SET state='completed' WHERE task_id=?").run(task.id);
       const expected = f.tasks.get(task.id).revision;
       if (missing === 'critic') {
+        // Operator ruling 2026-10-30 (option A; staging card_019a647a169744ff): a running
+        // review's read-only child does not make the task busy for verification reads, so the
+        // owner's status poll and the driver can re-check freshness while the critic works.
+        // Any other live work, or a review child holding a writing tool, still does.
+        new TaskCritic(f.store, f.verification.artifacts, {} as never);
+        const live = f.tasks.get(task.id);
+        const checked = f.verification.latest(live, 'tests', null)!;
+        const childSession = f.store.create(f.dir, 'critic-child').id;
+        const childAttempt = f.store.accept(
+          childSession,
+          'critic',
+          f.store.session(childSession).revision,
+          'review',
+        ).attempt_id;
+        f.store.db
+          .prepare(
+            "INSERT INTO child_tasks(id,parent_session,parent_attempt,step_key,input_digest,child_session,child_attempt,authority,budget,state) VALUES ('review-child',?,?,'critic-1-1','d',?,?,?,4,'accepted')",
+          )
+          .run(
+            f.session.id,
+            f.store.db
+              .prepare('SELECT id FROM attempts WHERE session_id=? LIMIT 1')
+              .get(f.session.id)!.id as string,
+            childSession,
+            childAttempt,
+            JSON.stringify(['salaam_findings', 'salaam_probe', 'salaam_repository']),
+          );
+        f.store.db
+          .prepare(
+            "INSERT INTO task_critics VALUES ('review-row',?,?,'e',1,'review-child','running',NULL,NULL)",
+          )
+          .run(task.id, live.plan_revision);
+        expect(await f.verification.freshAsync(checked)).toBe(true);
+        // A review child that could write is not exempt.
+        f.store.db
+          .prepare("UPDATE child_tasks SET authority=? WHERE id='review-child'")
+          .run(JSON.stringify(['salaam_command', 'salaam_findings', 'salaam_probe']));
+        expect(await f.verification.freshAsync(checked)).toBe(false);
+        f.store.db
+          .prepare("UPDATE child_tasks SET authority=? WHERE id='review-child'")
+          .run(JSON.stringify(['salaam_findings', 'salaam_probe', 'salaam_repository']));
+        // A live child that is not a running review is not exempt.
+        f.store.db.prepare("UPDATE task_critics SET state='pass' WHERE id='review-row'").run();
+        expect(await f.verification.freshAsync(checked)).toBe(false);
+        f.store.db.prepare("UPDATE task_critics SET state='running' WHERE id='review-row'").run();
+        // A live step attempt beside the review still makes the task busy.
+        const step = 'step-live';
+        f.store.db
+          .prepare(
+            "INSERT INTO submissions(id,session_id,text,attempt_id) VALUES ('sub-live',?,'step',?)",
+          )
+          .run(f.session.id, step);
+        f.store.db
+          .prepare(
+            "INSERT INTO attempts(id,session_id,submission_id,state) VALUES (?,?,'sub-live','running')",
+          )
+          .run(step, f.session.id);
+        expect(await f.verification.freshAsync(checked)).toBe(false);
+        f.store.db
+          .prepare("UPDATE attempts SET state='completed' WHERE id IN (?,?)")
+          .run(step, childAttempt);
+        f.store.db
+          .prepare("UPDATE child_tasks SET state='completed' WHERE id='review-child'")
+          .run();
+        f.store.db.prepare("DELETE FROM task_critics WHERE id='review-row'").run();
         // Item 8: without a passing critic verdict on this exact evidence, nothing completes.
         const seen: { evidence: string; deliverables: unknown }[] = [];
         let passed = false;

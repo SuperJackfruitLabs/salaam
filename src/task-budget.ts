@@ -11,6 +11,13 @@ export class TaskBudgetError extends ServiceError {
   }
 }
 
+/** Tools a critic review child may hold and still be left out of the verification busy check. */
+export const READ_ONLY_REVIEW_TOOLS = [
+  'salaam_findings',
+  'salaam_probe',
+  'salaam_repository',
+] as const;
+
 export class TaskBudget {
   constructor(
     readonly store: Store,
@@ -48,16 +55,52 @@ export class TaskBudget {
     );
     return { ...runtime, invocations_spent: n, external_model_usage: n ? 'unknown' : 'none' };
   }
-  active(task: WorkTask): number {
+  /** The child attempt of each running critic review of this task revision whose recorded
+   * tools are all read-only (operator ruling 2026-10-30, option A). Only verification reads may
+   * leave these out of the busy count: the reviewer reads a digest-bound snapshot and cannot
+   * write the workspace, run a command or reach the station (staging card_019a647a169744ff). */
+  private readOnlyReviews(task: WorkTask): string[] {
+    if (
+      !this.store.db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_critics'")
+        .get()
+    )
+      return [];
+    const rows = this.store.db
+      .prepare(
+        "SELECT c.child_attempt, c.authority FROM task_critics r JOIN child_tasks c ON c.id=r.child_id WHERE r.task_id=? AND r.plan_revision=? AND r.state='running' AND c.parent_session=?",
+      )
+      .all(task.id, task.plan_revision, task.session_id) as {
+      child_attempt: string;
+      authority: string;
+    }[];
+    return rows
+      .filter((r) => {
+        try {
+          const tools = JSON.parse(r.authority) as unknown;
+          return (
+            Array.isArray(tools) &&
+            tools.every((t) => (READ_ONLY_REVIEW_TOOLS as readonly unknown[]).includes(t))
+          );
+        } catch {
+          return false;
+        }
+      })
+      .map((r) => r.child_attempt);
+  }
+  /** Live work in the task's session tree. `verification` leaves out a running read-only review's
+   * child attempt, for verification reads only; admission and concurrency count everything. */
+  active(task: WorkTask, opts: { verification?: boolean } = {}): number {
+    const excluded = JSON.stringify(opts.verification ? this.readOnlyReviews(task) : []);
     const row = this.store.db
       .prepare(
         `WITH tree(id) AS (SELECT ? UNION ALL SELECT child_session FROM child_tasks WHERE parent_session=?) SELECT
-      (SELECT count(*) FROM attempts WHERE session_id IN (SELECT id FROM tree) AND state IN ('accepted','dispatching','running')) +
+      (SELECT count(*) FROM attempts WHERE session_id IN (SELECT id FROM tree) AND state IN ('accepted','dispatching','running') AND id NOT IN (SELECT value FROM json_each(?))) +
       (SELECT count(*) FROM station_calls WHERE session_id IN (SELECT id FROM tree) AND kind='check' AND attempt_id IS NULL AND state IN ('prepared','dispatching')) +
       (SELECT count(*) FROM command_runs WHERE session_id IN (SELECT id FROM tree) AND state NOT IN ('succeeded','failed','cancelled','timed_out','output_limited','interrupted')) +
       (SELECT count(*) FROM external_runs e JOIN child_tasks c ON c.id=e.child_id JOIN attempts a ON a.id=c.child_attempt WHERE c.parent_session=? AND e.stopped=0 AND a.state NOT IN ('accepted','dispatching','running')) AS n`,
       )
-      .get(task.session_id, task.session_id, task.session_id)!;
+      .get(task.session_id, task.session_id, excluded, task.session_id)!;
     return Number(row.n);
   }
   private deny(session: string, message: string): never {
