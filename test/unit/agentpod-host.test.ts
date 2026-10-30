@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'vitest';
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { planHost, readHost, hostUnit } from '../../src/host.js';
+import { planHost, readHost, hostUnit, hostCommandNetwork } from '../../src/host.js';
 import { digest } from '../../src/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
@@ -98,6 +98,41 @@ test('managed MCP requires schema3 and a private authority-bound profile; old ho
 
 // Item 10, operator ruling 2026-10-30 (option A): with no usable sandbox a host refuses local
 // commands; only an explicit host-config field allows them unsandboxed, and the manifest pins it.
+test('command_network "broker" pins the broker socket in the manifest; anything else is refused', async () => {
+  const f = fixture();
+  const sbx = (m: unknown) => (m as { local_sandbox: Record<string, unknown> }).local_sandbox;
+  const plain = await planHost(f.input);
+  expect(sbx(plain)).not.toHaveProperty('command_network');
+  const broker = await planHost({ ...f.input, command_network: 'broker' });
+  expect(sbx(broker)).toMatchObject({
+    command_network: {
+      mode: 'broker',
+      socket: '/run/stk/local-commands.sock',
+      label: 'broker (hosts set by the stk policy)',
+    },
+  });
+  const custom = await planHost({
+    ...f.input,
+    command_network: 'broker',
+    command_network_socket: '/run/stk/other.sock',
+  });
+  expect(sbx(custom)).toMatchObject({ command_network: { socket: '/run/stk/other.sock' } });
+  for (const command_network of ['yes', true, 'BROKER', null, 'open'])
+    await expect(planHost({ ...f.input, command_network })).rejects.toThrow('command_network');
+  await expect(
+    planHost({ ...f.input, command_network: 'broker', command_network_socket: 'relative.sock' }),
+  ).rejects.toThrow('command_network_socket');
+  await expect(
+    planHost({ ...f.input, command_network_socket: '/run/stk/local-commands.sock' }),
+  ).rejects.toThrow('command_network_socket');
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(broker), { mode: 0o600 });
+  expect(readHost(file)).toEqual(broker);
+  expect(hostCommandNetwork(readHost(file))).toEqual({ socket: '/run/stk/local-commands.sock' });
+  expect(hostCommandNetwork(plain)).toBeNull();
+  expect(digest(broker)).not.toBe(digest(plain));
+});
+
 test('unsandboxed_commands "allow" is the only accepted value and is pinned in the manifest', async () => {
   const f = fixture();
   const sbx = (m: unknown) => (m as { local_sandbox: Record<string, unknown> }).local_sandbox;

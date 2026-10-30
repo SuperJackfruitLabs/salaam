@@ -1,3 +1,4 @@
+import { COMMAND_NETWORK_PORT, inSandboxRelaySource } from './command-network.js';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isAbsolute } from 'node:path';
@@ -55,7 +56,12 @@ export function sandboxArgv(
   root: string,
   argv: string[],
   bwrap: Bwrap | null,
-  options: { network: boolean },
+  options: {
+    network: boolean;
+    /** Broker network: the host relay's private directory and the node that runs the in-sandbox
+     * relay. The network stays unshared; only the relay socket and node are bound in. */
+    broker?: { dir: string; node: string };
+  },
 ): string[] {
   if (level === 'full-access') return argv;
   if (!bwrap)
@@ -97,14 +103,40 @@ export function sandboxArgv(
     level === 'read-only' ? '--ro-bind' : '--bind',
     root,
     root,
+    // Broker network: only the host relay's socket directory and the node that bridges to it.
+    ...(options.broker
+      ? [
+          '--bind',
+          options.broker.dir,
+          '/run/salaam-net',
+          '--ro-bind',
+          options.broker.node,
+          '/run/salaam-node',
+        ]
+      : []),
     // The empty root itself is read-only too: only the workspace (and the private /tmp) is writable.
     '--remount-ro',
     '/',
     '--chdir',
     root,
     '--',
+    ...(options.broker
+      ? [
+          '/run/salaam-node',
+          '-e',
+          inSandboxRelaySource,
+          '/run/salaam-net/relay.sock',
+          String(COMMAND_NETWORK_PORT),
+        ]
+      : []),
     ...argv,
   ];
+}
+
+function brokerPort(port: number): number {
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new ServiceError('invalid_field', 'A broker relay port is 1–65535');
+  return port;
 }
 
 /** The pinned Seatbelt launcher, or null when this host cannot apply a deny-by-default profile. */
@@ -144,7 +176,8 @@ export function seatbeltProfile(
   level: 'read-only' | 'workspace-write',
   root: string,
   tmp: string,
-  options: { network: boolean },
+  /** brokerPort: the host relay's loopback port, the only place a broker-network command may connect. */
+  options: { network: boolean; brokerPort?: number },
 ): string {
   const w = sbplPath(root, 'workspace path'),
     t = sbplPath(tmp, 'tmp path');
@@ -181,6 +214,9 @@ export function seatbeltProfile(
       : `(allow file-write* (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`,
     `(allow file-ioctl ${devices} (regex #"^/dev/fd/"))`,
     ...(options.network ? ['(allow network*)'] : []),
+    ...(options.brokerPort !== undefined && !options.network
+      ? [`(allow network-outbound (remote tcp "localhost:${brokerPort(options.brokerPort)}"))`]
+      : []),
   ].join('\n');
 }
 
@@ -190,7 +226,7 @@ export function seatbeltArgv(
   tmp: string,
   argv: string[],
   seatbelt: Seatbelt | null,
-  options: { network: boolean },
+  options: { network: boolean; brokerPort?: number },
 ): string[] {
   if (level === 'full-access') return argv;
   if (!seatbelt)
