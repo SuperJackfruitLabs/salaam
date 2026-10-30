@@ -573,29 +573,39 @@ test('host plan names the command sandbox, refused without one unless the operat
   });
 });
 
-test.runIf(process.platform === 'darwin')(
-  'on macOS a real command runs under Seatbelt, records it, and its private tmp is removed',
-  async () => {
-    const { findSeatbelt } = await import('../../src/command-sandbox.js');
-    const seatbelt = findSeatbelt();
-    expect(seatbelt).not.toBeNull();
-    const f = sandboxed({ kind: 'seatbelt', level: 'workspace-write', bwrap: null, seatbelt });
-    try {
-      const call = f.prepare('c1', {
-        action: 'command',
-        command: 'echo hi > out.txt && echo "$TMPDIR" && echo bad > "$HOME/salaam-lc-escape"',
-      });
-      f.approve(call);
-      f.local.run(call.call.id);
-      const done = await until(
-        () => f.local.view(call.call.id),
-        (v) => v.call.state !== 'running',
+// Every host runs this with its own sandbox and nothing is skipped (the CI evidence gate refuses a
+// skipped test): Seatbelt on macOS, bubblewrap on a Linux host that has it, and a refusal where no
+// sandbox can start (a CI container).
+test('a real command runs under the host sandbox and records it, or is refused where there is none', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const chosen = chooseLocalSandbox('workspace-write');
+  if (process.platform === 'darwin') expect(chosen.kind).toBe('seatbelt');
+  const f = sandboxed(chosen);
+  try {
+    if (chosen.kind === 'none') {
+      expect(() => f.prepare('c1', { action: 'command', command: 'echo hi' })).toThrow(
+        expect.objectContaining({ code: 'sandbox_unavailable' }),
       );
-      expect(done.result).toMatchObject({
-        sandbox: 'seatbelt',
-        isolation: 'local-user-seatbelt-workspace-write',
-      });
-      expect(readFileSync(join(f.root, 'out.txt'), 'utf8')).toBe('hi\n');
+      return;
+    }
+    const call = f.prepare('c1', {
+      action: 'command',
+      command: 'echo hi > out.txt && echo "$TMPDIR" && echo bad > "$HOME/salaam-lc-escape"',
+    });
+    f.approve(call);
+    f.local.run(call.call.id);
+    const done = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(done.result).toMatchObject({
+      sandbox: chosen.kind,
+      isolation: 'local-user-' + chosen.kind + '-workspace-write',
+    });
+    expect(readFileSync(join(f.root, 'out.txt'), 'utf8')).toBe('hi\n');
+    expect(existsSync(join(process.env.HOME ?? '/nonexistent', 'salaam-lc-escape'))).toBe(false);
+    if (chosen.kind === 'seatbelt') {
+      // Seatbelt gives each command its own TMPDIR, removed when it ends.
       const tmp = String((done.result as { output: string }).output).match(
         /(\/\S*salaam-cmd-\S+?)\/?\n/,
       )?.[1];
@@ -604,9 +614,8 @@ test.runIf(process.platform === 'darwin')(
         () => existsSync(tmp!),
         (exists) => !exists,
       );
-      expect(existsSync(join(process.env.HOME ?? '/nonexistent', 'salaam-lc-escape'))).toBe(false);
-    } finally {
-      await f.close();
     }
-  },
-);
+  } finally {
+    await f.close();
+  }
+});
