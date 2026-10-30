@@ -112,6 +112,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Item 10: the sandbox level for agent-initiated local commands (default workspace-write).
    * full-access is unsandboxed and must be chosen explicitly. */
   localSandbox?: SandboxLevel;
+  /** Host config `unsandboxed_commands: "allow"`: run local commands unsandboxed on a host with no
+   * usable sandbox. Absent, they are refused (operator ruling 2026-10-30, option A). */
+  unsandboxedCommands?: 'allow';
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -363,11 +366,12 @@ export class SalaamService {
               : this.supervisor.failControl(id, error),
         });
         this.supervisor.managed = this.managed;
-        // Item 10: Linux runs local commands under bubblewrap when usable; any other host runs
-        // them unsandboxed and says so in every approval.
-        const localSandbox: LocalSandbox = chooseLocalSandbox(
-          options.localSandbox ?? 'workspace-write',
-        );
+        // Item 10: Linux runs local commands under bubblewrap and macOS under Seatbelt when
+        // usable; a host with neither refuses them unless the operator allowed them unsandboxed.
+        const localSandbox: LocalSandbox = {
+          ...chooseLocalSandbox(options.localSandbox ?? 'workspace-write'),
+          allowUnsandboxed: options.unsandboxedCommands === 'allow',
+        };
         this.localCoding = new LocalCoding(
           this.store,
           this.managed,

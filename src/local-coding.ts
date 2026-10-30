@@ -1,7 +1,17 @@
-import { sandboxArgv, type Bwrap, type SandboxLevel } from './command-sandbox.js';
+import {
+  sandboxArgv,
+  seatbeltArgv,
+  UNSANDBOXED_REFUSAL,
+  type Bwrap,
+  type SandboxKind,
+  type SandboxLevel,
+  type Seatbelt,
+} from './command-sandbox.js';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
 import { digest, object, string, ServiceError, type Operation } from './protocol.js';
@@ -43,15 +53,18 @@ interface LocalCall {
   identity: string | null;
 }
 /**
- * Item 10: how this host runs local commands. `bwrap`: under bubblewrap at `level` (full-access
- * only by explicit operator setting). `none`: a host with no usable sandbox (macOS until Seatbelt
- * lands, or Linux without a working bubblewrap), which runs commands unsandboxed and says so in
- * every approval.
+ * Item 10: how this host runs local commands. `bwrap` (Linux) or `seatbelt` (macOS): under the OS
+ * sandbox at `level` (full-access only by explicit operator setting). `none`: a host with no usable
+ * sandbox, which refuses local commands unless the operator allowed them unsandboxed
+ * (`allowUnsandboxed`); then it runs them and says so in every approval.
  */
 export interface LocalSandbox {
-  kind: 'bwrap' | 'none';
+  kind: SandboxKind;
   level: SandboxLevel;
   bwrap: Bwrap | null;
+  seatbelt?: Seatbelt | null;
+  /** The host config's `unsandboxed_commands: "allow"` (operator ruling 2026-10-30, option A). */
+  allowUnsandboxed?: boolean;
 }
 export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
@@ -202,6 +215,12 @@ export class LocalCoding {
           'sandbox_unavailable',
           'This host has no usable bubblewrap, so it cannot run a sandboxed command; an operator can choose full access explicitly',
         );
+      if (
+        this.sandbox.kind === 'none' &&
+        this.sandbox.level !== 'full-access' &&
+        !this.sandbox.allowUnsandboxed
+      )
+        throw new ServiceError('sandbox_unavailable', UNSANDBOXED_REFUSAL);
       args = {
         action: 'command',
         command: string(input.command, 'command', 8192),
@@ -369,21 +388,31 @@ export class LocalCoding {
       return 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.';
     if (kind === 'none')
       return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
+    const name = kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
     return level === 'read-only'
-      ? 'in a bubblewrap sandbox (read-only): it can read this workspace but write nothing, and has no network.'
-      : 'in a bubblewrap sandbox (workspace-write): it can write only inside this workspace and has no network.';
+      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and has no network.`
+      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace and has no network.`;
   }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
    * otherwise report a number that means nothing on the host. */
-  private commandArgv(root: string, script: string): string[] {
-    const sandboxed = this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access';
+  private commandArgv(root: string, script: string, tmp?: string): string[] {
+    const sandboxed = this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access';
     const inner = (s: string) =>
-      sandboxed
-        ? sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
-            network: false,
-          })
-        : ['/bin/sh', '-c', s];
+      !sandboxed
+        ? ['/bin/sh', '-c', s]
+        : this.sandbox.kind === 'seatbelt'
+          ? seatbeltArgv(
+              this.sandbox.level,
+              root,
+              tmp ?? '',
+              ['/bin/sh', '-c', s],
+              this.sandbox.seatbelt ?? null,
+              { network: false },
+            )
+          : sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
+              network: false,
+            });
     if (this.tools.mode !== 'tools-user') return inner(script);
     const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
     return sandboxed
@@ -400,6 +429,11 @@ export class LocalCoding {
   }
   private command(c: LocalCall, command: string, timeout: number): void {
     let stop = () => {};
+    // Seatbelt has no tmpfs: each command gets its own private tmp, removed when it ends.
+    const tmp =
+      this.sandbox.kind === 'seatbelt' && this.sandbox.level !== 'full-access'
+        ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
+        : undefined;
     const done = new Promise<void>((resolve) => {
       let output = '',
         bytes = 0,
@@ -410,7 +444,7 @@ export class LocalCoding {
       const tools = this.tools.mode === 'tools-user';
       const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = this.commandArgv(c.root, script);
+      const argv = this.commandArgv(c.root, script, tmp);
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;
@@ -551,12 +585,12 @@ export class LocalCoding {
           error: error ? 'Command could not start' : null,
           isolation:
             (tools ? 'tools-user-' : 'local-user-') +
-            (this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access'
-              ? 'bwrap-' + this.sandbox.level
+            (this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
+              ? this.sandbox.kind + '-' + this.sandbox.level
               : 'no-os-sandbox'),
           sandbox:
-            this.sandbox.kind === 'bwrap' && this.sandbox.level !== 'full-access'
-              ? 'bwrap'
+            this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
+              ? this.sandbox.kind
               : 'none',
           tool_uid: this.tools.uid,
         };
@@ -577,6 +611,7 @@ export class LocalCoding {
       child.once('close', (code) => finish(code));
     });
     this.jobs.set(c.id, { stop: () => stop(), done });
+    if (tmp) void done.finally(() => rmSync(tmp, { recursive: true, force: true }));
   }
   async close(): Promise<void> {
     this.closed = true;

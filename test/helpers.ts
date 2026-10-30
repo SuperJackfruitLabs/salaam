@@ -7,10 +7,17 @@ import type { ControlLease } from '../src/protocol.js';
 import { randomUUID } from 'node:crypto';
 import { PiProcess } from '../src/pi.js';
 import { ROOT } from '../src/config.js';
+import { chooseLocalSandbox } from '../src/command-sandbox.js';
+
+/** Tests that run real local commands on a machine with no usable OS sandbox (a CI container where
+ * bubblewrap cannot start) run them with the operator opt-in; a machine with bubblewrap or Seatbelt
+ * keeps them sandboxed. The refusal itself is tested where it is decided (local-coding tests). */
+export const sandboxFallback: Partial<ServiceOptions> =
+  chooseLocalSandbox('workspace-write').kind === 'none' ? { unsandboxedCommands: 'allow' } : {};
 
 export async function fixture(options: Partial<ServiceOptions> = {}, prefix = '/tmp/sal-test-') {
   const dir = mkdtempSync(prefix);
-  const service = await SalaamService.open({ stateDir: dir, ...options });
+  const service = await SalaamService.open({ stateDir: dir, ...sandboxFallback, ...options });
   return {
     service,
     dir,

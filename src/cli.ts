@@ -508,8 +508,16 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'host') {
-    const { planHost, readHost, hostUnit, runHost, hostReceipt, hostToolsUser, hostApprovalTtlMs } =
-      await import('./host.js');
+    const {
+      planHost,
+      readHost,
+      hostUnit,
+      runHost,
+      hostReceipt,
+      hostToolsUser,
+      hostApprovalTtlMs,
+      hostAllowsUnsandboxed,
+    } = await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
       if (!file) throw Error('Supply --manifest FILE');
@@ -651,6 +659,7 @@ async function main(): Promise<void> {
           toolsUser: hostToolsUser(m),
           providerRoute: m.provider,
           approvalTtlMs: hostApprovalTtlMs(m),
+          ...(hostAllowsUnsandboxed(m) ? { unsandboxedCommands: 'allow' as const } : {}),
         });
       if (process.connected) process.once('disconnect', () => void service.close());
       for (const signal of ['SIGTERM', 'SIGINT'] as const)
@@ -1621,9 +1630,13 @@ async function main(): Promise<void> {
       a2aListenConfig = option('--a2a-listen-config'),
       mcpConfig = resolve(option('--mcp-config') ?? operatorMcpPath(process.env)),
       toolsUser = option('--tools-user') ?? (process.env.SALAAM_TOOLS_USER || undefined),
-      localSandbox = option('--local-sandbox') ?? (process.env.SALAAM_LOCAL_SANDBOX || undefined);
+      localSandbox = option('--local-sandbox') ?? (process.env.SALAAM_LOCAL_SANDBOX || undefined),
+      unsandboxedCommands =
+        option('--unsandboxed-commands') ?? (process.env.SALAAM_UNSANDBOXED_COMMANDS || undefined);
     if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))
       throw Error('--local-sandbox is read-only, workspace-write or full-access');
+    if (unsandboxedCommands !== undefined && unsandboxedCommands !== 'allow')
+      throw Error('--unsandboxed-commands is allow or absent');
     if (foreground) {
       const service = await SalaamService.open({
         stateDir: state,
@@ -1637,6 +1650,7 @@ async function main(): Promise<void> {
         a2aListenConfig: a2aListenConfig ? resolve(a2aListenConfig) : undefined,
         toolsUser,
         ...(localSandbox ? { localSandbox: localSandbox as SandboxLevel } : {}),
+        ...(unsandboxedCommands ? { unsandboxedCommands: 'allow' as const } : {}),
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1729,6 +1743,7 @@ async function main(): Promise<void> {
         mcpConfig,
         ...(toolsUser ? ['--tools-user', toolsUser] : []),
         ...(localSandbox ? ['--local-sandbox', localSandbox] : []),
+        ...(unsandboxedCommands ? ['--unsandboxed-commands', 'allow'] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

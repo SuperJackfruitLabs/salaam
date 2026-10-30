@@ -1,5 +1,14 @@
 import { test, expect } from 'vitest';
-import { sandboxArgv, SANDBOX_LEVELS, type Bwrap } from '../../src/command-sandbox.js';
+import {
+  chooseLocalSandbox,
+  sandboxArgv,
+  sandboxLabel,
+  seatbeltArgv,
+  seatbeltProfile,
+  SANDBOX_LEVELS,
+  type Bwrap,
+  type Seatbelt,
+} from '../../src/command-sandbox.js';
 
 // Item 10: a local command runs under bubblewrap unless the operator chose full access.
 const bwrap: Bwrap = { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' };
@@ -60,4 +69,92 @@ test('full access runs the command as is; any other level without a usable bwrap
   expect(() =>
     sandboxArgv('workspace-write', 'relative', cmd, bwrap, { network: false }),
   ).toThrow();
+});
+
+// Item 10, operator ruling 2026-10-30 (option A): macOS runs local commands under Seatbelt.
+const seatbelt: Seatbelt = { path: '/usr/bin/sandbox-exec' };
+
+test('a Seatbelt profile denies by default and opens only the system, the workspace and a private tmp', () => {
+  const p = seatbeltProfile('workspace-write', '/Users/u/proj', '/private/tmp/salaam-cmd-x', {
+    network: false,
+  });
+  expect(p).toMatch(/^\(version 1\)/);
+  expect(p).toContain('(deny default)');
+  expect(p).toContain(
+    '(allow file-write* (subpath "/Users/u/proj") (subpath "/private/tmp/salaam-cmd-x")',
+  );
+  expect(p).toContain('(subpath "/Users/u/proj")');
+  // No home, no network, no broad mach services.
+  expect(p).not.toMatch(/\(allow network/);
+  expect(p).not.toMatch(/\(allow mach-lookup\)/);
+  expect(p).not.toContain('(subpath "/Users")');
+  expect(p).not.toContain('(allow default)');
+});
+
+test('read-only Seatbelt writes only its private tmp; a declared network opens the network', () => {
+  const ro = seatbeltProfile('read-only', '/w', '/private/tmp/t', { network: false });
+  expect(ro).toContain('(allow file-write* (subpath "/private/tmp/t")');
+  expect(ro).not.toContain('(allow file-write* (subpath "/w")');
+  expect(ro).toContain('(subpath "/w")');
+  const net = seatbeltProfile('workspace-write', '/w', '/private/tmp/t', { network: true });
+  expect(net).toContain('(allow network*)');
+});
+
+test('Seatbelt refuses paths it cannot quote and relative paths; full access runs as is', () => {
+  for (const root of ['relative', '/w"x', '/w\\x', '/w\nx'])
+    expect(() =>
+      seatbeltProfile('workspace-write', root, '/private/tmp/t', { network: false }),
+    ).toThrow();
+  expect(() => seatbeltProfile('workspace-write', '/w', 'tmp', { network: false })).toThrow();
+  expect(
+    seatbeltArgv('full-access', '/w', '/private/tmp/t', cmd, null, { network: false }),
+  ).toEqual(cmd);
+  for (const level of ['read-only', 'workspace-write'] as const)
+    expect(() =>
+      seatbeltArgv(level, '/w', '/private/tmp/t', cmd, null, { network: false }),
+    ).toThrow('Seatbelt');
+});
+
+test('Seatbelt argv runs the command under sandbox-exec with its profile and private TMPDIR', () => {
+  const argv = seatbeltArgv('workspace-write', '/w', '/private/tmp/t', cmd, seatbelt, {
+    network: false,
+  });
+  expect(argv.slice(0, 2)).toEqual(['/usr/bin/sandbox-exec', '-p']);
+  expect(argv[2]).toBe(
+    seatbeltProfile('workspace-write', '/w', '/private/tmp/t', { network: false }),
+  );
+  expect(argv.slice(3, 5)).toEqual(['/usr/bin/env', 'TMPDIR=/private/tmp/t/']);
+  expect(argv.slice(5)).toEqual(cmd);
+});
+
+test('each platform chooses its own sandbox, and none only when it is unusable', () => {
+  const none = () => null;
+  expect(chooseLocalSandbox('workspace-write', 'darwin', none, () => seatbelt)).toMatchObject({
+    kind: 'seatbelt',
+    seatbelt,
+  });
+  expect(chooseLocalSandbox('workspace-write', 'darwin', () => bwrap, none).kind).toBe('none');
+  expect(
+    chooseLocalSandbox(
+      'workspace-write',
+      'linux',
+      () => bwrap,
+      () => seatbelt,
+    ).kind,
+  ).toBe('bwrap');
+  expect(chooseLocalSandbox('workspace-write', 'linux', none, () => seatbelt).kind).toBe('none');
+  expect(
+    chooseLocalSandbox(
+      'read-only',
+      'win32',
+      () => bwrap,
+      () => seatbelt,
+    ).kind,
+  ).toBe('none');
+  expect(chooseLocalSandbox('full-access', 'darwin', none, () => seatbelt).kind).toBe('none');
+  expect([sandboxLabel('bwrap'), sandboxLabel('seatbelt'), sandboxLabel('none')]).toEqual([
+    'bubblewrap',
+    'seatbelt',
+    'unsandboxed',
+  ]);
 });
