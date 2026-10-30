@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { fixture, ready, until } from '../helpers.js';
+import { fixture, ready, sandboxFallback, until } from '../helpers.js';
 import { OperatorClient } from '../../src/tui-client.js';
 import { SalaamService } from '../../src/service.js';
 import { permissionPolicy } from '../../src/autonomy.js';
@@ -32,7 +32,7 @@ test('real Pi executes only scoped edits automatically and permission policy sur
     );
     await client.leave();
     await f.service.close();
-    replacement = await SalaamService.open({ stateDir: f.dir });
+    replacement = await SalaamService.open({ stateDir: f.dir, ...sandboxFallback });
     expect(permissionPolicy(replacement.store, id)).toMatchObject({
       revision: 1,
       mode: 'scoped-edit',

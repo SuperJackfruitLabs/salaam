@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { fixture, until } from '../helpers.js';
+import { fixture, sandboxFallback, until } from '../helpers.js';
 import { OperatorClient } from '../../src/tui-client.js';
 import { call } from '../../src/transport.js';
 import { SalaamService } from '../../src/service.js';
@@ -35,7 +35,7 @@ test('local TUI session reads a real workspace through pinned Pi and recovers it
     ).toContain('salaam_workspace');
     await client.leave();
     await f.service.close();
-    replacement = await SalaamService.open({ stateDir: f.dir });
+    replacement = await SalaamService.open({ stateDir: f.dir, ...sandboxFallback });
     expect(replacement.store.localWorkspace(id)).toBe(true);
     await replacement.supervisor.start(id);
     expect(replacement.supervisor.inspect(id).state).toBe('ready');
@@ -79,6 +79,7 @@ test('a local model selection is durable and does not change other sessions or t
     ).rejects.toThrow();
     await f.service.close();
     replacement = await SalaamService.open({
+      ...sandboxFallback,
       stateDir: f.dir,
       anthropicApiKey: 'fixture-never-sent',
     });
