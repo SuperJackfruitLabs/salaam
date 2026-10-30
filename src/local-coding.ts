@@ -1,3 +1,4 @@
+import { BrokerRelay, COMMAND_NETWORK_PORT } from './command-network.js';
 import {
   sandboxArgv,
   seatbeltArgv,
@@ -65,6 +66,21 @@ export interface LocalSandbox {
   seatbelt?: Seatbelt | null;
   /** The host config's `unsandboxed_commands: "allow"` (operator ruling 2026-10-30, option A). */
   allowUnsandboxed?: boolean;
+  /** The host config's `command_network: "broker"`: a sandboxed command reaches the network only
+   * through this stk local-commands socket (operator rulings 2026-10-30). */
+  network?: { socket: string };
+}
+/** The proxy a broker-network command uses: only the relay on loopback, nothing direct. */
+function proxyEnv(port: number): Record<string, string> {
+  const url = `http://127.0.0.1:${port}`;
+  return {
+    HTTP_PROXY: url,
+    HTTPS_PROXY: url,
+    http_proxy: url,
+    https_proxy: url,
+    NO_PROXY: 'localhost,127.0.0.1',
+    no_proxy: 'localhost,127.0.0.1',
+  };
 }
 export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
@@ -199,7 +215,7 @@ export class LocalCoding {
           action: 'command';
           command: string;
           timeout_ms: number;
-          sandbox: { kind: string; level: string; bwrap: string | null };
+          sandbox: { kind: string; level: string; bwrap: string | null; network?: 'broker' };
         };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
     else if (kind === 'command') {
@@ -230,6 +246,7 @@ export class LocalCoding {
           kind: this.sandbox.kind,
           level: this.sandbox.level,
           bwrap: this.sandbox.bwrap?.version ?? null,
+          ...(this.brokerNetwork() ? { network: 'broker' as const } : {}),
         },
       };
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
@@ -389,14 +406,30 @@ export class LocalCoding {
     if (kind === 'none')
       return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
     const name = kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
+    const net = this.brokerNetwork()
+      ? 'network: through the broker allowlist (hosts set by the stk policy), nothing direct.'
+      : 'has no network.';
     return level === 'read-only'
-      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and has no network.`
-      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace and has no network.`;
+      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and ${net}`
+      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}`;
+  }
+  /** Broker network applies only to a sandboxed command: unsandboxed ones are not confined anyway. */
+  private brokerNetwork(): { socket: string } | null {
+    return this.sandbox.network &&
+      this.sandbox.kind !== 'none' &&
+      this.sandbox.level !== 'full-access'
+      ? this.sandbox.network
+      : null;
   }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
    * otherwise report a number that means nothing on the host. */
-  private commandArgv(root: string, script: string, tmp?: string): string[] {
+  private commandArgv(
+    root: string,
+    script: string,
+    tmp?: string,
+    relay?: BrokerRelay | null,
+  ): string[] {
     const sandboxed = this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access';
     const inner = (s: string) =>
       !sandboxed
@@ -408,10 +441,11 @@ export class LocalCoding {
               tmp ?? '',
               ['/bin/sh', '-c', s],
               this.sandbox.seatbelt ?? null,
-              { network: false },
+              { network: false, ...(relay?.port ? { brokerPort: relay.port } : {}) },
             )
           : sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
               network: false,
+              ...(relay?.dir ? { broker: { dir: relay.dir, node: process.execPath } } : {}),
             });
     if (this.tools.mode !== 'tools-user') return inner(script);
     const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
@@ -428,13 +462,43 @@ export class LocalCoding {
       : toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
   }
   private command(c: LocalCall, command: string, timeout: number): void {
-    let stop = () => {};
+    const broker = this.brokerNetwork();
+    // The relay is Salaam's, outside the sandbox: it forwards to stk and counts what was reached.
+    const relayStarting = broker
+      ? BrokerRelay.start(broker.socket, this.sandbox.kind === 'seatbelt' ? 'tcp' : 'unix')
+      : Promise.resolve(null);
+    // A stop that arrives while the relay starts still cancels the command once it is spawned.
+    let early = false;
+    let stop = () => {
+      early = true;
+    };
     // Seatbelt has no tmpfs: each command gets its own private tmp, removed when it ends.
     const tmp =
       this.sandbox.kind === 'seatbelt' && this.sandbox.level !== 'full-access'
         ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
         : undefined;
-    const done = new Promise<void>((resolve) => {
+    const set = (s: () => void) => {
+      stop = s;
+      if (early) s();
+    };
+    const done = relayStarting.then(
+      (relay) => this.runCommand(c, command, timeout, tmp, relay, set),
+      () => this.runCommand(c, command, timeout, tmp, null, set, !!broker),
+    );
+    this.jobs.set(c.id, { stop: () => stop(), done });
+    if (tmp) void done.finally(() => rmSync(tmp, { recursive: true, force: true }));
+  }
+  private runCommand(
+    c: LocalCall,
+    command: string,
+    timeout: number,
+    tmp: string | undefined,
+    relay: BrokerRelay | null,
+    setStop: (stop: () => void) => void,
+    relayFailed = false,
+  ): Promise<void> {
+    let stop = () => {};
+    return new Promise<void>((resolve) => {
       let output = '',
         bytes = 0,
         reason: string | null = null,
@@ -444,7 +508,7 @@ export class LocalCoding {
       const tools = this.tools.mode === 'tools-user';
       const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = this.commandArgv(c.root, script, tmp);
+      const argv = this.commandArgv(c.root, script, tmp, relay);
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;
@@ -461,6 +525,7 @@ export class LocalCoding {
           HOME: process.env.HOME ?? c.root,
           LANG: 'en_US.UTF-8',
           TMPDIR: '/tmp',
+          ...(relay ? proxyEnv(relay.port ?? COMMAND_NETWORK_PORT) : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -493,6 +558,7 @@ export class LocalCoding {
         reason ??= 'cancelled';
         kill();
       };
+      setStop(stop);
       const deadline = setTimeout(() => {
         reason = 'timed_out';
         kill();
@@ -578,9 +644,22 @@ export class LocalCoding {
         kill();
         this.jobs.delete(c.id);
         const state = reason ?? (error ? 'failed' : code === 0 ? 'succeeded' : 'failed');
+        const network = relay
+          ? relay.summary()
+          : relayFailed
+            ? { broker: 'unavailable' as const, connections: [] }
+            : null;
+        void relay?.close();
+        // What the broker refused, in its own words, so the reason reaches the card.
+        const refusals = (network?.connections ?? [])
+          .filter((n) => n.refused && n.reason)
+          .map((n) => `[network] refused ${n.target}: ${n.reason}`)
+          .join('\n');
         const result = {
           exit_code: code,
-          output,
+          output: refusals
+            ? output + (output.endsWith('\n') || !output ? '' : '\n') + refusals + '\n'
+            : output,
           state,
           error: error ? 'Command could not start' : null,
           isolation:
@@ -593,6 +672,7 @@ export class LocalCoding {
               ? this.sandbox.kind
               : 'none',
           tool_uid: this.tools.uid,
+          ...(network ? { network } : {}),
         };
         this.store.transaction(() => {
           this.change(c, state, result);
@@ -610,8 +690,6 @@ export class LocalCoding {
       child.once('error', (e) => finish(null, e));
       child.once('close', (code) => finish(code));
     });
-    this.jobs.set(c.id, { stop: () => stop(), done });
-    if (tmp) void done.finally(() => rmSync(tmp, { recursive: true, force: true }));
   }
   async close(): Promise<void> {
     this.closed = true;

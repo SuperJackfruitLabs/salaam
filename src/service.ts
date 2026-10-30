@@ -115,6 +115,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Host config `unsandboxed_commands: "allow"`: run local commands unsandboxed on a host with no
    * usable sandbox. Absent, they are refused (operator ruling 2026-10-30, option A). */
   unsandboxedCommands?: 'allow';
+  /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
+   * through this stk local-commands socket (operator rulings 2026-10-30). */
+  commandNetwork?: { socket: string };
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -371,6 +374,7 @@ export class SalaamService {
         const localSandbox: LocalSandbox = {
           ...chooseLocalSandbox(options.localSandbox ?? 'workspace-write'),
           allowUnsandboxed: options.unsandboxedCommands === 'allow',
+          ...(options.commandNetwork ? { network: { socket: options.commandNetwork.socket } } : {}),
         };
         this.localCoding = new LocalCoding(
           this.store,

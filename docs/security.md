@@ -104,6 +104,24 @@ or passes `--unsandboxed-commands allow` to `salaam serve`. Host plan pins that
 choice in the manifest, and every approval says "unsandboxed". Edits are not
 commands and are unaffected.
 
+### Network through the broker allowlist
+
+A sandboxed command can reach the network only when the host config sets
+`command_network: "broker"` (optionally `command_network_socket`, default
+`/run/stk/local-commands.sock`). Host plan pins it, and every approval says
+"network: through the broker allowlist". The command still has no network of its
+own. On Linux, bubblewrap keeps `--unshare-net`, and a relay inside the sandbox on
+`127.0.0.1:3128` reaches only a socket Salaam binds in. On macOS, Seatbelt allows
+one outbound connection, to Salaam's relay on loopback. `HTTP_PROXY` and
+`HTTPS_PROXY` point at that relay.
+
+Salaam's relay runs outside the sandbox. It forwards each connection to stk's
+`local-commands` socket, where the host operator's `egress.hosts` list decides,
+and it records what was reached and refused in the command result. A refused
+host's reason, in stk's words, is added to the output. Tools that ignore proxy
+settings (`ssh`, UDP, direct DNS) stay blocked. With the broker socket missing,
+the command runs with no network and its result says the broker was unavailable.
+
 ## Approvals and recovery
 
 Approvals bind the target, normalized arguments, expected target version, policy,

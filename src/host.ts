@@ -1,3 +1,4 @@
+import { DEFAULT_COMMAND_NETWORK_SOCKET } from './command-network.js';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -98,19 +99,37 @@ export interface HostLocalSandbox {
   kind: SandboxKind;
   label: string;
   unsandboxed_commands?: 'allow';
+  /** Network allowlist (operator rulings 2026-10-30): local commands reach the network only
+   * through stk's local-commands socket, whose egress.hosts the host operator sets. */
+  command_network?: { mode: 'broker'; socket: string; label: string };
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
   find?: Parameters<typeof chooseLocalSandbox>[2],
   findSb?: Parameters<typeof chooseLocalSandbox>[3],
   allowUnsandboxed = false,
+  brokerSocket?: string,
 ): HostLocalSandbox {
   const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
   return {
     kind,
     label: kind === 'none' && !allowUnsandboxed ? 'refused' : sandboxLabel(kind),
     ...(allowUnsandboxed ? { unsandboxed_commands: 'allow' as const } : {}),
+    ...(brokerSocket
+      ? {
+          command_network: {
+            mode: 'broker' as const,
+            socket: brokerSocket,
+            label: 'broker (hosts set by the stk policy)',
+          },
+        }
+      : {}),
   };
+}
+/** The broker socket local commands reach the network through, or null for no network. */
+export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
+  const n = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.command_network;
+  return n?.mode === 'broker' && typeof n.socket === 'string' ? { socket: n.socket } : null;
 }
 /** Whether the reviewed manifest lets local commands run unsandboxed on a host without a sandbox. */
 export function hostAllowsUnsandboxed(m: HostManifest): boolean {
@@ -224,6 +243,8 @@ async function planAgentPod(
     'persona_config',
     'approval_ttl_ms',
     'unsandboxed_commands',
+    'command_network',
+    'command_network_socket',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -265,6 +286,19 @@ async function planAgentPod(
   if (c.unsandboxed_commands !== undefined && c.unsandboxed_commands !== 'allow')
     throw Error('unsandboxed_commands is "allow" or absent');
   const allowUnsandboxed = c.unsandboxed_commands === 'allow';
+  if (c.command_network !== undefined && c.command_network !== 'broker')
+    throw Error('command_network is "broker" or absent');
+  if (c.command_network_socket !== undefined) {
+    if (c.command_network !== 'broker')
+      throw Error('command_network_socket is only for command_network "broker"');
+    const sock = c.command_network_socket;
+    if (typeof sock !== 'string' || !isAbsolute(sock) || sock.includes('\0'))
+      throw Error('command_network_socket must be an absolute path');
+  }
+  const brokerSocket =
+    c.command_network === 'broker'
+      ? String(c.command_network_socket ?? DEFAULT_COMMAND_NETWORK_SOCKET)
+      : undefined;
   const state = privateState(string(c.state, 'state'), access?.gid);
   const config = string(c.agentpod_config, 'agentpod_config');
   if (!isAbsolute(config) || realpathSync(config) !== config)
@@ -350,7 +384,13 @@ async function planAgentPod(
     pins_digest: digest(pins),
     workspace: pins.workspace,
     cli_digest: digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')),
-    local_sandbox: hostLocalSandbox(undefined, undefined, undefined, allowUnsandboxed),
+    local_sandbox: hostLocalSandbox(
+      undefined,
+      undefined,
+      undefined,
+      allowUnsandboxed,
+      brokerSocket,
+    ),
   };
 }
 export function hostDigests() {
@@ -506,7 +546,15 @@ export function readHost(path: string): HostManifest {
     if (
       Object.hasOwn(m, 'local_sandbox') &&
       canonical(m.local_sandbox) !==
-        canonical(hostLocalSandbox(undefined, undefined, undefined, hostAllowsUnsandboxed(m)))
+        canonical(
+          hostLocalSandbox(
+            undefined,
+            undefined,
+            undefined,
+            hostAllowsUnsandboxed(m),
+            hostCommandNetwork(m)?.socket,
+          ),
+        )
     )
       throw Error('Host command sandbox changed; run host plan again');
     const pins = readAgentPodPins(m.agentpod_config, m.state);
