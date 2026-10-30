@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   writeFileSync,
   readFileSync,
+  readdirSync,
   lstatSync,
   rmSync,
   chmodSync,
@@ -315,10 +316,8 @@ export class StationWork {
         spawned = true;
         try {
           if (id) {
-            const c = this.get(id);
-            if (verificationGuard) verificationGuard();
-            else this.guard(c);
-            if (c.state !== 'dispatching') stationUnavailable();
+            // Own the process first: a guard that refuses below must still leave a pid and identity
+            // that a stop can prove exited (staging card_06a619a3e2e94faf left a pid-less helper).
             const identity = processIdentity(child.pid!);
             if (!identity) stationUnavailable();
             this.store.transaction(() =>
@@ -328,6 +327,10 @@ export class StationWork {
                 )
                 .run(child.pid!, identity, id),
             );
+            const c = this.get(id);
+            if (verificationGuard) verificationGuard();
+            else this.guard(c);
+            if (c.state !== 'dispatching') stationUnavailable();
           }
           child.stdin.end(
             JSON.stringify({
@@ -414,12 +417,43 @@ export class StationWork {
       return (error as NodeJS.ErrnoException).code !== 'ESRCH';
     }
   }
+  /** Whether no process on this host runs the station file helper, proven from every /proc entry. */
+  private noHelperProcess(): boolean {
+    if (process.platform !== 'linux') return false;
+    for (const entry of readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry)) continue;
+      let argv: string[];
+      try {
+        argv = readFileSync(join('/proc', entry, 'cmdline'), 'utf8').split('\0');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        return false;
+      }
+      if (argv.includes('salaam-station-files-v1')) return false;
+    }
+    return true;
+  }
   private async stopHelper(id: string): Promise<void> {
     const c = this.get(id);
     if (!c.helper_state || c.helper_state === 'none' || c.helper_state === 'stopped') return;
     this.files.get(id)?.abort();
     try {
-      if (!c.helper_pid || !c.helper_identity) stationUnavailable();
+      if (!c.helper_pid || !c.helper_identity) {
+        // Recorded before the fix above: no pid to prove. Settle only when the whole process table
+        // holds no station helper; any live or unreadable process keeps the call fenced.
+        if (!this.noHelperProcess()) stationUnavailable();
+        this.store.transaction(() =>
+          this.store.db
+            .prepare(
+              "UPDATE station_calls SET helper_state='stopped',helper_stop_json=? WHERE id=?",
+            )
+            .run(
+              canonical({ version: 1, scope: 'host_process_table', method: 'no_helper_process' }),
+              id,
+            ),
+        );
+        return;
+      }
       if (this.processExists(c.helper_pid) || this.processExists(c.helper_pid, true)) {
         if (processIdentity(c.helper_pid) !== c.helper_identity) stationUnavailable();
         process.kill(-c.helper_pid, 'SIGKILL');

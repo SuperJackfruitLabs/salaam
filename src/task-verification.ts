@@ -65,7 +65,7 @@ export class TaskVerification {
   }
   assertIdle(task: WorkTask, stationInspection?: string): void {
     if (
-      this.budget.active(task) > 0 ||
+      this.budget.active(task, { verification: true }) > 0 ||
       this.store.db
         .prepare("SELECT 1 FROM compactions WHERE session_id=? AND state='running'")
         .get(task.session_id)

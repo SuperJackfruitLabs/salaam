@@ -71,9 +71,12 @@ export class RepositorySnapshots {
     const tree = this.tree(binding),
       action = string(args.action, 'action', 32),
       offset = integer(args.offset ?? 0, 'offset');
+    // A snapshot-only reviewer (the critic) has no workspace; leave those fields out rather than
+    // undefined, since every read result is digested into the journal (card_5dcbd5d9be5c4183).
     const identity = {
-      workspace_id: binding.workspace?.id,
-      revision: binding.workspace?.revision,
+      ...(binding.workspace
+        ? { workspace_id: binding.workspace.id, revision: binding.workspace.revision }
+        : {}),
       digest: binding.repository!.digest,
       artifact_id: binding.repository!.artifact_id,
     };
