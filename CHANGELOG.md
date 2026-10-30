@@ -6,9 +6,46 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-10-30
+
+Board work on a protected AgentPod station, made to match the Hermes workflow, plus a sandbox
+for local commands.
+
+### Added
+
+- Approvals: "Approve for this run", per-agent "Always allow" (offered on workspace writes, owners
+  and admins only), plain-words approval offers, and rules added at renewal joining the run in
+  flight.
+- Completion critic: a plan may declare a rubric; a read-only reviewer judges the verified
+  deliverables before the task completes. Completion hooks are required checks.
+- Checkpoints: read-only checkpoints of a station run, their diff against the live workspace, and
+  restore exactly as approved.
+- Command sandbox: bubblewrap on Linux and Seatbelt on macOS. With no usable sandbox, local
+  commands are refused unless the host config sets `unsandboxed_commands: "allow"`.
+- Board parity: the work-status tool-step tail carries each step's output and a readable title;
+  plan updates reach the card; board reads are served by the hub.
+- Operator persona pinned by digest in the host manifest.
+- Budgets and retries: step request budgets, rate-limit retry then a provable stop, and
+  verification-budget stops that settle without anyone clearing them.
+- A fetch host that keeps failing is paused briefly instead of failing the run.
 - Add `--tools-user` (`SALAAM_TOOLS_USER`) to run local agent commands, edits and
   undo as a separate unprivileged OS user via a runas-restricted sudo rule, so
   tools cannot read the provider credential. Without it, startup warns.
+
+### Fixed
+
+- A verification read refused at spawn no longer leaves the daemon unable to start; a stuck
+  pid-less helper settles once `/proc` proves no helper runs (Linux only; elsewhere it stays
+  fenced).
+- A run stopped by its own failed acceptance check reaches the board as a failed run instead of
+  parking.
+- Readable titles for MCP steps with no input, and for finished steps.
+
+### Upgrade notes
+
+- Hosts without a usable bubblewrap (Linux) or Seatbelt (macOS) now refuse local commands. Install
+  or repair the sandbox, or set `unsandboxed_commands: "allow"` explicitly.
+- Release after AgentPod v0.1.118 (hub): the step output field and board reads need that hub.
 
 ## [0.0.3] - 2026-10-22
 
