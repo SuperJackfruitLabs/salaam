@@ -63,9 +63,12 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       profile: full
+    # Everything any ci.yml job asks for; GitHub will not start the release otherwise
+    # (test/unit/release-workflow.test.ts holds this).
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       id-token: write
       attestations: write
   github-release:
