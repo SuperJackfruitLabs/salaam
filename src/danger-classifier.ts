@@ -6,6 +6,8 @@ import { commandArgv } from './approval-rules.js';
 // auto mode does the same with a separate classifier model that only sees the action, never tool
 // results, and refuses on an unparseable verdict (code.claude.com/docs/en/permission-modes).
 export interface DangerClassifierConfig {
+  /** How a person picks it with /classifier; defaults to provider:model. */
+  name: string;
   provider: 'anthropic' | 'openai-compatible';
   model: string;
   /** openai-compatible only: the base URL, e.g. http://127.0.0.1:11434/v1 */
@@ -22,7 +24,7 @@ export type ClassifierReview = {
 };
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-const KEYS = ['provider', 'model', 'url', 'key_env', 'on_unavailable', 'timeout_ms'];
+const KEYS = ['name', 'provider', 'model', 'url', 'key_env', 'on_unavailable', 'timeout_ms'];
 /** Reads the setting; the key comes only from a named environment variable, never the file. */
 export function loadDangerClassifierConfig(
   raw: unknown,
@@ -61,7 +63,13 @@ export function loadDangerClassifierConfig(
   const timeout = c.timeout_ms ?? 3000;
   if (!Number.isInteger(timeout) || (timeout as number) < 10 || (timeout as number) > 30000)
     throw new Error('danger_classifier.timeout_ms must be 10–30000');
+  if (
+    c.name !== undefined &&
+    (typeof c.name !== 'string' || !/^[a-z0-9][a-z0-9._:-]{0,63}$/.test(c.name) || c.name === 'off')
+  )
+    throw new Error('danger_classifier.name is a short lowercase name, not "off"');
   return {
+    name: typeof c.name === 'string' ? c.name : `${c.provider}:${c.model}`,
     provider: c.provider,
     model: c.model,
     ...(typeof c.url === 'string' ? { url: c.url.replace(/\/+$/, '') } : {}),
@@ -69,6 +77,30 @@ export function loadDangerClassifierConfig(
     on_unavailable: on,
     timeout_ms: timeout as number,
   };
+}
+
+/** The reviewer choices a service offers (operator 2026-10-31: the reviewer has its own model
+ * selection). One config object is one option; `{options: [...], default}` offers several. */
+export function loadDangerClassifierOptions(
+  raw: unknown,
+  env: Record<string, string | undefined> = process.env,
+): { options: DangerClassifierConfig[]; default: string } {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'options' in raw) {
+    const c = raw as Record<string, unknown>;
+    if (Object.keys(c).some((k) => k !== 'options' && k !== 'default'))
+      throw new Error('danger_classifier: only options and default go beside options');
+    if (!Array.isArray(c.options) || c.options.length < 1 || c.options.length > 8)
+      throw new Error('danger_classifier.options lists 1–8 reviewers');
+    const options = c.options.map((o) => loadDangerClassifierConfig(o, env)!);
+    if (new Set(options.map((o) => o.name)).size !== options.length)
+      throw new Error('danger_classifier.options names must be unique');
+    const d = c.default ?? options[0]!.name;
+    if (d !== 'off' && !options.some((o) => o.name === d))
+      throw new Error('danger_classifier.default names an option or "off"');
+    return { options, default: String(d) };
+  }
+  const one = loadDangerClassifierConfig(raw, env);
+  return one ? { options: [one], default: one.name } : { options: [], default: 'off' };
 }
 
 const INTERPRETERS = new Set([
