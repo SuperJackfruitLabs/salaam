@@ -113,6 +113,9 @@ export interface HostLocalSandbox {
   /** Phase 2b: whether an interactive session on this host may choose full access (no OS sandbox).
    * Hosts allow it only when the operator sets `allow_full_access_sessions: true`. */
   full_access_sessions?: 'allow';
+  /** Operator ruling 2026-10-31: whether a desk session on this host may choose YOLO (no sandbox, no
+   * approvals). Hosts allow it only when the operator sets `allow_yolo_sessions: true`. */
+  yolo_sessions?: 'allow';
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
@@ -122,6 +125,7 @@ export function hostLocalSandbox(
   brokerSocket?: string,
   readPaths: readonly string[] = [],
   allowFullAccessSessions = false,
+  allowYoloSessions = false,
 ): HostLocalSandbox {
   const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
   return {
@@ -139,6 +143,7 @@ export function hostLocalSandbox(
       : {}),
     ...(readPaths.length ? { read_paths: [...readPaths] } : {}),
     ...(allowFullAccessSessions ? { full_access_sessions: 'allow' as const } : {}),
+    ...(allowYoloSessions ? { yolo_sessions: 'allow' as const } : {}),
   };
 }
 /** The read-only paths outside the workspace the reviewed manifest lets local commands read. */
@@ -151,6 +156,10 @@ export function hostAllowsFullAccessSessions(m: HostManifest): boolean {
   return (
     (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.full_access_sessions === 'allow'
   );
+}
+/** Whether the reviewed manifest lets a desk session choose YOLO. */
+export function hostAllowsYoloSessions(m: HostManifest): boolean {
+  return (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.yolo_sessions === 'allow';
 }
 /** The broker socket local commands reach the network through, or null for no network. */
 export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
@@ -273,6 +282,7 @@ async function planAgentPod(
     'command_network_socket',
     'local_sandbox_read_paths',
     'allow_full_access_sessions',
+    'allow_yolo_sessions',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -317,6 +327,9 @@ async function planAgentPod(
   if (c.allow_full_access_sessions !== undefined && c.allow_full_access_sessions !== true)
     throw Error('allow_full_access_sessions is true or absent');
   const allowFullAccessSessions = c.allow_full_access_sessions === true;
+  if (c.allow_yolo_sessions !== undefined && c.allow_yolo_sessions !== true)
+    throw Error('allow_yolo_sessions is true or absent');
+  const allowYoloSessions = c.allow_yolo_sessions === true;
   if (c.command_network !== undefined && c.command_network !== 'broker')
     throw Error('command_network is "broker" or absent');
   if (c.command_network_socket !== undefined) {
@@ -434,6 +447,7 @@ async function planAgentPod(
       brokerSocket,
       readPaths,
       allowFullAccessSessions,
+      allowYoloSessions,
     ),
   };
 }

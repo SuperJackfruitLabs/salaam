@@ -73,6 +73,8 @@ export function instructionsLabel(
   const names = [...new Set(summary.files.map((f) => f.path.split('/').at(-1)!))].join(' + ');
   return summary.files.length > 1 ? `${names} (${summary.files.length} files)` : names;
 }
+/** Longest a stale control lease is waited out (the service's lease TTL is 15 s). */
+const CONTROL_LAPSE_MS = 16000;
 export class OperatorClient extends EventEmitter {
   readonly socket: string;
   readonly clientId = randomUUID();
@@ -152,6 +154,10 @@ export class OperatorClient extends EventEmitter {
     command_auto_approval: boolean;
     /** Phase 2b: whether this host lets a session choose full access. */
     full_access_allowed?: boolean;
+    /** Whether this desk session may choose YOLO. */
+    yolo_allowed?: boolean;
+    /** Where the next command runs, e.g. "in a Seatbelt sandbox (workspace-write)". */
+    command_sandbox?: string;
   }> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(this.socket, `/v1/sessions/${this.snapshot.id}/permissions`);
@@ -159,7 +165,11 @@ export class OperatorClient extends EventEmitter {
   async setPermissions(
     session: string,
     expected: number,
-    policy: { mode: import('./autonomy.js').PermissionMode; paths: string[]; access?: 'full' },
+    policy: {
+      mode: import('./autonomy.js').PermissionMode;
+      paths: string[];
+      access?: 'full' | 'yolo';
+    },
   ): Promise<void> {
     if (this.snapshot?.id !== session)
       throw new Error('Session changed; review permissions again.');
@@ -339,15 +349,15 @@ export class OperatorClient extends EventEmitter {
     this.snapshot = await call<SessionSnapshot>(this.socket, `/v1/sessions/${id}/snapshot`);
     if (!options.observe) {
       try {
-        this.lease = await acquireControl(this.socket, id, this.clientId, options.takeover);
+        this.lease = await this.acquireOrWait(id, options.takeover);
       } catch (error) {
         if (
           !(error instanceof ServiceError) ||
-          !['control_conflict', 'control_required'].includes(error.code)
+          !['control_conflict', 'control_required', 'control_busy'].includes(error.code)
         )
           throw error;
         this.notice =
-          'Another client has control. You are observing; use Take control to take over.';
+          'Another terminal is using this session and still renews its control. You are observing; type /takeover to take control.';
       }
     }
     if (this.lease) await call(this.socket, `/v1/sessions/${id}/resume`, this.actor());
@@ -360,6 +370,25 @@ export class OperatorClient extends EventEmitter {
     }, 5000);
     this.watcher = this.watch(id, generation);
     this.changed();
+  }
+  /** Acquire control. A lease left by a terminal that was killed lapses within its short TTL, so
+   * wait that out once instead of opening as an observer; a live terminal renews and keeps it. */
+  private async acquireOrWait(id: string, takeover?: boolean): Promise<ControlLease> {
+    try {
+      return await acquireControl(this.socket, id, this.clientId, takeover);
+    } catch (error) {
+      if (takeover || !(error instanceof ServiceError) || error.code !== 'control_busy')
+        throw error;
+      const snapshot = await call<SessionSnapshot>(this.socket, `/v1/sessions/${id}/snapshot`);
+      const wait = snapshot.control.expires_at - Date.now();
+      if (wait <= 0 || wait > CONTROL_LAPSE_MS) throw error;
+      this.notice = `Waiting ${Math.ceil(wait / 1000)} s for the previous terminal's control to lapse…`;
+      this.changed();
+      await new Promise((done) => setTimeout(done, wait + 250));
+      const lease = await acquireControl(this.socket, id, this.clientId);
+      this.notice = 'You have control: the previous terminal had stopped.';
+      return lease;
+    }
   }
   private actor(): { client_id: string; token: string } {
     if (!this.lease) throw new Error('Take control before sending an instruction.');

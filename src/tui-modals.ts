@@ -1,3 +1,4 @@
+import { commandArgv } from './approval-rules.js';
 import {
   Input,
   SelectList,
@@ -242,6 +243,14 @@ export type ApprovalDecision = 'approve' | 'approve-session' | 'always' | 'deny'
  * request longer than the screen must be read to the end before anything but Deny is possible, and
  * a request that changed or expired cannot be approved at all.
  */
+/** Why a reviewed request can only be approved once: a command with shell features (pipes,
+ * redirects, substitutions) can never become an approval rule. Undefined when a rule is possible. */
+export function onceOnlyReason(value: string): string | undefined {
+  const command = /\nCommand:\n([\s\S]*)$/.exec(value)?.[1];
+  return command !== undefined && commandArgv(command) === null
+    ? 'This command uses shell features (pipes, redirects, substitutions), so it cannot become a rule. Approve it once or deny it.'
+    : undefined;
+}
 export class ApprovalModal implements Component, Focusable {
   focused = false;
   offset = 0;
@@ -261,6 +270,8 @@ export class ApprovalModal implements Component, Focusable {
     readonly close: () => void,
     readonly decide: (decision: ApprovalDecision) => void,
     readonly offerRules = false,
+    /** Why only Approve once and Deny are offered, shown above the choices. */
+    readonly onceOnly?: string,
   ) {}
   private choices(): {
     decision: ApprovalDecision;
@@ -338,6 +349,7 @@ export class ApprovalModal implements Component, Focusable {
                   'muted',
                 ),
               ]),
+        ...(this.onceOnly ? wrapTextWithAnsi(t.ink(this.onceOnly, 'muted'), inner) : []),
         ...choices.map((c, i) =>
           t.ink(
             (i === this.choice ? '› ' : '  ') + `${c.key}  ${c.label}`,

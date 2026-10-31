@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { ApprovalModal } from '../../src/tui-modals.js';
+import { ApprovalModal, onceOnlyReason } from '../../src/tui-modals.js';
 import { SalaamTheme } from '../../src/tui-theme.js';
 import type { Approval, Operation } from '../../src/protocol.js';
 
@@ -9,6 +9,7 @@ const strip = (lines: string[]) => lines.join('\n').replace(/\x1b\[[0-9;]*m/g, '
 function modal(
   offerRules: boolean,
   value = 'Runs as your local user, in a bubblewrap sandbox\nCommand:\nnpm test',
+  onceOnly?: string,
 ) {
   const a = {
     id: 'approval-uuid-1234',
@@ -36,6 +37,7 @@ function modal(
     () => {},
     (d) => decisions.push(d),
     offerRules,
+    onceOnly,
   );
   return { m, decisions, setCurrent: (c: Approval | undefined) => (current = c) };
 }
@@ -105,4 +107,19 @@ test('a long request still has to be read to the end before any approval, and a 
   second.m.render(80);
   second.m.handleInput('y');
   expect(second.decisions).toEqual([]);
+});
+
+test('a command that can never become a rule offers only approve once and deny, and says why', () => {
+  const piped = 'Runs as your local user, in a Seatbelt sandbox\nCommand:\nnpm test 2>&1 | tail -5';
+  const reason = onceOnlyReason(piped);
+  expect(reason).toMatch(/cannot become a rule/);
+  expect(onceOnlyReason('Runs as your local user\nCommand:\nnpm test -- a.ts')).toBeUndefined();
+  // Edits are not commands: their rule choices stay.
+  expect(onceOnlyReason('Edit src/a.ts\n@@ -1 +1 @@')).toBeUndefined();
+  const shown = strip(modal(false, piped, reason).m.render(80));
+  expect(shown).toContain('cannot become a rule');
+  expect(shown).toContain('Approve once');
+  expect(shown).toContain('Deny');
+  expect(shown).not.toContain('Approve for this session');
+  expect(shown).not.toContain('Always allow');
 });

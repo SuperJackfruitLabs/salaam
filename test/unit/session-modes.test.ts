@@ -10,17 +10,23 @@ import {
   permissionDigest,
   validatePermissions,
   nextMode,
-  leavingPlanNeedsConfirm,
-  planNote,
   autoApprovesEdits,
   type PermissionMode,
 } from '../../src/autonomy.js';
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { localHash } from '../../src/local-edits.js';
+import { ApprovalRules } from '../../src/approval-rules.js';
 
-// Phase 2b (operator-approved plan, 2026-10-31): one-key modes for interactive coding sessions —
-// plan, accept edits, auto — and full access as an explicit per-session sandbox level.
-function setup(opts: { allowFullAccess?: boolean; workspace?: boolean } = {}) {
+// Phase 2b (operator rulings 2026-10-31): one-key modes for interactive coding sessions — review,
+// accept edits, auto — plus full access (no sandbox; dangerous commands ask) and YOLO (no approvals).
+function setup(
+  opts: {
+    allowFullAccess?: boolean;
+    allowYolo?: boolean;
+    desk?: boolean;
+    workspace?: boolean;
+  } = {},
+) {
   const root = realpathSync(mkdtempSync('/tmp/sal-modes-')),
     store = new Store(':memory:');
   mkdirSync(join(root, 'src'));
@@ -57,7 +63,7 @@ function setup(opts: { allowFullAccess?: boolean; workspace?: boolean } = {}) {
       bwrap: { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' },
     });
   let n = 0;
-  const configure = (mode: PermissionMode, access?: 'full') => {
+  const configure = (mode: PermissionMode, access?: 'full' | 'yolo') => {
     const rev = permissionPolicy(store, session.id).revision;
     return configurePermissions(
       store,
@@ -66,7 +72,11 @@ function setup(opts: { allowFullAccess?: boolean; workspace?: boolean } = {}) {
       rev,
       { mode, paths: [], ...(access ? { access } : {}) },
       actor,
-      { allowFullAccess: opts.allowFullAccess ?? true },
+      {
+        allowFullAccess: opts.allowFullAccess ?? true,
+        allowYolo: opts.allowYolo ?? true,
+        deskSession: opts.desk ?? true,
+      },
     );
   };
   const edit = (path = 'src/a.txt') =>
@@ -76,10 +86,10 @@ function setup(opts: { allowFullAccess?: boolean; workspace?: boolean } = {}) {
         { path, sha256: path === 'src/a.txt' ? localHash('before') : null, content: 'after' },
       ],
     });
-  const command = () =>
+  const command = (text = 'echo hi') =>
     local.prepare(session.id, epoch, submission.attempt_id, 'cmd-' + n++, {
       action: 'command',
-      command: 'echo hi',
+      command: text,
     });
   const args = (call: { id: string }) =>
     JSON.parse(
@@ -109,7 +119,7 @@ function setup(opts: { allowFullAccess?: boolean; workspace?: boolean } = {}) {
 }
 
 test('the new modes validate, take no paths, and full access is an explicit separate field', () => {
-  for (const mode of ['plan', 'accept-edits', 'auto'] as const)
+  for (const mode of ['accept-edits', 'auto'] as const)
     expect(validatePermissions({ mode, paths: [] })).toEqual({ mode, paths: [] });
   expect(() => validatePermissions({ mode: 'auto', paths: ['src/'] })).toThrow();
   expect(validatePermissions({ mode: 'review', paths: [], access: 'full' })).toEqual({
@@ -131,20 +141,21 @@ test('a sandboxed policy keeps its digest: existing auto-approval bindings stay 
   }
 });
 
-test('plan mode denies mutations, even an exact manual approval', async () => {
+test('plan mode is gone: it is refused, and a session saved in it reads as review', async () => {
+  expect(() => validatePermissions({ mode: 'plan', paths: [] })).toThrow();
   const f = setup();
   try {
-    const pending = f.edit();
-    f.configure('plan');
-    expect(() =>
-      f.managed.decide(
-        pending.approval.id,
-        'manual',
-        pending.approval.revision,
-        pending.operation.operation_digest,
-        'approve',
-      ),
-    ).toThrow('does not permit');
+    f.store.transaction(() =>
+      f.store.event(f.session.id, 'permissions.configured', {
+        mode: 'plan',
+        paths: [],
+        revision: 1,
+        root: f.root,
+      }),
+    );
+    expect(permissionPolicy(f.store, f.session.id)).toMatchObject({ mode: 'review', revision: 1 });
+    // A review-mode session asks for edits; nothing is read-only any more but inspect.
+    expect(f.state(f.edit().approval)).toBe('pending');
   } finally {
     await f.close();
   }
@@ -184,17 +195,86 @@ test('auto approves edits and sandboxed commands, and records the policy it used
   }
 });
 
-test('full access binds an unsandboxed level into the command, and auto still does not approve it', async () => {
+test('full access runs ordinary commands unsandboxed without asking; dangerous ones ask and say why', async () => {
   const f = setup();
   try {
-    f.configure('auto', 'full');
-    const cmd = f.command();
+    f.configure('review', 'full');
+    const cmd = f.command('npm test');
     expect(f.args(cmd.call).sandbox.level).toBe('full-access');
     expect(String(cmd.operation.value)).toContain('unsandboxed');
-    // Full access is never approved by mode alone: each unsandboxed command asks.
-    expect(f.state(cmd.approval)).toBe('pending');
+    expect(f.state(cmd.approval)).toBe('decided');
+    const push = f.command('git push --force origin main');
+    expect(f.state(push.approval)).toBe('pending');
+    expect(String(push.operation.value)).toMatch(/Dangerous \(git-history\): git: rewrites/);
+    // Ordinary project edits need no approval either; private paths still ask.
+    expect(f.state(f.edit().approval)).toBe('decided');
     f.configure('auto');
     expect(f.args(f.command().call).sandbox.level).toBe('workspace-write');
+  } finally {
+    await f.close();
+  }
+});
+
+test('YOLO approves everything, even dangerous commands, and records what full access would have asked', async () => {
+  const f = setup();
+  try {
+    f.configure('review', 'yolo');
+    const push = f.command('git push --force origin main');
+    expect(f.args(push.call).sandbox.level).toBe('full-access');
+    expect(f.state(push.approval)).toBe('decided');
+    expect(f.state(f.command('npm test').approval)).toBe('decided');
+    expect(f.state(f.edit().approval)).toBe('decided');
+    const notes = f.store.db
+      .prepare("SELECT payload FROM events WHERE kind='permission.yolo-approved' ORDER BY seq")
+      .all()
+      .map((r) => JSON.parse((r as { payload: string }).payload));
+    expect(notes).toHaveLength(3);
+    expect(notes[0]).toMatchObject({
+      action: 'command',
+      command: 'git push --force origin main',
+      would_have_asked: { category: 'git-history' },
+    });
+    expect(notes[1].would_have_asked).toBeUndefined();
+  } finally {
+    await f.close();
+  }
+});
+
+test('YOLO is refused when the operator does not allow it, and outside desk sessions', async () => {
+  const f = setup({ allowYolo: false });
+  try {
+    expect(() => f.configure('review', 'yolo')).toThrow('operator');
+  } finally {
+    await f.close();
+  }
+  const g = setup({ desk: false });
+  try {
+    expect(() => g.configure('review', 'yolo')).toThrow('desk sessions');
+  } finally {
+    await g.close();
+  }
+});
+
+test('a repo rule cannot approve a dangerous command; the person’s own session rule can', async () => {
+  const f = setup();
+  const rules = new ApprovalRules(f.store, f.root + '/no-user-rules.json');
+  f.local.rules = rules;
+  try {
+    rules.add(
+      f.session.id,
+      'repo',
+      { effect: 'allow', tool: 'command', command: 'git push *' },
+      'r1',
+    );
+    expect(f.state(f.command('git push origin feat').approval)).toBe('decided');
+    expect(f.state(f.command('git push --force origin feat').approval)).toBe('pending');
+    rules.add(
+      f.session.id,
+      'session',
+      { effect: 'allow', tool: 'command', command: 'git push *' },
+      'r2',
+    );
+    expect(f.state(f.command('git push --force origin feat').approval)).toBe('decided');
   } finally {
     await f.close();
   }
@@ -218,7 +298,7 @@ test('full access is refused when the operator does not allow it, and for non-lo
 test('every mode change is a recorded session event', async () => {
   const f = setup();
   try {
-    f.configure('plan');
+    f.configure('auto');
     f.configure('accept-edits');
     const modes = f.store.db
       .prepare(
@@ -226,25 +306,16 @@ test('every mode change is a recorded session event', async () => {
       )
       .all()
       .map((r) => (r as { m: string }).m);
-    expect(modes).toEqual(['plan', 'accept-edits']);
+    expect(modes).toEqual(['auto', 'accept-edits']);
   } finally {
     await f.close();
   }
 });
 
-test('Shift+Tab cycles review, accept edits, auto, plan; leaving plan needs a confirm', () => {
+test('Shift+Tab cycles review, accept edits, auto and back to review', () => {
   expect(nextMode('review')).toBe('accept-edits');
   expect(nextMode('accept-edits')).toBe('auto');
-  expect(nextMode('auto')).toBe('plan');
-  expect(nextMode('plan')).toBe('review');
+  expect(nextMode('auto')).toBe('review');
   expect(nextMode('scoped-edit')).toBe('review');
   expect(nextMode('inspect')).toBe('review');
-  expect(leavingPlanNeedsConfirm('plan', 'review')).toBe(true);
-  expect(leavingPlanNeedsConfirm('review', 'accept-edits')).toBe(false);
-});
-
-test('plan mode tells the model it is planning, and only in plan mode', () => {
-  expect(planNote('plan', 'fix it')).toMatch(/^\[Plan mode[^\]]*\]/);
-  expect(planNote('plan', 'fix it').endsWith('fix it')).toBe(true);
-  expect(planNote('review', 'fix it')).toBe('fix it');
 });

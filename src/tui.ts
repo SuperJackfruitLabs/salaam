@@ -67,8 +67,15 @@ import {
   type DiffPage,
   modeLabel,
 } from './tui-view.js';
-import { nextMode, leavingPlanNeedsConfirm } from './autonomy.js';
-import { ChoiceModal, FormModal, ConfirmModal, ApprovalModal, TextModal } from './tui-modals.js';
+import { nextMode } from './autonomy.js';
+import {
+  ChoiceModal,
+  FormModal,
+  ConfirmModal,
+  ApprovalModal,
+  onceOnlyReason,
+  TextModal,
+} from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
 
@@ -604,66 +611,83 @@ export class SalaamApp {
     const current = await this.client.permissions();
     this.view.mode =
       current.configurable && current.coding
-        ? { mode: current.policy.mode, full: current.policy.access === 'full' }
+        ? {
+            mode: current.policy.mode,
+            ...(current.policy.access ? { access: current.policy.access } : {}),
+            ...(current.command_sandbox ? { sandbox: current.command_sandbox } : {}),
+          }
         : undefined;
     this.tui.requestRender();
   }
-  /** Shift+Tab: review → accept edits → auto → plan. Leaving plan for a mode that can change the
-   * workspace asks first. Full access is kept as it is; it has its own command. */
+  /** Shift+Tab: review → accept edits → auto. Full access and YOLO are kept as they are; each has
+   * its own command. */
   private async cycleMode(): Promise<void> {
     const session = this.client.snapshot?.id;
     if (!session) throw new Error('Open a session first.');
     const current = await this.client.permissions();
     if (!current.configurable || !current.coding)
       throw new Error('Modes are for local coding sessions. No session or files were changed.');
-    const from = current.policy.mode,
-      to = nextMode(from);
-    const apply = async () => {
-      await this.client.setPermissions(session, current.policy.revision, {
-        mode: to,
-        paths: [],
-        ...(current.policy.access === 'full' ? { access: 'full' as const } : {}),
-      });
-      await this.loadMode();
-    };
-    if (leavingPlanNeedsConfirm(from, to))
-      this.confirm(
-        'Leave plan mode?',
-        `Switch from plan to ${modeLabel(to)}. The agent may then change files${to === 'auto' ? ' and run sandboxed commands without asking' : ''}.`,
-        'switch mode',
-        apply,
-      );
-    else await apply();
+    await this.client.setPermissions(session, current.policy.revision, {
+      mode: nextMode(current.policy.mode),
+      paths: [],
+      ...(current.policy.access ? { access: current.policy.access } : {}),
+    });
+    await this.loadMode();
   }
-  /** Full access on (with a warning and a confirm) or off (at once). */
+  private async setAccess(access: 'full' | 'yolo' | undefined): Promise<void> {
+    const session = this.client.snapshot!.id;
+    const current = await this.client.permissions();
+    await this.client.setPermissions(session, current.policy.revision, {
+      mode: current.policy.mode,
+      paths: current.policy.paths,
+      ...(access ? { access } : {}),
+    });
+    await this.loadMode();
+  }
+  /** Full access on (with a warning and a confirm) or off (at once). From YOLO it steps down at once. */
   private async fullAccess(): Promise<void> {
     const session = this.client.snapshot?.id;
     if (!session) throw new Error('Open a session first.');
     const current = await this.client.permissions();
     if (!current.configurable || !current.coding)
       throw new Error('Full access is for local coding sessions. Nothing was changed.');
-    const on = current.policy.access === 'full';
-    const apply = async () => {
-      await this.client.setPermissions(session, current.policy.revision, {
-        mode: current.policy.mode,
-        paths: current.policy.paths,
-        ...(on ? {} : { access: 'full' as const }),
-      });
-      await this.loadMode();
-    };
-    if (on) {
-      await apply();
-      return;
-    }
+    if (current.policy.access === 'full') return this.setAccess(undefined);
     if (current.full_access_allowed === false)
       throw new Error(
         'The operator does not allow full access on this host. Commands stay in the OS sandbox.',
       );
+    if (current.policy.access === 'yolo') return this.setAccess('full');
     this.confirm(
       'Turn on full access?',
-      'Later commands in this session run WITHOUT the OS sandbox: they can read and change any file your user can, and reach the network directly. Each command still asks for your approval, even in auto mode. Run /full-access again to turn it off.',
+      'Later commands in this session run WITHOUT the OS sandbox: they can read and change any file your user can, and reach the network directly. They run without asking, except commands the danger check calls dangerous (force pushes, deletes, publishing, credentials, anything it cannot read), which still ask and say why. Run /full-access again to turn it off.',
       'turn on full access',
-      apply,
+      () => this.setAccess('full'),
+    );
+  }
+  /** YOLO on only after the person types "yolo"; off at once. Never in the Shift+Tab cycle. */
+  private async yolo(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('YOLO is for local coding sessions. Nothing was changed.');
+    if (current.policy.access === 'yolo') return this.setAccess(undefined);
+    if (current.yolo_allowed === false)
+      throw new Error(
+        'YOLO is not allowed for this session: it is only for your own desk sessions on a host whose operator allows it.',
+      );
+    this.taskInput(
+      'Turn on YOLO? Type yolo to confirm',
+      '',
+      'Type yolo',
+      'NO approvals at all: every edit and command runs at once, without the OS sandbox, including force pushes, deletes and publishing. Each one is recorded. /yolo again turns it off.',
+      (value) => {
+        if (value.trim() !== 'yolo') {
+          this.client.report('YOLO stays off: the confirmation was not "yolo".');
+          return;
+        }
+        void this.execute(() => this.setAccess('yolo'));
+      },
     );
   }
   private showText(title: string, text: string): void {
@@ -959,6 +983,15 @@ export class SalaamApp {
       await this.fullAccess();
       return;
     }
+    if (command === 'yolo') {
+      await this.yolo();
+      return;
+    }
+    if (command === 'takeover') {
+      await this.client.takeControl();
+      this.client.report('You have control of this session.');
+      return;
+    }
     if (command === 'permissions') {
       await this.permissionControls();
       return;
@@ -1151,9 +1184,7 @@ export class SalaamApp {
     await this.startService();
     this.showModal(
       new FormModal(
-        (localCoding
-          ? 'New coding session · reviewed edits and unsandboxed commands · '
-          : 'New session · ') +
+        (localCoding ? 'New coding session · reviewed edits and commands · ' : 'New session · ') +
           (this.selectedRoute?.model ?? this.client.health?.provider_route.model ?? 'default'),
         this.options.cwd ?? this.client.snapshot?.cwd ?? process.cwd(),
         this.view.theme,
@@ -1278,7 +1309,15 @@ export class SalaamApp {
         const reviewed = await this.client.review(approval);
         // Desk sessions can approve for the session or always; strict work only ever approves once.
         const rules = await this.client.approvalRules().catch(() => ({ applies: false }));
-        this.showApproval(reviewed.approval, reviewed.operation, rules.applies);
+        const onceOnly = rules.applies
+          ? onceOnlyReason(String(reviewed.operation.value))
+          : undefined;
+        this.showApproval(
+          reviewed.approval,
+          reviewed.operation,
+          rules.applies && !onceOnly,
+          onceOnly,
+        );
       });
     if (approvals.length === 1) open(approvals[0]!.id);
     else
@@ -1388,6 +1427,7 @@ export class SalaamApp {
     approval: Approval,
     operation: import('./protocol.js').Operation,
     offerRules = false,
+    onceOnly?: string,
   ): void {
     this.showModal(
       new ApprovalModal(
@@ -1437,6 +1477,7 @@ This exact request will be approved without asking in every desk session on this
             );
         },
         offerRules,
+        onceOnly,
       ),
       86,
     );
@@ -1497,7 +1538,7 @@ This exact request will be approved without asking in every desk session on this
               {
                 value: 'review',
                 label: 'Review every mutation',
-                description: 'Explicit approval for each edit and unsandboxed shell command',
+                description: 'Explicit approval for each edit and shell command',
               },
               {
                 value: 'scoped-edit',
@@ -1520,7 +1561,7 @@ This exact request will be approved without asking in every desk session on this
           this.showModal(
             new TextModal(
               'Review permission policy',
-              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nCommands ask unless an approval rule or the session mode allows them (auto allows only sandboxed commands). Commands run in the host OS sandbox unless full access is on. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
+              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nCommands ask unless an approval rule or the session mode allows them (auto allows only sandboxed commands; full access allows all but dangerous ones; YOLO allows everything). Commands run in the host OS sandbox unless full access or YOLO is on. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
               this.view.theme,
               () => this.terminal.rows,
               () => this.tui.requestRender(),

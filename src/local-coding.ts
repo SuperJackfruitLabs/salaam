@@ -11,7 +11,8 @@ import {
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
+import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -256,11 +257,20 @@ export class LocalCoding {
       };
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
     c.args = JSON.stringify(args);
+    // Operator ruling 2026-10-31: full access asks only for commands this check calls dangerous.
+    const danger: DangerVerdict =
+      args.action === 'command'
+        ? classifyCommand(args.command, {
+            root,
+            home: homedir(),
+            tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
+          })
+        : { dangerous: false };
     this.store.transaction(() => {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}Command:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -296,17 +306,15 @@ export class LocalCoding {
     const policy = permissionPolicy(this.store, session);
     // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
     // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
-    if (
-      this.rules &&
-      policy.mode !== 'inspect' &&
-      policy.mode !== 'plan' &&
-      this.rules.applies(session)
-    ) {
+    if (this.rules && policy.mode !== 'inspect' && this.rules.applies(session)) {
       const request: RuleRequest =
         args.action === 'command'
           ? { tool: 'command', argv: commandArgv(args.command) }
           : { tool: 'edit', paths: args.edits.map((e) => e.path) };
-      const decided = evaluateRules(this.rules.list(session), request);
+      // A repo's allow rules cannot approve a dangerous command: only the person's own rules can.
+      const usable = (all: ReturnType<ApprovalRules['list']>) =>
+        danger.dangerous ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow')) : all;
+      const decided = evaluateRules(usable(this.rules.list(session)), request);
       const approval = this.managed.forOperation(c.operation_id);
       const rule = decided.rule && {
         id: decided.rule.id,
@@ -350,7 +358,7 @@ export class LocalCoding {
             decidedBy: 'rule:' + rule.source,
             authorize: () => {
               this.guard(c);
-              const again = evaluateRules(rules.list(session), request);
+              const again = evaluateRules(usable(rules.list(session)), request);
               if (again.effect !== 'allow' || again.rule?.id !== rule.id)
                 throw new ServiceError('permission_changed', 'Approval rules changed');
             },
@@ -366,7 +374,7 @@ export class LocalCoding {
             p,
             args.edits.map((e) => e.path),
           )
-        : autoApprovesCommands(p, this.sandboxed(this.bound(args)));
+        : autoApprovesCommands(p, this.sandboxed(this.bound(args)), danger.dangerous);
     if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(
@@ -391,6 +399,19 @@ export class LocalCoding {
           },
         },
       );
+      // YOLO approves everything; each approval is recorded with what full access would have asked.
+      if (policy.access === 'yolo')
+        this.store.transaction(() =>
+          this.store.event(session, 'permission.yolo-approved', {
+            call_id: c.id,
+            operation_id: c.operation_id,
+            action: args.action,
+            ...(args.action === 'command' ? { command: args.command } : {}),
+            ...(danger.dangerous
+              ? { would_have_asked: { category: danger.category, reason: danger.reason } }
+              : {}),
+          }),
+        );
     }
     return this.view(c.id);
   }
@@ -465,7 +486,7 @@ export class LocalCoding {
   /** The sandbox for a new command in this session: the host's, or full access if the person chose
    * it for this session (Phase 2b). Bound into the command's approval and digest. */
   private sandboxFor(session: string): LocalSandbox {
-    return permissionPolicy(this.store, session).access === 'full'
+    return permissionPolicy(this.store, session).access
       ? { ...this.sandbox, level: 'full-access' }
       : this.sandbox;
   }
@@ -477,6 +498,15 @@ export class LocalCoding {
   }
   private sandboxed(sb: LocalSandbox): boolean {
     return sb.kind !== 'none' && sb.level !== 'full-access';
+  }
+  /** Where this session's next command runs, in a word or two for the status and side panels. */
+  commandSandbox(session: string): string {
+    const access = permissionPolicy(this.store, session).access;
+    if (access) return access === 'yolo' ? 'YOLO' : 'full access';
+    if (this.sandbox.level === 'full-access') return 'no sandbox';
+    if (this.sandbox.kind === 'none')
+      return this.sandbox.allowUnsandboxed ? 'no sandbox' : 'refused';
+    return this.sandbox.kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
   }
   private sandboxText(sb: LocalSandbox = this.sandbox): string {
     const { kind, level } = sb;

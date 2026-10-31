@@ -519,6 +519,7 @@ async function main(): Promise<void> {
       hostApprovalTtlMs,
       hostAllowsUnsandboxed,
       hostAllowsFullAccessSessions,
+      hostAllowsYoloSessions,
       hostCommandNetwork,
       hostReadPaths,
     } = await import('./host.js');
@@ -666,6 +667,7 @@ async function main(): Promise<void> {
           ...(hostAllowsUnsandboxed(m) ? { unsandboxedCommands: 'allow' as const } : {}),
           // A host session may choose full access only when the reviewed manifest says so.
           allowFullAccessSessions: hostAllowsFullAccessSessions(m),
+          allowYoloSessions: hostAllowsYoloSessions(m),
           ...(hostCommandNetwork(m) ? { commandNetwork: hostCommandNetwork(m)! } : {}),
           ...(hostReadPaths(m).length ? { localSandboxReadPaths: hostReadPaths(m) } : {}),
         });

@@ -5,44 +5,35 @@ export type PermissionMode =
   | 'inspect'
   | 'review'
   | 'scoped-edit'
-  // Phase 2b (operator-approved plan, 2026-10-31): the one-key modes of an interactive session.
-  | 'plan'
+  // Phase 2b (operator rulings 2026-10-31): the one-key modes of an interactive session.
   | 'accept-edits'
   | 'auto';
 const MODES: readonly PermissionMode[] = [
   'inspect',
   'review',
   'scoped-edit',
-  'plan',
   'accept-edits',
   'auto',
 ];
 /** Modes in which the service performs no local mutation, however it was approved. */
-const READ_ONLY_MODES: readonly PermissionMode[] = ['inspect', 'plan'];
-/** Shift+Tab: review → accept edits → auto → plan → review. Full access is never in the cycle. */
-const CYCLE: readonly PermissionMode[] = ['review', 'accept-edits', 'auto', 'plan'];
+const READ_ONLY_MODES: readonly PermissionMode[] = ['inspect'];
+/** Shift+Tab: review → accept edits → auto → review. Full access and YOLO are never in the cycle. */
+const CYCLE: readonly PermissionMode[] = ['review', 'accept-edits', 'auto'];
 export function nextMode(mode: PermissionMode): PermissionMode {
   const at = CYCLE.indexOf(mode);
   return at < 0 ? 'review' : CYCLE[(at + 1) % CYCLE.length]!;
 }
-/** Leaving plan mode for any mode that may change the workspace asks the person to confirm. */
-export function leavingPlanNeedsConfirm(from: PermissionMode, to: PermissionMode): boolean {
-  return from === 'plan' && !READ_ONLY_MODES.includes(to);
-}
-const PLAN_NOTE =
-  '[Plan mode: this session is read-only. Read and investigate, then propose a step-by-step plan and stop. Do not edit files or run commands; the person will switch modes when the plan is agreed.]';
-/** The instruction as the model receives it: in plan mode, prefixed with what plan mode means. */
-export function planNote(mode: PermissionMode, text: string): string {
-  return mode === 'plan' ? PLAN_NOTE + '\n\n' + text : text;
-}
+/** Sandbox levels a session can choose beyond its mode: full access (no OS sandbox; dangerous
+ * commands still ask) and YOLO (no OS sandbox and no approvals at all). */
+export type SessionAccess = 'full' | 'yolo';
 export interface PermissionPolicy {
   revision: number;
   mode: PermissionMode;
   paths: string[];
   root: string;
-  /** Present only when the person chose full access: later commands run without the OS sandbox.
-   * Absent for sandboxed policies, so their digests (and the receipts bound to them) are unchanged. */
-  access?: 'full';
+  /** Present only when the person chose full access or YOLO: later commands run without the OS
+   * sandbox. Absent for sandboxed policies, so their digests (and receipts bound to them) are unchanged. */
+  access?: SessionAccess;
 }
 export function permissionPolicy(store: Store, session: string): PermissionPolicy {
   const root = store.session(session).cwd;
@@ -70,7 +61,8 @@ export function permissionPolicy(store: Store, session: string): PermissionPolic
     )
       throw new Error('Invalid saved policy');
     const policy = validatePermissions({
-      mode: saved.mode,
+      // Plan mode was removed (operator ruling 2026-10-31): a session saved in it reads as review.
+      mode: saved.mode === 'plan' ? 'review' : saved.mode,
       paths: saved.paths,
       ...(saved.access === undefined ? {} : { access: saved.access }),
     });
@@ -85,17 +77,17 @@ export function permissionPolicy(store: Store, session: string): PermissionPolic
 export function validatePermissions(value: unknown): {
   mode: PermissionMode;
   paths: string[];
-  access?: 'full';
+  access?: SessionAccess;
 } {
   const input = object(value);
   if (
     Object.keys(input).some((k) => !['mode', 'paths', 'access'].includes(k)) ||
     !(MODES as readonly string[]).includes(String(input.mode)) ||
-    (input.access !== undefined && input.access !== 'full')
+    (input.access !== undefined && input.access !== 'full' && input.access !== 'yolo')
   )
     throw new ServiceError(
       'invalid_permissions',
-      'Choose inspect, review, scoped-edit, plan, accept-edits or auto, and access "full" or none; unknown policy fields are rejected',
+      'Choose inspect, review, scoped-edit, accept-edits or auto, and access "full", "yolo" or none; unknown policy fields are rejected',
     );
   const paths = input.paths ?? [];
   if (
@@ -131,7 +123,9 @@ export function validatePermissions(value: unknown): {
   return {
     mode: input.mode as PermissionMode,
     paths: [...paths].sort(),
-    ...(input.access === 'full' ? { access: 'full' as const } : {}),
+    ...(input.access === 'full' || input.access === 'yolo'
+      ? { access: input.access as SessionAccess }
+      : {}),
   };
 }
 export function configurePermissions(
@@ -141,14 +135,22 @@ export function configurePermissions(
   expected: number,
   value: unknown,
   actor: Controller,
-  /** The operator's setting: may an interactive session choose full access (no OS sandbox)? */
-  opts: { allowFullAccess?: boolean } = {},
+  /** The operator's settings: may an interactive session choose full access or YOLO, and is this a
+   * desk session (YOLO is never for host-managed, board or child work)? */
+  opts: { allowFullAccess?: boolean; allowYolo?: boolean; deskSession?: boolean } = {},
 ) {
   const policy = validatePermissions(value);
   if (policy.access === 'full' && opts.allowFullAccess === false)
     throw new ServiceError(
       'full_access_denied',
       'The operator does not allow full access on this host; commands stay in the OS sandbox',
+    );
+  if (policy.access === 'yolo' && (opts.allowYolo === false || opts.deskSession !== true))
+    throw new ServiceError(
+      'yolo_denied',
+      opts.deskSession !== true
+        ? 'YOLO is only for your own desk sessions, never host-managed, board or child work'
+        : 'The operator does not allow YOLO on this host; commands keep their approvals',
     );
   return store.request(
     'local-operator',
@@ -227,17 +229,26 @@ function ordinaryProjectPath(path: string): boolean {
       )
   );
 }
-/** Whether this policy approves these edits by itself (scoped edits, accept-edits and auto). */
+/** Whether this policy approves these edits by itself: scoped edits, accept-edits, auto and full
+ * access approve ordinary project edits; YOLO approves every edit. */
 export function autoApprovesEdits(policy: PermissionPolicy, paths: string[]): boolean {
-  if (policy.mode === 'scoped-edit') return matchesEditScope(policy, paths);
+  if (policy.access === 'yolo') return paths.length > 0;
+  if (policy.mode === 'scoped-edit' && !policy.access) return matchesEditScope(policy, paths);
   return (
-    (policy.mode === 'accept-edits' || policy.mode === 'auto') &&
+    (policy.mode === 'accept-edits' || policy.mode === 'auto' || policy.access === 'full') &&
     paths.length > 0 &&
     paths.every(ordinaryProjectPath)
   );
 }
-/** Whether this policy approves a command by itself: auto, and only inside the OS sandbox. */
-export function autoApprovesCommands(policy: PermissionPolicy, sandboxed: boolean): boolean {
-  return policy.mode === 'auto' && policy.access !== 'full' && sandboxed;
+/** Whether this policy approves a command by itself: auto inside the OS sandbox; full access unless
+ * the danger check calls the command dangerous; YOLO always. */
+export function autoApprovesCommands(
+  policy: PermissionPolicy,
+  sandboxed: boolean,
+  dangerous: boolean,
+): boolean {
+  if (policy.access === 'yolo') return true;
+  if (policy.access === 'full') return !dangerous;
+  return policy.mode === 'auto' && sandboxed;
 }
 export const permissionDigest = (policy: PermissionPolicy) => digest(JSON.parse(canonical(policy)));

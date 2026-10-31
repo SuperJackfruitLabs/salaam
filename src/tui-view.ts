@@ -25,8 +25,8 @@ export interface ViewModel {
   log?: { id: string; text: string; offset: number; complete: boolean };
   busy: boolean;
   continuation?: string;
-  /** Phase 2b: the session's mode and whether full access is on, shown on the status line. */
-  mode?: { mode: string; full: boolean };
+  /** Phase 2b: the session's mode, its access (full access or YOLO) and where commands run. */
+  mode?: { mode: string; access?: 'full' | 'yolo'; sandbox?: string };
 }
 /** How the status line names a mode. */
 export function modeLabel(mode: string): string {
@@ -35,7 +35,6 @@ export function modeLabel(mode: string): string {
       review: 'review',
       'accept-edits': 'accept edits',
       auto: 'auto',
-      plan: 'plan',
       inspect: 'inspect only',
       'scoped-edit': 'scoped edits',
     }[mode] ?? mode
@@ -146,7 +145,11 @@ export function status(view: ViewModel, width: number): string[] {
   const mode = view.mode
     ? '  ' +
       t.ink('mode ' + modeLabel(view.mode.mode), 'muted') +
-      (view.mode.full ? ' ' + t.ink('FULL ACCESS', 'amber') : '') +
+      (view.mode.access === 'yolo'
+        ? ' ' + t.ink('YOLO', 'red')
+        : view.mode.access === 'full'
+          ? ' ' + t.ink('FULL ACCESS', 'amber')
+          : '') +
       t.ink(' · shift+tab', 'muted')
     : '';
   const identity = c.snapshot
@@ -249,7 +252,10 @@ export class DocumentView implements Component {
                   ? 'Owned coding workspace · guarded edits'
                   : c.snapshot.capabilities.includes('local-workspace-read')
                     ? c.snapshot.capabilities.includes('local-coding-reviewed')
-                      ? 'Local coding · reviewed edits · commands run as your user'
+                      ? 'Local coding · reviewed edits · commands ' +
+                        (this.view.mode?.sandbox
+                          ? '· ' + this.view.mode.sandbox
+                          : 'run as your user')
                       : 'Local workspace · read, list and search · /coding for edits and commands'
                     : 'Conversation session · coding tools are off',
                 'muted',
@@ -423,7 +429,10 @@ export class DocumentView implements Component {
           ...this.text(
             tab === 'changes'
               ? 'Proposed edits appear here with their approval and apply outcome.'
-              : 'Commands appear here with their recorded exit status and output. Commands run as your local user.',
+              : 'Commands appear here with their recorded exit status and output. ' +
+                  (this.view.mode?.sandbox
+                    ? 'Where commands run: ' + this.view.mode.sandbox + '.'
+                    : 'Commands run as your local user.'),
             width,
           ),
         );
@@ -951,7 +960,7 @@ export function sidebar(view: ViewModel, width: number): string[] {
   );
   row(
     c.snapshot?.capabilities.includes('local-coding-reviewed')
-      ? 'Commands · local user'
+      ? 'Commands · ' + (view.mode?.sandbox ?? 'local user')
       : c.workspace && c.health?.execution?.commands
         ? 'Commands · isolated'
         : 'Commands · off',

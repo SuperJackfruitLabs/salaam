@@ -64,7 +64,7 @@ import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
-import { permissionPolicy, configurePermissions, planNote } from './autonomy.js';
+import { permissionPolicy, configurePermissions } from './autonomy.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
@@ -134,6 +134,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Phase 2b: may an interactive session choose full access? Default true for local desk use;
    * a host started from a manifest passes its reviewed `full_access_sessions` setting. */
   allowFullAccessSessions?: boolean;
+  /** Whether an interactive session may choose YOLO (no sandbox, no approvals). Desk default allows
+   * it; a host started from a manifest passes its reviewed `yolo_sessions` setting. */
+  allowYoloSessions?: boolean;
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -196,8 +199,10 @@ export class SalaamService {
   private readonly agentpodWorkProgression: boolean;
   /** Phase 2b: whether interactive sessions here may choose full access (no OS sandbox). */
   private readonly allowFullAccessSessions: boolean;
+  private readonly allowYoloSessions: boolean;
   private constructor(options: ServiceOptions) {
     this.allowFullAccessSessions = options.allowFullAccessSessions !== false;
+    this.allowYoloSessions = options.allowYoloSessions !== false;
     this.agentpodWorkProgression = options.agentpodWorkProgression === true;
     if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
       throw Error('Strict work requires reviewed AgentPod protected station configuration');
@@ -2209,6 +2214,10 @@ export class SalaamService {
               // Desk coding sessions: approval rules and auto mode can approve commands (Phase 2a/2b).
               command_auto_approval: this.store.localCoding(id),
               full_access_allowed: this.allowFullAccessSessions,
+              yolo_allowed: this.allowYoloSessions && !!this.localCoding.rules?.applies(id),
+              ...(this.store.localCoding(id)
+                ? { command_sandbox: this.localCoding.commandSandbox(id) }
+                : {}),
             });
             return;
           }
@@ -2227,7 +2236,11 @@ export class SalaamService {
                   client_id: string(body.client_id, 'client_id', 128),
                   token: string(body.token, 'token', 128),
                 },
-                { allowFullAccess: this.allowFullAccessSessions },
+                {
+                  allowFullAccess: this.allowFullAccessSessions,
+                  allowYolo: this.allowYoloSessions,
+                  deskSession: !!this.localCoding.rules?.applies(id),
+                },
               ),
             );
             return;
@@ -2997,13 +3010,7 @@ export class SalaamService {
             id,
             string(body.request_id, 'request_id', 128),
             integer(body.expected_revision, 'expected_revision'),
-            // Plan mode (Phase 2b): the model is told the session is read-only and to plan.
-            this.store.localCoding(id)
-              ? planNote(
-                  permissionPolicy(this.store, id).mode,
-                  string(body.text, 'text', 256 * 1024),
-                )
-              : string(body.text, 'text', 256 * 1024),
+            string(body.text, 'text', 256 * 1024),
             {
               client_id: string(body.client_id, 'client_id', 128),
               token: string(body.token, 'token', 128),
