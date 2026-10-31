@@ -20,6 +20,7 @@ import {
   prepareLocalEdits,
   verifyLocalEdits,
   applyLocalEdits,
+  reviewLocalEdits,
   type LocalEdit,
 } from './local-edits.js';
 import {
@@ -256,9 +257,7 @@ export class LocalCoding {
     this.store.transaction(() => {
       const reviewed =
         args.action === 'edit'
-          ? args.edits
-              .map((e) => `--- ${e.path}\n${e.before ?? '(new file)'}\n+++ ${e.path}\n${e.after}`)
-              .join('\n\n')
+          ? reviewLocalEdits(args.edits)
           : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText()}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
