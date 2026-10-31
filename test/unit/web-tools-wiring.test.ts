@@ -39,7 +39,9 @@ test('the extension registers both tools for interactive coding roots only', () 
   ].map((m) => m[1]);
   expect(registered).toEqual(expect.arrayContaining(['salaam_web_search', 'salaam_web_fetch']));
   // Their bridge calls get a timeout long enough for a real HTTP round trip.
-  expect(ext).toMatch(/method\.startsWith\('web\.'\)\s*\?\s*\d{5}/);
+  // (Phase 4b: the same long timeout as local calls, since PreToolUse hooks run first.)
+  expect(ext).toMatch(/method\.startsWith\('web\.'\)\s*\?\s*HOOKED_BRIDGE_TIMEOUT/);
+  expect(ext).toMatch(/const HOOKED_BRIDGE_TIMEOUT = \d+ \* 60 \* 1000;/);
 });
 
 test('the supervisor serves web calls only to admitted interactive coding sessions', () => {
