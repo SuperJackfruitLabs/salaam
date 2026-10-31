@@ -149,7 +149,7 @@ export class OperatorClient extends EventEmitter {
     policy: import('./autonomy.js').PermissionPolicy;
     configurable: boolean;
     coding: boolean;
-    command_auto_approval: false;
+    command_auto_approval: boolean;
     /** Phase 2b: whether this host lets a session choose full access. */
     full_access_allowed?: boolean;
   }> {

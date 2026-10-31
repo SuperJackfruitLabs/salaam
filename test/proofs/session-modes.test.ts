@@ -107,6 +107,8 @@ test('a service that does not allow full access refuses it, and says so', async 
     await client.open(id);
     const current = await client.permissions();
     expect(current.full_access_allowed).toBe(false);
+    // Approval rules and auto mode can approve commands in a desk coding session (Phase 2a/2b).
+    expect(current.command_auto_approval).toBe(true);
     await expect(
       client.setPermissions(id, current.policy.revision, {
         mode: 'review',

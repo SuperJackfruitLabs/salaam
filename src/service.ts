@@ -2206,7 +2206,8 @@ export class SalaamService {
               policy: permissionPolicy(this.store, id),
               configurable: this.store.localWorkspace(id),
               coding: this.store.localCoding(id),
-              command_auto_approval: false,
+              // Desk coding sessions: approval rules and auto mode can approve commands (Phase 2a/2b).
+              command_auto_approval: this.store.localCoding(id),
               full_access_allowed: this.allowFullAccessSessions,
             });
             return;

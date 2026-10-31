@@ -735,7 +735,7 @@ export default function house(pi: ExtensionAPI): void {
       name: 'salaam_local',
       label: 'Reviewed local coding',
       description:
-        'Apply reviewed edits in the real workspace or run a shell command as the local user (no OS sandbox). Every invocation needs human approval. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. Inspect actual results; do not claim success after failure.',
+        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless the operator chose full access. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. Inspect actual results; do not claim success after failure.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('edit'), Type.Literal('command')]),
         edits: Type.Optional(

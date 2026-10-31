@@ -296,9 +296,12 @@ export class LocalCoding {
     const policy = permissionPolicy(this.store, session);
     // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
     // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
-    if (this.rules && policy.mode !== 'inspect' &&
+    if (
+      this.rules &&
+      policy.mode !== 'inspect' &&
       policy.mode !== 'plan' &&
-      this.rules.applies(session)) {
+      this.rules.applies(session)
+    ) {
       const request: RuleRequest =
         args.action === 'command'
           ? { tool: 'command', argv: commandArgv(args.command) }

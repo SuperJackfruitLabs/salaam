@@ -176,3 +176,18 @@ test('allow_full_access_sessions is off by default for hosts, true only by setti
   expect(readHost(file)).toEqual(allowed);
   expect(digest(allowed)).not.toBe(digest(plain));
 });
+
+// Integration of Phase 1 B and 2b: a manifest that pins read paths must read back. readHost rebuilt
+// the expected sandbox without them, so a host with `local_sandbox_read_paths` refused its own plan.
+test('a host plan with read paths (and full access) reads back unchanged', async () => {
+  const f = fixture();
+  const tc = mkdtempSync(join(f.root, 'toolchain-'));
+  const planned = await planHost({
+    ...f.input,
+    local_sandbox_read_paths: [tc],
+    allow_full_access_sessions: true,
+  });
+  const file = join(f.root, 'host-read-paths.json');
+  writeFileSync(file, JSON.stringify(planned), { mode: 0o600 });
+  expect(readHost(file)).toEqual(planned);
+});

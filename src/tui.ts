@@ -1510,7 +1510,7 @@ This exact request will be approved without asking in every desk session on this
           this.showModal(
             new TextModal(
               'Review permission policy',
-              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nAll shell commands still require approval. This is not an OS sandbox. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
+              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nCommands ask unless an approval rule or the session mode allows them (auto allows only sandboxed commands). Commands run in the host OS sandbox unless full access is on. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
               this.view.theme,
               () => this.terminal.rows,
               () => this.tui.requestRender(),
