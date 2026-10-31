@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { latestSessionFor, parseCodeStart } from '../../src/session-pick.js';
+import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { deskUsesAnthropic, latestSessionFor, parseCodeStart } from '../../src/session-pick.js';
 
 // `salaam code` in a folder continues that folder's latest session, or starts one (step 0,
 // 2026-10-31: starting took three commands and resuming needed the full session id).
@@ -39,4 +40,17 @@ test('a state path too long for a Unix socket names its length and the fix', asy
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+});
+
+// Live pass, 2026-10-31: `salaam code --new` against a running TUI-started service opened an
+// offline demo session although an Anthropic key was stored.
+test('a new desk session uses Anthropic when the running service defaults to offline', () => {
+  // `service start --provider offline` reports the scripted fixture's provider id.
+  const offline = OFFLINE_ROUTE.provider;
+  expect(offline).not.toBe('offline');
+  expect(deskUsesAnthropic(false, offline, true)).toBe(true);
+  expect(deskUsesAnthropic(false, undefined, true)).toBe(true);
+  expect(deskUsesAnthropic(false, offline, false)).toBe(false);
+  expect(deskUsesAnthropic(true, offline, true)).toBe(false);
+  expect(deskUsesAnthropic(false, 'openai', true)).toBe(false);
 });

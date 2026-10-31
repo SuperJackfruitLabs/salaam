@@ -1407,7 +1407,17 @@ export class SalaamApp {
           // The rule is the exact request just reviewed: its command words or its edited paths.
           // If it cannot become a rule (shell features, odd words), nothing is approved; say why.
           const approveWith = (scope: 'session' | 'repo') => async () => {
-            await this.client.ruleFromOperation(operation.id, scope);
+            // While the approval is pending the status line shows it, not a notice, so a
+            // refused rule is shown where it cannot be missed.
+            try {
+              await this.client.ruleFromOperation(operation.id, scope);
+            } catch (error) {
+              this.showText(
+                'Not saved as a rule',
+                `${error instanceof Error ? error.message : String(error)}\n\nNothing was approved. Press ctrl+o to approve it once instead.`,
+              );
+              return;
+            }
             await this.client.decide(approval, 'approve');
             this.client.report(
               scope === 'session'
@@ -2574,8 +2584,16 @@ This exact request will be approved without asking in every desk session on this
   /** One command for this folder: start the service if needed, then continue the folder's
    * latest session, start a new coding session in it, or show the session list. */
   private async openHere(start: import('./session-pick.js').CodeStart): Promise<void> {
-    const { latestSessionFor } = await import('./session-pick.js');
+    const { latestSessionFor, deskUsesAnthropic } = await import('./session-pick.js');
     await this.startService();
+    if (
+      deskUsesAnthropic(
+        !!this.selectedRoute,
+        this.client.health?.provider_route.provider,
+        existsSync(credentialPath()) || existsSync(credentialPath() + '.json'),
+      )
+    )
+      this.selectedRoute = providerRoute('anthropic');
     if (start === 'resume') return this.sessions();
     const cwd = resolve(this.options.cwd ?? process.cwd());
     const existing = start === 'continue' ? latestSessionFor(this.client.sessions, cwd) : undefined;
