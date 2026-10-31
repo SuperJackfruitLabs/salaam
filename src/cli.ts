@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadDangerClassifierConfig } from './danger-classifier.js';
+import { loadDangerClassifierOptions } from './danger-classifier.js';
 import { loadWebSearchConfig } from './web-search.js';
 import { SANDBOX_LEVELS, type SandboxLevel } from './command-sandbox.js';
 import { acp } from './acp.js';
@@ -1684,7 +1684,9 @@ async function main(): Promise<void> {
         (process.env.SALAAM_DANGER_CLASSIFIER_CONFIG || undefined);
     // Fail early on a bad command-reviewer config; its key is read from the named variable, never printed.
     if (dangerClassifierConfig)
-      loadDangerClassifierConfig(JSON.parse(readFileSync(resolve(dangerClassifierConfig), 'utf8')));
+      loadDangerClassifierOptions(
+        JSON.parse(readFileSync(resolve(dangerClassifierConfig), 'utf8')),
+      );
     // Fail early on a bad web search config; its keys are read, never printed.
     if (webSearchConfig) loadWebSearchConfig(resolve(webSearchConfig));
     if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))

@@ -169,3 +169,12 @@ describe('what is sent', () => {
     expect(calls).toBe(3);
   });
 });
+
+// Live pass 2026-11-01: the CLI checked the config with the single-reviewer loader, so a file
+// listing options refused to start the service ("unknown field default").
+it('the service CLI accepts a config that lists several reviewers', async () => {
+  const { readFileSync } = await import('node:fs');
+  const cli = readFileSync(new URL('../../src/cli.ts', import.meta.url), 'utf8');
+  expect(cli).not.toMatch(/loadDangerClassifierConfig\(/);
+  expect(cli).toMatch(/loadDangerClassifierOptions\(\s*JSON\.parse/);
+});
