@@ -45,7 +45,7 @@ test('a custom command typed in the TUI sends its expanded prompt; /hooks lists 
     await terminal.contains('Offline reply: Fix issue 12');
     await new Promise((r) => setTimeout(r, 1000));
     await terminal.write('/hooks\r');
-    await terminal.contains('NOT trusted');
+    await terminal.contains('does not run (/hooks trust');
     await terminal.contains('Stop: touch stopped');
     await terminal.write('\x1b');
     await new Promise((r) => setTimeout(r, 500));
