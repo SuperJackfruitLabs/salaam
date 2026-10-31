@@ -246,8 +246,11 @@ export function autoApprovesCommands(
   policy: PermissionPolicy,
   sandboxed: boolean,
   dangerous: boolean,
+  /** Pushes or opens a pull request: asks in every mode but YOLO (operator ruling 2026-10-31). */
+  publishes = false,
 ): boolean {
   if (policy.access === 'yolo') return true;
+  if (publishes) return false;
   if (policy.access === 'full') return !dangerous;
   return policy.mode === 'auto' && sandboxed;
 }

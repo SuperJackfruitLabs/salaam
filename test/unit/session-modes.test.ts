@@ -270,7 +270,8 @@ test('a repo rule cannot approve a dangerous command; the person’s own session
       { effect: 'allow', tool: 'command', command: 'git push *' },
       'r1',
     );
-    expect(f.state(f.command('git push origin feat').approval)).toBe('decided');
+    // A plain push publishes, so a repo rule cannot approve it either (operator ruling 2026-10-31).
+    expect(f.state(f.command('git push origin feat').approval)).toBe('pending');
     expect(f.state(f.command('git push --force origin feat').approval)).toBe('pending');
     rules.add(
       f.session.id,
@@ -345,4 +346,56 @@ test('a long confirm hint (the YOLO warning) wraps inside its frame', () => {
       .replace(/\x1b\[[0-9;]*m|│/g, '')
       .replace(/\s+/g, ' '),
   ).toContain('/yolo again turns it off.');
+});
+
+test('pushing and opening a pull request ask in auto and full access, and say why', async () => {
+  const f = setup();
+  try {
+    f.configure('auto');
+    const push = f.command('git push -u origin feat');
+    expect(f.state(push.approval)).toBe('pending');
+    expect(String(push.operation.value)).toContain('Publishes: pushes commits to a remote');
+    expect(f.state(f.command('git status').approval)).toBe('decided');
+    f.configure('review', 'full');
+    expect(f.state(f.command('git push origin feat').approval)).toBe('pending');
+    expect(f.state(f.command('gh pr create --title t --body b').approval)).toBe('pending');
+    expect(f.state(f.command('git commit -m x').approval)).toBe('decided');
+  } finally {
+    await f.close();
+  }
+});
+
+test('YOLO approves a push and records that it would have asked', async () => {
+  const f = setup();
+  try {
+    f.configure('review', 'yolo');
+    expect(f.state(f.command('git push origin feat').approval)).toBe('decided');
+    const note = f.store.db
+      .prepare("SELECT payload FROM events WHERE kind='permission.yolo-approved'")
+      .get() as { payload: string };
+    expect(JSON.parse(note.payload).would_have_asked).toEqual({
+      category: 'publish',
+      reason: 'pushes commits to a remote',
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+test('the person’s own session rule can approve a push', async () => {
+  const f = setup();
+  const rules = new ApprovalRules(f.store, f.root + '/no-user-rules.json');
+  f.local.rules = rules;
+  try {
+    f.configure('review', 'full');
+    rules.add(
+      f.session.id,
+      'session',
+      { effect: 'allow', tool: 'command', command: 'git push *' },
+      'r1',
+    );
+    expect(f.state(f.command('git push origin feat').approval)).toBe('decided');
+  } finally {
+    await f.close();
+  }
 });

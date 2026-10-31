@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chooseLocalSandbox, sandboxArgv, seatbeltArgv } from '../../src/command-sandbox.js';
+import { gitIdentityEnv } from '../../src/git-helpers.js';
 
 // Phase 1 proof (operator, 2026-10-31): on this host's own sandbox, git works inside the
 // workspace and a toolchain outside it is readable only when the operator allowed it. Every host
@@ -79,4 +80,44 @@ test('a toolchain outside the workspace is readable only when the operator allow
   // Read only: the allowed toolchain still cannot be written.
   const write = run(root, 'echo x > node_modules/new.js', [outside]);
   expect(write.code).not.toBe(0);
+});
+
+// Phase 4a: the sandbox cannot read ~/.gitconfig, so Salaam passes the person's own identity in.
+test('a commit inside this host sandbox carries the identity from the person’s git config', () => {
+  if (chosen.kind === 'none') return void expect(chosen.kind).toBe('none');
+  const root = repo();
+  const home = realpathSync(mkdtempSync('/tmp/sal-usable-home-'));
+  try {
+    writeFileSync(
+      join(home, '.gitconfig'),
+      '[user]\n\tname = Ada Example\n\temail = ada@example.test\n',
+    );
+    const env = gitIdentityEnv(root, {
+      PATH: process.env.PATH,
+      HOME: home,
+      GIT_CONFIG_NOSYSTEM: '1',
+    });
+    expect(env.GIT_AUTHOR_NAME).toBe('Ada Example');
+    const tmp = realpathSync(mkdtempSync('/tmp/sal-usable-tmp-'));
+    const script = 'git commit -qam second && git log -1 --format="%an %ae"';
+    const argv =
+      chosen.kind === 'seatbelt'
+        ? seatbeltArgv('workspace-write', root, tmp, ['/bin/sh', '-c', script], chosen.seatbelt, {
+            network: false,
+          })
+        : sandboxArgv('workspace-write', root, ['/bin/sh', '-c', script], chosen.bwrap, {
+            network: false,
+          });
+    const r = spawnSync(argv[0]!, argv.slice(1), {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 20000,
+      env: { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1', ...env },
+    });
+    rmSync(tmp, { recursive: true, force: true });
+    expect(r.stdout.trim().split('\n').pop()).toBe('Ada Example ada@example.test');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -52,6 +52,16 @@ import {
   parseSlashCommand,
   slashHelp,
 } from './tui-commands.js';
+import {
+  branchInstruction,
+  commitInstruction,
+  currentBranch,
+  defaultBase,
+  forgeTool,
+  loadGitPrefs,
+  prInstruction,
+  validBranchName,
+} from './git-helpers.js';
 import { conversationExport, writeConversationExport } from './tui-export.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
@@ -872,6 +882,29 @@ export class SalaamApp {
       );
       return;
     }
+    if (command === 'commit' || command === 'branch' || command === 'pr') {
+      if (!snapshot.capabilities.includes('local-coding-reviewed'))
+        throw new Error(`/${command} runs git. Start a coding session with /coding first.`);
+      const root = snapshot.cwd;
+      let instruction: string;
+      if (command === 'commit')
+        instruction = commitInstruction({ ...loadGitPrefs(), session: snapshot.id });
+      else if (command === 'branch') {
+        if (!args) throw new Error('Usage: /branch <name>');
+        instruction = branchInstruction(args);
+      } else {
+        const branch = currentBranch(root),
+          base = args || defaultBase(root);
+        if (!branch) throw new Error('/pr needs a checked-out branch, not a detached HEAD.');
+        if (branch === base)
+          throw new Error(`You are on ${base}. Create a branch first with /branch <name>.`);
+        if (!validBranchName(base)) throw new Error(`"${base}" is not a valid branch name.`);
+        instruction = prInstruction({ tool: forgeTool(root), branch, base });
+      }
+      await this.client.submit(instruction);
+      this.setTab('conversation');
+      return;
+    }
     if (command === 'init') {
       if (!snapshot.capabilities.includes('local-coding-reviewed'))
         throw new Error('/init writes a file. Start a coding session with /coding first.');
@@ -892,7 +925,9 @@ export class SalaamApp {
       return;
     }
     if (command === 'diff') {
-      if (snapshot.capabilities.includes('local-workspace-read')) {
+      // Coding sessions review their diff file by file in Changes (Phase 3a).
+      if (snapshot.capabilities.includes('local-coding-reviewed')) this.setTab('changes');
+      else if (snapshot.capabilities.includes('local-workspace-read')) {
         const diff = await call<{ text: string }>(
           this.client.socket,
           `/v1/sessions/${snapshot.id}/local-diff`,
