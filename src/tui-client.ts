@@ -357,7 +357,7 @@ export class OperatorClient extends EventEmitter {
         )
           throw error;
         this.notice =
-          'Another terminal is using this session and still renews its control. You are observing; type /takeover to take control.';
+          'Another terminal is using this session and still renews its control. You are observing; press ctrl+k and choose Take control to take it over.';
       }
     }
     if (this.lease) await call(this.socket, `/v1/sessions/${id}/resume`, this.actor());

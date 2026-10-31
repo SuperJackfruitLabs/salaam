@@ -44,7 +44,6 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
     'Turn full access on or off: commands run without the OS sandbox; dangerous ones still ask',
   ),
   command('yolo', 'Turn YOLO on (type yolo to confirm) or off: no sandbox and no approvals'),
-  command('takeover', 'Take control of this session from another terminal'),
   command('approvals', 'Review exact pending approval requests'),
   command('context', 'Inspect session context, facts and usage'),
   command('usage', 'Show recorded usage and unknown observations'),

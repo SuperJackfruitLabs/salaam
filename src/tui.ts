@@ -987,11 +987,6 @@ export class SalaamApp {
       await this.yolo();
       return;
     }
-    if (command === 'takeover') {
-      await this.client.takeControl();
-      this.client.report('You have control of this session.');
-      return;
-    }
     if (command === 'permissions') {
       await this.permissionControls();
       return;

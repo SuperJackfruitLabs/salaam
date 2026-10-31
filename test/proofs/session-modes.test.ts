@@ -71,6 +71,11 @@ test('real terminal cycles modes with shift+tab and turns on full access only af
       () => permissionPolicy(f.service.store, id).access,
       (a) => a === undefined,
     );
+    // The status line settles before the next command, so /exit is not typed into a busy prompt.
+    await until(
+      () => terminal!.screen(),
+      (text) => !text.includes('YOLO'),
+    );
     await terminal.write('\x1b[200~/exit\x1b[201~\r');
     expect(await terminal.exit()).toMatchObject({ code: 0 });
   } finally {
@@ -177,7 +182,7 @@ test('a lease left by a killed terminal is waited out; a live one is not taken',
     const observer = new OperatorClient(f.dir);
     await observer.open(id);
     expect(f.service.store.controlView(id).client_id).toBe('live-client');
-    expect(observer.notice).toContain('/takeover');
+    expect(observer.notice).toContain('Take control');
     await observer.leave();
   } finally {
     await f.close();
