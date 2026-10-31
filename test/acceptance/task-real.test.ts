@@ -245,9 +245,13 @@ test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bou
     // The observer frame can precede the first session/approval snapshot.
     await terminal.contains('1 approval waiting');
     await terminal.write('\x0f');
-    await terminal.contains('Review approval');
+    await terminal.contains('Approve?');
     await terminal.write('\x1b[F');
-    await terminal.contains('Exact request binding reviewed.');
+    // Reading to the end lifts the read-to-the-end gate before approving.
+    await until(
+      () => terminal!.screen(),
+      (screen) => screen.includes('Approve once') && !screen.includes('Read to the end'),
+    );
     await terminal.capture(join(ROOT, '.state/evidence/m11/screens/real-approval.svg'));
     await terminal.write('\x1b[C\r');
     const completed = await until(task, (t) => t.state === 'succeeded', 45000);
