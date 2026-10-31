@@ -24,7 +24,7 @@ Type `/` to see command completions. Tab or Enter accepts a completion; Enter th
 | `/cancel`, `/stop`                                                     | Explicitly cancel a selected active or queued instruction; these do not stop the daemon                                                          |
 | `/queue [text]`                                                        | Save a durable next-turn instruction, or inspect queued work                                                                                     |
 | `/steer <text>`                                                        | Send guidance during an active local turn; the service records intent before delivery and never replays an uncertain delivery                    |
-| `/diff`, `/tools`, `/approvals`                                        | Inspect actual Git changes, capabilities, tool activity and exact approval requests                                                              |
+| `/diff`, `/tools`, `/approvals`                                        | Review Git changes file by file, capabilities, tool activity and exact approval requests                                                         |
 | `/copy`, `/export [path]`                                              | Copy the last complete assistant response on macOS, or export captured history (including pre-compaction records) to a new private Markdown file |
 | `/settings`                                                            | Terminal appearance, shortcuts and model selection                                                                                               |
 | `/fork`                                                                | Fork an idle local conversation through Pi's session manager; share the workspace, but not pending approvals or task authority                   |
@@ -141,6 +141,25 @@ The model reads a file and supplies its content hash with an edit. Review shows 
 Commands run as your local OS user, **without an OS sandbox**. The approval shows the exact command, working directory and timeout. They can access the user's files and network, even outside the project. Salaam supplies a minimal environment rather than inheriting daemon API keys. Commands have a two-minute maximum runtime and 64 KiB captured-output limit. Foreground process groups are cancelled with the attempt; deliberately daemonized programs are outside this process-group guarantee. Use foreground commands rather than starting background services.
 
 Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The Commands tab shows recorded commands and outcomes; Changes reviews the folder itself against its checkpoints. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
+
+## Git helpers
+
+In a coding session, `/commit`, `/branch <name>` and `/pr [base]` ask the model to do the git work, and every git command it runs goes through the session's normal command approval and sandbox. Nothing runs git behind your back.
+
+- `/commit` reads the status and diff, stages only the files that belong to the change, and commits with a message in the repository's style. The message is written to a file and committed with `git commit -F`, so the approval shows exactly what will be committed. The author is you, from your own git config; Salaam never invents one. A sandboxed command cannot read `~/.gitconfig`, so Salaam reads your `user.name` and `user.email` itself and passes them in. If either is missing the commit fails with git's own message.
+- `/branch <name>` switches to the branch, creating it if needed. Names a shell would read specially are refused before anything is sent.
+- `/pr [base]` pushes the current branch and opens a pull request into `base` (the remote's default branch if omitted) with `gh` for GitHub remotes or `tea` for Forgejo/Gitea. It refuses on the base branch itself.
+- `/diff` opens the per-file review in Changes.
+
+**Pushing and opening a pull request always ask**, in auto and full access too; only YOLO approves them, and YOLO records that it would have asked. A repository's own rules cannot approve them; a rule you add yourself can. The helpers never amend, rebase, reset, force-push, skip hooks (`--no-verify`) or change git config.
+
+Commit trailers are yours to choose in `~/.config/salaam/git.json`:
+
+```json
+{ "trailers": ["Reviewed-by: Your Name <you@example.com>"], "session_trailer": true }
+```
+
+`session_trailer` adds `Salaam-Session: <session id>`. With no file, commits carry no trailers.
 
 ## Attaching files with `@`
 

@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
+import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -316,11 +317,13 @@ export class LocalCoding {
             tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
           })
         : { dangerous: false };
+    // Pushing and opening a pull request ask in every mode but YOLO (operator ruling 2026-10-31).
+    const publishes = args.action === 'command' ? publishesToRemote(args.command) : null;
     this.store.transaction(() => {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}Command:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}${publishes ? `Publishes: ${publishes}; this always asks, except in YOLO\n` : ''}Command:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -361,9 +364,12 @@ export class LocalCoding {
         args.action === 'command'
           ? { tool: 'command', argv: commandArgv(args.command) }
           : { tool: 'edit', paths: args.edits.map((e) => e.path) };
-      // A repo's allow rules cannot approve a dangerous command: only the person's own rules can.
+      // A repo's allow rules cannot approve a dangerous or publishing command: only the person's own
+      // rules can.
       const usable = (all: ReturnType<ApprovalRules['list']>) =>
-        danger.dangerous ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow')) : all;
+        danger.dangerous || publishes
+          ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow'))
+          : all;
       const decided = evaluateRules(usable(this.rules.list(session)), request);
       const approval = this.managed.forOperation(c.operation_id);
       const rule = decided.rule && {
@@ -424,7 +430,12 @@ export class LocalCoding {
             p,
             args.edits.map((e) => e.path),
           )
-        : autoApprovesCommands(p, this.sandboxed(this.bound(args)), danger.dangerous);
+        : autoApprovesCommands(
+            p,
+            this.sandboxed(this.bound(args)),
+            danger.dangerous,
+            publishes !== null,
+          );
     if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(
@@ -459,7 +470,9 @@ export class LocalCoding {
             ...(args.action === 'command' ? { command: args.command } : {}),
             ...(danger.dangerous
               ? { would_have_asked: { category: danger.category, reason: danger.reason } }
-              : {}),
+              : publishes
+                ? { would_have_asked: { category: 'publish', reason: publishes } }
+                : {}),
           }),
         );
     }
@@ -686,6 +699,7 @@ export class LocalCoding {
           HOME: process.env.HOME ?? c.root,
           LANG: 'en_US.UTF-8',
           TMPDIR: '/tmp',
+          ...(this.sandboxed(sb) ? gitIdentityEnv(c.root) : {}),
           ...(relay ? proxyEnv(relay.port ?? COMMAND_NETWORK_PORT) : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -894,6 +908,7 @@ export class LocalCoding {
         HOME: process.env.HOME ?? c.root,
         LANG: 'en_US.UTF-8',
         TMPDIR: '/tmp',
+        ...(this.sandboxed(sb) ? gitIdentityEnv(c.root) : {}),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
