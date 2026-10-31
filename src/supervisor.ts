@@ -131,6 +131,7 @@ export const LOCAL_TOOL_ERRORS = [
   'command_limit',
   'invalid_cursor',
   'shell_binding',
+  'listen_unreachable',
 ];
 export function processIdentity(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;

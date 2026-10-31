@@ -146,6 +146,60 @@ else if (seatbelt)
         expect(r.out, bind).not.toContain('listening');
       }
     });
+    // Option C (operator ruling 2026-11-01): a command the person approved to listen gets the
+    // allowance, for that command only; it can serve the host, and outbound stays closed.
+    test('a command approved to listen serves the host; outbound network stays closed', async () => {
+      const { spawn } = await import('node:child_process');
+      const port = 47000 + Math.floor(Math.random() * 1000);
+      const root = fresh('sal-sbx-'),
+        tmp = fresh('sal-sbt-');
+      const argv = seatbeltArgv(
+        'workspace-write',
+        root,
+        tmp,
+        [
+          process.execPath,
+          '-e',
+          `require('http').createServer((q, r) => r.end('served')).listen(${port}, '127.0.0.1')`,
+        ],
+        seatbelt,
+        { network: false, listen: true },
+      );
+      const child = spawn(argv[0]!, argv.slice(1), { cwd: root, stdio: 'pipe' });
+      let body = '';
+      try {
+        for (let i = 0; i < 40 && !body; i++) {
+          await new Promise((r) => setTimeout(r, 150));
+          body = await fetch(`http://127.0.0.1:${port}/`).then(
+            (r) => r.text(),
+            () => '',
+          );
+        }
+      } finally {
+        child.kill();
+      }
+      expect(body).toBe('served');
+      const out = spawnSync(
+        seatbeltArgv(
+          'workspace-write',
+          root,
+          tmp,
+          ['/usr/bin/curl', '-s', '-m', '5', '-o', '/dev/null', 'http://1.1.1.1'],
+          seatbelt,
+          { network: false, listen: true },
+        )[0]!,
+        seatbeltArgv(
+          'workspace-write',
+          root,
+          tmp,
+          ['/usr/bin/curl', '-s', '-m', '5', '-o', '/dev/null', 'http://1.1.1.1'],
+          seatbelt,
+          { network: false, listen: true },
+        ).slice(1),
+        { encoding: 'utf8', timeout: 15000 },
+      );
+      expect(out.status).not.toBe(0);
+    }, 30000);
     test('read-only cannot listen at all', () => {
       const root = fresh('sal-sbx-');
       const r = runSb(

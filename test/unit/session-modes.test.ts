@@ -30,6 +30,7 @@ function setup(
     desk?: boolean;
     workspace?: boolean;
     text?: string;
+    seatbelt?: boolean;
   } = {},
 ) {
   const root = realpathSync(mkdtempSync('/tmp/sal-modes-')),
@@ -67,11 +68,24 @@ function setup(
       reply: () => {},
       failed: () => {},
     }),
-    local = new LocalCoding(store, managed, active, undefined, {
-      kind: 'bwrap',
-      level: 'workspace-write',
-      bwrap: { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' },
-    });
+    local = new LocalCoding(
+      store,
+      managed,
+      active,
+      undefined,
+      opts.seatbelt
+        ? {
+            kind: 'seatbelt',
+            level: 'workspace-write',
+            bwrap: null,
+            seatbelt: { path: '/usr/bin/sandbox-exec' },
+          }
+        : {
+            kind: 'bwrap',
+            level: 'workspace-write',
+            bwrap: { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' },
+          },
+    );
   let n = 0;
   const configure = (mode: PermissionMode, access?: 'full' | 'yolo') => {
     const rev = permissionPolicy(store, session.id).revision;
@@ -96,10 +110,11 @@ function setup(
         { path, sha256: path === 'src/a.txt' ? localHash('before') : null, content: 'after' },
       ],
     });
-  const command = (text = 'echo hi') =>
+  const command = (text = 'echo hi', extra: Record<string, unknown> = {}) =>
     local.prepare(session.id, epoch, submission.attempt_id, 'cmd-' + n++, {
       action: 'command',
       command: text,
+      ...extra,
     });
   const ids = (): [number, string, string] => [epoch, submission.attempt_id, 'rv-' + n++];
   const args = (call: { id: string }) =>
@@ -587,5 +602,66 @@ test('a push allowed by your own session or user rule runs unasked; a repo rule 
     } finally {
       await f.close();
     }
+  }
+});
+
+// Operator ruling 2026-11-01 (option C): a sandboxed command may listen only when a person approves
+// that exact command to listen. macOS cannot limit it to localhost, so the approval says so; auto
+// mode, repo rules and the reviewer never approve it; your own session rule may.
+test('a command that asks to listen always asks, and warns that macOS cannot limit it to localhost', async () => {
+  const f = setup({ seatbelt: true });
+  const rules = new ApprovalRules(f.store, f.root + '/no-user-rules.json');
+  f.local.rules = rules;
+  try {
+    f.configure('auto');
+    expect(f.state(f.command('npm run dev').approval)).toBe('decided');
+    const listen = f.command('npm run dev', { listen: true });
+    expect(f.state(listen.approval)).toBe('pending');
+    expect(String(listen.operation.value)).toMatch(
+      /May listen: .*macOS cannot limit listening to localhost.*reachable from your network/s,
+    );
+    expect(f.args(listen.call)).toMatchObject({ listen: true });
+    rules.add(
+      f.session.id,
+      'repo',
+      { effect: 'allow', tool: 'command', command: 'npm run *' },
+      'r1',
+    );
+    expect(f.state(f.command('npm run dev', { listen: true }).approval)).toBe('pending');
+    rules.add(
+      f.session.id,
+      'session',
+      { effect: 'allow', tool: 'command', command: 'npm run dev' },
+      'r2',
+    );
+    expect(f.state(f.command('npm run dev', { listen: true }).approval)).toBe('decided');
+    expect(() => f.command('npm run dev', { listen: 'yes' })).toThrow(
+      /listen must be true or false/,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('on Linux a listening command is refused with the reason: the sandbox has its own network', async () => {
+  const f = setup();
+  try {
+    f.configure('review');
+    expect(() => f.command('python3 -m http.server', { listen: true })).toThrow(
+      /own network namespace.*cannot be reached from the host.*full access/s,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('full access needs no listen allowance: the command is not sandboxed', async () => {
+  const f = setup({ seatbelt: true });
+  try {
+    f.configure('review', 'full');
+    const call = f.command('npm run dev', { listen: true });
+    expect(String(call.operation.value)).not.toMatch(/May listen/);
+  } finally {
+    await f.close();
   }
 });
