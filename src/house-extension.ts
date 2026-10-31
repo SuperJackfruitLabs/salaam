@@ -54,6 +54,8 @@ function platformNote(): string {
   return `Commands run on ${process.platform} under /bin/sh.`;
 }
 
+/** Long enough for PreToolUse hooks (at most 600 s each, as in Claude Code) plus the call itself. */
+const HOOKED_BRIDGE_TIMEOUT = 11 * 60 * 1000;
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
   if (!config) throw new Error('Missing Salaam worker configuration');
@@ -67,10 +69,11 @@ export default function house(pi: ExtensionAPI): void {
       c.token,
       method === 'provider.auth' || method.startsWith('operator_mcp.')
         ? 125000
-        : method.startsWith('station.')
-          ? 35000
-          : method.startsWith('web.')
-            ? 45000
+        : // PreToolUse hooks run before these answer, each for up to its own timeout (Phase 4b).
+          method === 'local.prepare' || method === 'local.read' || method.startsWith('web.')
+          ? HOOKED_BRIDGE_TIMEOUT
+          : method.startsWith('station.')
+            ? 35000
             : 2000,
     );
   let timer: NodeJS.Timeout | undefined;

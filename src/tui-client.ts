@@ -225,6 +225,25 @@ export class OperatorClient extends EventEmitter {
     });
     this.report('Rule removed.');
   }
+  /** Your hooks and this workspace's, with their trust state (Phase 4b). */
+  async hooks(): Promise<{ sources: import('./hooks.js').HookSource[] }> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks`);
+  }
+  /** Trust this workspace's hooks file as reviewed; `digest` binds the content you saw. */
+  async trustHooks(digest: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks/trust`, {
+      ...this.actor(),
+      digest,
+    });
+    this.report('Workspace hooks trusted. They run from the next tool call or prompt.');
+  }
+  async revokeHooks(): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks/revoke`, { ...this.actor() });
+    this.report('Workspace hooks no longer trusted; they will not run.');
+  }
   async steer(text: string): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const result = await call<{ state: string }>(
