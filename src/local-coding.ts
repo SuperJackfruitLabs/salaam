@@ -38,6 +38,7 @@ import {
   type RuleRequest,
 } from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
+import type { HookRun } from './hooks.js';
 import { processIdentity, processStart } from './supervisor.js';
 
 const TASK_TAIL = 65536;
@@ -230,6 +231,12 @@ export class LocalCoding {
         'local_busy',
         'Another operation or uncertain outcome owns this workspace',
       );
+  }
+  /** Has this tool call already been prepared? */
+  hasCall(session: string, epoch: number, toolCall: string): boolean {
+    return !!this.store.db
+      .prepare('SELECT 1 FROM local_calls WHERE session_id=? AND epoch=? AND tool_call=?')
+      .get(session, epoch, toolCall);
   }
   prepare(
     session: string,
@@ -581,6 +588,80 @@ export class LocalCoding {
   /** Broker network applies only to a sandboxed command: unsandboxed ones are not confined anyway. */
   private brokerNetwork(sb: LocalSandbox = this.sandbox): { socket: string } | null {
     return sb.network && this.sandboxed(sb) ? sb.network : null;
+  }
+  /** Run a hook (Phase 4b) as one of this session's sandboxed commands would run: the same sandbox
+   * and level, no network, a minimal environment, `input` on stdin, bounded output and a timeout.
+   * Never as the tools user, whose process accounting is for approved operations only. */
+  runHook(session: string, command: string, input: string, timeoutMs: number): Promise<HookRun> {
+    const refused = (why: string): Promise<HookRun> =>
+      Promise.resolve({
+        code: null,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        truncated: false,
+        refused: why,
+      });
+    if (this.tools.mode === 'tools-user')
+      return refused('Hooks do not run when commands run as a separate tools user');
+    const sb = this.sandboxFor(session);
+    if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
+      return refused('This host has no usable bubblewrap, so it cannot run a sandboxed hook');
+    if (sb.kind === 'none' && sb.level !== 'full-access' && !sb.allowUnsandboxed)
+      return refused(UNSANDBOXED_REFUSAL);
+    const root = this.store.session(session).cwd;
+    const tmp =
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
+        ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-hook-')))
+        : undefined;
+    const argv = this.commandArgv(root, command, tmp, null, sb);
+    const cap = 16 * 1024;
+    return new Promise<HookRun>((resolve) => {
+      let stdout = '',
+        stderr = '',
+        truncated = false,
+        timedOut = false;
+      const child = spawn(argv[0]!, argv.slice(1), {
+        cwd: root,
+        detached: true,
+        env: {
+          PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+          HOME: process.env.HOME ?? root,
+          LANG: 'en_US.UTF-8',
+          TMPDIR: '/tmp',
+          SALAAM_PROJECT_DIR: root,
+          CLAUDE_PROJECT_DIR: root,
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const take = (current: string, chunk: Buffer) => {
+        const room = cap - Buffer.byteLength(current);
+        if (chunk.length > room) truncated = true;
+        return room > 0 ? current + chunk.subarray(0, room).toString('utf8') : current;
+      };
+      child.stdout.on('data', (c: Buffer) => (stdout = take(stdout, c)));
+      child.stderr.on('data', (c: Buffer) => (stderr = take(stderr, c)));
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      }, timeoutMs);
+      const finish = (code: number | null) => {
+        clearTimeout(timer);
+        if (tmp) rmSync(tmp, { recursive: true, force: true });
+        resolve({ code: timedOut ? null : code, stdout, stderr, timedOut, truncated });
+      };
+      child.once('error', (error) => {
+        stderr = take(stderr, Buffer.from(error.message));
+        finish(null);
+      });
+      child.once('close', (code) => finish(code));
+    });
   }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would

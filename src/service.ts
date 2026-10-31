@@ -69,6 +69,7 @@ import { expandPrompt, storeImages, type PromptImage } from './mentions.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
+import { Hooks } from './hooks.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
@@ -130,6 +131,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   webSearchConfig?: string;
   /** The user's approval rules file (default ~/.config/salaam/permissions.json). */
   permissionsFile?: string;
+  /** Your hooks file (Phase 4b); defaults to ~/.config/salaam/hooks.json or $SALAAM_HOOKS_FILE. */
+  hooksFile?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
@@ -430,6 +433,12 @@ export class SalaamService {
         this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
         this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
         this.supervisor.localCoding = this.localCoding;
+        const local = this.localCoding;
+        this.supervisor.hooks = new Hooks(
+          this.store,
+          (session, command, input, timeout) => local.runHook(session, command, input, timeout),
+          options.hooksFile,
+        );
         const webConfig = options.webSearchConfig
           ? loadWebSearchConfig(options.webSearchConfig)
           : { providers: [] };
@@ -2252,6 +2261,32 @@ export class SalaamService {
               ),
             );
             return;
+          }
+        }
+        // Desk-session hooks (Phase 4b): list, trust the reviewed repository file, or revoke it.
+        if (parts[3] === 'hooks' && this.supervisor.hooks) {
+          if (!this.supervisor.isInteractiveCoding(id))
+            throw new ServiceError('hooks_denied', 'Hooks run only in your own desk sessions', 403);
+          const hooks = this.supervisor.hooks;
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { sources: hooks.sources(id) });
+            return;
+          }
+          if (parts.length === 5 && req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.store.authorizeControl(id, {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            });
+            if (parts[4] === 'trust') {
+              this.send(res, 200, hooks.trust(id, string(body.digest, 'digest', 128)));
+              return;
+            }
+            if (parts[4] === 'revoke') {
+              hooks.revoke(id);
+              this.send(res, 200, { revoked: true });
+              return;
+            }
           }
         }
         if (parts[3] === 'local-tasks' && this.localCoding) {

@@ -83,6 +83,12 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('agents', 'Inspect native/external worker profiles and child work'),
   command('progression', 'Choose manual or bounded task progression; permissions stay separate'),
   command('tasks', 'Open durable task actions'),
+  command(
+    'hooks',
+    'Show your hooks and this workspace’s; trust or revoke the workspace file',
+    [],
+    '[trust|revoke]',
+  ),
   command('jobs', 'Show background commands and their output, or stop one', ['bg'], '[stop <id>]'),
 ];
 export const SLASH_COMPLETIONS = SLASH_COMMANDS.flatMap((c) =>

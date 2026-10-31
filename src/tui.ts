@@ -53,6 +53,13 @@ import {
   slashHelp,
 } from './tui-commands.js';
 import { conversationExport, writeConversationExport } from './tui-export.js';
+import { describeHooks } from './hooks.js';
+import {
+  expandCustomCommand,
+  loadCustomCommands,
+  matchCustomCommand,
+  type CustomCommand,
+} from './custom-commands.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
 import { notificationFor, notify, notifyMode, jobsText, type JobRow } from './tui-notify.js';
@@ -95,6 +102,8 @@ export interface TuiOptions {
   cwd?: string;
   codingRoot?: string;
   codingSocket?: string;
+  /** Your own custom commands folder; defaults to ~/.config/salaam/commands. */
+  commandsDir?: string;
   /** `salaam code`: open this folder directly (step 0, 2026-10-31). */
   start?: import('./session-pick.js').CodeStart;
 }
@@ -229,6 +238,8 @@ export class SalaamApp {
         return;
       }
       if (this.client.snapshot) this.drafts.set(this.client.snapshot.id, clean);
+      // Starting a command reloads this workspace's custom commands into the completion list.
+      if (clean === '/') this.refreshCommandCompletions();
       this.tui.requestRender();
     };
     this.document = new DocumentView(this.view);
@@ -728,7 +739,48 @@ export class SalaamApp {
       return;
     }
     if (command === 'help') {
-      this.showText('Salaam commands', slashHelp(args || undefined));
+      const custom = args ? [] : this.customCommands();
+      const problems = args ? [] : this.customCommandProblems;
+      this.showText(
+        'Salaam commands',
+        slashHelp(args || undefined) +
+          (custom.length
+            ? '\n\nCustom commands (write a prompt only):\n' +
+              custom
+                .map(
+                  (c) =>
+                    `/${c.name}${c.argumentHint ? ' ' + c.argumentHint : ''} — ${c.description} [${c.scope}]`,
+                )
+                .join('\n')
+            : '') +
+          (problems.length ? '\n\nSkipped command files:\n' + problems.join('\n') : ''),
+      );
+      return;
+    }
+    if (command === 'hooks') {
+      if (args === 'revoke') {
+        await this.client.revokeHooks();
+        return;
+      }
+      const { sources } = await this.client.hooks();
+      if (args === 'trust') {
+        const repo = sources.find((s) => s.scope === 'repo');
+        if (!repo?.digest) throw new Error('This workspace has no readable .salaam/hooks.json.');
+        if (repo.trusted) {
+          this.showText('Hooks', 'This workspace’s hooks are already trusted as they are.');
+          return;
+        }
+        this.confirm(
+          'Trust this workspace’s hooks?',
+          describeHooks([repo]) +
+            '\n\nThese commands will run on your machine, in this session’s sandbox, whenever their event happens. Trust covers this exact content; any change needs trusting again.',
+          'Trust these hooks',
+          () => this.client.trustHooks(repo.digest!),
+        );
+        return;
+      }
+      if (args) throw new Error('Use /hooks, /hooks trust or /hooks revoke.');
+      this.showText('Hooks', describeHooks(sources));
       return;
     }
     if (command === 'keys') {
@@ -1261,11 +1313,63 @@ export class SalaamApp {
       },
     );
   }
+  private commandCache?: { root: string; at: number; commands: CustomCommand[] };
+  private customCommandProblems: string[] = [];
+  /** This workspace's and your own custom commands, reread at most every two seconds. */
+  customCommands(): CustomCommand[] {
+    const root = this.client.snapshot?.cwd ?? this.options.cwd ?? process.cwd();
+    const cached = this.commandCache;
+    if (cached && cached.root === root && Date.now() - cached.at < 2000) return cached.commands;
+    const { commands, problems } = loadCustomCommands(root, this.options.commandsDir);
+    this.customCommandProblems = problems;
+    this.commandCache = { root, at: Date.now(), commands };
+    return commands;
+  }
+  private refreshCommandCompletions(): void {
+    const root = this.client.snapshot?.cwd ?? this.options.cwd ?? process.cwd();
+    this.editor.setAutocompleteProvider(
+      new MentionAutocompleteProvider(
+        [
+          ...SLASH_COMPLETIONS,
+          ...this.customCommands().map((c) => ({
+            name: c.name,
+            description: `${c.description} [${c.scope}]`,
+          })),
+        ],
+        root,
+      ),
+    );
+  }
   private async submit(): Promise<void> {
     const text = this.editor.getExpandedText(),
       session = this.client.snapshot?.id,
       continuation = this.view.continuation;
     if (!text.trim()) return;
+    // A custom command only writes a prompt; built-in names never reach here (they are refused at
+    // load), and the expanded prompt goes through every check an ordinary message does.
+    const custom = text.trim().startsWith('/')
+      ? matchCustomCommand(text, this.customCommands())
+      : null;
+    if (custom) {
+      if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
+      const prompt = expandCustomCommand(custom.command, custom.args);
+      if (Buffer.byteLength(prompt) > 65536)
+        throw new Error(`/${custom.command.name} expands past 64 KiB. Shorten the command file.`);
+      const secrets = extractMentions(prompt).filter(isSensitivePath);
+      const send = (sensitive: boolean) =>
+        this.deliver(prompt, session, continuation, sensitive, text);
+      if (secrets.length) {
+        this.confirm(
+          'Attach secret-looking files?',
+          `/${custom.command.name} mentions ${secrets.map((s) => '@' + s).join(', ')}, which will be sent to the model in full.`,
+          'Attach and send',
+          () => send(true),
+        );
+        return;
+      }
+      await send(false);
+      return;
+    }
     const command = parseSlashCommand(text);
     if (command) {
       await this.runSlashCommand(command.name, command.args);
@@ -1293,10 +1397,12 @@ export class SalaamApp {
     session: string,
     continuation: string | undefined,
     confirmSensitive: boolean,
+    /** What was typed, when it differs from what is sent (a custom command). */
+    typed = text,
   ): Promise<void> {
     await this.client.submit(text, continuation, confirmSensitive);
-    this.editor.addToHistory(text);
-    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
+    this.editor.addToHistory(typed);
+    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === typed) {
       this.editor.setText('');
       this.drafts.delete(session);
     }
