@@ -108,6 +108,8 @@ export interface KeyContext {
   tab: string;
   coding: boolean;
   running: boolean;
+  /** Your own slash commands (Phase 4b), listed in the conversation sheet. */
+  custom?: readonly { name: string; description: string; argumentHint?: string }[];
 }
 
 export function keySheet(c: KeyContext): {
@@ -136,6 +138,15 @@ export function keySheet(c: KeyContext): {
     };
   return {
     title: 'Keys · Conversation',
-    rows: [...COMPOSER, ...(c.coding ? CODING_COMMANDS : []), ...global, approvals],
+    rows: [
+      ...COMPOSER,
+      ...(c.coding ? CODING_COMMANDS : []),
+      ...(c.custom ?? []).map((k) => ({
+        label: `/${k.name}${k.argumentHint ? ' ' + k.argumentHint : ''} · your command`,
+        description: k.description,
+      })),
+      ...global,
+      approvals,
+    ],
   };
 }

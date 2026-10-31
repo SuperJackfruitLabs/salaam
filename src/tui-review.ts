@@ -1,3 +1,4 @@
+import { relativeTime } from './session-pick.js';
 import type { CheckpointChange, CheckpointHunk } from './turn-checkpoints.js';
 import type { ChangeReview, RewindReview } from './turn-rewind.js';
 
@@ -57,4 +58,19 @@ export function rewindSummary(review: RewindReview): string {
   const note = backgroundNote(review.background_running);
   if (note) lines.push(note);
   return lines.join('\n');
+}
+
+/** /rewind's turn list: newest first, with how long ago each turn started. */
+export function rewindItems(
+  points: readonly { attempt_id: string; turn: number; text: string; at: string }[],
+  now = Date.now(),
+) {
+  return points
+    .slice()
+    .reverse()
+    .map((p) => ({
+      value: p.attempt_id,
+      label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,
+      description: relativeTime(p.at, now),
+    }));
 }

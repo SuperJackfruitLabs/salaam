@@ -101,7 +101,7 @@ import {
 } from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
-import { rewindSummary } from './tui-review.js';
+import { rewindItems, rewindSummary } from './tui-review.js';
 import { classifierItems, classifierNotice, type ClassifierView } from './tui-classifier.js';
 import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './tui-keymap.js';
 import { HerdrReporter, statusEnabled, terminalState, titleFor } from './terminal-status.js';
@@ -1688,18 +1688,7 @@ export class SalaamApp {
       choose(found.attempt_id);
       return;
     }
-    this.choice(
-      'Rewind to before which turn?',
-      points
-        .slice()
-        .reverse()
-        .map((p) => ({
-          value: p.attempt_id,
-          label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,
-          description: p.at,
-        })),
-      choose,
-    );
+    this.choice('Rewind to before which turn?', rewindItems(points), choose);
   }
   private resetScroll(): void {
     if (this.view.tab === 'conversation' || this.view.tab === 'commands') this.scroll.scrollToEnd();
@@ -3007,6 +2996,7 @@ This exact request will be approved without asking in every desk session on this
       tab: this.view.tab,
       coding: interactiveCoding(snapshot),
       running: interactiveCoding(snapshot) && runningAttempt(snapshot) !== undefined,
+      custom: this.customCommands(),
     });
     this.choice(
       sheet.title,

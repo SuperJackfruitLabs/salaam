@@ -97,3 +97,17 @@ test('the sheet follows the context: a running turn, the review, and the coding 
       .join('\n'),
   ).not.toContain('/rewind');
 });
+
+// Phase 4b + polish C: your own slash commands appear in the conversation key sheet.
+test('the conversation sheet lists custom commands', () => {
+  const sheet = keySheet({
+    tab: 'conversation',
+    coding: true,
+    running: false,
+    custom: [{ name: 'review-pr', description: 'Review the open PR', argumentHint: '<number>' }],
+  });
+  expect(sheet.rows).toContainEqual({
+    label: '/review-pr <number> · your command',
+    description: 'Review the open PR',
+  });
+});
