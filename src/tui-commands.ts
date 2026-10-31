@@ -38,7 +38,7 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('diff', 'Review workspace changes'),
   command('tools', 'Inspect available capabilities and recorded tool activity'),
   command('permissions', 'Configure local permissions independently of task progression'),
-  command('mode', 'Cycle review → accept edits → auto → plan (shift+tab)'),
+  command('mode', 'Cycle review → accept edits → auto (shift+tab)'),
   command(
     'full-access',
     'Turn full access on or off: commands run without the OS sandbox; dangerous ones still ask',

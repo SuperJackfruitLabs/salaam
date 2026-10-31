@@ -111,6 +111,26 @@ interface Worker {
   resolve: () => void;
   reject: (error: Error) => void;
 }
+/** Errors a local tool call returns to the model as feedback; any other one fails the worker.
+ * Every code src/local-edits.ts can throw belongs here (a failed replacement is not a crash). */
+export const LOCAL_TOOL_ERRORS = [
+  'local_busy',
+  'workspace_read_failed',
+  'unsafe_path',
+  'edit_mismatch',
+  'workspace_changed',
+  'workspace_busy',
+  'workspace_limit',
+  'workspace_conflict',
+  'not_found',
+  'binary_file',
+  'line_limit',
+  'invalid_field',
+  'request_conflict',
+  'command_conflict',
+  'command_limit',
+  'invalid_cursor',
+];
 export function processIdentity(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;
   try {
@@ -1555,23 +1575,7 @@ export class Supervisor extends EventEmitter {
       if (
         (method.startsWith('coding.') || method.startsWith('local.')) &&
         error instanceof ServiceError &&
-        [
-          'local_busy',
-          'workspace_read_failed',
-          'unsafe_path',
-          'workspace_changed',
-          'workspace_busy',
-          'workspace_limit',
-          'workspace_conflict',
-          'not_found',
-          'binary_file',
-          'line_limit',
-          'invalid_field',
-          'request_conflict',
-          'command_conflict',
-          'command_limit',
-          'invalid_cursor',
-        ].includes(error.code)
+        LOCAL_TOOL_ERRORS.includes(error.code)
       )
         throw error;
       if (
