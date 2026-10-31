@@ -65,7 +65,9 @@ export function workerTools(
     : [
         ...(local ? ['salaam_history', 'salaam_workspace'] : TOOLS),
         // Interactive coding also gets built-in web search and fetch (operator ruling 2026-10-31).
-        ...(localCoding ? ['salaam_local', 'salaam_web_fetch', 'salaam_web_search'] : []),
+        ...(localCoding
+          ? ['salaam_local', 'salaam_tasks', 'salaam_web_fetch', 'salaam_web_search']
+          : []),
         ...(effects ? ['salaam_effect'] : []),
         ...(coding?.files ? ['salaam_files'] : []),
         ...(coding?.commands ? ['salaam_command'] : []),
