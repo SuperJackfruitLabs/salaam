@@ -1,3 +1,4 @@
+import { WebSearch, loadWebSearchConfig } from './web-search.js';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { loadPersona } from './persona.js';
 import {
@@ -13,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { ContextAdmission } from './context-admission.js';
+import { ProjectInstructions, userInstructionsPath } from './project-instructions.js';
 import { SLASH_COMMANDS } from './tui-commands.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
@@ -63,16 +65,22 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
-import { chooseLocalSandbox, type SandboxLevel } from './command-sandbox.js';
+import { expandPrompt, storeImages, type PromptImage } from './mentions.js';
+import { ApprovalRules } from './approval-rules.js';
+import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
+import { TurnCheckpoints, type RewindMode } from './turn-rewind.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  /** The user-level AGENTS.md for interactive sessions; null turns it off. Default:
+   * /salaam/AGENTS.md or ~/.config/salaam/AGENTS.md. */
+  userInstructions?: string | null;
   hostManifestDigest?: string;
   /** Receipt fields for the launcher profile; reported only by a manifest-served host. */
   hostReceipt?: Record<string, unknown>;
@@ -115,9 +123,22 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Host config `unsandboxed_commands: "allow"`: run local commands unsandboxed on a host with no
    * usable sandbox. Absent, they are refused (operator ruling 2026-10-30, option A). */
   unsandboxedCommands?: 'allow';
+  /** Read-only paths outside the workspace local commands may read (resolved, `toolchain` expanded). */
+  localSandboxReadPaths?: string[];
+  /** Web search config file: optional providers (searxng, brave, tavily, exa) and their key
+   * references. Keyless official APIs answer without one (operator ruling 2026-10-31). */
+  webSearchConfig?: string;
+  /** The user's approval rules file (default ~/.config/salaam/permissions.json). */
+  permissionsFile?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
+  /** Phase 2b: may an interactive session choose full access? Default true for local desk use;
+   * a host started from a manifest passes its reviewed `full_access_sessions` setting. */
+  allowFullAccessSessions?: boolean;
+  /** Whether an interactive session may choose YOLO (no sandbox, no approvals). Desk default allows
+   * it; a host started from a manifest passes its reviewed `yolo_sessions` setting. */
+  allowYoloSessions?: boolean;
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -178,7 +199,12 @@ export class SalaamService {
   private readonly hostReceipt: Record<string, unknown> | null;
   private readonly operatorAccess: { group: string; gid: number } | null;
   private readonly agentpodWorkProgression: boolean;
+  /** Phase 2b: whether interactive sessions here may choose full access (no OS sandbox). */
+  private readonly allowFullAccessSessions: boolean;
+  private readonly allowYoloSessions: boolean;
   private constructor(options: ServiceOptions) {
+    this.allowFullAccessSessions = options.allowFullAccessSessions !== false;
+    this.allowYoloSessions = options.allowYoloSessions !== false;
     this.agentpodWorkProgression = options.agentpodWorkProgression === true;
     if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
       throw Error('Strict work requires reviewed AgentPod protected station configuration');
@@ -227,7 +253,10 @@ export class SalaamService {
     this.socket = join(this.stateDir, 'operator.sock');
     this.bridgeSocket = join(this.stateDir, 'bridge.sock');
     if (Buffer.byteLength(this.bridgeSocket) > 100)
-      throw new Error('State path is too long for a Unix socket; choose a shorter --state path');
+      throw new Error(
+        `State path is too long for a Unix socket (${Buffer.byteLength(this.bridgeSocket)} bytes; the limit is 100): ` +
+          'use the default (salaam code, no --state), or a shorter --state or SALAAM_STATE_DIR such as /tmp/salaam-state.',
+      );
     this.release = acquireStateLock(this.stateDir);
     try {
       this.store = new Store(join(this.stateDir, 'journal.sqlite'));
@@ -240,6 +269,18 @@ export class SalaamService {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
         this.tasks.admitted = new ContextAdmission(this.store);
+        this.tasks.instructions = new ProjectInstructions(
+          this.store,
+          this.artifacts,
+          options.userInstructions === undefined
+            ? userInstructionsPath()
+            : options.userInstructions,
+        );
+        this.tasks.checkpoints = new TurnCheckpoints(
+          this.store,
+          this.stateDir,
+          this.toolIdentity.mode !== 'tools-user',
+        );
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
         if (options.admitModelRequest) {
@@ -374,6 +415,9 @@ export class SalaamService {
         const localSandbox: LocalSandbox = {
           ...chooseLocalSandbox(options.localSandbox ?? 'workspace-write'),
           allowUnsandboxed: options.unsandboxedCommands === 'allow',
+          ...(options.localSandboxReadPaths?.length
+            ? { readPaths: resolveReadPaths(options.localSandboxReadPaths) }
+            : {}),
           ...(options.commandNetwork ? { network: { socket: options.commandNetwork.socket } } : {}),
         };
         this.localCoding = new LocalCoding(
@@ -383,7 +427,13 @@ export class SalaamService {
           this.toolIdentity,
           localSandbox,
         );
+        this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
+        this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
         this.supervisor.localCoding = this.localCoding;
+        const webConfig = options.webSearchConfig
+          ? loadWebSearchConfig(options.webSearchConfig)
+          : { providers: [] };
+        this.supervisor.web = new WebSearch(webConfig);
         this.agents = new AgentProfiles(
           this.store,
           this.supervisor.route,
@@ -2121,13 +2171,61 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        // Desk-session approval rules (phase 2a): list, add (from a reviewed operation or written out),
+        // and remove. Adding or removing needs the session's control lease, like the permission policy.
+        if (parts[3] === 'approval-rules' && (parts.length === 4 || parts.length === 6)) {
+          const rules = this.localCoding.rules!;
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, {
+              applies: rules.applies(id),
+              rules: rules.list(id),
+              problems: rules.problems(id),
+            });
+            return;
+          }
+          const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          if (parts.length === 4 && req.method === 'POST') {
+            const scope = string(body.scope, 'scope');
+            if (scope !== 'session' && scope !== 'repo')
+              throw new ServiceError('invalid_field', 'A rule scope is session or repo', 400);
+            const request = string(body.request_id, 'request_id', 128);
+            this.send(
+              res,
+              200,
+              body.operation_id !== undefined
+                ? rules.addFromOperation(
+                    id,
+                    string(body.operation_id, 'operation_id', 128),
+                    scope,
+                    request,
+                  )
+                : rules.add(id, scope, body.rule, request),
+            );
+            return;
+          }
+          if (parts.length === 6 && parts[5] === 'remove' && req.method === 'POST') {
+            rules.remove(id, string(parts[4], 'rule', 128));
+            this.send(res, 200, { removed: parts[4] });
+            return;
+          }
+        }
         if (parts.length === 4 && parts[3] === 'permissions') {
           if (req.method === 'GET') {
             this.send(res, 200, {
               policy: permissionPolicy(this.store, id),
               configurable: this.store.localWorkspace(id),
               coding: this.store.localCoding(id),
-              command_auto_approval: false,
+              // Desk coding sessions: approval rules and auto mode can approve commands (Phase 2a/2b).
+              command_auto_approval: this.store.localCoding(id),
+              full_access_allowed: this.allowFullAccessSessions,
+              yolo_allowed: this.allowYoloSessions && !!this.localCoding.rules?.applies(id),
+              ...(this.store.localCoding(id)
+                ? { command_sandbox: this.localCoding.commandSandbox(id) }
+                : {}),
             });
             return;
           }
@@ -2146,8 +2244,33 @@ export class SalaamService {
                   client_id: string(body.client_id, 'client_id', 128),
                   token: string(body.token, 'token', 128),
                 },
+                {
+                  allowFullAccess: this.allowFullAccessSessions,
+                  allowYolo: this.allowYoloSessions,
+                  deskSession: !!this.localCoding.rules?.applies(id),
+                },
               ),
             );
+            return;
+          }
+        }
+        if (parts[3] === 'local-tasks' && this.localCoding) {
+          if (!this.supervisor.isInteractiveCoding(id))
+            throw new ServiceError(
+              'background_denied',
+              'Background commands are not admitted',
+              403,
+            );
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { tasks: this.localCoding.tasks(id) });
+            return;
+          }
+          if (parts.length === 5 && req.method === 'GET') {
+            this.send(res, 200, this.localCoding.taskOutput(id, parts[4]!));
+            return;
+          }
+          if (parts.length === 6 && parts[5] === 'stop' && req.method === 'POST') {
+            this.send(res, 200, this.localCoding.stopTask(id, parts[4]!));
             return;
           }
         }
@@ -2224,6 +2347,132 @@ export class SalaamService {
                 this.toolIdentity,
               ),
             );
+            return;
+          }
+        }
+        if (
+          (parts.length === 4 || parts.length === 5) &&
+          (parts[3] === 'checkpoints' || parts[3] === 'rewind' || parts[3] === 'review')
+        ) {
+          const checkpoints = this.tasks.checkpoints!;
+          // Operator ruling 2026-10-31: background commands may keep writing; say so, do not block.
+          const running = <T extends object | null>(value: T): T =>
+            value && this.localCoding
+              ? {
+                  ...value,
+                  background_running: this.localCoding
+                    .tasks(id)
+                    .filter((t) => t.state === 'running').length,
+                }
+              : value;
+          const controller = (body: Record<string, unknown>) => ({
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          const idle = () => {
+            this.supervisor.assertIdle(id);
+            if (
+              this.store.db
+                .prepare(
+                  "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+                )
+                .get(id)
+            )
+              throw new ServiceError('session_busy', 'Wait for the current turn to finish');
+          };
+          if (parts[3] === 'checkpoints' && parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { checkpoints: checkpoints.list(id) });
+            return;
+          }
+          if (parts[3] === 'rewind' && parts.length === 4 && req.method === 'GET') {
+            this.send(
+              res,
+              200,
+              running(
+                checkpoints.reviewRewind(
+                  id,
+                  string(url.searchParams.get('attempt'), 'attempt', 128),
+                  string(url.searchParams.get('mode'), 'mode', 16) as RewindMode,
+                ),
+              ),
+            );
+            return;
+          }
+          if (parts[3] === 'rewind' && parts.length === 4 && req.method === 'POST') {
+            if (this.agentpod)
+              throw new ServiceError(
+                'admission_required',
+                'Managed station sessions cannot rewind',
+              );
+            const body = object(await readJson(req));
+            const request = string(body.request_id, 'request_id', 128);
+            this.send(
+              res,
+              200,
+              checkpoints.rewind(
+                id,
+                request,
+                string(body.attempt_id, 'attempt_id', 128),
+                string(body.mode, 'mode', 16) as RewindMode,
+                string(body.review_digest, 'review_digest', 128),
+                controller(body),
+                idle,
+                (leaf, summary) =>
+                  this.store.forkLocal(
+                    id,
+                    request + ':fork',
+                    this.store.session(id).revision,
+                    controller(body),
+                    (source, target) => {
+                      const dir = join(this.stateDir, 'workers', target, 'sessions');
+                      mkdirSync(dir, { recursive: true, mode: 0o700 });
+                      return forkPiSession(source.pi_session_file!, source.cwd, dir, target, {
+                        leaf,
+                        summary,
+                      });
+                    },
+                    { leaf },
+                  ),
+              ),
+            );
+            return;
+          }
+          if (parts[3] === 'review' && parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { review: running(checkpoints.review(id)) });
+            return;
+          }
+          if (parts[3] === 'review' && parts[4] === 'hunks' && req.method === 'GET') {
+            const q = (name: string) => string(url.searchParams.get(name), name, 1024);
+            this.send(res, 200, {
+              hunks: checkpoints.hunks(id, q('path'), q('base'), q('current')),
+            });
+            return;
+          }
+          if (parts[3] === 'review' && parts.length === 4 && req.method === 'POST') {
+            const body = object(await readJson(req));
+            const hunk =
+              body.hunk === undefined
+                ? undefined
+                : {
+                    text: string(object(body.hunk).text, 'hunk.text', 256 * 1024),
+                    patch: string(object(body.hunk).patch, 'hunk.patch', 256 * 1024),
+                  };
+            this.send(res, 200, {
+              review: running(
+                checkpoints.act(
+                  id,
+                  {
+                    action: string(body.action, 'action', 16) as 'accept' | 'revert',
+                    path: string(body.path, 'path', 1024),
+                    ...(hunk ? { hunk } : {}),
+                    base: string(body.base, 'base', 128),
+                    current: string(body.current, 'current', 128),
+                  },
+                  controller(body),
+                  idle,
+                ),
+              ),
+            });
             return;
           }
         }
@@ -2830,6 +3079,48 @@ export class SalaamService {
           );
           return;
         }
+        if (parts[3] === 'route' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          if (!this.tasks.instructions!.applies(id))
+            throw new ServiceError(
+              'route_switch_unavailable',
+              'Only interactive sessions can switch model mid-session',
+              409,
+            );
+          this.supervisor.assertIdle(id);
+          const input = object(body.route);
+          const requested = providerRoute(
+            string(input.provider, 'provider'),
+            input.model === undefined ? undefined : string(input.model, 'model'),
+            undefined,
+            undefined,
+            undefined,
+            input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
+          );
+          const prepared = await this.supervisor.prepareProviderRoute(requested).catch(() => {
+            throw new ServiceError(
+              'provider_auth_required',
+              `Configure ${requested.provider} with sal auth login ${requested.provider} or sal auth set ${requested.provider}, then retry.`,
+              400,
+            );
+          });
+          if (prepared.output_cap !== (this.store.localOutputCap(id) ?? true))
+            throw new ServiceError(
+              'provider_output_cap_changed',
+              'That route enforces output caps differently; start a new session for it',
+              409,
+            );
+          this.supervisor.assertIdle(id);
+          this.store.switchRoute(id, prepared.route);
+          await this.supervisor.stopSession(id);
+          void this.supervisor.start(id).catch(() => {});
+          this.send(res, 200, this.supervisor.inspect(id));
+          return;
+        }
         if (parts[3] === 'resume' && req.method === 'POST') {
           const body = object(await readJson(req));
           this.store.authorizeControl(id, {
@@ -2848,6 +3139,12 @@ export class SalaamService {
             );
           if (session.state !== 'ready' && session.state !== 'starting')
             void this.supervisor.start(id).catch(() => {});
+          // Show the project instructions an interactive session will use before its first turn.
+          try {
+            this.tasks.instructions?.refresh(id);
+          } catch {
+            /* reported on the next turn */
+          }
           this.send(res, 202, this.supervisor.inspect(id));
           return;
         }
@@ -2863,11 +3160,24 @@ export class SalaamService {
         }
         if (parts[3] === 'submissions' && req.method === 'POST') {
           const body = object(await readJson(req));
+          const local = this.store.localCoding(id);
+          let text = string(body.text, 'text', 256 * 1024);
+          let images: PromptImage[] = [];
+          // Desk prompts attach their @mentions (Phase 3b); board work never reads the tree here.
+          if (local) {
+            if (body.confirm_sensitive !== undefined && typeof body.confirm_sensitive !== 'boolean')
+              throw new ServiceError('invalid_field', 'Invalid confirm_sensitive flag', 400);
+            ({ text, images } = expandPrompt(
+              this.store.session(id).cwd,
+              text,
+              body.confirm_sensitive === true,
+            ));
+          }
           const submission = this.store.accept(
             id,
             string(body.request_id, 'request_id', 128),
             integer(body.expected_revision, 'expected_revision'),
-            string(body.text, 'text', 256 * 1024),
+            text,
             {
               client_id: string(body.client_id, 'client_id', 128),
               token: string(body.token, 'token', 128),
@@ -2876,6 +3186,8 @@ export class SalaamService {
               ? null
               : string(body.continues_attempt_id, 'continues_attempt_id', 128),
           );
+          // Same tick as the acceptance, so dispatch cannot claim the submission without them.
+          storeImages(this.store.db, submission.id, images);
           this.send(res, 202, submission);
           return;
         }

@@ -1,10 +1,12 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
-import type { OperatorClient } from './tui-client.js';
+import { instructionsLabel, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
+import { interactiveCoding, runningAttempt } from './tui-turn-keys.js';
+import { backgroundNote, changeCounts } from './tui-review.js';
 
 export type ViewTab = 'conversation' | 'changes' | 'commands' | 'context';
 export interface DiffPage {
@@ -24,6 +26,22 @@ export interface ViewModel {
   log?: { id: string; text: string; offset: number; complete: boolean };
   busy: boolean;
   continuation?: string;
+  /** The Changes tab of a local coding session (tui-review.ts). */
+  review?: import('./tui-review.js').ReviewView;
+  /** Phase 2b: the session's mode, its access (full access or YOLO) and where commands run. */
+  mode?: { mode: string; access?: 'full' | 'yolo'; sandbox?: string };
+}
+/** How the status line names a mode. */
+export function modeLabel(mode: string): string {
+  return (
+    {
+      review: 'review',
+      'accept-edits': 'accept edits',
+      auto: 'auto',
+      inspect: 'inspect only',
+      'scoped-edit': 'scoped edits',
+    }[mode] ?? mode
+  );
 }
 export function modelLabel(client: OperatorClient): string {
   const route = client.snapshot?.provider_route ?? client.health?.provider_route;
@@ -37,6 +55,12 @@ export function modelLabel(client: OperatorClient): string {
   return (
     route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2') + warning
   );
+}
+/** 950 → "950", 12_400 → "12.4k", 2_300_000 → "2.3M". */
+export function compactTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '') + 'k';
+  return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 export class Dynamic implements Component {
   constructor(private readonly content: (width: number) => string[]) {}
@@ -112,6 +136,25 @@ export function status(view: ViewModel, width: number): string[] {
               ? 'Ready when you are.'
               : 'Observing · ctrl+k → Take control');
   const tone = pending ? 'amber' : c.connection === 'reconnecting' ? 'amber' : 'muted';
+  const guidance = c.snapshot?.project_instructions?.files.length
+    ? '  Using ' + instructionsLabel(c.snapshot.project_instructions)
+    : '';
+  const spend = c.usage?.observations
+    ? '  ' +
+      compactTokens(c.usage.known_input + c.usage.known_output) +
+      ' tokens · $' +
+      Math.max(c.usage.known_cost, c.usage.estimated_cost).toFixed(2)
+    : '';
+  const mode = view.mode
+    ? '  ' +
+      t.ink('mode ' + modeLabel(view.mode.mode), 'muted') +
+      (view.mode.access === 'yolo'
+        ? ' ' + t.ink('YOLO', 'red')
+        : view.mode.access === 'full'
+          ? ' ' + t.ink('FULL ACCESS', 'amber')
+          : '') +
+      t.ink(' · shift+tab', 'muted')
+    : '';
   const identity = c.snapshot
     ? '  session ' +
       shortId(c.snapshot.id) +
@@ -119,17 +162,28 @@ export function status(view: ViewModel, width: number): string[] {
     : '';
   return [
     t.line(
-      t.ink(safeText(state).replace(/\bPi\b/g, 'Worker'), tone) + t.ink(identity, 'muted'),
+      t.ink(safeText(state).replace(/\bPi\b/g, 'Worker'), tone) +
+        mode +
+        t.ink(safeText(guidance) + spend + identity, 'muted'),
       width,
     ),
     t.line(
-      [
-        t.key('enter', 'send'),
-        t.key('alt+enter', 'newline'),
-        t.key('ctrl+k', 'actions'),
-        t.key('ctrl+p', 'sessions'),
-        t.key('ctrl+c', 'detach'),
-      ].join('   '),
+      (c.snapshot && interactiveCoding(c.snapshot) && runningAttempt(c.snapshot)
+        ? [
+            t.key('esc', 'stop'),
+            t.key('enter', 'steer'),
+            t.key('tab', 'queue'),
+            t.key('alt+enter', 'newline'),
+            t.key('ctrl+c', 'detach'),
+          ]
+        : [
+            t.key('enter', 'send'),
+            t.key('alt+enter', 'newline'),
+            t.key('ctrl+k', 'actions'),
+            t.key('ctrl+p', 'sessions'),
+            t.key('ctrl+c', 'detach'),
+          ]
+      ).join('   '),
       width,
     ),
   ];
@@ -153,6 +207,80 @@ export class DocumentView implements Component {
       this.cache.set(id, cached);
     }
     return cached.markdown.render(Math.max(1, width));
+  }
+  /** Per-file review of what changed in the folder since the review base. */
+  private reviewLines(width: number): string[] {
+    const t = this.view.theme,
+      review = this.view.review,
+      lines = this.title('CHANGES SINCE REVIEW', width);
+    if (!review) return [...lines, ...this.text('Loading changes…', width)];
+    if (!review.data)
+      return [
+        ...lines,
+        ...this.text(
+          'Changes appear here after the first turn starts; each turn is checkpointed.',
+          width,
+        ),
+      ];
+    const note = backgroundNote(review.data.background_running);
+    if (note) lines.push(...this.text(note, width));
+    if (!review.data.files.length)
+      return [
+        ...lines,
+        ...this.text('Nothing to review: the folder matches what you accepted.', width),
+      ];
+    review.data.files.forEach((change, i) => {
+      const mark = i === review.file ? '▸ ' : '  ';
+      lines.push(
+        t.line(
+          mark +
+            safeText(change.path) +
+            '  ' +
+            t.ink(change.status + ' · ' + changeCounts(change), 'muted'),
+          width,
+        ),
+      );
+    });
+    lines.push(t.fill('', width));
+    const file = review.data.files[review.file]!;
+    const hunks = review.hunks ?? [];
+    lines.push(
+      ...this.title(
+        safeText(file.path) +
+          (review.hunk >= 0 ? ` · hunk ${review.hunk + 1} of ${hunks.length}` : ' · whole file'),
+        width,
+      ),
+    );
+    if (!hunks.length) lines.push(...this.text('No text diff to show for this file.', width));
+    hunks.forEach((hunk, i) => {
+      const selected = i === review.hunk;
+      lines.push(
+        ...t
+          .highlight(safeText(hunk.text).replace(/\n$/, ''), 'diff')
+          .flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 4)))
+          .map((line) => t.line((selected ? '┃ ' : review.hunk >= 0 ? '  ' : '') + line, width)),
+      );
+    });
+    lines.push(
+      t.fill('', width),
+      t.line(
+        t.key('alt+←/→', 'file') +
+          '   ' +
+          t.key('alt+↑/↓', 'hunk') +
+          '   ' +
+          t.key('a', 'accept') +
+          '   ' +
+          t.key('r', 'revert') +
+          '   ' +
+          t.key('i', 'instruct'),
+        width,
+      ),
+      ...this.text(
+        'a/r/i work while the message box is empty. Accept marks a change reviewed; revert writes the reviewed base back. /rewind returns to before any turn.',
+        width,
+      ),
+    );
+    return lines;
   }
   private title(label: string, width: number, role: 'jade' | 'amber' | 'muted' = 'jade'): string[] {
     const t = this.view.theme;
@@ -201,7 +329,10 @@ export class DocumentView implements Component {
                   ? 'Owned coding workspace · guarded edits'
                   : c.snapshot.capabilities.includes('local-workspace-read')
                     ? c.snapshot.capabilities.includes('local-coding-reviewed')
-                      ? 'Local coding · reviewed edits · commands run as your user'
+                      ? 'Local coding · reviewed edits · commands ' +
+                        (this.view.mode?.sandbox
+                          ? '· ' + this.view.mode.sandbox
+                          : 'run as your user')
                       : 'Local workspace · read, list and search · /coding for edits and commands'
                     : 'Conversation session · coding tools are off',
                 'muted',
@@ -359,23 +490,20 @@ export class DocumentView implements Component {
         );
       for (const key of this.cache.keys())
         if (key !== 'live-preview' && !ids.has(key)) this.cache.delete(key);
-    } else if (
-      (tab === 'changes' || tab === 'commands') &&
-      c.snapshot.capabilities.includes('local-coding-reviewed')
-    ) {
-      const prefix = tab === 'changes' ? 'Local edit:' : 'Local command:';
+    } else if (tab === 'changes' && c.snapshot.capabilities.includes('local-coding-reviewed')) {
+      lines.push(...this.reviewLines(width));
+    } else if (tab === 'commands' && c.snapshot.capabilities.includes('local-coding-reviewed')) {
       const operations = c.snapshot.operations.filter(
-        (op) => op.kind === 'workspace' && op.target.startsWith(prefix),
+        (op) => op.kind === 'workspace' && op.target.startsWith('Local command:'),
       );
-      lines.push(
-        ...this.title(tab === 'changes' ? 'REVIEWED LOCAL EDITS' : 'LOCAL COMMAND RESULTS', width),
-      );
+      lines.push(...this.title('LOCAL COMMAND RESULTS', width));
       if (!operations.length)
         lines.push(
           ...this.text(
-            tab === 'changes'
-              ? 'Proposed edits appear here with their approval and apply outcome.'
-              : 'Commands appear here with their recorded exit status and output. Commands run as your local user.',
+            'Commands appear here with their recorded exit status and output. ' +
+              (this.view.mode?.sandbox
+                ? 'Where commands run: ' + this.view.mode.sandbox + '.'
+                : 'Commands run as your local user.'),
             width,
           ),
         );
@@ -903,7 +1031,7 @@ export function sidebar(view: ViewModel, width: number): string[] {
   );
   row(
     c.snapshot?.capabilities.includes('local-coding-reviewed')
-      ? 'Commands · local user'
+      ? 'Commands · ' + (view.mode?.sandbox ?? 'local user')
       : c.workspace && c.health?.execution?.commands
         ? 'Commands · isolated'
         : 'Commands · off',

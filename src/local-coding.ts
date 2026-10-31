@@ -11,7 +11,8 @@ import {
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
+import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -20,16 +21,48 @@ import {
   prepareLocalEdits,
   verifyLocalEdits,
   applyLocalEdits,
+  reviewLocalEdits,
   type LocalEdit,
 } from './local-edits.js';
 import {
   permissionPolicy,
+  autoApprovesEdits,
+  autoApprovesCommands,
   permissionDigest,
-  matchesEditScope,
   assertPermissionBinding,
 } from './autonomy.js';
+import {
+  commandArgv,
+  evaluateRules,
+  type ApprovalRules,
+  type RuleRequest,
+} from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
-import { processIdentity } from './supervisor.js';
+import { processIdentity, processStart } from './supervisor.js';
+
+const TASK_TAIL = 65536;
+const TASK_LIMIT = 4;
+const BACKGROUND_LIFETIME = 2 * 3600 * 1000;
+type TaskState = 'running' | 'exited' | 'stopped' | 'timed_out' | 'lost';
+interface TaskRow {
+  id: string;
+  session_id: string;
+  call_id: string;
+  command: string;
+  state: TaskState;
+  pid: number | null;
+  identity: string | null;
+  exit_code: number | null;
+  started_at: string;
+  ended_at: string | null;
+}
+interface BackgroundTask {
+  id: string;
+  session: string;
+  done: Promise<void>;
+  output: () => { output: string; bytes: number; truncated: boolean };
+  stop: (why: TaskState) => void;
+}
 import {
   applyEditsAsTools,
   killToolGroup,
@@ -69,6 +102,8 @@ export interface LocalSandbox {
   /** The host config's `command_network: "broker"`: a sandboxed command reaches the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   network?: { socket: string };
+  /** Operator-allowed read-only paths outside the workspace (Phase 1, 2026-10-31). */
+  readPaths?: string[];
 }
 /** The proxy a broker-network command uses: only the relay on loopback, nothing direct. */
 function proxyEnv(port: number): Record<string, string> {
@@ -84,8 +119,16 @@ function proxyEnv(port: number): Record<string, string> {
 }
 export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
+  /** Background tasks this controller owns; they belong to the session, not to a turn. */
+  private live = new Map<string, BackgroundTask>();
+  /** Output of recently ended tasks, so the model can read why one stopped. */
+  private kept = new Map<string, { output: string; bytes: number; truncated: boolean }>();
+  /** Background commands are for a person's own desk session only (Phase 3c). */
+  public interactive: (session: string) => boolean = () => false;
   private closed = false;
   private unregister: () => void;
+  /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
+  public rules?: ApprovalRules;
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
@@ -105,6 +148,20 @@ export class LocalCoding {
           throw new ServiceError('local_busy', 'Command resources are still active');
       },
     });
+    store.db.exec(
+      'CREATE TABLE IF NOT EXISTS local_tasks(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,call_id TEXT NOT NULL,command TEXT NOT NULL,state TEXT NOT NULL,pid INTEGER,identity TEXT,exit_code INTEGER,started_at TEXT NOT NULL,ended_at TEXT)',
+    );
+    // A background task never outlives its controller: kill what a restart left and say so.
+    for (const raw of store.db.prepare("SELECT * FROM local_tasks WHERE state='running'").all()) {
+      const t = raw as unknown as TaskRow;
+      if (t.pid && t.identity && processStart(t.pid) === t.identity)
+        try {
+          process.kill(-t.pid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      this.endTask(t, 'lost', null);
+    }
     // A lost controller must never retry a possibly executed edit or command.
     for (const raw of store.db.prepare("SELECT * FROM local_calls WHERE state='running'").all()) {
       const c = raw as unknown as LocalCall;
@@ -215,6 +272,7 @@ export class LocalCoding {
           action: 'command';
           command: string;
           timeout_ms: number;
+          background?: true;
           sandbox: { kind: string; level: string; bwrap: string | null; network?: 'broker' };
         };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
@@ -222,42 +280,47 @@ export class LocalCoding {
       const timeout = input.timeout_ms ?? 30000;
       if (!Number.isInteger(timeout) || Number(timeout) < 100 || Number(timeout) > 120000)
         throw new ServiceError('invalid_field', 'Command timeout must be 100–120000 ms');
-      if (
-        this.sandbox.kind === 'bwrap' &&
-        this.sandbox.level !== 'full-access' &&
-        !this.sandbox.bwrap
-      )
+      const background = input.background === true;
+      if (input.background !== undefined && typeof input.background !== 'boolean')
+        throw new ServiceError('invalid_field', 'background must be true or false');
+      if (background) this.assertBackground(session);
+      const sb = this.sandboxFor(session);
+      if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
         throw new ServiceError(
           'sandbox_unavailable',
           'This host has no usable bubblewrap, so it cannot run a sandboxed command; an operator can choose full access explicitly',
         );
-      if (
-        this.sandbox.kind === 'none' &&
-        this.sandbox.level !== 'full-access' &&
-        !this.sandbox.allowUnsandboxed
-      )
+      if (sb.kind === 'none' && sb.level !== 'full-access' && !sb.allowUnsandboxed)
         throw new ServiceError('sandbox_unavailable', UNSANDBOXED_REFUSAL);
       args = {
         action: 'command',
         command: string(input.command, 'command', 8192),
-        timeout_ms: Number(timeout),
+        timeout_ms: background ? BACKGROUND_LIFETIME : Number(timeout),
+        ...(background ? { background: true as const } : {}),
         // Bound into the approval and the operation digest: the sandbox is part of what is approved.
         sandbox: {
-          kind: this.sandbox.kind,
-          level: this.sandbox.level,
-          bwrap: this.sandbox.bwrap?.version ?? null,
-          ...(this.brokerNetwork() ? { network: 'broker' as const } : {}),
+          kind: sb.kind,
+          level: sb.level,
+          bwrap: sb.bwrap?.version ?? null,
+          ...(this.brokerNetwork(sb) ? { network: 'broker' as const } : {}),
         },
       };
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
     c.args = JSON.stringify(args);
+    // Operator ruling 2026-10-31: full access asks only for commands this check calls dangerous.
+    const danger: DangerVerdict =
+      args.action === 'command'
+        ? classifyCommand(args.command, {
+            root,
+            home: homedir(),
+            tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
+          })
+        : { dangerous: false };
     this.store.transaction(() => {
       const reviewed =
         args.action === 'edit'
-          ? args.edits
-              .map((e) => `--- ${e.path}\n${e.before ?? '(new file)'}\n+++ ${e.path}\n${e.after}`)
-              .join('\n\n')
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText()}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          ? reviewLocalEdits(args.edits)
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}Command:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -291,13 +354,78 @@ export class LocalCoding {
       });
     });
     const policy = permissionPolicy(this.store, session);
-    if (
-      args.action === 'edit' &&
-      matchesEditScope(
-        policy,
-        args.edits.map((e) => e.path),
-      )
-    ) {
+    // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
+    // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
+    if (this.rules && policy.mode !== 'inspect' && this.rules.applies(session)) {
+      const request: RuleRequest =
+        args.action === 'command'
+          ? { tool: 'command', argv: commandArgv(args.command) }
+          : { tool: 'edit', paths: args.edits.map((e) => e.path) };
+      // A repo's allow rules cannot approve a dangerous command: only the person's own rules can.
+      const usable = (all: ReturnType<ApprovalRules['list']>) =>
+        danger.dangerous ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow')) : all;
+      const decided = evaluateRules(usable(this.rules.list(session)), request);
+      const approval = this.managed.forOperation(c.operation_id);
+      const rule = decided.rule && {
+        id: decided.rule.id,
+        source: decided.rule.source,
+        effect: decided.rule.effect,
+        tool: decided.rule.tool,
+        ...(decided.rule.command ? { command: decided.rule.command } : {}),
+        ...(decided.rule.paths ? { paths: decided.rule.paths } : {}),
+      };
+      if (decided.effect === 'deny' && rule) {
+        this.managed.decide(
+          approval.id,
+          'rule-deny:' + c.id,
+          approval.revision,
+          approval.operation_digest,
+          'deny',
+        );
+        this.store.transaction(() =>
+          this.store.event(session, 'permission.rule-denied', {
+            rule,
+            call_id: c.id,
+            operation_id: c.operation_id,
+          }),
+        );
+      } else if (decided.effect === 'allow' && rule) {
+        const rules = this.rules;
+        this.managed.decide(
+          approval.id,
+          'rule:' + c.id,
+          approval.revision,
+          approval.operation_digest,
+          'approve',
+          {
+            receipt: {
+              policy_digest: permissionDigest(policy),
+              policy_revision: policy.revision,
+              rule,
+              root,
+              call_id: c.id,
+            },
+            decidedBy: 'rule:' + rule.source,
+            authorize: () => {
+              this.guard(c);
+              const again = evaluateRules(usable(rules.list(session)), request);
+              if (again.effect !== 'allow' || again.rule?.id !== rule.id)
+                throw new ServiceError('permission_changed', 'Approval rules changed');
+            },
+          },
+        );
+      }
+    }
+    // The session's mode approves by itself only what it covers (Phase 2b): scoped or ordinary
+    // project edits, and, in auto, commands that stay inside the OS sandbox. Re-checked at decision.
+    const covered = (p: typeof policy) =>
+      args.action === 'edit'
+        ? autoApprovesEdits(
+            p,
+            args.edits.map((e) => e.path),
+          )
+        : autoApprovesCommands(p, this.sandboxed(this.bound(args)), danger.dangerous);
+    if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(
         approval.id,
@@ -315,19 +443,25 @@ export class LocalCoding {
           authorize: () => {
             this.guard(c);
             const fresh = permissionPolicy(this.store, session);
-            if (
-              permissionDigest(fresh) !== permissionDigest(policy) ||
-              args.action !== 'edit' ||
-              !matchesEditScope(
-                fresh,
-                args.edits.map((e) => e.path),
-              )
-            )
+            if (permissionDigest(fresh) !== permissionDigest(policy) || !covered(fresh))
               throw new ServiceError('permission_changed', 'Scoped edit policy changed');
-            verifyLocalEdits(root, args.edits);
+            if (args.action === 'edit') verifyLocalEdits(root, args.edits);
           },
         },
       );
+      // YOLO approves everything; each approval is recorded with what full access would have asked.
+      if (policy.access === 'yolo')
+        this.store.transaction(() =>
+          this.store.event(session, 'permission.yolo-approved', {
+            call_id: c.id,
+            operation_id: c.operation_id,
+            action: args.action,
+            ...(args.action === 'command' ? { command: args.command } : {}),
+            ...(danger.dangerous
+              ? { would_have_asked: { category: danger.category, reason: danger.reason } }
+              : {}),
+          }),
+        );
     }
     return this.view(c.id);
   }
@@ -396,30 +530,57 @@ export class LocalCoding {
           else this.managed.workspaceDefiniteFailureInTransaction(c.operation_id);
         });
       }
-    } else this.command(c, String(args.command), Number(args.timeout_ms));
+    } else if (args.background === true) this.background(c, String(args.command), this.bound(args));
+    else this.command(c, String(args.command), Number(args.timeout_ms), this.bound(args));
     return this.view(id);
   }
-  private sandboxText(): string {
-    const { kind, level } = this.sandbox;
+  /** The sandbox for a new command in this session: the host's, or full access if the person chose
+   * it for this session (Phase 2b). Bound into the command's approval and digest. */
+  private sandboxFor(session: string): LocalSandbox {
+    return permissionPolicy(this.store, session).access
+      ? { ...this.sandbox, level: 'full-access' }
+      : this.sandbox;
+  }
+  /** The sandbox a prepared command was approved under. */
+  private bound(args: { sandbox?: { level?: string } }): LocalSandbox {
+    return args.sandbox?.level === 'full-access'
+      ? { ...this.sandbox, level: 'full-access' }
+      : this.sandbox;
+  }
+  private sandboxed(sb: LocalSandbox): boolean {
+    return sb.kind !== 'none' && sb.level !== 'full-access';
+  }
+  /** Where this session's next command runs, in a word or two for the status and side panels. */
+  commandSandbox(session: string): string {
+    const access = permissionPolicy(this.store, session).access;
+    if (access) return access === 'yolo' ? 'YOLO' : 'full access';
+    if (this.sandbox.level === 'full-access') return 'no sandbox';
+    if (this.sandbox.kind === 'none')
+      return this.sandbox.allowUnsandboxed ? 'no sandbox' : 'refused';
+    return this.sandbox.kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
+  }
+  private sandboxText(sb: LocalSandbox = this.sandbox): string {
+    const { kind, level } = sb;
     if (level === 'full-access')
-      return 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.';
+      return this.sandbox.level === 'full-access'
+        ? 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.'
+        : 'unsandboxed: you turned on full access for this session. May access files and network beyond this workspace.';
     if (kind === 'none')
       return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
     const name = kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
-    const net = this.brokerNetwork()
+    const net = this.brokerNetwork(sb)
       ? 'network: through the broker allowlist (hosts set by the stk policy), nothing direct.'
       : 'has no network.';
+    const reads = this.sandbox.readPaths?.length
+      ? ` It can also read ${this.sandbox.readPaths.length} operator-allowed path${this.sandbox.readPaths.length === 1 ? '' : 's'} outside the workspace.`
+      : '';
     return level === 'read-only'
-      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and ${net}`
-      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}`;
+      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and ${net}${reads}`
+      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}${reads}`;
   }
   /** Broker network applies only to a sandboxed command: unsandboxed ones are not confined anyway. */
-  private brokerNetwork(): { socket: string } | null {
-    return this.sandbox.network &&
-      this.sandbox.kind !== 'none' &&
-      this.sandbox.level !== 'full-access'
-      ? this.sandbox.network
-      : null;
+  private brokerNetwork(sb: LocalSandbox = this.sandbox): { socket: string } | null {
+    return sb.network && this.sandboxed(sb) ? sb.network : null;
   }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
@@ -429,23 +590,22 @@ export class LocalCoding {
     script: string,
     tmp?: string,
     relay?: BrokerRelay | null,
+    sb: LocalSandbox = this.sandbox,
   ): string[] {
-    const sandboxed = this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access';
+    const sandboxed = this.sandboxed(sb);
     const inner = (s: string) =>
       !sandboxed
         ? ['/bin/sh', '-c', s]
-        : this.sandbox.kind === 'seatbelt'
-          ? seatbeltArgv(
-              this.sandbox.level,
-              root,
-              tmp ?? '',
-              ['/bin/sh', '-c', s],
-              this.sandbox.seatbelt ?? null,
-              { network: false, ...(relay?.port ? { brokerPort: relay.port } : {}) },
-            )
-          : sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
+        : sb.kind === 'seatbelt'
+          ? seatbeltArgv(sb.level, root, tmp ?? '', ['/bin/sh', '-c', s], sb.seatbelt ?? null, {
+              network: false,
+              ...(relay?.port ? { brokerPort: relay.port } : {}),
+              readPaths: sb.readPaths ?? [],
+            })
+          : sandboxArgv(sb.level, root, ['/bin/sh', '-c', s], sb.bwrap, {
               network: false,
               ...(relay?.dir ? { broker: { dir: relay.dir, node: process.execPath } } : {}),
+              readPaths: sb.readPaths ?? [],
             });
     if (this.tools.mode !== 'tools-user') return inner(script);
     const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
@@ -461,11 +621,11 @@ export class LocalCoding {
         ])
       : toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
   }
-  private command(c: LocalCall, command: string, timeout: number): void {
-    const broker = this.brokerNetwork();
+  private command(c: LocalCall, command: string, timeout: number, sb: LocalSandbox): void {
+    const broker = this.brokerNetwork(sb);
     // The relay is Salaam's, outside the sandbox: it forwards to stk and counts what was reached.
     const relayStarting = broker
-      ? BrokerRelay.start(broker.socket, this.sandbox.kind === 'seatbelt' ? 'tcp' : 'unix')
+      ? BrokerRelay.start(broker.socket, sb.kind === 'seatbelt' ? 'tcp' : 'unix')
       : Promise.resolve(null);
     // A stop that arrives while the relay starts still cancels the command once it is spawned.
     let early = false;
@@ -474,7 +634,7 @@ export class LocalCoding {
     };
     // Seatbelt has no tmpfs: each command gets its own private tmp, removed when it ends.
     const tmp =
-      this.sandbox.kind === 'seatbelt' && this.sandbox.level !== 'full-access'
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
         ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
         : undefined;
     const set = (s: () => void) => {
@@ -482,8 +642,8 @@ export class LocalCoding {
       if (early) s();
     };
     const done = relayStarting.then(
-      (relay) => this.runCommand(c, command, timeout, tmp, relay, set),
-      () => this.runCommand(c, command, timeout, tmp, null, set, !!broker),
+      (relay) => this.runCommand(c, command, timeout, tmp, relay, set, false, sb),
+      () => this.runCommand(c, command, timeout, tmp, null, set, !!broker, sb),
     );
     this.jobs.set(c.id, { stop: () => stop(), done });
     if (tmp) void done.finally(() => rmSync(tmp, { recursive: true, force: true }));
@@ -496,6 +656,7 @@ export class LocalCoding {
     relay: BrokerRelay | null,
     setStop: (stop: () => void) => void,
     relayFailed = false,
+    sb: LocalSandbox = this.sandbox,
   ): Promise<void> {
     let stop = () => {};
     return new Promise<void>((resolve) => {
@@ -508,7 +669,7 @@ export class LocalCoding {
       const tools = this.tools.mode === 'tools-user';
       const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = this.commandArgv(c.root, script, tmp, relay);
+      const argv = this.commandArgv(c.root, script, tmp, relay, sb);
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;
@@ -664,13 +825,8 @@ export class LocalCoding {
           error: error ? 'Command could not start' : null,
           isolation:
             (tools ? 'tools-user-' : 'local-user-') +
-            (this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
-              ? this.sandbox.kind + '-' + this.sandbox.level
-              : 'no-os-sandbox'),
-          sandbox:
-            this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
-              ? this.sandbox.kind
-              : 'none',
+            (this.sandboxed(sb) ? sb.kind + '-' + sb.level : 'no-os-sandbox'),
+          sandbox: this.sandboxed(sb) ? sb.kind : 'none',
           tool_uid: this.tools.uid,
           ...(network ? { network } : {}),
         };
@@ -691,11 +847,204 @@ export class LocalCoding {
       child.once('close', (code) => finish(code));
     });
   }
+  private assertBackground(session: string): void {
+    if (!this.interactive(session))
+      throw new ServiceError(
+        'background_denied',
+        'Background commands are only for an interactive local coding session',
+      );
+    if (this.tools.mode === 'tools-user')
+      throw new ServiceError(
+        'background_denied',
+        'Background commands do not yet run as a separate tools user',
+      );
+    if ([...this.live.values()].filter((t) => t.session === session).length >= TASK_LIMIT)
+      throw new ServiceError(
+        'background_limit',
+        `A session runs at most ${TASK_LIMIT} background commands; stop one first`,
+      );
+  }
+  /** Launch an approved background command. Its operation settles once the process is owned;
+   * the process then lives as a session task until it exits, is stopped, or the session ends. */
+  private background(c: LocalCall, command: string, sb: LocalSandbox): void {
+    const settle = (ok: boolean, result: Record<string, unknown>) =>
+      this.store.transaction(() => {
+        this.change(c, ok ? 'succeeded' : 'failed', result);
+        this.managed.localExecutionResultInTransaction(c.operation_id, ok, result);
+      });
+    try {
+      this.assertBackground(c.session_id);
+    } catch (error) {
+      settle(false, { error: (error as Error).message, background: true });
+      return;
+    }
+    const id = 'task_' + randomUUID().slice(0, 8);
+    const tmp =
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
+        ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
+        : undefined;
+    // Network for a long-lived task needs a relay that lives as long; keep it simple and honest.
+    const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
+    const argv = this.commandArgv(c.root, script, tmp, null, sb);
+    const child = spawn(argv[0]!, argv.slice(1), {
+      cwd: c.root,
+      detached: true,
+      env: {
+        PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+        HOME: process.env.HOME ?? c.root,
+        LANG: 'en_US.UTF-8',
+        TMPDIR: '/tmp',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let tail = Buffer.alloc(0),
+      bytes = 0,
+      ended: TaskState | null = null,
+      resolve = () => {};
+    const done = new Promise<void>((r) => (resolve = r));
+    const kill = () => {
+      if (child.pid)
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+    };
+    const task: BackgroundTask = {
+      id,
+      session: c.session_id,
+      done,
+      output: () => ({ output: tail.toString('utf8'), bytes, truncated: bytes > tail.length }),
+      stop: (why) => {
+        ended ??= why;
+        kill();
+      },
+    };
+    const collect = (chunk: Buffer) => {
+      bytes += chunk.length;
+      tail = Buffer.concat([tail, chunk]);
+      if (tail.length > TASK_TAIL) tail = tail.subarray(tail.length - TASK_TAIL);
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.stdin.on('error', () => {});
+    const lifetime = setTimeout(() => task.stop('timed_out'), BACKGROUND_LIFETIME);
+    // The session, not the turn, owns the task: it ends when local coding or its root goes away.
+    const watch = setInterval(() => {
+      try {
+        if (this.closed || !this.store.localCoding(c.session_id)) throw Error('closed');
+        if (this.store.session(c.session_id).cwd !== c.root) throw Error('moved');
+      } catch {
+        task.stop('stopped');
+      }
+    }, 1000);
+    const finish = (code: number | null) => {
+      clearTimeout(lifetime);
+      clearInterval(watch);
+      kill();
+      this.live.delete(id);
+      this.kept.set(id, task.output());
+      if (this.kept.size > 32) this.kept.delete(this.kept.keys().next().value!);
+      if (tmp) rmSync(tmp, { recursive: true, force: true });
+      const row = this.store.db.prepare('SELECT * FROM local_tasks WHERE id=?').get(id) as
+        TaskRow | undefined;
+      if (row) this.endTask(row, ended ?? 'exited', code);
+      else settle(false, { error: 'Command could not start', background: true });
+      resolve();
+    };
+    child.once('error', () => finish(null));
+    child.once('close', (code) => finish(code));
+    child.once('spawn', () => {
+      try {
+        // The start time, not processIdentity: the gated shell execs into the command.
+        const identity = processStart(child.pid!);
+        if (!identity) throw Error('No process identity');
+        this.store.transaction(() =>
+          this.store.db
+            .prepare(
+              "INSERT INTO local_tasks(id,session_id,call_id,command,state,pid,identity,started_at) VALUES (?,?,?,?,'running',?,?,?)",
+            )
+            .run(id, c.session_id, c.id, command, child.pid!, identity, new Date().toISOString()),
+        );
+        this.live.set(id, task);
+        settle(true, {
+          background: true,
+          task_id: id,
+          state: 'running',
+          isolation:
+            'local-user-' + (this.sandboxed(sb) ? sb.kind + '-' + sb.level : 'no-os-sandbox'),
+          sandbox: this.sandboxed(sb) ? sb.kind : 'none',
+          note: 'Read its output with salaam_tasks; it keeps running after this turn.',
+        });
+        child.stdin.end('start\n');
+      } catch {
+        ended = 'lost';
+        kill();
+      }
+    });
+  }
+  private endTask(t: TaskRow, state: TaskState, code: number | null): void {
+    this.store.transaction(() => {
+      this.store.db
+        .prepare(
+          "UPDATE local_tasks SET state=?,exit_code=?,ended_at=? WHERE id=? AND state='running'",
+        )
+        .run(state, code, new Date().toISOString(), t.id);
+      this.store.event(t.session_id, 'local.task_finished', {
+        task_id: t.id,
+        command: t.command.slice(0, 200),
+        state,
+        exit_code: code,
+      });
+    });
+  }
+  /** The session's background tasks, newest first. */
+  tasks(session: string) {
+    return (
+      this.store.db
+        .prepare(
+          'SELECT * FROM local_tasks WHERE session_id=? ORDER BY started_at DESC, rowid DESC',
+        )
+        .all(session) as unknown as TaskRow[]
+    ).map((t) => ({
+      id: t.id,
+      command: t.command,
+      state: t.state,
+      exit_code: t.exit_code,
+      pid: t.pid,
+      started_at: t.started_at,
+      ended_at: t.ended_at,
+      bytes: this.live.get(t.id)?.output().bytes ?? null,
+    }));
+  }
+  private task(session: string, id: string): TaskRow {
+    const row = this.store.db
+      .prepare('SELECT * FROM local_tasks WHERE id=? AND session_id=?')
+      .get(id, session) as TaskRow | undefined;
+    if (!row) throw new ServiceError('not_found', 'No such background task in this session', 404);
+    return row;
+  }
+  /** The kept tail of a task's output. Output of a task this controller no longer owns is gone. */
+  taskOutput(session: string, id: string) {
+    const row = this.task(session, id);
+    const live = this.live.get(id);
+    return {
+      task: { id: row.id, state: row.state, exit_code: row.exit_code },
+      ...(live?.output() ?? this.kept.get(id) ?? { output: '', bytes: 0, truncated: false }),
+    };
+  }
+  stopTask(session: string, id: string) {
+    this.task(session, id);
+    this.live.get(id)?.stop('stopped');
+    return { stopping: this.live.has(id) };
+  }
   async close(): Promise<void> {
     this.closed = true;
     const jobs = [...this.jobs.values()];
     for (const job of jobs) job.stop();
-    await Promise.all(jobs.map((j) => j.done));
+    const tasks = [...this.live.values()];
+    for (const t of tasks) t.stop('stopped');
+    await Promise.all([...jobs.map((j) => j.done), ...tasks.map((t) => t.done)]);
     this.unregister();
   }
 }

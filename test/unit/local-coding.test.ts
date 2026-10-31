@@ -12,7 +12,12 @@ import { join } from 'node:path';
 import { Store } from '../../src/store.js';
 import { ManagedWork } from '../../src/managed.js';
 import { LocalCoding } from '../../src/local-coding.js';
-import { localHash, prepareLocalEdits, applyLocalEdits } from '../../src/local-edits.js';
+import {
+  localHash,
+  prepareLocalEdits,
+  applyLocalEdits,
+  reviewLocalEdits,
+} from '../../src/local-edits.js';
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { until } from '../helpers.js';
 function setup() {
@@ -718,3 +723,199 @@ test('a broker-network command with the broker socket missing still runs, with n
     await f.close();
   }
 }, 60000);
+
+// Targeted edits (daily-driver Phase 1A). An interactive one-line change used to resend and
+// review the whole file: ~3,500 output tokens and a 315-line approval for one line.
+const LINES = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+
+test('a targeted replacement changes one span, applies it exactly and reviews only the change', async () => {
+  const f = setup();
+  try {
+    writeFileSync(join(f.root, 'big.txt'), LINES);
+    const c = f.prepare('one-line', {
+      action: 'edit',
+      edits: [
+        {
+          path: 'big.txt',
+          sha256: localHash(LINES),
+          replacements: [{ old: 'line 150\n', new: 'line 150 changed\n' }],
+        },
+      ],
+    });
+    const review = c.operation.value;
+    expect(review).toContain('-line 150');
+    expect(review).toContain('+line 150 changed');
+    expect(review).not.toContain('line 10\n');
+    expect(review.split('\n').length).toBeLessThan(20);
+    f.approve(c);
+    expect(f.local.run(c.call.id).call.state).toBe('succeeded');
+    expect(readFileSync(join(f.root, 'big.txt'), 'utf8')).toBe(
+      LINES.replace('line 150\n', 'line 150 changed\n'),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('several replacements apply in order and the review shows each change, not the lines between', () => {
+  const root = realpathSync(mkdtempSync('/tmp/sal-edit-'));
+  try {
+    writeFileSync(join(root, 'big.txt'), LINES);
+    const edits = prepareLocalEdits(root, [
+      {
+        path: 'big.txt',
+        sha256: localHash(LINES),
+        replacements: [
+          { old: 'line 20\n', new: 'line twenty\n' },
+          { old: 'line 280\n', new: 'line two hundred eighty\n' },
+        ],
+      },
+    ]);
+    expect(edits[0]!.after).toBe(
+      LINES.replace('line 20\n', 'line twenty\n').replace(
+        'line 280\n',
+        'line two hundred eighty\n',
+      ),
+    );
+    const review = reviewLocalEdits(edits);
+    expect(review).toContain('+line twenty');
+    expect(review).toContain('+line two hundred eighty');
+    expect(review).not.toContain('line 150');
+    expect(review.match(/^@@ /gm)).toHaveLength(2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  ['not found', [{ old: 'no such line\n', new: 'x' }], 'not found'],
+  ['ambiguous', [{ old: 'line 1', new: 'x' }], 'occurs'],
+  ['empty old', [{ old: '', new: 'x' }], 'empty'],
+  ['no change', [{ old: 'line 7\n', new: 'line 7\n' }], 'changes nothing'],
+])('a replacement must match exactly once (%s)', (_name, replacements, message) => {
+  const root = realpathSync(mkdtempSync('/tmp/sal-edit-'));
+  try {
+    writeFileSync(join(root, 'big.txt'), LINES);
+    expect(() =>
+      prepareLocalEdits(root, [{ path: 'big.txt', sha256: localHash(LINES), replacements }]),
+    ).toThrow(message);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a replacement edits an existing file only, and never together with whole content', () => {
+  const root = realpathSync(mkdtempSync('/tmp/sal-edit-'));
+  try {
+    writeFileSync(join(root, 'a.txt'), 'alpha\n');
+    expect(() =>
+      prepareLocalEdits(root, [
+        { path: 'new.txt', sha256: null, replacements: [{ old: 'a', new: 'b' }] },
+      ]),
+    ).toThrow('existing file');
+    expect(() =>
+      prepareLocalEdits(root, [
+        {
+          path: 'a.txt',
+          sha256: localHash('alpha\n'),
+          content: 'beta\n',
+          replacements: [{ old: 'alpha', new: 'beta' }],
+        },
+      ]),
+    ).toThrow();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an approval for one targeted edit cannot run a different one', async () => {
+  const f = setup();
+  try {
+    writeFileSync(join(f.root, 'big.txt'), LINES);
+    const one = f.prepare('one', {
+      action: 'edit',
+      edits: [
+        {
+          path: 'big.txt',
+          sha256: localHash(LINES),
+          replacements: [{ old: 'line 5\n', new: 'five\n' }],
+        },
+      ],
+    });
+    const two = f.prepare('two', {
+      action: 'edit',
+      edits: [
+        {
+          path: 'big.txt',
+          sha256: localHash(LINES),
+          replacements: [{ old: 'line 6\n', new: 'six\n' }],
+        },
+      ],
+    });
+    expect(one.operation.operation_digest).not.toBe(two.operation.operation_digest);
+    expect(() =>
+      f.managed.decide(
+        two.approval.id,
+        'cross',
+        two.approval.revision,
+        one.operation.operation_digest,
+        'approve',
+      ),
+    ).toThrow();
+    expect(f.local.run(two.call.id).call.state).toBe('prepared');
+    expect(readFileSync(join(f.root, 'big.txt'), 'utf8')).toBe(LINES);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a small change to a file larger than 16 KiB is accepted and reviewed briefly', () => {
+  const root = realpathSync(mkdtempSync('/tmp/sal-edit-'));
+  try {
+    const big = Array.from({ length: 4000 }, (_, i) => `row ${i}`).join('\n') + '\n';
+    writeFileSync(join(root, 'huge.txt'), big);
+    const edits = prepareLocalEdits(root, [
+      {
+        path: 'huge.txt',
+        sha256: localHash(big),
+        replacements: [{ old: 'row 2000\n', new: 'row two thousand\n' }],
+      },
+    ]);
+    expect(reviewLocalEdits(edits).length).toBeLessThan(1000);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a large review is bounded and says how much it left out', () => {
+  const before = Array.from({ length: 2000 }, (_, i) => `a ${i}`).join('\n') + '\n';
+  const after = Array.from({ length: 2000 }, (_, i) => `b ${i}`).join('\n') + '\n';
+  const review = reviewLocalEdits([{ path: 'x.txt', before, after, mode: 0o644 }]);
+  expect(review.split('\n').length).toBeLessThan(260);
+  expect(review).toMatch(/more changed lines not shown/);
+});
+
+test('undo after a targeted edit restores the original file', async () => {
+  const { reviewUndo } = await import('../../src/local-undo.js');
+  const f = setup();
+  try {
+    writeFileSync(join(f.root, 'big.txt'), LINES);
+    const c = f.prepare('undoable', {
+      action: 'edit',
+      edits: [
+        {
+          path: 'big.txt',
+          sha256: localHash(LINES),
+          replacements: [{ old: 'line 9\n', new: 'nine\n' }],
+        },
+      ],
+    });
+    f.approve(c);
+    f.local.run(c.call.id);
+    const review = reviewUndo(f.store, f.session.id);
+    expect(review.edits[0]!.before).toBe(LINES);
+    expect(review.edits[0]!.after).toBe(LINES.replace('line 9\n', 'nine\n'));
+  } finally {
+    await f.close();
+  }
+});

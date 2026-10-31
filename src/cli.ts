@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadWebSearchConfig } from './web-search.js';
 import { SANDBOX_LEVELS, type SandboxLevel } from './command-sandbox.js';
 import { acp } from './acp.js';
 import { homedir } from 'node:os';
@@ -517,7 +518,10 @@ async function main(): Promise<void> {
       hostToolsUser,
       hostApprovalTtlMs,
       hostAllowsUnsandboxed,
+      hostAllowsFullAccessSessions,
+      hostAllowsYoloSessions,
       hostCommandNetwork,
+      hostReadPaths,
     } = await import('./host.js');
     if (verb?.startsWith('config-')) {
       const file = option('--manifest');
@@ -661,7 +665,11 @@ async function main(): Promise<void> {
           providerRoute: m.provider,
           approvalTtlMs: hostApprovalTtlMs(m),
           ...(hostAllowsUnsandboxed(m) ? { unsandboxedCommands: 'allow' as const } : {}),
+          // A host session may choose full access only when the reviewed manifest says so.
+          allowFullAccessSessions: hostAllowsFullAccessSessions(m),
+          allowYoloSessions: hostAllowsYoloSessions(m),
           ...(hostCommandNetwork(m) ? { commandNetwork: hostCommandNetwork(m)! } : {}),
+          ...(hostReadPaths(m).length ? { localSandboxReadPaths: hostReadPaths(m) } : {}),
         });
       if (process.connected) process.once('disconnect', () => void service.close());
       for (const signal of ['SIGTERM', 'SIGINT'] as const)
@@ -685,6 +693,20 @@ async function main(): Promise<void> {
       observe: args.includes('--observe'),
       takeover: args.includes('--takeover'),
       theme: theme as 'night' | 'paper' | undefined,
+    });
+    return;
+  }
+  if (group === 'code' || group === 'here') {
+    const { parseCodeStart } = await import('./session-pick.js');
+    const start = parseCodeStart(args.slice(1));
+    const { tui } = await import('./tui.js');
+    await tui({
+      state,
+      start,
+      cwd: option('--cwd'),
+      takeover: args.includes('--takeover'),
+      codingRoot: option('--coding-root'),
+      codingSocket: option('--coding-socket'),
     });
     return;
   }
@@ -1634,7 +1656,18 @@ async function main(): Promise<void> {
       toolsUser = option('--tools-user') ?? (process.env.SALAAM_TOOLS_USER || undefined),
       localSandbox = option('--local-sandbox') ?? (process.env.SALAAM_LOCAL_SANDBOX || undefined),
       unsandboxedCommands =
-        option('--unsandboxed-commands') ?? (process.env.SALAAM_UNSANDBOXED_COMMANDS || undefined);
+        option('--unsandboxed-commands') ?? (process.env.SALAAM_UNSANDBOXED_COMMANDS || undefined),
+      localSandboxRead = (
+        option('--local-sandbox-read') ??
+        (process.env.SALAAM_LOCAL_SANDBOX_READ || '')
+      )
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean),
+      webSearchConfig =
+        option('--web-search-config') ?? (process.env.SALAAM_WEB_SEARCH_CONFIG || undefined);
+    // Fail early on a bad web search config; its keys are read, never printed.
+    if (webSearchConfig) loadWebSearchConfig(resolve(webSearchConfig));
     if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))
       throw Error('--local-sandbox is read-only, workspace-write or full-access');
     if (unsandboxedCommands !== undefined && unsandboxedCommands !== 'allow')
@@ -1653,6 +1686,8 @@ async function main(): Promise<void> {
         toolsUser,
         ...(localSandbox ? { localSandbox: localSandbox as SandboxLevel } : {}),
         ...(unsandboxedCommands ? { unsandboxedCommands: 'allow' as const } : {}),
+        ...(localSandboxRead.length ? { localSandboxReadPaths: localSandboxRead } : {}),
+        ...(webSearchConfig ? { webSearchConfig: resolve(webSearchConfig) } : {}),
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1746,6 +1781,8 @@ async function main(): Promise<void> {
         ...(toolsUser ? ['--tools-user', toolsUser] : []),
         ...(localSandbox ? ['--local-sandbox', localSandbox] : []),
         ...(unsandboxedCommands ? ['--unsandboxed-commands', 'allow'] : []),
+        ...(localSandboxRead.length ? ['--local-sandbox-read', localSandboxRead.join(',')] : []),
+        ...(webSearchConfig ? ['--web-search-config', resolve(webSearchConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

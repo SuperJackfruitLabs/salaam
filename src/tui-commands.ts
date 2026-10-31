@@ -17,15 +17,11 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('help', 'Show commands and their execution type', ['commands'], '[command]'),
   command('exit', 'Detach; preserve the session and running work', ['quit', 'q']),
   command('keys', 'Show keyboard shortcuts', ['hotkeys']),
-  command('model', 'Choose provider and model for a new session', ['models'], '[provider/model]'),
-  command('provider', 'Choose a provider for a new session', [], '[provider]'),
-  command('thinking', 'Choose reasoning effort for a new session', [], '[level]'),
-  command(
-    'coding',
-    'New local coding session with reviewed edits and unsandboxed commands',
-    [],
-    '[workspace]',
-  ),
+  command('model', 'Switch this session’s provider and model', ['models'], '[provider/model]'),
+  command('provider', 'Switch this session’s provider', [], '[provider]'),
+  command('thinking', 'Switch this session’s reasoning effort', [], '[level]'),
+  command('coding', 'New local coding session with reviewed edits and commands', [], '[workspace]'),
+  command('init', 'Draft an AGENTS.md for this repository; the edit asks for approval'),
   command('new', 'Create a session in a workspace', [], '[workspace]'),
   command('sessions', 'Switch or resume a session', ['resume'], '[session-id]'),
   command('name', 'Set a durable session label', ['rename'], '<name>'),
@@ -42,6 +38,12 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('diff', 'Review workspace changes'),
   command('tools', 'Inspect available capabilities and recorded tool activity'),
   command('permissions', 'Configure local permissions independently of task progression'),
+  command('mode', 'Cycle review → accept edits → auto (shift+tab)'),
+  command(
+    'full-access',
+    'Turn full access on or off: commands run without the OS sandbox; dangerous ones still ask',
+  ),
+  command('yolo', 'Turn YOLO on (type yolo to confirm) or off: no sandbox and no approvals'),
   command('approvals', 'Review exact pending approval requests'),
   command('context', 'Inspect session context, facts and usage'),
   command('usage', 'Show recorded usage and unknown observations'),
@@ -50,6 +52,7 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('export', 'Export full durable conversation as Markdown; never overwrite', [], '[path]'),
   command('settings', 'Choose terminal appearance and model settings'),
   command('fork', 'Fork an idle local conversation; keep the same workspace'),
+  command('rewind', 'Rewind files, conversation or both to before an earlier turn', [], '[turn]'),
   command(
     'undo',
     'Review and revert the last completed local edit; retain conversation history',
@@ -80,6 +83,7 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('agents', 'Inspect native/external worker profiles and child work'),
   command('progression', 'Choose manual or bounded task progression; permissions stay separate'),
   command('tasks', 'Open durable task actions'),
+  command('jobs', 'Show background commands and their output, or stop one', ['bg'], '[stop <id>]'),
 ];
 export const SLASH_COMPLETIONS = SLASH_COMMANDS.flatMap((c) =>
   [c.name, ...c.aliases].map((name) => ({ name, description: c.description })),
@@ -125,3 +129,11 @@ export function slashHelp(name?: string): string {
     )
     .join('\n');
 }
+
+/** What /init asks the agent to do. The write goes through the session's normal edit approval. */
+export const INIT_INSTRUCTION = [
+  'Draft an AGENTS.md for this repository.',
+  'First read the tree and the files that define how it is built and tested (package manifests, build and CI configuration, README, existing contributor docs, any CLAUDE.md).',
+  'Then write AGENTS.md at the repository root: a short overview, the exact commands to build, test, lint and format, the code layout, and conventions a contributor must follow.',
+  'Keep it under 150 lines, state only what the files show, and if AGENTS.md already exists, propose improvements to it instead of replacing it.',
+].join(' ');
