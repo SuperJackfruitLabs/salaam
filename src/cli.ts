@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadWebSearchConfig } from './web-search.js';
 import { SANDBOX_LEVELS, type SandboxLevel } from './command-sandbox.js';
 import { acp } from './acp.js';
 import { homedir } from 'node:os';
@@ -1657,7 +1658,11 @@ async function main(): Promise<void> {
       )
         .split(',')
         .map((p) => p.trim())
-        .filter(Boolean);
+        .filter(Boolean),
+      webSearchConfig =
+        option('--web-search-config') ?? (process.env.SALAAM_WEB_SEARCH_CONFIG || undefined);
+    // Fail early on a bad web search config; its keys are read, never printed.
+    if (webSearchConfig) loadWebSearchConfig(resolve(webSearchConfig));
     if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))
       throw Error('--local-sandbox is read-only, workspace-write or full-access');
     if (unsandboxedCommands !== undefined && unsandboxedCommands !== 'allow')
@@ -1677,6 +1682,7 @@ async function main(): Promise<void> {
         ...(localSandbox ? { localSandbox: localSandbox as SandboxLevel } : {}),
         ...(unsandboxedCommands ? { unsandboxedCommands: 'allow' as const } : {}),
         ...(localSandboxRead.length ? { localSandboxReadPaths: localSandboxRead } : {}),
+        ...(webSearchConfig ? { webSearchConfig: resolve(webSearchConfig) } : {}),
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1771,6 +1777,7 @@ async function main(): Promise<void> {
         ...(localSandbox ? ['--local-sandbox', localSandbox] : []),
         ...(unsandboxedCommands ? ['--unsandboxed-commands', 'allow'] : []),
         ...(localSandboxRead.length ? ['--local-sandbox-read', localSandboxRead.join(',')] : []),
+        ...(webSearchConfig ? ['--web-search-config', resolve(webSearchConfig)] : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

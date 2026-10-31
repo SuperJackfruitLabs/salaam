@@ -177,6 +177,8 @@ function groupExists(pid: number): boolean {
 }
 export class Supervisor extends EventEmitter {
   localCoding?: import('./local-coding.js').LocalCoding;
+  /** Built-in web search and fetch for interactive coding (operator ruling 2026-10-31). */
+  web?: import('./web-search.js').WebSearch;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   private readonly fetchBreaker = new HostBreaker();
@@ -1131,6 +1133,67 @@ export class Supervisor extends EventEmitter {
         if (method === 'station.run') return this.station.run(c.id);
         if (method === 'station.status') return this.station.view(c.id);
         throw new ServiceError('invalid_field', 'Unsupported station method');
+      }
+      if (method === 'web.search' || method === 'web.fetch') {
+        if (!this.web || !this.store.localCoding(id) || this.children?.owned(id) || !w.attempt)
+          throw new ServiceError('web_denied', 'Web search is not admitted for this session', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        const args = object(body.args);
+        const toolCallId = string(body.tool_call_id, 'tool_call_id', 512);
+        if (method === 'web.search') {
+          const out = await this.web.search({
+            query: string(args.query, 'query', 300),
+            ...(typeof args.kind === 'string'
+              ? { kind: args.kind as import('./web-search.js').SearchKind }
+              : {}),
+            ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+          });
+          // Recorded: kind, backends tried, which answered and how long. Never a key or the query.
+          this.store.transaction(() =>
+            this.store.event(id, 'web.search', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              kind: out.kind,
+              cached: !!out.cached,
+              results: out.results.length,
+              tried: out.tried,
+            }),
+          );
+          return out;
+        }
+        const url = string(args.url, 'url', 2000);
+        let host = '';
+        try {
+          host = new URL(url).hostname;
+        } catch {
+          /* fetchPage refuses it */
+        }
+        try {
+          const page = await (await import('./web-fetch.js')).fetchPage(url);
+          this.store.transaction(() =>
+            this.store.event(id, 'web.fetch', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              host,
+              status: page.status,
+              chars: page.text.length,
+              truncated: page.truncated,
+            }),
+          );
+          const { renderFetched } = await import('./web-fetch.js');
+          return { ok: true, url: page.url, text: renderFetched(page) };
+        } catch (error) {
+          const message = String((error as Error).message ?? error).slice(0, 300);
+          this.store.transaction(() =>
+            this.store.event(id, 'web.fetch', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              host,
+              error: message,
+            }),
+          );
+          return { ok: false, url, error: message };
+        }
       }
       if (method.startsWith('local.') && method !== 'local.read') {
         if (

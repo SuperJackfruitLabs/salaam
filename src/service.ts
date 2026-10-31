@@ -1,3 +1,4 @@
+import { WebSearch, loadWebSearchConfig } from './web-search.js';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { loadPersona } from './persona.js';
 import {
@@ -117,6 +118,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   unsandboxedCommands?: 'allow';
   /** Read-only paths outside the workspace local commands may read (resolved, `toolchain` expanded). */
   localSandboxReadPaths?: string[];
+  /** Web search config file: optional providers (searxng, brave, tavily, exa) and their key
+   * references. Keyless official APIs answer without one (operator ruling 2026-10-31). */
+  webSearchConfig?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
@@ -392,6 +396,10 @@ export class SalaamService {
           localSandbox,
         );
         this.supervisor.localCoding = this.localCoding;
+        const webConfig = options.webSearchConfig
+          ? loadWebSearchConfig(options.webSearchConfig)
+          : { providers: [] };
+        this.supervisor.web = new WebSearch(webConfig);
         this.agents = new AgentProfiles(
           this.store,
           this.supervisor.route,
