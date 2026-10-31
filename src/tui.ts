@@ -14,6 +14,13 @@ import {
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
+import {
+  cancelChoices,
+  queuedItems,
+  runningAttempt,
+  turnKey,
+  turnKeyAction,
+} from './tui-turn-keys.js';
 import { randomUUID } from 'node:crypto';
 import { join, resolve, basename } from 'node:path';
 import {
@@ -315,6 +322,48 @@ export class SalaamApp {
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
     )
       return;
+    // Esc stops the running turn, Enter steers it, Tab queues behind it (interactive coding only).
+    const key = turnKey(data);
+    const action = key
+      ? turnKeyAction({
+          key,
+          text: this.editor.getExpandedText(),
+          snapshot: this.client.snapshot,
+          modal: false,
+          autocomplete: false,
+        })
+      : null;
+    if (action === 'interrupt') {
+      const attempt = runningAttempt(this.client.snapshot);
+      if (attempt)
+        void this.execute(async () => {
+          await this.client.cancel(attempt);
+          this.client.report(
+            'Stopped the turn. Edits already made stay; /undo reverts the last one. Your typed text is kept.',
+          );
+        });
+      return { consume: true };
+    }
+    if (action === 'steer' || action === 'queue') {
+      const text = this.editor.getExpandedText(),
+        session = this.client.snapshot?.id;
+      void this.execute(async () => {
+        if (action === 'steer') await this.client.steer(text);
+        else {
+          await this.client.submit(text);
+          const waiting = this.client.snapshot ? queuedItems(this.client.snapshot).length : 0;
+          this.client.report(
+            'Queued for after this turn (' + waiting + ' waiting). /queue edits or removes them.',
+          );
+        }
+        this.editor.addToHistory(text);
+        if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
+          this.editor.setText('');
+          if (session) this.drafts.delete(session);
+        }
+      });
+      return { consume: true };
+    }
     if (matchesKey(data, 'enter')) {
       const text = this.editor.getExpandedText(),
         session = this.client.snapshot?.id;
@@ -435,6 +484,7 @@ export class SalaamApp {
     description: string,
     label: string,
     confirm: () => Promise<unknown>,
+    confirmByDefault = false,
   ): void {
     if (this.terminal.rows < 18) {
       this.client.report('Expand the terminal to at least 18 rows to review this action.');
@@ -452,6 +502,7 @@ export class SalaamApp {
           this.closeModal();
           void this.execute(confirm);
         },
+        confirmByDefault,
       ),
     );
   }
@@ -736,9 +787,7 @@ export class SalaamApp {
       return;
     }
     if (command === 'cancel') {
-      const active = snapshot.attempts.filter((a) =>
-        ['accepted', 'dispatching', 'running'].includes(a.state),
-      );
+      const active = cancelChoices(snapshot);
       if (!active.length) {
         this.client.report('No active or queued instruction to cancel.');
         return;
@@ -746,15 +795,18 @@ export class SalaamApp {
       const cancel = (id: string) =>
         this.confirm(
           'Cancel instruction',
-          'Cancel attempt ' + id + '? /exit would leave it running.',
+          'Cancel attempt ' +
+            shortId(id) +
+            '? Your typed text is kept. /exit would leave it running.',
           'Cancel work',
           () => this.client.cancel(id),
+          true,
         );
       if (active.length === 1) cancel(active[0]!.id);
       else
         this.choice(
           'Cancel an instruction',
-          active.map((a) => ({ value: a.id, label: a.state + ' · ' + shortId(a.id) })),
+          active.map((a) => ({ value: a.id, label: a.label })),
           cancel,
         );
       return;
@@ -769,15 +821,29 @@ export class SalaamApp {
         await this.client.submit(args);
         return;
       }
-      this.showText(
-        'Durable instruction queue',
-        JSON.stringify(
-          snapshot.submissions.filter((s) =>
-            ['accepted', 'dispatching', 'running'].includes(s.state),
-          ),
-          null,
-          2,
-        ),
+      const queued = queuedItems(snapshot);
+      if (!queued.length) {
+        this.client.report('Nothing is queued. Tab queues text for after the running turn.');
+        return;
+      }
+      this.choice(
+        'Queued instructions',
+        queued.map((q) => ({ value: q.attempt, label: q.text.slice(0, 80) })),
+        (attempt) => {
+          const item = queued.find((q) => q.attempt === attempt)!;
+          this.choice(
+            'Queued instruction',
+            [
+              { value: 'edit', label: 'Edit', description: 'Move it back into the input' },
+              { value: 'remove', label: 'Remove', description: 'Cancel it before it runs' },
+            ],
+            (choice) =>
+              void this.execute(async () => {
+                await this.client.cancel(item.attempt);
+                if (choice === 'edit') this.editor.setText(item.text);
+              }),
+          );
+        },
       );
       return;
     }

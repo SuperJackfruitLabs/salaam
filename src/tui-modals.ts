@@ -191,7 +191,11 @@ export class ConfirmModal implements Component, Focusable {
     readonly renderAgain: () => void,
     readonly close: () => void,
     readonly confirm: () => void,
-  ) {}
+    /** Start on the action rather than on "Keep current state" (cancel a running turn). */
+    confirmByDefault = false,
+  ) {
+    this.selected = confirmByDefault;
+  }
   invalidate(): void {}
   render(width: number): string[] {
     return framed(

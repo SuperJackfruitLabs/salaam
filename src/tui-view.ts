@@ -5,6 +5,7 @@ import { instructionsLabel, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
+import { interactiveCoding, runningAttempt } from './tui-turn-keys.js';
 
 export type ViewTab = 'conversation' | 'changes' | 'commands' | 'context';
 export interface DiffPage {
@@ -139,13 +140,22 @@ export function status(view: ViewModel, width: number): string[] {
       width,
     ),
     t.line(
-      [
-        t.key('enter', 'send'),
-        t.key('alt+enter', 'newline'),
-        t.key('ctrl+k', 'actions'),
-        t.key('ctrl+p', 'sessions'),
-        t.key('ctrl+c', 'detach'),
-      ].join('   '),
+      (c.snapshot && interactiveCoding(c.snapshot) && runningAttempt(c.snapshot)
+        ? [
+            t.key('esc', 'stop'),
+            t.key('enter', 'steer'),
+            t.key('tab', 'queue'),
+            t.key('alt+enter', 'newline'),
+            t.key('ctrl+c', 'detach'),
+          ]
+        : [
+            t.key('enter', 'send'),
+            t.key('alt+enter', 'newline'),
+            t.key('ctrl+k', 'actions'),
+            t.key('ctrl+p', 'sessions'),
+            t.key('ctrl+c', 'detach'),
+          ]
+      ).join('   '),
       width,
     ),
   ];
