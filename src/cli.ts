@@ -68,6 +68,10 @@ async function main(): Promise<void> {
     console.log('salaam ' + VERSION);
     return;
   }
+  if (args[0] === '-c' || args[0] === '--continue') {
+    const { continueArgs } = await import('./session-pick.js');
+    args.splice(0, args.length, ...continueArgs(args)!);
+  }
   if (args[0] === 'mcp') {
     // Parsed before global help: a declared command's own flags follow "--".
     const rest = args.slice(1);
