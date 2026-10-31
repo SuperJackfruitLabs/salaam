@@ -52,6 +52,7 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('export', 'Export full durable conversation as Markdown; never overwrite', [], '[path]'),
   command('settings', 'Choose terminal appearance and model settings'),
   command('fork', 'Fork an idle local conversation; keep the same workspace'),
+  command('rewind', 'Rewind files, conversation or both to before an earlier turn', [], '[turn]'),
   command(
     'undo',
     'Review and revert the last completed local edit; retain conversation history',

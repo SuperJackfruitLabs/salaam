@@ -1904,6 +1904,8 @@ export class Supervisor extends EventEmitter {
       } catch {
         /* the previously loaded guidance stays in force */
       }
+      // The folder as it was before this turn, so /rewind can return to it.
+      if (this.interactiveCoding(id)) this.tasks.checkpoints?.capture(id, work.attempt.id);
       const images = takeImages(this.store.db, work.submission.id);
       const response = await w.pi.command('prompt', {
         message: work.submission.text,

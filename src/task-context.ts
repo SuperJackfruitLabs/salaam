@@ -44,6 +44,8 @@ export class TaskContext {
   admitted?: ContextAdmission;
   /** Interactive sessions only: AGENTS.md guidance loaded automatically (project-instructions.ts). */
   instructions?: ProjectInstructions;
+  /** Interactive sessions only: a folder checkpoint before every turn (turn-rewind.ts). */
+  checkpoints?: import('./turn-rewind.js').TurnCheckpoints;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,

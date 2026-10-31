@@ -266,6 +266,99 @@ export class OperatorClient extends EventEmitter {
     await this.refresh();
     this.report('Reverted the reviewed local edit. Conversation history is preserved.');
   }
+  async checkpoints(): Promise<import('./turn-rewind.js').TurnCheckpoint[]> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ checkpoints: import('./turn-rewind.js').TurnCheckpoint[] }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/checkpoints`,
+      )
+    ).checkpoints;
+  }
+  async rewindReview(
+    attempt: string,
+    mode: import('./turn-rewind.js').RewindMode,
+  ): Promise<import('./turn-rewind.js').RewindReview> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(
+      this.socket,
+      `/v1/sessions/${this.snapshot.id}/rewind?attempt=${encodeURIComponent(attempt)}&mode=${mode}`,
+    );
+  }
+  /** Returns the rewound turn's instruction so it can be edited and sent again. */
+  async rewind(review: import('./turn-rewind.js').RewindReview): Promise<string> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const id = this.snapshot.id;
+    const result = await call<{ state: string; session_id: string; text: string }>(
+      this.socket,
+      `/v1/sessions/${id}/rewind`,
+      {
+        ...this.actor(),
+        request_id: randomUUID(),
+        attempt_id: review.attempt_id,
+        mode: review.mode,
+        review_digest: review.digest,
+      },
+    );
+    if (result.state !== 'completed')
+      throw new Error('Rewind outcome is uncertain; inspect files before continuing.');
+    if (result.session_id !== id) await this.open(result.session_id);
+    else await this.refresh();
+    this.report(
+      (review.mode === 'conversation'
+        ? 'Conversation'
+        : review.mode === 'files'
+          ? 'Files'
+          : 'Files and conversation') +
+        ` rewound to before turn ${review.turn}.` +
+        (result.session_id !== id ? ' The earlier conversation stays as its own session.' : ''),
+    );
+    return result.text;
+  }
+  async changeReview(): Promise<import('./turn-rewind.js').ChangeReview | null> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ review: import('./turn-rewind.js').ChangeReview | null }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review`,
+      )
+    ).review;
+  }
+  async changeHunks(
+    review: import('./turn-rewind.js').ChangeReview,
+    path: string,
+  ): Promise<import('./turn-checkpoints.js').CheckpointHunk[]> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const q = new URLSearchParams({ path, base: review.base, current: review.current });
+    return (
+      await call<{ hunks: import('./turn-checkpoints.js').CheckpointHunk[] }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review/hunks?${q}`,
+      )
+    ).hunks;
+  }
+  async changeAct(
+    review: import('./turn-rewind.js').ChangeReview,
+    action: 'accept' | 'revert',
+    path: string,
+    hunk?: import('./turn-checkpoints.js').CheckpointHunk,
+  ): Promise<import('./turn-rewind.js').ChangeReview | null> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ review: import('./turn-rewind.js').ChangeReview | null }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review`,
+        {
+          ...this.actor(),
+          action,
+          path,
+          base: review.base,
+          current: review.current,
+          ...(hunk ? { hunk } : {}),
+        },
+      )
+    ).review;
+  }
   async fork(): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const session = await call<Session>(this.socket, `/v1/sessions/${this.snapshot.id}/fork`, {

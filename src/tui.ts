@@ -18,6 +18,7 @@ import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import {
   cancelChoices,
+  interactiveCoding,
   queuedItems,
   runningAttempt,
   turnKey,
@@ -82,6 +83,8 @@ import {
 } from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
+import { rewindSummary } from './tui-review.js';
+import type { RewindMode } from './turn-rewind.js';
 
 export interface TuiOptions {
   state: string;
@@ -432,6 +435,10 @@ export class SalaamApp {
       const names: ViewTab[] = ['conversation', 'changes', 'commands', 'context'];
       this.setTab(names[(names.indexOf(this.view.tab) + 1) % names.length]!);
       return { consume: true };
+    }
+    if (this.view.tab === 'changes' && interactiveCoding(this.client.snapshot)) {
+      const handled = this.reviewKey(data);
+      if (handled) return handled;
     }
     if (
       this.view.tab === 'changes' &&
@@ -818,6 +825,10 @@ export class SalaamApp {
       return;
     }
     if (!snapshot) throw new Error('Choose a session with /sessions or /new first.');
+    if (command === 'rewind') {
+      await this.rewind(args);
+      return;
+    }
     if (command === 'undo') {
       if (args === 'reconcile') {
         await this.client.reconcileUndo();
@@ -1296,8 +1307,140 @@ export class SalaamApp {
   setTab(tab: ViewTab): void {
     this.view.tab = tab;
     this.resetScroll();
-    if (tab === 'changes') void this.execute(() => this.loadDiff(this.view.diffOffset));
+    if (tab === 'changes') void this.execute(() => this.loadChanges());
     this.tui.requestRender();
+  }
+  /** A local coding session reviews its folder against the review base; a coding workspace
+   * keeps its guarded diff. */
+  private loadChanges(): Promise<void> {
+    return interactiveCoding(this.client.snapshot)
+      ? this.loadReview()
+      : this.loadDiff(this.view.diffOffset);
+  }
+  private async loadReview(file = this.view.review?.file ?? 0): Promise<void> {
+    const id = this.client.snapshot?.id;
+    const data = await this.client.changeReview();
+    if (this.client.snapshot?.id !== id) return;
+    const index = data?.files.length ? Math.min(Math.max(0, file), data.files.length - 1) : 0;
+    const path = data?.files[index]?.path;
+    const hunks = data && path ? await this.client.changeHunks(data, path) : undefined;
+    this.view.review = { data, file: index, hunks, hunk: -1 };
+    this.document.invalidate();
+    this.tui.requestRender();
+  }
+  /** Changes-tab keys: alt+left/right file, alt+up/down hunk; with an empty editor, a accepts,
+   * r reverts and i starts a follow-up instruction about the selection. */
+  private reviewKey(data: string): { consume: true } | undefined {
+    const review = this.view.review;
+    if (!review?.data?.files.length) return;
+    const file = review.data.files[review.file]!;
+    if (matchesKey(data, 'alt+right') || matchesKey(data, 'alt+left')) {
+      const next = review.file + (matchesKey(data, 'alt+right') ? 1 : -1);
+      if (next >= 0 && next < review.data.files.length)
+        void this.execute(() => this.loadReview(next));
+      return { consume: true };
+    }
+    if (matchesKey(data, 'alt+down') || matchesKey(data, 'alt+up')) {
+      const count = review.hunks?.length ?? 0;
+      review.hunk = Math.max(
+        -1,
+        Math.min(count - 1, review.hunk + (matchesKey(data, 'alt+down') ? 1 : -1)),
+      );
+      this.document.invalidate();
+      this.tui.requestRender();
+      return { consume: true };
+    }
+    if (this.editor.getExpandedText() !== '') return;
+    const hunk = review.hunk >= 0 ? review.hunks?.[review.hunk] : undefined;
+    const what = file.path + (hunk ? ` (hunk ${review.hunk + 1})` : '');
+    const act = (action: 'accept' | 'revert') => async () => {
+      const data = await this.client.changeAct(review.data!, action, file.path, hunk);
+      this.view.review = { data, file: review.file, hunk: -1 };
+      await this.loadReview(review.file);
+      this.client.report((action === 'accept' ? 'Accepted ' : 'Reverted ') + what + '.');
+    };
+    if (data === 'a') {
+      void this.execute(act('accept'));
+      return { consume: true };
+    }
+    if (data === 'r') {
+      this.confirm(
+        'Revert ' + what,
+        (hunk ? 'Puts this hunk back' : 'Puts this file back') +
+          ' the way it was at the review base. Only the reviewed version is written; if the file changed since, nothing is written and you review again.',
+        'Revert',
+        act('revert'),
+      );
+      return { consume: true };
+    }
+    if (data === 'i') {
+      this.setTab('conversation');
+      this.editor.setText(
+        `In ${file.path}${hunk ? ` (the change at ${hunk.text.split('\n')[0]})` : ''}: `,
+      );
+      return { consume: true };
+    }
+    return;
+  }
+  /** /rewind [turn]: choose a turn and what to restore, review, then confirm once. */
+  private async rewind(args: string): Promise<void> {
+    const points = await this.client.checkpoints();
+    if (!points.length)
+      throw new Error(
+        'No turn has been checkpointed in this session yet. A checkpoint is taken as each turn starts.',
+      );
+    const choose = (attempt: string) =>
+      this.choice(
+        'Rewind · what to restore',
+        [
+          {
+            value: 'both',
+            label: 'Files and conversation',
+            description: 'Restore files and continue from before this turn in a new session',
+          },
+          {
+            value: 'files',
+            label: 'Files only',
+            description: 'Restore files; keep the conversation',
+          },
+          {
+            value: 'conversation',
+            label: 'Conversation only',
+            description: 'Continue from before this turn in a new session; files stay',
+          },
+        ],
+        (mode) =>
+          void this.execute(async () => {
+            const review = await this.client.rewindReview(attempt, mode as RewindMode);
+            this.confirm(
+              `Rewind to before turn ${review.turn}`,
+              rewindSummary(review),
+              'Rewind',
+              async () => {
+                const text = await this.client.rewind(review);
+                if (review.mode !== 'files') this.editor.setText(text);
+              },
+            );
+          }),
+      );
+    if (args) {
+      const found = points.find((p) => String(p.turn) === args.trim());
+      if (!found) throw new Error(`No checkpoint for turn ${args.trim()}. /rewind lists them.`);
+      choose(found.attempt_id);
+      return;
+    }
+    this.choice(
+      'Rewind to before which turn?',
+      points
+        .slice()
+        .reverse()
+        .map((p) => ({
+          value: p.attempt_id,
+          label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,
+          description: p.at,
+        })),
+      choose,
+    );
   }
   private resetScroll(): void {
     if (this.view.tab === 'conversation' || this.view.tab === 'commands') this.scroll.scrollToEnd();
@@ -1305,7 +1448,7 @@ export class SalaamApp {
   }
   private async refresh(): Promise<void> {
     await this.client.refresh();
-    if (this.view.tab === 'changes') await this.loadDiff(this.view.diffOffset);
+    if (this.view.tab === 'changes') await this.loadChanges();
   }
   private async loadDiff(offset: number): Promise<void> {
     if (this.diffBusy) return;
