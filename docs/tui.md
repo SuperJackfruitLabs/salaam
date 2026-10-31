@@ -28,11 +28,21 @@ Type `/` to see command completions. Tab or Enter accepts a completion; Enter th
 | `/copy`, `/export [path]`                                              | Copy the last complete assistant response on macOS, or export captured history (including pre-compaction records) to a new private Markdown file |
 | `/settings`                                                            | Terminal appearance, shortcuts and model selection                                                                                               |
 | `/fork`                                                                | Fork an idle local conversation through Pi's session manager; share the workspace, but not pending approvals or task authority                   |
+| `/rewind`, `/rewind N`                                                 | Restore files, the conversation or both to before an earlier turn: one reviewed summary, one confirm                                             |
 | `/undo`, `/undo reconcile`                                             | Review the inverse of the last completed local edit, or verify files after an interrupted undo without replaying mutations                       |
 | `/plan [request]`, `/review [focus]`                                   | Submit a planning or code-review instruction using the current provider; these are prompts, not enforced permission modes                        |
 | `/skills`, `/mcp`, `/agents`, `/tasks`                                 | Inspect skill admission, managed MCP, worker profiles/children, or open durable task actions                                                     |
 
+Shift+Tab (or `/mode`) cycles a coding session through **review** (every edit and command asks), **accept edits** (ordinary project edits apply without asking) and **auto** (edits, and commands that stay inside the OS sandbox, run without asking). There is no plan mode; a session saved in it opens in review. Two further levels are separate commands and survive the cycle:
+
+- `/full-access` runs later commands without the OS sandbox and without asking, except commands the danger check calls dangerous. Those still ask and say why. The check reads the plain shell subset only (simple commands joined by `&&`, `||`, `;`, `|`). It unwraps `sudo`, `env`, `timeout`, `nice`, `xargs`, `find -exec` and `sh -c` up to three levels, and treats anything it cannot read as dangerous: substitutions, heredocs, pipes into a shell, and writes outside the workspace. A repo's approval rules cannot approve a dangerous command; your own session or user rules can. The host must allow it (`allow_full_access_sessions`).
+- `/yolo` asks you to type `yolo`, then approves every edit and command with no sandbox. The status line shows a red `YOLO`. Each approval is recorded as `permission.yolo-approved`, with what full access would have asked. It is only for your own desk sessions, never host-managed, board or child work, and a host must set `allow_yolo_sessions: true`. `/yolo` again turns it off.
+
+A command with shell features (pipes, redirects) can never become an approval rule, so its prompt offers only Approve once and Deny. If a terminal is killed while holding control, the next `salaam code` waits out its lease (at most 15 s). A terminal that is still alive keeps control; press Ctrl+K and choose Take control to take it.
+
 `/undo` refuses concurrent file changes and cannot reverse shell commands or external effects. A crash or partial failure leaves a durable fence across local coding sessions sharing the root. Inspect the recorded inverse and restore the original files before `/undo reconcile`; reconciliation verifies every file rather than retrying the edit. Conversation history stays intact.
+
+`/rewind` lists the session's turns, newest first. Each turn checkpoints the folder before it starts, in a shadow Git repository under Salaam's state directory; the folder's own `.git` is never read or written, and `.gitignore`d files, `node_modules`, `.env*`, key files and Salaam's own state are not captured. Choose files, conversation or both, read the summary of what restoring does, and confirm once. Files are restored only if the folder is still exactly the tree you reviewed; otherwise nothing is written and you review again. A conversation rewind never cuts history: it forks a new session from before that turn, the old session stays as it was, and the turn's instruction comes back into the message box to edit. Commands and effects outside the folder are not undone. When files are written as a separate tools user, only the conversation can be rewound.
 
 `/fork` requires an idle local session with no pending work or uncertain effects. The branch retains captured history; inherited provider usage is not charged to it again. Both conversations still point at the same files, so this is not a Git worktree or filesystem snapshot.
 
@@ -67,7 +77,9 @@ Existing pre-coding daemons remain usable: missing coding/executor fields and ro
 
 Conversation shows committed messages, queued instructions, bounded live previews, recent tool activity, pending approvals and explicit interruptions. A preview is replaced by committed transcript state and discarded after connection loss; it is not a completion receipt. The recent transcript has a 100-message snapshot limit. **Browse full history** opens bounded saved entry pages, including before compaction; **Read artifact** opens saved evidence without acknowledging a child result. **Inspect tool activity** shows recorded inputs and outcomes under their original attempt/tool IDs. Input previews are bounded and indicate truncation.
 
-Changes displays a service-checked diff against the imported baseline and its workspace identity/revision. Alt+Left/Right pages files. Original source checkouts remain outside the writable coding copy. External edits or a locked workspace can prevent a checked diff; inspect the reported conflict and use the explicit `sal workspace refresh` workflow after reviewing its observed digest. A displayed old revision cannot authorize an edit to a newer revision.
+In a local coding session, Changes is a per-file review of what changed in the folder since the review base (the first turn's checkpoint, moved forward as you accept). Alt+Left/Right moves between files and Alt+Up/Down between hunks (none selected means the whole file). With the message box empty, `a` accepts the selection (marks it reviewed; the file is not touched), `r` reverts it to the base after one confirm, and `i` starts a follow-up instruction about it. A revert is refused if the folder changed after you looked.
+
+In a coding workspace, Changes displays a service-checked diff against the imported baseline and its workspace identity/revision. Alt+Left/Right pages files. Original source checkouts remain outside the writable coding copy. External edits or a locked workspace can prevent a checked diff; inspect the reported conflict and use the explicit `sal workspace refresh` workflow after reviewing its observed digest. A displayed old revision cannot authorize an edit to a newer revision.
 
 Commands displays stable run IDs, captured workspace revisions, actual terminal states and exit codes. **Command logs** reads the captured output by byte offset. **Cancel a command** and **Cancel current work** are separate confirmed actions; neither is implied by detach. Unknown outcomes stay unknown and use the scriptable reconciliation workflow. Context shows the session/worker/workspace, explicit task facts, child/result identities, executor details and recorded/estimated/unknown usage.
 
@@ -110,4 +122,22 @@ The model reads a file and supplies its content hash with an edit. Review shows 
 
 Commands run as your local OS user, **without an OS sandbox**. The approval shows the exact command, working directory and timeout. They can access the user's files and network, even outside the project. Salaam supplies a minimal environment rather than inheriting daemon API keys. Commands have a two-minute maximum runtime and 64 KiB captured-output limit. Foreground process groups are cancelled with the attempt; deliberately daemonized programs are outside this process-group guarantee. Use foreground commands rather than starting background services.
 
-Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The local tabs show recorded proposals and outcomes, not a live Git diff. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
+Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The Commands tab shows recorded commands and outcomes; Changes reviews the folder itself against its checkpoints. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
+
+## Attaching files with `@`
+
+In a local coding session, type `@` in the composer to complete a workspace file. The list
+comes from git, so ignored files do not appear. Names with spaces are quoted (`@"my notes.md"`).
+
+When you send the prompt, Salaam attaches each mentioned file:
+
+- A text file is attached in full, up to 64 KiB per file and 256 KiB per prompt. A cut file is
+  marked as truncated.
+- An image (PNG, JPEG, GIF or WebP, recognised by its bytes) goes to the model as an image, up to
+  512 KiB each and four per prompt.
+- A directory attaches its listing. A binary file is named but not attached.
+- A path outside the workspace, including through a symlink, is refused.
+- A file that looks like a secret (`.env`, keys, `.netrc` and similar) needs a confirm first.
+
+Each attachment is named with the start of its SHA-256 so the transcript shows which version the
+model read. Board sessions are sent exactly what was typed; `@` is not expanded there.

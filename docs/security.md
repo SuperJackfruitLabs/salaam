@@ -93,7 +93,20 @@ sandbox at `read-only` or `workspace-write` (the default):
 - macOS uses Seatbelt (`sandbox-exec`) with a deny-by-default profile. It reads
   the system, developer tools, package prefixes, the workspace and a private tmp.
   It writes only the workspace (in `workspace-write`) and that tmp. It has no
-  home directory, no mach services and no network.
+  home directory, no mach services and no network. `/usr/bin/git` is Apple's
+  shim, which needs Xcode's licence preferences, so commands get the real git
+  from the active developer dir (`xcode-select -p`) first on `PATH`. git runs
+  with `GIT_CONFIG_GLOBAL=/dev/null` unless the operator allows `~/.gitconfig`.
+
+Toolchains outside the workspace are unreadable unless the operator lists them.
+`local_sandbox_read_paths` in the host config (or `--local-sandbox-read` /
+`SALAAM_LOCAL_SANDBOX_READ` for `salaam service start`) adds read-only paths; the
+entry `toolchain` expands to the node running Salaam and, where present,
+`~/.npm`, `~/.nvm`, `~/.cargo`, `~/.rustup`, `~/go`, `~/.gitconfig` and
+`~/.config/git`. The root, home itself and any credential location (`~/.ssh`,
+`~/.gnupg`, `~/.aws`, `~/.npmrc`, `~/.netrc`, keychains and others), or a path
+above one, are refused. Host plan pins the resolved list in the manifest. A
+listed path is never writable.
 
 Neither sandbox gives network unless a check declares it. `full-access` runs the
 command as is, and only when the operator chooses it.

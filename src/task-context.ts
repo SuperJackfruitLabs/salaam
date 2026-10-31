@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TaskWork } from './task-work.js';
 import type { ContextAdmission } from './context-admission.js';
+import type { ProjectInstructions } from './project-instructions.js';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
 import { canonical, ServiceError, string, integer, object } from './protocol.js';
@@ -41,6 +42,10 @@ export interface Compaction {
 export class TaskContext {
   work?: TaskWork;
   admitted?: ContextAdmission;
+  /** Interactive sessions only: AGENTS.md guidance loaded automatically (project-instructions.ts). */
+  instructions?: ProjectInstructions;
+  /** Interactive sessions only: a folder checkpoint before every turn (turn-rewind.ts). */
+  checkpoints?: import('./turn-rewind.js').TurnCheckpoints;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,
@@ -99,11 +104,13 @@ export class TaskContext {
     if (Buffer.byteLength(frame) > TASK_FRAME_BYTES)
       throw new ServiceError('context_capacity', 'Mandatory task state exceeds the context budget');
     const admittedContext = this.admitted?.frame(id);
-    return admittedContext
+    const projectInstructions = this.instructions?.frame(id);
+    return admittedContext || projectInstructions
       ? 'SALAAM_TASK_STATE ' +
           canonical({
             ...JSON.parse(frame.slice('SALAAM_TASK_STATE '.length)),
-            admitted_context: admittedContext,
+            ...(admittedContext ? { admitted_context: admittedContext } : {}),
+            ...(projectInstructions ? { project_instructions: projectInstructions } : {}),
           })
       : frame;
   }

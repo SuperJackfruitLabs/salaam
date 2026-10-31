@@ -1,3 +1,4 @@
+import { commandArgv } from './approval-rules.js';
 import {
   Input,
   SelectList,
@@ -152,13 +153,17 @@ export class FormModal implements Component, Focusable {
         this.theme.ink(this.labels?.field ?? 'Project directory', 'muted'),
         ...this.input.render(Math.max(1, width - 4)).map((line) => this.theme.ink(line)),
         '',
-        this.theme.ink(
-          this.allowCoding
-            ? this.coding
-              ? '[✓] Coding workspace · guarded tools'
-              : '[ ] Conversation session'
-            : (this.labels?.hint ?? 'Conversation session · coding service is off'),
-          this.coding ? 'jade' : 'muted',
+        // A long hint (the YOLO warning) wraps instead of running past the frame.
+        ...wrapTextWithAnsi(
+          this.theme.ink(
+            this.allowCoding
+              ? this.coding
+                ? '[✓] Coding workspace · guarded tools'
+                : '[ ] Conversation session'
+              : (this.labels?.hint ?? 'Conversation session · coding service is off'),
+            this.coding ? 'jade' : 'muted',
+          ),
+          Math.max(1, width - 4),
         ),
         '',
         this.theme.key('enter', this.labels?.submit ?? 'create') +
@@ -191,7 +196,11 @@ export class ConfirmModal implements Component, Focusable {
     readonly renderAgain: () => void,
     readonly close: () => void,
     readonly confirm: () => void,
-  ) {}
+    /** Start on the action rather than on "Keep current state" (cancel a running turn). */
+    confirmByDefault = false,
+  ) {
+    this.selected = confirmByDefault;
+  }
   invalidate(): void {}
   render(width: number): string[] {
     return framed(
@@ -230,11 +239,28 @@ export class ConfirmModal implements Component, Focusable {
     this.renderAgain();
   }
 }
+export type ApprovalDecision = 'approve' | 'approve-session' | 'always' | 'deny';
+/**
+ * The approval prompt (phase 2a): what will run, in plain words, with the exact binding (approval
+ * id, digest, revision, expiry) one key away rather than in the way. Desk sessions can also approve
+ * for the rest of the session or always for this repo; strict work only ever approves once. A
+ * request longer than the screen must be read to the end before anything but Deny is possible, and
+ * a request that changed or expired cannot be approved at all.
+ */
+/** Why a reviewed request can only be approved once: a command with shell features (pipes,
+ * redirects, substitutions) can never become an approval rule. Undefined when a rule is possible. */
+export function onceOnlyReason(value: string): string | undefined {
+  const command = /\nCommand:\n([\s\S]*)$/.exec(value)?.[1];
+  return command !== undefined && commandArgv(command) === null
+    ? 'This command uses shell features (pipes, redirects, substitutions), so it cannot become a rule. Approve it once or deny it.'
+    : undefined;
+}
 export class ApprovalModal implements Component, Focusable {
   focused = false;
   offset = 0;
   reviewed = false;
-  approve = false;
+  showDetails = false;
+  choice = 0;
   private total = 0;
   private pageSize = 1;
   private stale = false;
@@ -246,24 +272,56 @@ export class ApprovalModal implements Component, Focusable {
     readonly current: () => Approval | undefined,
     readonly renderAgain: () => void,
     readonly close: () => void,
-    readonly decide: (decision: 'approve' | 'deny') => void,
+    readonly decide: (decision: ApprovalDecision) => void,
+    readonly offerRules = false,
+    /** Why only Approve once and Deny are offered, shown above the choices. */
+    readonly onceOnly?: string,
   ) {}
+  private choices(): {
+    decision: ApprovalDecision;
+    key: string;
+    label: string;
+    colour: 'amber' | 'jade';
+  }[] {
+    return [
+      { decision: 'deny', key: 'n', label: 'Deny', colour: 'amber' },
+      { decision: 'approve', key: 'y', label: 'Approve once', colour: 'jade' },
+      ...(this.offerRules
+        ? [
+            {
+              decision: 'approve-session' as const,
+              key: 's',
+              label: 'Approve for this session',
+              colour: 'jade' as const,
+            },
+            {
+              decision: 'always' as const,
+              key: 'a',
+              label: 'Always allow in this repo',
+              colour: 'jade' as const,
+            },
+          ]
+        : []),
+    ];
+  }
   invalidate(): void {}
   render(width: number): string[] {
     const a = this.approval,
       op = this.operation,
       t = this.theme,
       inner = Math.max(1, width - 4);
-    const details = [
-      `Operation: ${op.kind}`,
-      `Target: ${safeText(op.target)}`,
-      'Value:',
+    const body = [
+      safeText(op.target),
+      '',
       safeText(op.value),
-      `Expected target version: ${safeText(op.target_version)}`,
-      `Approval: ${a.id}`,
-      `Digest: ${a.operation_digest}`,
-      `Revision: ${a.revision} · worker epoch: ${a.worker_epoch}`,
-      `Expires: ${new Date(a.expires_at).toISOString()}`,
+      ...(this.showDetails
+        ? [
+            '',
+            `Approval ${a.id} · revision ${a.revision} · worker epoch ${a.worker_epoch}`,
+            `Digest ${a.operation_digest}`,
+            `Target version ${safeText(op.target_version)} · expires ${new Date(a.expires_at).toISOString()}`,
+          ]
+        : []),
     ].flatMap((line) => wrapTextWithAnsi(t.ink(line), inner));
     const current = this.current();
     this.stale =
@@ -272,39 +330,53 @@ export class ApprovalModal implements Component, Focusable {
       current.operation_digest !== a.operation_digest ||
       current.revision !== a.revision ||
       Date.now() >= a.expires_at;
-    this.total = details.length;
+    this.total = body.length;
     this.pageSize = Math.max(1, Math.min(18, this.rows() - 11));
     this.offset = Math.max(0, Math.min(this.offset, Math.max(0, this.total - this.pageSize)));
     if (this.rows() >= 12 && this.offset + this.pageSize >= this.total) this.reviewed = true;
     const disabled = !this.reviewed || this.stale;
+    const choices = this.choices();
+    this.choice = Math.max(0, Math.min(this.choice, choices.length - 1));
     return framed(
       t,
-      'Review approval',
+      'Approve?',
       [
-        ...details.slice(this.offset, this.offset + this.pageSize),
+        ...body.slice(this.offset, this.offset + this.pageSize),
         '',
-        t.ink(
-          this.stale
-            ? 'This request changed or expired. Close and refresh.'
-            : this.reviewed
-              ? 'Exact request binding reviewed.'
-              : `Scroll to the end to enable approval · ${this.offset + 1}–${Math.min(this.total, this.offset + this.pageSize)} of ${this.total}`,
-          this.stale ? 'red' : 'muted',
+        ...(this.stale
+          ? [t.ink('This request changed or expired. Close and refresh.', 'red')]
+          : this.reviewed
+            ? []
+            : [
+                t.ink(
+                  `Read to the end to approve · ${this.offset + 1}–${Math.min(this.total, this.offset + this.pageSize)} of ${this.total}`,
+                  'muted',
+                ),
+              ]),
+        ...(this.onceOnly ? wrapTextWithAnsi(t.ink(this.onceOnly, 'muted'), inner) : []),
+        ...choices.map((c, i) =>
+          t.ink(
+            (i === this.choice ? '› ' : '  ') + `${c.key}  ${c.label}`,
+            c.decision !== 'deny' && disabled ? 'muted' : i === this.choice ? c.colour : 'muted',
+          ),
         ),
-        t.ink((this.approve ? '  ' : '› ') + 'Deny', this.approve ? 'muted' : 'amber') +
-          '     ' +
-          t.ink((this.approve ? '› ' : '  ') + 'Approve once', disabled ? 'muted' : 'jade'),
         '',
-        t.key('↑↓', 'scroll') +
-          '   ' +
-          t.key('←→', 'choose') +
+        t.key('←→', 'choose') +
           '   ' +
           t.key('enter', 'decide') +
+          '   ' +
+          t.key('d', this.showDetails ? 'hide details' : 'details') +
+          '   ' +
+          t.key('↑↓', 'scroll') +
           '   ' +
           t.key('esc', 'back'),
       ],
       width,
     );
+  }
+  private pick(decision: ApprovalDecision): void {
+    if (decision !== 'deny' && (this.stale || !this.reviewed)) return;
+    this.decide(decision);
   }
   handleInput(data: string): void {
     const current = this.current(),
@@ -316,17 +388,22 @@ export class ApprovalModal implements Component, Focusable {
       current.revision !== a.revision ||
       current.worker_epoch !== a.worker_epoch ||
       Date.now() >= a.expires_at;
+    const choices = this.choices();
+    const byKey = choices.find((c) => c.key === data);
     if (matchesKey(data, 'escape')) this.close();
+    else if (byKey) this.pick(byKey.decision);
+    else if (data === 'd') this.showDetails = !this.showDetails;
     else if (matchesKey(data, 'down')) this.offset++;
     else if (matchesKey(data, 'up')) this.offset--;
     else if (matchesKey(data, 'pageDown')) this.offset += this.pageSize;
     else if (matchesKey(data, 'pageUp')) this.offset -= this.pageSize;
     else if (matchesKey(data, 'end')) this.offset = this.total;
     else if (matchesKey(data, 'home')) this.offset = 0;
-    else if (matchesKey(data, 'left') || matchesKey(data, 'right') || matchesKey(data, 'tab'))
-      this.approve = !this.approve;
-    else if (matchesKey(data, 'enter') && !this.stale && (!this.approve || this.reviewed))
-      this.decide(this.approve ? 'approve' : 'deny');
+    else if (matchesKey(data, 'right') || matchesKey(data, 'tab'))
+      this.choice = (this.choice + 1) % choices.length;
+    else if (matchesKey(data, 'left'))
+      this.choice = (this.choice + choices.length - 1) % choices.length;
+    else if (matchesKey(data, 'enter')) this.pick(choices[this.choice]!.decision);
     this.renderAgain();
   }
 }

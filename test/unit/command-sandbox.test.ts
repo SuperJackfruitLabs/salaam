@@ -123,8 +123,14 @@ test('Seatbelt argv runs the command under sandbox-exec with its profile and pri
   expect(argv[2]).toBe(
     seatbeltProfile('workspace-write', '/w', '/private/tmp/t', { network: false }),
   );
-  expect(argv.slice(3, 5)).toEqual(['/usr/bin/env', 'TMPDIR=/private/tmp/t/']);
-  expect(argv.slice(5)).toEqual(cmd);
+  // No developer dir on this Seatbelt, so PATH is left alone; git gets no global config unless
+  // the operator allows ~/.gitconfig (Phase 1, 2026-10-31).
+  expect(argv.slice(3, 6)).toEqual([
+    '/usr/bin/env',
+    'TMPDIR=/private/tmp/t/',
+    'GIT_CONFIG_GLOBAL=/dev/null',
+  ]);
+  expect(argv.slice(6)).toEqual(cmd);
 });
 
 test('each platform chooses its own sandbox, and none only when it is unusable', () => {

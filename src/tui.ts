@@ -11,9 +11,19 @@ import {
   type OverlayHandle,
   type KeyId,
 } from '@earendil-works/pi-tui';
+import { extractMentions, isSensitivePath } from './mentions.js';
+import { MentionAutocompleteProvider } from './tui-mentions.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
+import {
+  cancelChoices,
+  interactiveCoding,
+  queuedItems,
+  runningAttempt,
+  turnKey,
+  turnKeyAction,
+} from './tui-turn-keys.js';
 import { randomUUID } from 'node:crypto';
 import { join, resolve, basename } from 'node:path';
 import {
@@ -35,26 +45,46 @@ import {
   providerRoute,
   type ProviderRoute,
 } from './provider-config.js';
-import { SLASH_COMMANDS, SLASH_COMPLETIONS, parseSlashCommand, slashHelp } from './tui-commands.js';
+import {
+  INIT_INSTRUCTION,
+  SLASH_COMMANDS,
+  SLASH_COMPLETIONS,
+  parseSlashCommand,
+  slashHelp,
+} from './tui-commands.js';
 import { conversationExport, writeConversationExport } from './tui-export.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
+import { notificationFor, notify, notifyMode, jobsText, type JobRow } from './tui-notify.js';
+import type { DurableEvent } from './protocol.js';
 import { OperatorClient } from './tui-client.js';
 import { SalaamTheme, safeText, shortId, type ThemeName } from './tui-theme.js';
 import {
   Dynamic,
   DocumentView,
   header,
+  modelLabel,
   tabs,
   status,
   sidebar,
   type ViewModel,
   type ViewTab,
   type DiffPage,
+  modeLabel,
 } from './tui-view.js';
-import { ChoiceModal, FormModal, ConfirmModal, ApprovalModal, TextModal } from './tui-modals.js';
+import { nextMode } from './autonomy.js';
+import {
+  ChoiceModal,
+  FormModal,
+  ConfirmModal,
+  ApprovalModal,
+  onceOnlyReason,
+  TextModal,
+} from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
+import { rewindSummary } from './tui-review.js';
+import type { RewindMode } from './turn-rewind.js';
 
 export interface TuiOptions {
   state: string;
@@ -65,6 +95,8 @@ export interface TuiOptions {
   cwd?: string;
   codingRoot?: string;
   codingSocket?: string;
+  /** `salaam code`: open this folder directly (step 0, 2026-10-31). */
+  start?: import('./session-pick.js').CodeStart;
 }
 /** Frames are atomic. A slow terminal gets one fresh full redraw after drain. */
 export class SalaamTerminal extends ProcessTerminal {
@@ -187,7 +219,7 @@ export class SalaamApp {
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
     this.editor.setAutocompleteProvider(
-      new CombinedAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd(), null),
+      new MentionAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd()),
     );
     this.editor.onChange = () => {
       const text = this.editor.getExpandedText(),
@@ -255,6 +287,10 @@ export class SalaamApp {
     this.done = new Promise((resolve) => (this.finish = resolve));
     this.removeInput = this.tui.addInputListener((data) => this.input(data));
     this.client.on('change', () => this.changed());
+    this.client.on('durable', (event: DurableEvent) => {
+      const message = notificationFor(event);
+      if (message) notify(message, notifyMode());
+    });
   }
   private contentWidth(): number {
     return Math.max(
@@ -282,6 +318,11 @@ export class SalaamApp {
           this.historyKeys.add(submission.id);
           this.editor.addToHistory(submission.text);
         }
+      // Phase 2b: the status line shows this session's mode; reload it when the session changes.
+      if (this.client.snapshot?.id !== this.modeSession) {
+        this.modeSession = this.client.snapshot?.id;
+        void this.loadMode().catch(() => {});
+      }
       if (this.client.workspace?.revision !== this.lastRevision) {
         this.lastRevision = this.client.workspace?.revision;
         this.view.diff = undefined;
@@ -306,6 +347,48 @@ export class SalaamApp {
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
     )
       return;
+    // Esc stops the running turn, Enter steers it, Tab queues behind it (interactive coding only).
+    const key = turnKey(data);
+    const action = key
+      ? turnKeyAction({
+          key,
+          text: this.editor.getExpandedText(),
+          snapshot: this.client.snapshot,
+          modal: false,
+          autocomplete: false,
+        })
+      : null;
+    if (action === 'interrupt') {
+      const attempt = runningAttempt(this.client.snapshot);
+      if (attempt)
+        void this.execute(async () => {
+          await this.client.cancel(attempt);
+          this.client.report(
+            'Stopped the turn. Edits already made stay; /undo reverts the last one. Your typed text is kept.',
+          );
+        });
+      return { consume: true };
+    }
+    if (action === 'steer' || action === 'queue') {
+      const text = this.editor.getExpandedText(),
+        session = this.client.snapshot?.id;
+      void this.execute(async () => {
+        if (action === 'steer') await this.client.steer(text);
+        else {
+          await this.client.submit(text);
+          const waiting = this.client.snapshot ? queuedItems(this.client.snapshot).length : 0;
+          this.client.report(
+            'Queued for after this turn (' + waiting + ' waiting). /queue edits or removes them.',
+          );
+        }
+        this.editor.addToHistory(text);
+        if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
+          this.editor.setText('');
+          if (session) this.drafts.delete(session);
+        }
+      });
+      return { consume: true };
+    }
     if (matchesKey(data, 'enter')) {
       const text = this.editor.getExpandedText(),
         session = this.client.snapshot?.id;
@@ -337,6 +420,7 @@ export class SalaamApp {
       ],
       ['ctrl+r', () => void this.execute(() => this.refresh())],
       ['ctrl+e', () => void this.execute(() => this.editPrompt())],
+      ['shift+tab', () => void this.execute(() => this.cycleMode())],
       ['f1', () => this.help()],
     ];
     for (const [key, action] of keys)
@@ -351,6 +435,10 @@ export class SalaamApp {
       const names: ViewTab[] = ['conversation', 'changes', 'commands', 'context'];
       this.setTab(names[(names.indexOf(this.view.tab) + 1) % names.length]!);
       return { consume: true };
+    }
+    if (this.view.tab === 'changes' && interactiveCoding(this.client.snapshot)) {
+      const handled = this.reviewKey(data);
+      if (handled) return handled;
     }
     if (
       this.view.tab === 'changes' &&
@@ -426,6 +514,7 @@ export class SalaamApp {
     description: string,
     label: string,
     confirm: () => Promise<unknown>,
+    confirmByDefault = false,
   ): void {
     if (this.terminal.rows < 18) {
       this.client.report('Expand the terminal to at least 18 rows to review this action.');
@@ -443,6 +532,7 @@ export class SalaamApp {
           this.closeModal();
           void this.execute(confirm);
         },
+        confirmByDefault,
       ),
     );
   }
@@ -476,25 +566,41 @@ export class SalaamApp {
     if (this.client.connection === 'offline')
       throw new Error('Service did not become available. Inspect sal service status.');
   }
+  /** Interactive sessions switch in place between turns; otherwise the choice opens a new session. */
+  private async applyRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+    if (this.client.snapshot?.provider_route && this.client.controlling) {
+      await this.client.switchRoute(route);
+      this.client.notice = 'Now using ' + modelLabel(this.client) + ' in this session.';
+      return;
+    }
+    this.selectedRoute = route;
+    await this.newSession();
+  }
   private modelPicker(): void {
+    const configured = (this.client.snapshot?.provider_route ?? this.client.health?.provider_route)
+      ?.provider;
+    const live = PI_PROVIDERS.filter((p) => p.getModels().length);
     this.choice(
-      'Provider · applies to a new session',
+      this.client.snapshot ? 'Provider · switches this session' : 'Provider',
       [
+        // The configured provider first; the scripted demo last, never the default.
+        ...[
+          ...live.filter((p) => p.id === configured),
+          ...live.filter((p) => p.id !== configured),
+        ].map((p) => ({
+          value: p.id,
+          label: p.name,
+          description: p.id + (p.id === configured ? ' · current' : ''),
+        })),
         {
           value: 'offline',
           label: 'Offline demo',
           description: 'Scripted fixture, not an AI model',
         },
-        ...PI_PROVIDERS.filter((p) => p.getModels().length).map((p) => ({
-          value: p.id,
-          label: p.name,
-          description: p.id,
-        })),
       ],
       (provider) => {
         if (provider === 'offline') {
-          this.selectedRoute = providerRoute();
-          void this.execute(() => this.newSession());
+          void this.execute(() => this.applyRoute(providerRoute()));
           return;
         }
         const catalog = PI_PROVIDERS.find((p) => p.id === provider)!;
@@ -505,11 +611,97 @@ export class SalaamApp {
             label: m.name,
             description: m.id + ' · ' + m.contextWindow + ' context tokens',
           })),
-          (model) => {
-            this.selectedRoute = providerRoute(provider, model);
-            void this.execute(() => this.newSession());
-          },
+          (model) => void this.execute(() => this.applyRoute(providerRoute(provider, model))),
         );
+      },
+    );
+  }
+  private modeSession: string | undefined;
+  /** Phase 2b: the session's mode and full access, for the status line. */
+  private async loadMode(): Promise<void> {
+    if (!this.client.snapshot) {
+      this.view.mode = undefined;
+      return;
+    }
+    const current = await this.client.permissions();
+    this.view.mode =
+      current.configurable && current.coding
+        ? {
+            mode: current.policy.mode,
+            ...(current.policy.access ? { access: current.policy.access } : {}),
+            ...(current.command_sandbox ? { sandbox: current.command_sandbox } : {}),
+          }
+        : undefined;
+    this.tui.requestRender();
+  }
+  /** Shift+Tab: review → accept edits → auto. Full access and YOLO are kept as they are; each has
+   * its own command. */
+  private async cycleMode(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('Modes are for local coding sessions. No session or files were changed.');
+    await this.client.setPermissions(session, current.policy.revision, {
+      mode: nextMode(current.policy.mode),
+      paths: [],
+      ...(current.policy.access ? { access: current.policy.access } : {}),
+    });
+    await this.loadMode();
+  }
+  private async setAccess(access: 'full' | 'yolo' | undefined): Promise<void> {
+    const session = this.client.snapshot!.id;
+    const current = await this.client.permissions();
+    await this.client.setPermissions(session, current.policy.revision, {
+      mode: current.policy.mode,
+      paths: current.policy.paths,
+      ...(access ? { access } : {}),
+    });
+    await this.loadMode();
+  }
+  /** Full access on (with a warning and a confirm) or off (at once). From YOLO it steps down at once. */
+  private async fullAccess(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('Full access is for local coding sessions. Nothing was changed.');
+    if (current.policy.access === 'full') return this.setAccess(undefined);
+    if (current.full_access_allowed === false)
+      throw new Error(
+        'The operator does not allow full access on this host. Commands stay in the OS sandbox.',
+      );
+    if (current.policy.access === 'yolo') return this.setAccess('full');
+    this.confirm(
+      'Turn on full access?',
+      'Later commands in this session run WITHOUT the OS sandbox: they can read and change any file your user can, and reach the network directly. They run without asking, except commands the danger check calls dangerous (force pushes, deletes, publishing, credentials, anything it cannot read), which still ask and say why. Run /full-access again to turn it off.',
+      'turn on full access',
+      () => this.setAccess('full'),
+    );
+  }
+  /** YOLO on only after the person types "yolo"; off at once. Never in the Shift+Tab cycle. */
+  private async yolo(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('YOLO is for local coding sessions. Nothing was changed.');
+    if (current.policy.access === 'yolo') return this.setAccess(undefined);
+    if (current.yolo_allowed === false)
+      throw new Error(
+        'YOLO is not allowed for this session: it is only for your own desk sessions on a host whose operator allows it.',
+      );
+    this.taskInput(
+      'Turn on YOLO? Type yolo to confirm',
+      '',
+      'Type yolo',
+      'NO approvals at all: every edit and command runs at once, without the OS sandbox, including force pushes, deletes and publishing. Each one is recorded. /yolo again turns it off.',
+      (value) => {
+        if (value.trim() !== 'yolo') {
+          this.client.report('YOLO stays off: the confirmation was not "yolo".');
+          return;
+        }
+        void this.execute(() => this.setAccess('yolo'));
       },
     );
   }
@@ -549,10 +741,8 @@ export class SalaamApp {
         return;
       }
       const slash = args.indexOf('/');
-      if (slash <= 0)
-        throw new Error('Use /model provider/model. The choice creates a new session.');
-      this.selectedRoute = providerRoute(args.slice(0, slash), args.slice(slash + 1));
-      await this.newSession();
+      if (slash <= 0) throw new Error('Use /model provider/model.');
+      await this.applyRoute(providerRoute(args.slice(0, slash), args.slice(slash + 1)));
       return;
     }
     if (command === 'provider') {
@@ -561,8 +751,7 @@ export class SalaamApp {
         return;
       }
       if (args === 'offline') {
-        this.selectedRoute = providerRoute();
-        await this.newSession();
+        await this.applyRoute(providerRoute());
         return;
       }
       const provider = PI_PROVIDERS.find((p) => p.id === args);
@@ -571,10 +760,7 @@ export class SalaamApp {
       this.choice(
         'Model · ' + provider.name,
         provider.getModels().map((m) => ({ value: m.id, label: m.name, description: m.id })),
-        (model) => {
-          this.selectedRoute = providerRoute(args, model);
-          void this.execute(() => this.newSession());
-        },
+        (model) => void this.execute(() => this.applyRoute(providerRoute(args, model))),
       );
       return;
     }
@@ -602,7 +788,7 @@ export class SalaamApp {
         [
           { value: 'permissions', label: 'Permissions · inspect, review or scoped edits' },
           { value: 'progression', label: 'Progression · manual, bounded tasks or schedules' },
-          { value: 'model', label: 'Provider and model (new session)' },
+          { value: 'model', label: 'Provider and model' },
           { value: 'theme', label: 'Switch Night / Paper' },
           { value: 'rail', label: 'Toggle workspace rail' },
           { value: 'keys', label: 'Keyboard shortcuts' },
@@ -639,6 +825,10 @@ export class SalaamApp {
       return;
     }
     if (!snapshot) throw new Error('Choose a session with /sessions or /new first.');
+    if (command === 'rewind') {
+      await this.rewind(args);
+      return;
+    }
     if (command === 'undo') {
       if (args === 'reconcile') {
         await this.client.reconcileUndo();
@@ -682,6 +872,13 @@ export class SalaamApp {
       );
       return;
     }
+    if (command === 'init') {
+      if (!snapshot.capabilities.includes('local-coding-reviewed'))
+        throw new Error('/init writes a file. Start a coding session with /coding first.');
+      await this.client.submit(INIT_INSTRUCTION);
+      this.setTab('conversation');
+      return;
+    }
     if (command === 'compact') {
       await this.client.compact();
       return;
@@ -712,10 +909,25 @@ export class SalaamApp {
       this.taskActions();
       return;
     }
-    if (command === 'cancel') {
-      const active = snapshot.attempts.filter((a) =>
-        ['accepted', 'dispatching', 'running'].includes(a.state),
+    if (command === 'jobs') {
+      const base = `/v1/sessions/${snapshot.id}/local-tasks`;
+      const stop = /^stop\s+(\S+)$/.exec(args.trim());
+      if (stop) {
+        await call(this.client.socket, `${base}/${stop[1]}/stop`, {});
+        this.client.notice = 'Stopping background command ' + stop[1];
+        return;
+      }
+      const { tasks } = await call<{ tasks: JobRow[] }>(this.client.socket, base);
+      const outputs = await Promise.all(
+        tasks
+          .slice(0, 4)
+          .map((t) => call<{ output: string }>(this.client.socket, `${base}/${t.id}`)),
       );
+      this.showText('Background commands', jobsText(tasks, outputs));
+      return;
+    }
+    if (command === 'cancel') {
+      const active = cancelChoices(snapshot);
       if (!active.length) {
         this.client.report('No active or queued instruction to cancel.');
         return;
@@ -723,15 +935,18 @@ export class SalaamApp {
       const cancel = (id: string) =>
         this.confirm(
           'Cancel instruction',
-          'Cancel attempt ' + id + '? /exit would leave it running.',
+          'Cancel attempt ' +
+            shortId(id) +
+            '? Your typed text is kept. /exit would leave it running.',
           'Cancel work',
           () => this.client.cancel(id),
+          true,
         );
       if (active.length === 1) cancel(active[0]!.id);
       else
         this.choice(
           'Cancel an instruction',
-          active.map((a) => ({ value: a.id, label: a.state + ' · ' + shortId(a.id) })),
+          active.map((a) => ({ value: a.id, label: a.label })),
           cancel,
         );
       return;
@@ -746,15 +961,29 @@ export class SalaamApp {
         await this.client.submit(args);
         return;
       }
-      this.showText(
-        'Durable instruction queue',
-        JSON.stringify(
-          snapshot.submissions.filter((s) =>
-            ['accepted', 'dispatching', 'running'].includes(s.state),
-          ),
-          null,
-          2,
-        ),
+      const queued = queuedItems(snapshot);
+      if (!queued.length) {
+        this.client.report('Nothing is queued. Tab queues text for after the running turn.');
+        return;
+      }
+      this.choice(
+        'Queued instructions',
+        queued.map((q) => ({ value: q.attempt, label: q.text.slice(0, 80) })),
+        (attempt) => {
+          const item = queued.find((q) => q.attempt === attempt)!;
+          this.choice(
+            'Queued instruction',
+            [
+              { value: 'edit', label: 'Edit', description: 'Move it back into the input' },
+              { value: 'remove', label: 'Remove', description: 'Cancel it before it runs' },
+            ],
+            (choice) =>
+              void this.execute(async () => {
+                await this.client.cancel(item.attempt);
+                if (choice === 'edit') this.editor.setText(item.text);
+              }),
+          );
+        },
       );
       return;
     }
@@ -780,6 +1009,18 @@ export class SalaamApp {
           2,
         ),
       );
+      return;
+    }
+    if (command === 'mode') {
+      await this.cycleMode();
+      return;
+    }
+    if (command === 'full-access') {
+      await this.fullAccess();
+      return;
+    }
+    if (command === 'yolo') {
+      await this.yolo();
       return;
     }
     if (command === 'permissions') {
@@ -911,21 +1152,21 @@ export class SalaamApp {
       const current = snapshot.provider_route;
       if (!current || current.provider === 'salaam-proof')
         throw new Error('Choose a live provider/model first with /model.');
-      const choose = (level: string) => {
-        this.selectedRoute = providerRoute(
-          current.provider,
-          current.model,
-          current.max_tokens,
-          current.workspace_id,
-          current.connection,
-          level as import('./provider-config.js').ReasoningLevel,
+      const choose = (level: string) =>
+        this.applyRoute(
+          providerRoute(
+            current.provider,
+            current.model,
+            current.max_tokens,
+            current.workspace_id,
+            current.connection,
+            level as import('./provider-config.js').ReasoningLevel,
+          ),
         );
-        return this.newSession(snapshot.capabilities.includes('local-coding-reviewed'));
-      };
       if (args) await choose(args);
       else
         this.choice(
-          'Reasoning · new session · current ' + (current.reasoning ?? 'automatic low'),
+          'Reasoning · current ' + (current.reasoning ?? 'automatic low'),
           REASONING_LEVELS.map((level) => ({ value: level, label: level })),
           (level) => void this.execute(() => choose(level)),
         );
@@ -974,9 +1215,7 @@ export class SalaamApp {
     await this.startService();
     this.showModal(
       new FormModal(
-        (localCoding
-          ? 'New coding session · reviewed edits and unsandboxed commands · '
-          : 'New session · ') +
+        (localCoding ? 'New coding session · reviewed edits and commands · ' : 'New session · ') +
           (this.selectedRoute?.model ?? this.client.health?.provider_route.model ?? 'default'),
         this.options.cwd ?? this.client.snapshot?.cwd ?? process.cwd(),
         this.view.theme,
@@ -1037,7 +1276,25 @@ export class SalaamApp {
     if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
     if (Buffer.byteLength(text) > 65536)
       throw new Error('The composer accepts at most 64 KiB. Use an artifact for longer input.');
-    await this.client.submit(text, continuation);
+    const secrets = extractMentions(text).filter(isSensitivePath);
+    if (secrets.length) {
+      this.confirm(
+        'Attach secret-looking files?',
+        `${secrets.map((s) => '@' + s).join(', ')} will be sent to the model in full.`,
+        'Attach and send',
+        () => this.deliver(text, session, continuation, true),
+      );
+      return;
+    }
+    await this.deliver(text, session, continuation, false);
+  }
+  private async deliver(
+    text: string,
+    session: string,
+    continuation: string | undefined,
+    confirmSensitive: boolean,
+  ): Promise<void> {
+    await this.client.submit(text, continuation, confirmSensitive);
     this.editor.addToHistory(text);
     if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
       this.editor.setText('');
@@ -1050,8 +1307,140 @@ export class SalaamApp {
   setTab(tab: ViewTab): void {
     this.view.tab = tab;
     this.resetScroll();
-    if (tab === 'changes') void this.execute(() => this.loadDiff(this.view.diffOffset));
+    if (tab === 'changes') void this.execute(() => this.loadChanges());
     this.tui.requestRender();
+  }
+  /** A local coding session reviews its folder against the review base; a coding workspace
+   * keeps its guarded diff. */
+  private loadChanges(): Promise<void> {
+    return interactiveCoding(this.client.snapshot)
+      ? this.loadReview()
+      : this.loadDiff(this.view.diffOffset);
+  }
+  private async loadReview(file = this.view.review?.file ?? 0): Promise<void> {
+    const id = this.client.snapshot?.id;
+    const data = await this.client.changeReview();
+    if (this.client.snapshot?.id !== id) return;
+    const index = data?.files.length ? Math.min(Math.max(0, file), data.files.length - 1) : 0;
+    const path = data?.files[index]?.path;
+    const hunks = data && path ? await this.client.changeHunks(data, path) : undefined;
+    this.view.review = { data, file: index, hunks, hunk: -1 };
+    this.document.invalidate();
+    this.tui.requestRender();
+  }
+  /** Changes-tab keys: alt+left/right file, alt+up/down hunk; with an empty editor, a accepts,
+   * r reverts and i starts a follow-up instruction about the selection. */
+  private reviewKey(data: string): { consume: true } | undefined {
+    const review = this.view.review;
+    if (!review?.data?.files.length) return;
+    const file = review.data.files[review.file]!;
+    if (matchesKey(data, 'alt+right') || matchesKey(data, 'alt+left')) {
+      const next = review.file + (matchesKey(data, 'alt+right') ? 1 : -1);
+      if (next >= 0 && next < review.data.files.length)
+        void this.execute(() => this.loadReview(next));
+      return { consume: true };
+    }
+    if (matchesKey(data, 'alt+down') || matchesKey(data, 'alt+up')) {
+      const count = review.hunks?.length ?? 0;
+      review.hunk = Math.max(
+        -1,
+        Math.min(count - 1, review.hunk + (matchesKey(data, 'alt+down') ? 1 : -1)),
+      );
+      this.document.invalidate();
+      this.tui.requestRender();
+      return { consume: true };
+    }
+    if (this.editor.getExpandedText() !== '') return;
+    const hunk = review.hunk >= 0 ? review.hunks?.[review.hunk] : undefined;
+    const what = file.path + (hunk ? ` (hunk ${review.hunk + 1})` : '');
+    const act = (action: 'accept' | 'revert') => async () => {
+      const data = await this.client.changeAct(review.data!, action, file.path, hunk);
+      this.view.review = { data, file: review.file, hunk: -1 };
+      await this.loadReview(review.file);
+      this.client.report((action === 'accept' ? 'Accepted ' : 'Reverted ') + what + '.');
+    };
+    if (data === 'a') {
+      void this.execute(act('accept'));
+      return { consume: true };
+    }
+    if (data === 'r') {
+      this.confirm(
+        'Revert ' + what,
+        (hunk ? 'Puts this hunk back' : 'Puts this file back') +
+          ' the way it was at the review base. Only the reviewed version is written; if the file changed since, nothing is written and you review again.',
+        'Revert',
+        act('revert'),
+      );
+      return { consume: true };
+    }
+    if (data === 'i') {
+      this.setTab('conversation');
+      this.editor.setText(
+        `In ${file.path}${hunk ? ` (the change at ${hunk.text.split('\n')[0]})` : ''}: `,
+      );
+      return { consume: true };
+    }
+    return;
+  }
+  /** /rewind [turn]: choose a turn and what to restore, review, then confirm once. */
+  private async rewind(args: string): Promise<void> {
+    const points = await this.client.checkpoints();
+    if (!points.length)
+      throw new Error(
+        'No turn has been checkpointed in this session yet. A checkpoint is taken as each turn starts.',
+      );
+    const choose = (attempt: string) =>
+      this.choice(
+        'Rewind · what to restore',
+        [
+          {
+            value: 'both',
+            label: 'Files and conversation',
+            description: 'Restore files and continue from before this turn in a new session',
+          },
+          {
+            value: 'files',
+            label: 'Files only',
+            description: 'Restore files; keep the conversation',
+          },
+          {
+            value: 'conversation',
+            label: 'Conversation only',
+            description: 'Continue from before this turn in a new session; files stay',
+          },
+        ],
+        (mode) =>
+          void this.execute(async () => {
+            const review = await this.client.rewindReview(attempt, mode as RewindMode);
+            this.confirm(
+              `Rewind to before turn ${review.turn}`,
+              rewindSummary(review),
+              'Rewind',
+              async () => {
+                const text = await this.client.rewind(review);
+                if (review.mode !== 'files') this.editor.setText(text);
+              },
+            );
+          }),
+      );
+    if (args) {
+      const found = points.find((p) => String(p.turn) === args.trim());
+      if (!found) throw new Error(`No checkpoint for turn ${args.trim()}. /rewind lists them.`);
+      choose(found.attempt_id);
+      return;
+    }
+    this.choice(
+      'Rewind to before which turn?',
+      points
+        .slice()
+        .reverse()
+        .map((p) => ({
+          value: p.attempt_id,
+          label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,
+          description: p.at,
+        })),
+      choose,
+    );
   }
   private resetScroll(): void {
     if (this.view.tab === 'conversation' || this.view.tab === 'commands') this.scroll.scrollToEnd();
@@ -1059,7 +1448,7 @@ export class SalaamApp {
   }
   private async refresh(): Promise<void> {
     await this.client.refresh();
-    if (this.view.tab === 'changes') await this.loadDiff(this.view.diffOffset);
+    if (this.view.tab === 'changes') await this.loadChanges();
   }
   private async loadDiff(offset: number): Promise<void> {
     if (this.diffBusy) return;
@@ -1099,7 +1488,17 @@ export class SalaamApp {
       void this.execute(async () => {
         const approval = approvals.find((a) => a.id === id)!;
         const reviewed = await this.client.review(approval);
-        this.showApproval(reviewed.approval, reviewed.operation);
+        // Desk sessions can approve for the session or always; strict work only ever approves once.
+        const rules = await this.client.approvalRules().catch(() => ({ applies: false }));
+        const onceOnly = rules.applies
+          ? onceOnlyReason(String(reviewed.operation.value))
+          : undefined;
+        this.showApproval(
+          reviewed.approval,
+          reviewed.operation,
+          rules.applies && !onceOnly,
+          onceOnly,
+        );
       });
     if (approvals.length === 1) open(approvals[0]!.id);
     else
@@ -1115,7 +1514,102 @@ export class SalaamApp {
         open,
       );
   }
-  private showApproval(approval: Approval, operation: import('./protocol.js').Operation): void {
+  /** /permissions → Approval rules: list them, remove one, or add one in plain words. */
+  private async approvalRules(): Promise<void> {
+    const { applies, rules, problems } = await this.client.approvalRules();
+    if (!applies) {
+      this.client.report('Approval rules apply only to desk coding sessions.');
+      return;
+    }
+    const describe = (r: import('./approval-rules.js').StoredRule) =>
+      `${r.effect} ${r.tool} ${r.command ?? (r.paths ?? []).join(', ')}`.trim();
+    this.choice(
+      'Approval rules · deny beats ask beats allow · unmatched requests ask',
+      [
+        {
+          value: 'add',
+          label: 'Add a rule',
+          description: 'e.g. allow command npm test *  ·  deny edit src/secrets/**',
+        },
+        ...rules.map((r) => ({
+          value: 'rule:' + r.id,
+          label: describe(r),
+          description:
+            r.source === 'user'
+              ? 'From your permissions.json; edit that file to change it'
+              : r.source === 'repo'
+                ? 'Always, in this repo · choose to remove'
+                : 'This session · choose to remove',
+        })),
+        ...problems.map((p, i) => ({ value: 'problem:' + i, label: 'Problem', description: p })),
+      ],
+      (value) => {
+        if (value === 'add') {
+          this.taskInput(
+            'New approval rule',
+            '',
+            'effect tool words-or-paths',
+            'allow|ask|deny, then command or edit, then command words (a final * takes any further words) or comma-separated path globs. Example: allow command git status',
+            (text) => {
+              const [effect, tool, ...rest] = text.trim().split(/\s+/);
+              const target = rest.join(' ');
+              const rule =
+                tool === 'edit'
+                  ? {
+                      effect,
+                      tool,
+                      paths: target
+                        .split(',')
+                        .map((p) => p.trim())
+                        .filter(Boolean),
+                    }
+                  : { effect, tool, command: target };
+              this.choice(
+                'Keep this rule for…',
+                [
+                  {
+                    value: 'session',
+                    label: 'This session',
+                    description: 'Gone when the session ends',
+                  },
+                  {
+                    value: 'repo',
+                    label: 'This repo',
+                    description: "Every desk session here; kept in Salaam's state",
+                  },
+                ],
+                (scope) =>
+                  void this.execute(() =>
+                    this.client.addRule(
+                      scope as 'session' | 'repo',
+                      rule as import('./approval-rules.js').ApprovalRule,
+                    ),
+                  ),
+              );
+            },
+          );
+          return;
+        }
+        if (!value.startsWith('rule:')) return;
+        const rule = rules.find((r) => 'rule:' + r.id === value)!;
+        if (rule.source === 'user') {
+          this.client.report(
+            'This rule comes from your permissions.json; edit that file to change it.',
+          );
+          return;
+        }
+        this.confirm('Remove this rule?', describe(rule), 'remove', () =>
+          this.client.removeRule(rule.id),
+        );
+      },
+    );
+  }
+  private showApproval(
+    approval: Approval,
+    operation: import('./protocol.js').Operation,
+    offerRules = false,
+    onceOnly?: string,
+  ): void {
     this.showModal(
       new ApprovalModal(
         approval,
@@ -1127,8 +1621,44 @@ export class SalaamApp {
         () => this.closeModal(),
         (decision) => {
           this.closeModal();
-          void this.execute(() => this.client.decide(approval, decision));
+          if (decision === 'approve' || decision === 'deny') {
+            void this.execute(() => this.client.decide(approval, decision));
+            return;
+          }
+          // The rule is the exact request just reviewed: its command words or its edited paths.
+          // If it cannot become a rule (shell features, odd words), nothing is approved; say why.
+          const approveWith = (scope: 'session' | 'repo') => async () => {
+            // While the approval is pending the status line shows it, not a notice, so a
+            // refused rule is shown where it cannot be missed.
+            try {
+              await this.client.ruleFromOperation(operation.id, scope);
+            } catch (error) {
+              this.showText(
+                'Not saved as a rule',
+                `${error instanceof Error ? error.message : String(error)}\n\nNothing was approved. Press ctrl+o to approve it once instead.`,
+              );
+              return;
+            }
+            await this.client.decide(approval, 'approve');
+            this.client.report(
+              scope === 'session'
+                ? 'Approved, and the same request will be approved for the rest of this session.'
+                : 'Approved, and the same request will always be approved in this repo. Remove it in /permissions.',
+            );
+          };
+          if (decision === 'approve-session') void this.execute(approveWith('session'));
+          else
+            this.confirm(
+              'Always allow in this repo?',
+              `${safeText(operation.target)}
+
+This exact request will be approved without asking in every desk session on this repository, until you remove it in /permissions. It is kept in Salaam's state, not in the repository.`,
+              'always allow',
+              approveWith('repo'),
+            );
         },
+        offerRules,
+        onceOnly,
       ),
       86,
     );
@@ -1182,9 +1712,14 @@ export class SalaamApp {
         ...(current.coding
           ? [
               {
+                value: 'rules',
+                label: 'Approval rules',
+                description: 'Allow, ask or deny by command words and path globs',
+              },
+              {
                 value: 'review',
                 label: 'Review every mutation',
-                description: 'Explicit approval for each edit and unsandboxed shell command',
+                description: 'Explicit approval for each edit and shell command',
               },
               {
                 value: 'scoped-edit',
@@ -1195,6 +1730,10 @@ export class SalaamApp {
           : []),
       ],
       (mode) => {
+        if (mode === 'rules') {
+          void this.execute(() => this.approvalRules());
+          return;
+        }
         if (mode === 'inspect-current') {
           this.showText('Permissions and execution boundary', JSON.stringify(current, null, 2));
           return;
@@ -1203,7 +1742,7 @@ export class SalaamApp {
           this.showModal(
             new TextModal(
               'Review permission policy',
-              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nAll shell commands still require approval. This is not an OS sandbox. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
+              `Session ${session}\nWorkspace ${current.policy.root}\nMode ${mode}\nAuto-edit paths: ${paths.join(', ') || '(none)'}\nCommands ask unless an approval rule or the session mode allows them (auto allows only sandboxed commands; full access allows all but dangerous ones; YOLO allows everything). Commands run in the host OS sandbox unless full access or YOLO is on. Progression and budgets remain unchanged. Already-running commands are not stopped.`,
               this.view.theme,
               () => this.terminal.rows,
               () => this.tui.requestRender(),
@@ -1832,7 +2371,11 @@ export class SalaamApp {
         label: 'Operator inbox',
         description: 'Shared durable attention and results',
       },
-      { value: 'model', label: 'Choose model and provider', description: '/model · new session' },
+      {
+        value: 'model',
+        label: 'Choose model and provider',
+        description: '/model · switches this session',
+      },
       { value: 'help', label: 'Slash commands', description: '/help' },
       { value: 'new', label: 'New session', description: 'ctrl+n' },
       {
@@ -2246,6 +2789,7 @@ export class SalaamApp {
   }
   private async initialize(): Promise<void> {
     await this.execute(async () => {
+      if (this.options.start) return this.openHere(this.options.start);
       await this.client.list();
       if (this.options.session)
         await this.client.open(this.options.session, {
@@ -2258,6 +2802,30 @@ export class SalaamApp {
         this.tui.requestRender();
       }
     });
+  }
+  /** One command for this folder: start the service if needed, then continue the folder's
+   * latest session, start a new coding session in it, or show the session list. */
+  private async openHere(start: import('./session-pick.js').CodeStart): Promise<void> {
+    const { latestSessionFor, deskUsesAnthropic } = await import('./session-pick.js');
+    await this.startService();
+    if (
+      deskUsesAnthropic(
+        !!this.selectedRoute,
+        this.client.health?.provider_route.provider,
+        existsSync(credentialPath()) || existsSync(credentialPath() + '.json'),
+      )
+    )
+      this.selectedRoute = providerRoute('anthropic');
+    if (start === 'resume') return this.sessions();
+    const cwd = resolve(this.options.cwd ?? process.cwd());
+    const existing = start === 'continue' ? latestSessionFor(this.client.sessions, cwd) : undefined;
+    if (existing)
+      await this.client.open(existing, {
+        observe: this.options.observe,
+        takeover: this.options.takeover,
+      });
+    else await this.client.create(cwd, false, this.selectedRoute, true);
+    this.setTab('conversation');
   }
   async run(): Promise<void> {
     this.running = true;

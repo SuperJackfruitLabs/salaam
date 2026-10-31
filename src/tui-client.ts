@@ -66,6 +66,15 @@ export interface LivePreview {
 }
 export type OperatorConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 /** An operator client only: the service owns workers, authority and durable outcomes. */
+/** "AGENTS.md" or "AGENTS.md (2 files)": which instruction files guide this session. */
+export function instructionsLabel(
+  summary: import('./project-instructions.js').InstructionsSummary,
+): string {
+  const names = [...new Set(summary.files.map((f) => f.path.split('/').at(-1)!))].join(' + ');
+  return summary.files.length > 1 ? `${names} (${summary.files.length} files)` : names;
+}
+/** Longest a stale control lease is waited out (the service's lease TTL is 15 s). */
+const CONTROL_LAPSE_MS = 16000;
 export class OperatorClient extends EventEmitter {
   readonly socket: string;
   readonly clientId = randomUUID();
@@ -142,7 +151,13 @@ export class OperatorClient extends EventEmitter {
     policy: import('./autonomy.js').PermissionPolicy;
     configurable: boolean;
     coding: boolean;
-    command_auto_approval: false;
+    command_auto_approval: boolean;
+    /** Phase 2b: whether this host lets a session choose full access. */
+    full_access_allowed?: boolean;
+    /** Whether this desk session may choose YOLO. */
+    yolo_allowed?: boolean;
+    /** Where the next command runs, e.g. "in a Seatbelt sandbox (workspace-write)". */
+    command_sandbox?: string;
   }> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(this.socket, `/v1/sessions/${this.snapshot.id}/permissions`);
@@ -150,7 +165,11 @@ export class OperatorClient extends EventEmitter {
   async setPermissions(
     session: string,
     expected: number,
-    policy: { mode: import('./autonomy.js').PermissionMode; paths: string[] },
+    policy: {
+      mode: import('./autonomy.js').PermissionMode;
+      paths: string[];
+      access?: 'full' | 'yolo';
+    },
   ): Promise<void> {
     if (this.snapshot?.id !== session)
       throw new Error('Session changed; review permissions again.');
@@ -164,6 +183,45 @@ export class OperatorClient extends EventEmitter {
       'Permissions updated. Progression is unchanged; already-running commands are not stopped by this setting.',
     );
     await this.refresh();
+  }
+  /** Desk-session approval rules (phase 2a). */
+  async approvalRules(): Promise<{
+    applies: boolean;
+    rules: import('./approval-rules.js').StoredRule[];
+    problems: string[];
+  }> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`);
+  }
+  /** Turn a reviewed request into a rule: its exact command words or its exact edited paths. */
+  async ruleFromOperation(operation: string, scope: 'session' | 'repo'): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      scope,
+      operation_id: operation,
+    });
+  }
+  async addRule(
+    scope: 'session' | 'repo',
+    rule: import('./approval-rules.js').ApprovalRule,
+  ): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      scope,
+      rule,
+    });
+    this.report('Rule added.');
+  }
+  async removeRule(id: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules/${id}/remove`, {
+      ...this.actor(),
+    });
+    this.report('Rule removed.');
   }
   async steer(text: string): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
@@ -207,6 +265,99 @@ export class OperatorClient extends EventEmitter {
       throw new Error('Undo outcome is uncertain; inspect files before continuing.');
     await this.refresh();
     this.report('Reverted the reviewed local edit. Conversation history is preserved.');
+  }
+  async checkpoints(): Promise<import('./turn-rewind.js').TurnCheckpoint[]> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ checkpoints: import('./turn-rewind.js').TurnCheckpoint[] }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/checkpoints`,
+      )
+    ).checkpoints;
+  }
+  async rewindReview(
+    attempt: string,
+    mode: import('./turn-rewind.js').RewindMode,
+  ): Promise<import('./turn-rewind.js').RewindReview> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(
+      this.socket,
+      `/v1/sessions/${this.snapshot.id}/rewind?attempt=${encodeURIComponent(attempt)}&mode=${mode}`,
+    );
+  }
+  /** Returns the rewound turn's instruction so it can be edited and sent again. */
+  async rewind(review: import('./turn-rewind.js').RewindReview): Promise<string> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const id = this.snapshot.id;
+    const result = await call<{ state: string; session_id: string; text: string }>(
+      this.socket,
+      `/v1/sessions/${id}/rewind`,
+      {
+        ...this.actor(),
+        request_id: randomUUID(),
+        attempt_id: review.attempt_id,
+        mode: review.mode,
+        review_digest: review.digest,
+      },
+    );
+    if (result.state !== 'completed')
+      throw new Error('Rewind outcome is uncertain; inspect files before continuing.');
+    if (result.session_id !== id) await this.open(result.session_id);
+    else await this.refresh();
+    this.report(
+      (review.mode === 'conversation'
+        ? 'Conversation'
+        : review.mode === 'files'
+          ? 'Files'
+          : 'Files and conversation') +
+        ` rewound to before turn ${review.turn}.` +
+        (result.session_id !== id ? ' The earlier conversation stays as its own session.' : ''),
+    );
+    return result.text;
+  }
+  async changeReview(): Promise<import('./turn-rewind.js').ChangeReview | null> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ review: import('./turn-rewind.js').ChangeReview | null }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review`,
+      )
+    ).review;
+  }
+  async changeHunks(
+    review: import('./turn-rewind.js').ChangeReview,
+    path: string,
+  ): Promise<import('./turn-checkpoints.js').CheckpointHunk[]> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    const q = new URLSearchParams({ path, base: review.base, current: review.current });
+    return (
+      await call<{ hunks: import('./turn-checkpoints.js').CheckpointHunk[] }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review/hunks?${q}`,
+      )
+    ).hunks;
+  }
+  async changeAct(
+    review: import('./turn-rewind.js').ChangeReview,
+    action: 'accept' | 'revert',
+    path: string,
+    hunk?: import('./turn-checkpoints.js').CheckpointHunk,
+  ): Promise<import('./turn-rewind.js').ChangeReview | null> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return (
+      await call<{ review: import('./turn-rewind.js').ChangeReview | null }>(
+        this.socket,
+        `/v1/sessions/${this.snapshot.id}/review`,
+        {
+          ...this.actor(),
+          action,
+          path,
+          base: review.base,
+          current: review.current,
+          ...(hunk ? { hunk } : {}),
+        },
+      )
+    ).review;
   }
   async fork(): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
@@ -291,15 +442,15 @@ export class OperatorClient extends EventEmitter {
     this.snapshot = await call<SessionSnapshot>(this.socket, `/v1/sessions/${id}/snapshot`);
     if (!options.observe) {
       try {
-        this.lease = await acquireControl(this.socket, id, this.clientId, options.takeover);
+        this.lease = await this.acquireOrWait(id, options.takeover);
       } catch (error) {
         if (
           !(error instanceof ServiceError) ||
-          !['control_conflict', 'control_required'].includes(error.code)
+          !['control_conflict', 'control_required', 'control_busy'].includes(error.code)
         )
           throw error;
         this.notice =
-          'Another client has control. You are observing; use Take control to take over.';
+          'Another terminal is using this session and still renews its control. You are observing; press ctrl+k and choose Take control to take it over.';
       }
     }
     if (this.lease) await call(this.socket, `/v1/sessions/${id}/resume`, this.actor());
@@ -312,6 +463,25 @@ export class OperatorClient extends EventEmitter {
     }, 5000);
     this.watcher = this.watch(id, generation);
     this.changed();
+  }
+  /** Acquire control. A lease left by a terminal that was killed lapses within its short TTL, so
+   * wait that out once instead of opening as an observer; a live terminal renews and keeps it. */
+  private async acquireOrWait(id: string, takeover?: boolean): Promise<ControlLease> {
+    try {
+      return await acquireControl(this.socket, id, this.clientId, takeover);
+    } catch (error) {
+      if (takeover || !(error instanceof ServiceError) || error.code !== 'control_busy')
+        throw error;
+      const snapshot = await call<SessionSnapshot>(this.socket, `/v1/sessions/${id}/snapshot`);
+      const wait = snapshot.control.expires_at - Date.now();
+      if (wait <= 0 || wait > CONTROL_LAPSE_MS) throw error;
+      this.notice = `Waiting ${Math.ceil(wait / 1000)} s for the previous terminal's control to lapse…`;
+      this.changed();
+      await new Promise((done) => setTimeout(done, wait + 250));
+      const lease = await acquireControl(this.socket, id, this.clientId);
+      this.notice = 'You have control: the previous terminal had stopped.';
+      return lease;
+    }
   }
   private actor(): { client_id: string; token: string } {
     if (!this.lease) throw new Error('Take control before sending an instruction.');
@@ -358,10 +528,10 @@ export class OperatorClient extends EventEmitter {
     await job;
     this.changed();
   }
-  async submit(text: string, continues?: string): Promise<string> {
+  async submit(text: string, continues?: string, confirmSensitive = false): Promise<string> {
     this.actor();
     if (!this.snapshot || !this.outbox) throw new Error('Open a session first.');
-    const record = this.outbox.enqueue(text, this.snapshot.revision, continues);
+    const record = this.outbox.enqueue(text, this.snapshot.revision, continues, confirmSensitive);
     this.notice = 'Instruction saved locally. Delivering…';
     this.changed();
     try {
@@ -469,6 +639,19 @@ export class OperatorClient extends EventEmitter {
     this.notice = 'Reviewed context admitted. Tool permissions are unchanged.';
     await this.refresh();
   }
+  /** Switch this session's model or thinking level between turns; the conversation carries on. */
+  async switchRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+    if (!this.snapshot) throw new Error('Open a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/route`, {
+      ...this.actor(),
+      route: {
+        provider: route.provider === 'salaam-proof' ? 'offline' : route.provider,
+        ...(route.provider === 'salaam-proof' ? {} : { model: route.model }),
+        ...(route.reasoning === undefined ? {} : { reasoning: route.reasoning }),
+      },
+    });
+    await this.refresh();
+  }
   async decide(approval: Approval, decision: 'approve' | 'deny'): Promise<void> {
     if (!this.outbox) throw new Error('Open a session first.');
     this.outbox.enqueueDecision(
@@ -572,6 +755,13 @@ export class OperatorClient extends EventEmitter {
           optional<ToolActivity[]>(`/v1/sessions/${id}/activity`),
         ]);
         if (generation !== this.generation) return;
+        const before =
+          this.snapshot?.id === snapshot.id ? this.snapshot.project_instructions : null;
+        const after = snapshot.project_instructions;
+        if (before && after && after.revision > before.revision)
+          this.notice = after.files.length
+            ? 'Project instructions changed · reloaded ' + instructionsLabel(after)
+            : 'Project instructions removed';
         this.snapshot = snapshot;
         this.health = health;
         this.commands = commands ?? [];
@@ -616,6 +806,7 @@ export class OperatorClient extends EventEmitter {
         (event: DurableEvent) => {
           if (event.seq <= cursor || generation !== this.generation) return;
           cursor = event.seq;
+          this.emit('durable', event);
           if (
             [
               'attempt.completed',

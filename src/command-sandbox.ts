@@ -1,7 +1,8 @@
 import { COMMAND_NETWORK_PORT, inSandboxRelaySource } from './command-network.js';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, sep } from 'node:path';
 import { ServiceError } from './protocol.js';
 
 /**
@@ -25,8 +26,86 @@ export interface Bwrap {
 }
 export interface Seatbelt {
   path: string;
+  /** The active Apple developer dir (`xcode-select -p`) when it holds a real git. /usr/bin/git is
+   * a shim that needs Xcode's licence preferences, which the profile does not open; commands get
+   * the real tools first on PATH instead (step 0, 2026-10-31). */
+  developerDir?: string;
 }
 export type SandboxKind = 'bwrap' | 'seatbelt' | 'none';
+
+/**
+ * Phase 1 (2026-10-31): read-only paths outside the workspace an operator lets local commands use
+ * (a toolchain, a package cache, `~/.gitconfig`). Never the root, home itself or an ancestor of
+ * it, and never a credential directory or file, or an ancestor of one. `toolchain` expands to the
+ * ones that exist here: the prefix of the node running Salaam, and home's package caches and
+ * toolchains. Writes stay inside the workspace whatever is listed.
+ */
+export const READ_PATHS_TOOLCHAIN = 'toolchain';
+const CREDENTIALS = [
+  '.ssh',
+  '.gnupg',
+  '.aws',
+  '.azure',
+  '.config/gcloud',
+  '.config/gh',
+  '.docker',
+  '.kube',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  '.git-credentials',
+  '.claude',
+  '.codex',
+  '.config/salaam',
+  'Library/Keychains',
+];
+const TOOLCHAIN = ['.npm', '.nvm', '.cargo', '.rustup', 'go', '.gitconfig', '.config/git'];
+function within(path: string, base: string): boolean {
+  return path === base || path.startsWith(base.endsWith(sep) ? base : base + sep);
+}
+export function resolveReadPaths(entries: readonly string[], home = homedir()): string[] {
+  const refuse = (path: string, why: string): never => {
+    throw new ServiceError('invalid_field', `local_sandbox_read_paths: ${path} ${why}`);
+  };
+  const out: string[] = [];
+  const add = (path: string) => {
+    if (!isAbsolute(path)) refuse(path, 'must be an absolute path');
+    if (/["\\\x00-\x1f\x7f]/.test(path)) refuse(path, 'has a character Seatbelt cannot quote');
+    const p = path.length > 1 ? path.replace(/\/+$/, '') : path;
+    if (p === '/') refuse(p, 'is the whole filesystem');
+    if (within(home, p)) refuse(p, 'would expose the whole home directory');
+    for (const c of CREDENTIALS) {
+      const secret = join(home, c);
+      if (within(p, secret) || within(secret, p)) refuse(p, `covers credentials (${c})`);
+    }
+    if (!out.includes(p)) out.push(p);
+  };
+  for (const entry of entries) {
+    if (typeof entry !== 'string') refuse(String(entry), 'must be a string');
+    if (entry !== READ_PATHS_TOOLCHAIN) {
+      add(entry);
+      continue;
+    }
+    // The node running Salaam, so `node`/`npx`/`npm` resolve inside the sandbox.
+    const nodePrefix = dirname(dirname(realpathSync(process.execPath)));
+    if (!within(home, nodePrefix)) add(nodePrefix);
+    for (const t of TOOLCHAIN) if (existsSync(join(home, t))) add(join(home, t));
+  }
+  return out;
+}
+
+/** The active developer dir when it has a real git, else undefined. */
+function developerDir(): string | undefined {
+  try {
+    const dir = execFileSync('/usr/bin/xcode-select', ['-p'], {
+      timeout: 5000,
+      encoding: 'utf8',
+    }).trim();
+    return isAbsolute(dir) && existsSync(join(dir, 'usr/bin/git')) ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The pinned bubblewrap: its absolute path and the version it reports, or null when unusable. */
 export function findBwrap(candidates = ['/usr/bin/bwrap', '/bin/bwrap']): Bwrap | null {
@@ -61,6 +140,8 @@ export function sandboxArgv(
     /** Broker network: the host relay's private directory and the node that runs the in-sandbox
      * relay. The network stays unshared; only the relay socket and node are bound in. */
     broker?: { dir: string; node: string };
+    /** Operator-allowed read-only paths outside the workspace (resolveReadPaths). */
+    readPaths?: readonly string[];
   },
 ): string[] {
   if (level === 'full-access') return argv;
@@ -100,6 +181,8 @@ export function sandboxArgv(
     '/dev',
     '--tmpfs',
     '/tmp',
+    // Operator-allowed toolchains, read-only, at their own paths (a symlink into one resolves).
+    ...(options.readPaths ?? []).flatMap((p) => ['--ro-bind-try', p, p]),
     level === 'read-only' ? '--ro-bind' : '--bind',
     root,
     root,
@@ -153,7 +236,8 @@ export function findSeatbelt(path = '/usr/bin/sandbox-exec'): Seatbelt | null {
       ],
       { timeout: 5000, stdio: 'ignore' },
     );
-    return { path };
+    const dev = developerDir();
+    return dev ? { path, developerDir: dev } : { path };
   } catch {
     return null;
   }
@@ -176,11 +260,24 @@ export function seatbeltProfile(
   level: 'read-only' | 'workspace-write',
   root: string,
   tmp: string,
-  /** brokerPort: the host relay's loopback port, the only place a broker-network command may connect. */
-  options: { network: boolean; brokerPort?: number },
+  /** brokerPort: the host relay's loopback port, the only place a broker-network command may connect.
+   * readPaths: operator-allowed read-only paths outside the workspace. developerDir: the active
+   * developer dir, when it lies outside the system paths below. */
+  options: {
+    network: boolean;
+    brokerPort?: number;
+    readPaths?: readonly string[];
+    developerDir?: string;
+  },
 ): string {
   const w = sbplPath(root, 'workspace path'),
     t = sbplPath(tmp, 'tmp path');
+  const extra = [
+    ...(options.readPaths ?? []),
+    ...(options.developerDir ? [options.developerDir] : []),
+  ]
+    .map((p) => `(subpath ${sbplPath(p, 'read path')})`)
+    .join(' ');
   const system = [
     '/usr',
     '/bin',
@@ -208,7 +305,7 @@ export function seatbeltProfile(
     '(allow signal (target same-sandbox))',
     '(allow sysctl-read)',
     '(allow file-read-metadata)',
-    `(allow file-read* (literal "/") ${system} (subpath ${w}) (subpath ${t}))`,
+    `(allow file-read* (literal "/") ${system} (subpath ${w}) (subpath ${t})${extra ? ' ' + extra : ''})`,
     level === 'workspace-write'
       ? `(allow file-write* (subpath ${w}) (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`
       : `(allow file-write* (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`,
@@ -226,7 +323,7 @@ export function seatbeltArgv(
   tmp: string,
   argv: string[],
   seatbelt: Seatbelt | null,
-  options: { network: boolean; brokerPort?: number },
+  options: { network: boolean; brokerPort?: number; readPaths?: readonly string[] },
 ): string[] {
   if (level === 'full-access') return argv;
   if (!seatbelt)
@@ -234,12 +331,21 @@ export function seatbeltArgv(
       'sandbox_unavailable',
       'This host has no usable Seatbelt, so it cannot run a sandboxed command; an operator can choose full access explicitly',
     );
+  const dev = seatbelt.developerDir;
+  // git reads ~/.gitconfig and fails hard when it may not; without the operator allowing it, the
+  // command runs with no global git config rather than an error.
+  const gitConfig = join(homedir(), '.gitconfig');
+  const gitConfigAllowed = (options.readPaths ?? []).some((p) => within(gitConfig, p));
   return [
     seatbelt.path,
     '-p',
-    seatbeltProfile(level, root, tmp, options),
+    seatbeltProfile(level, root, tmp, { ...options, ...(dev ? { developerDir: dev } : {}) }),
     '/usr/bin/env',
     `TMPDIR=${tmp}/`,
+    ...(dev
+      ? [`PATH=${join(dev, 'usr/bin')}:${process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin'}`]
+      : []),
+    ...(gitConfigAllowed ? [] : ['GIT_CONFIG_GLOBAL=/dev/null']),
     ...argv,
   ];
 }

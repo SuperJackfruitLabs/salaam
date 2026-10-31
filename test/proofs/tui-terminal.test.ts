@@ -207,9 +207,13 @@ test('TUI reviews two operation-bound approvals in reverse order and observer de
     await observer.write('\x0f');
     await observer.contains('Approvals waiting');
     await observer.write('beta\r');
-    await observer.contains('Review approval');
+    await observer.contains('Approve?');
     await observer.write('\x1b[F');
-    await observer.contains('Exact request binding reviewed.');
+    // Reading to the end lifts the read-to-the-end gate before approving.
+    await until(
+      () => observer!.screen(),
+      (screen) => screen.includes('Approve once') && !screen.includes('Read to the end'),
+    );
     if (process.env.SALAAM_TUI_CAPTURE_DIR)
       await observer.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'approval.svg'));
     await observer.write('\x1b[C\r');
@@ -218,7 +222,7 @@ test('TUI reviews two operation-bound approvals in reverse order and observer de
       (approvals) => approvals.some((a) => a.decision === 'approve'),
     );
     await observer.write('\x0f');
-    await observer.contains('Review approval');
+    await observer.contains('Approve?');
     await observer.write('\r');
     await until(
       () => f.service.store.snapshot(session.id),
@@ -504,21 +508,19 @@ test('slash completion, help and model selection work in a real terminal without
       (screen) => !screen.includes('Salaam commands'),
     );
     await terminal.write('/mod');
-    await terminal.contains('Choose provider and model');
+    await terminal.contains('Switch this session’s provider and model');
     await terminal.write('\t');
     await terminal.write('\r');
-    await terminal.contains('Provider · applies to a new session');
+    // Phase 2d: /model switches the open session in place; it does not start another.
+    await terminal.contains('Provider · switches this session');
     await terminal.write('offline\r');
-    await terminal.contains('New session · scripted');
-    await terminal.write('\r');
+    await terminal.contains('in this session.');
+    // The proof fixture prepares every route as its scripted one, so assert the switch itself.
     await until(
-      () => f.service.store.sessions(),
-      (sessions) => sessions.length === 2,
+      () => f.service.store.events(id, 0),
+      (events) => events.some((e) => e.kind === 'provider.route_changed'),
     );
-    const added = f.service.store.sessions().find((s) => s.id !== id)!;
-    await ready(f.service, added.id);
-    expect(f.service.store.localWorkspace(added.id)).toBe(true);
-    expect(f.service.store.providerRoute(id)?.provider).toBe('salaam-proof');
+    expect(f.service.store.sessions()).toHaveLength(1);
     for (const session of f.service.store.sessions()) {
       expect(f.service.store.snapshot(session.id).submissions).toHaveLength(0);
       expect(f.service.store.events(session.id, 0).some((e) => e.kind === 'model.admitted')).toBe(

@@ -1,4 +1,5 @@
 import { BoardReads } from './board-reads.js';
+import { takeImages } from './mentions.js';
 import { HostBreaker, callThroughBreaker } from './host-breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -110,6 +111,26 @@ interface Worker {
   resolve: () => void;
   reject: (error: Error) => void;
 }
+/** Errors a local tool call returns to the model as feedback; any other one fails the worker.
+ * Every code src/local-edits.ts can throw belongs here (a failed replacement is not a crash). */
+export const LOCAL_TOOL_ERRORS = [
+  'local_busy',
+  'workspace_read_failed',
+  'unsafe_path',
+  'edit_mismatch',
+  'workspace_changed',
+  'workspace_busy',
+  'workspace_limit',
+  'workspace_conflict',
+  'not_found',
+  'binary_file',
+  'line_limit',
+  'invalid_field',
+  'request_conflict',
+  'command_conflict',
+  'command_limit',
+  'invalid_cursor',
+];
 export function processIdentity(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;
   try {
@@ -166,6 +187,33 @@ export function processIdentity(pid: number): string | null {
     return null;
   }
 }
+/**
+ * When a process started, keyed to this boot. Unlike processIdentity it survives exec, so it
+ * names a background task whose gated shell has since become the user's command.
+ */
+export function processStart(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
+  try {
+    if (process.platform === 'linux') {
+      const value = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const fields = value
+        .slice(value.lastIndexOf(') ') + 2)
+        .trim()
+        .split(/\s+/);
+      const boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      return /^\d+$/.test(fields[19] ?? '') ? `linux-start-v1:${pid}:${boot}:${fields[19]}` : null;
+    }
+    const started = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+      killSignal: 'SIGKILL',
+    }).trim();
+    return started ? `ps-start-v1:${pid}:${started}` : null;
+  } catch {
+    return null;
+  }
+}
 function groupExists(pid: number): boolean {
   try {
     process.kill(-pid, 0);
@@ -177,6 +225,8 @@ function groupExists(pid: number): boolean {
 }
 export class Supervisor extends EventEmitter {
   localCoding?: import('./local-coding.js').LocalCoding;
+  /** Built-in web search and fetch for interactive coding (operator ruling 2026-10-31). */
+  web?: import('./web-search.js').WebSearch;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   private readonly fetchBreaker = new HostBreaker();
@@ -750,6 +800,18 @@ export class Supervisor extends EventEmitter {
     return w;
   }
   /** Is this attempt a task step that has acceptance checks to decide it? */
+  /** A person's own local coding session: not a delegated child and not AgentPod-admitted work,
+   * whose strict semantics stay as they are. */
+  isInteractiveCoding(id: string): boolean {
+    return this.interactiveCoding(id);
+  }
+  private interactiveCoding(id: string): boolean {
+    return (
+      this.store.localCoding(id) &&
+      !this.children?.owned(id) &&
+      !this.store.db.prepare('SELECT 1 FROM agentpod_admissions WHERE session_id=?').get(id)
+    );
+  }
   private checkedStepAttempt(attempt: string): boolean {
     const row = this.store.db
       .prepare('SELECT checks FROM task_steps WHERE attempt_id=?')
@@ -1123,6 +1185,77 @@ export class Supervisor extends EventEmitter {
         if (method === 'station.status') return this.station.view(c.id);
         throw new ServiceError('invalid_field', 'Unsupported station method');
       }
+      if (method === 'web.search' || method === 'web.fetch') {
+        if (!this.web || !this.store.localCoding(id) || this.children?.owned(id) || !w.attempt)
+          throw new ServiceError('web_denied', 'Web search is not admitted for this session', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        const args = object(body.args);
+        const toolCallId = string(body.tool_call_id, 'tool_call_id', 512);
+        if (method === 'web.search') {
+          const out = await this.web.search({
+            query: string(args.query, 'query', 300),
+            ...(typeof args.kind === 'string'
+              ? { kind: args.kind as import('./web-search.js').SearchKind }
+              : {}),
+            ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+          });
+          // Recorded: kind, backends tried, which answered and how long. Never a key or the query.
+          this.store.transaction(() =>
+            this.store.event(id, 'web.search', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              kind: out.kind,
+              cached: !!out.cached,
+              results: out.results.length,
+              tried: out.tried,
+            }),
+          );
+          return out;
+        }
+        const url = string(args.url, 'url', 2000);
+        let host = '';
+        try {
+          host = new URL(url).hostname;
+        } catch {
+          /* fetchPage refuses it */
+        }
+        try {
+          const page = await (await import('./web-fetch.js')).fetchPage(url);
+          this.store.transaction(() =>
+            this.store.event(id, 'web.fetch', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              host,
+              status: page.status,
+              chars: page.text.length,
+              truncated: page.truncated,
+            }),
+          );
+          const { renderFetched } = await import('./web-fetch.js');
+          return { ok: true, url: page.url, text: renderFetched(page) };
+        } catch (error) {
+          const message = String((error as Error).message ?? error).slice(0, 300);
+          this.store.transaction(() =>
+            this.store.event(id, 'web.fetch', {
+              attempt_id: w.attempt,
+              tool_call_id: toolCallId,
+              host,
+              error: message,
+            }),
+          );
+          return { ok: false, url, error: message };
+        }
+      }
+      if (method.startsWith('bgtask.')) {
+        if (!this.localCoding || !this.interactiveCoding(id) || !w.attempt)
+          throw new ServiceError('background_denied', 'Background commands are not admitted', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'bgtask.list') return { tasks: this.localCoding.tasks(id) };
+        const task = string(body.task_id, 'task_id', 64);
+        if (method === 'bgtask.output') return this.localCoding.taskOutput(id, task);
+        if (method === 'bgtask.stop') return this.localCoding.stopTask(id, task);
+        throw new ServiceError('invalid_field', 'Unsupported background task method');
+      }
       if (method.startsWith('local.') && method !== 'local.read') {
         if (
           !this.localCoding ||
@@ -1442,23 +1575,7 @@ export class Supervisor extends EventEmitter {
       if (
         (method.startsWith('coding.') || method.startsWith('local.')) &&
         error instanceof ServiceError &&
-        [
-          'local_busy',
-          'workspace_read_failed',
-          'unsafe_path',
-          'workspace_changed',
-          'workspace_busy',
-          'workspace_limit',
-          'workspace_conflict',
-          'not_found',
-          'binary_file',
-          'line_limit',
-          'invalid_field',
-          'request_conflict',
-          'command_conflict',
-          'command_limit',
-          'invalid_cursor',
-        ].includes(error.code)
+        LOCAL_TOOL_ERRORS.includes(error.code)
       )
         throw error;
       if (
@@ -1510,6 +1627,7 @@ export class Supervisor extends EventEmitter {
     const state = {
       ...this.store.session(id),
       provider_route: this.store.providerRoute(id) ?? undefined,
+      project_instructions: this.tasks.instructions?.summary(id) ?? undefined,
       provider_capabilities:
         cap === undefined
           ? this.providerCapabilities()
@@ -1793,11 +1911,14 @@ export class Supervisor extends EventEmitter {
       // A checked task step is decided by its checks, not by a tool error the model went on
       // to recover from (operator decision, 2026-10-23). The error stays in the journal
       // (tool.finished failed=true). A delegated child turn, whose denied probes are its
-      // boundary proof, and any attempt outside a checked step still fail on it.
+      // boundary proof, and any attempt outside a checked step still fail on it, except an
+      // interactive coding turn: at a desk a failed command is feedback, and the turn is
+      // decided by how it ends (step 0, 2026-10-31).
       if (
         value.type === 'tool_execution_end' &&
         value.isError === true &&
-        (this.children?.owned(id) || !this.checkedStepAttempt(work.attempt.id))
+        (this.children?.owned(id) ||
+          (!this.checkedStepAttempt(work.attempt.id) && !this.interactiveCoding(id)))
       )
         outcome ??= {
           version: 1,
@@ -1807,7 +1928,20 @@ export class Supervisor extends EventEmitter {
     };
     w.pi.on('record', record);
     try {
-      const response = await w.pi.command('prompt', { message: work.submission.text });
+      // Interactive sessions pick up AGENTS.md edits at the start of each turn (recorded as a new
+      // instructions.loaded revision). A discovery failure never blocks the turn.
+      try {
+        this.tasks.instructions?.refresh(id);
+      } catch {
+        /* the previously loaded guidance stays in force */
+      }
+      // The folder as it was before this turn, so /rewind can return to it.
+      if (this.interactiveCoding(id)) this.tasks.checkpoints?.capture(id, work.attempt.id);
+      const images = takeImages(this.store.db, work.submission.id);
+      const response = await w.pi.command('prompt', {
+        message: work.submission.text,
+        ...(images.length ? { images } : {}),
+      });
       const disposition = object(response.data ?? {}).disposition;
       if (disposition !== 'started') throw new Error('Pi did not start the dispatched prompt');
       this.store.running(work.attempt.id);
