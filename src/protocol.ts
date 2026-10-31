@@ -108,6 +108,8 @@ export interface Session {
   capabilities: string[];
   seq: number;
   provider_route?: ProviderRoute;
+  /** Interactive sessions: the AGENTS.md set loaded automatically (project-instructions.ts). */
+  project_instructions?: import('./project-instructions.js').InstructionsSummary;
   provider_capabilities?: {
     output_token_cap: boolean;
     durable_tasks: boolean;

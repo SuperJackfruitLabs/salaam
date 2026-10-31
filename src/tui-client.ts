@@ -66,6 +66,13 @@ export interface LivePreview {
 }
 export type OperatorConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 /** An operator client only: the service owns workers, authority and durable outcomes. */
+/** "AGENTS.md" or "AGENTS.md (2 files)": which instruction files guide this session. */
+export function instructionsLabel(
+  summary: import('./project-instructions.js').InstructionsSummary,
+): string {
+  const names = [...new Set(summary.files.map((f) => f.path.split('/').at(-1)!))].join(' + ');
+  return summary.files.length > 1 ? `${names} (${summary.files.length} files)` : names;
+}
 export class OperatorClient extends EventEmitter {
   readonly socket: string;
   readonly clientId = randomUUID();
@@ -469,6 +476,19 @@ export class OperatorClient extends EventEmitter {
     this.notice = 'Reviewed context admitted. Tool permissions are unchanged.';
     await this.refresh();
   }
+  /** Switch this session's model or thinking level between turns; the conversation carries on. */
+  async switchRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+    if (!this.snapshot) throw new Error('Open a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/route`, {
+      ...this.actor(),
+      route: {
+        provider: route.provider === 'salaam-proof' ? 'offline' : route.provider,
+        ...(route.provider === 'salaam-proof' ? {} : { model: route.model }),
+        ...(route.reasoning === undefined ? {} : { reasoning: route.reasoning }),
+      },
+    });
+    await this.refresh();
+  }
   async decide(approval: Approval, decision: 'approve' | 'deny'): Promise<void> {
     if (!this.outbox) throw new Error('Open a session first.');
     this.outbox.enqueueDecision(
@@ -572,6 +592,13 @@ export class OperatorClient extends EventEmitter {
           optional<ToolActivity[]>(`/v1/sessions/${id}/activity`),
         ]);
         if (generation !== this.generation) return;
+        const before =
+          this.snapshot?.id === snapshot.id ? this.snapshot.project_instructions : null;
+        const after = snapshot.project_instructions;
+        if (before && after && after.revision > before.revision)
+          this.notice = after.files.length
+            ? 'Project instructions changed · reloaded ' + instructionsLabel(after)
+            : 'Project instructions removed';
         this.snapshot = snapshot;
         this.health = health;
         this.commands = commands ?? [];

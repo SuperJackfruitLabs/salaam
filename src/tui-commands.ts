@@ -17,15 +17,16 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('help', 'Show commands and their execution type', ['commands'], '[command]'),
   command('exit', 'Detach; preserve the session and running work', ['quit', 'q']),
   command('keys', 'Show keyboard shortcuts', ['hotkeys']),
-  command('model', 'Choose provider and model for a new session', ['models'], '[provider/model]'),
-  command('provider', 'Choose a provider for a new session', [], '[provider]'),
-  command('thinking', 'Choose reasoning effort for a new session', [], '[level]'),
+  command('model', 'Switch this session’s provider and model', ['models'], '[provider/model]'),
+  command('provider', 'Switch this session’s provider', [], '[provider]'),
+  command('thinking', 'Switch this session’s reasoning effort', [], '[level]'),
   command(
     'coding',
     'New local coding session with reviewed edits and unsandboxed commands',
     [],
     '[workspace]',
   ),
+  command('init', 'Draft an AGENTS.md for this repository; the edit asks for approval'),
   command('new', 'Create a session in a workspace', [], '[workspace]'),
   command('sessions', 'Switch or resume a session', ['resume'], '[session-id]'),
   command('name', 'Set a durable session label', ['rename'], '<name>'),
@@ -125,3 +126,11 @@ export function slashHelp(name?: string): string {
     )
     .join('\n');
 }
+
+/** What /init asks the agent to do. The write goes through the session's normal edit approval. */
+export const INIT_INSTRUCTION = [
+  'Draft an AGENTS.md for this repository.',
+  'First read the tree and the files that define how it is built and tested (package manifests, build and CI configuration, README, existing contributor docs, any CLAUDE.md).',
+  'Then write AGENTS.md at the repository root: a short overview, the exact commands to build, test, lint and format, the code layout, and conventions a contributor must follow.',
+  'Keep it under 150 lines, state only what the files show, and if AGENTS.md already exists, propose improvements to it instead of replacing it.',
+].join(' ');

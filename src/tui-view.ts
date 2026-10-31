@@ -1,7 +1,7 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
-import type { OperatorClient } from './tui-client.js';
+import { instructionsLabel, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
@@ -37,6 +37,12 @@ export function modelLabel(client: OperatorClient): string {
   return (
     route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2') + warning
   );
+}
+/** 950 → "950", 12_400 → "12.4k", 2_300_000 → "2.3M". */
+export function compactTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '') + 'k';
+  return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 export class Dynamic implements Component {
   constructor(private readonly content: (width: number) => string[]) {}
@@ -112,6 +118,15 @@ export function status(view: ViewModel, width: number): string[] {
               ? 'Ready when you are.'
               : 'Observing · ctrl+k → Take control');
   const tone = pending ? 'amber' : c.connection === 'reconnecting' ? 'amber' : 'muted';
+  const guidance = c.snapshot?.project_instructions?.files.length
+    ? '  Using ' + instructionsLabel(c.snapshot.project_instructions)
+    : '';
+  const spend = c.usage?.observations
+    ? '  ' +
+      compactTokens(c.usage.known_input + c.usage.known_output) +
+      ' tokens · $' +
+      Math.max(c.usage.known_cost, c.usage.estimated_cost).toFixed(2)
+    : '';
   const identity = c.snapshot
     ? '  session ' +
       shortId(c.snapshot.id) +
@@ -119,7 +134,8 @@ export function status(view: ViewModel, width: number): string[] {
     : '';
   return [
     t.line(
-      t.ink(safeText(state).replace(/\bPi\b/g, 'Worker'), tone) + t.ink(identity, 'muted'),
+      t.ink(safeText(state).replace(/\bPi\b/g, 'Worker'), tone) +
+        t.ink(safeText(guidance) + spend + identity, 'muted'),
       width,
     ),
     t.line(

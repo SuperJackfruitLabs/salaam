@@ -720,6 +720,27 @@ export class Store {
       }
     });
   }
+  /**
+   * The one sanctioned route change: an operator switching model or thinking level in an
+   * interactive session between turns. Recorded as provider.route_changed; the worker restarts on
+   * the same Pi transcript with the new route.
+   */
+  switchRoute(id: string, route: ProviderRoute): { from: ProviderRoute; to: ProviderRoute } {
+    return this.transaction(() => {
+      const from = this.providerRoute(id);
+      if (!from || !this.localWorkspace(id))
+        throw new ServiceError(
+          'route_switch_unavailable',
+          'Only interactive sessions can switch model mid-session',
+          409,
+        );
+      this.db
+        .prepare('UPDATE session_routes SET route=? WHERE session_id=?')
+        .run(canonical(route), id);
+      this.event(id, 'provider.route_changed', { from, to: route });
+      return { from, to: route };
+    });
+  }
   providerRoute(id: string): ProviderRoute | null {
     const row = this.db.prepare('SELECT route FROM session_routes WHERE session_id=?').get(id) as
       { route: string } | undefined;

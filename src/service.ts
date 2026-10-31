@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { providerRoute } from './provider-config.js';
 import { TaskContext } from './task-context.js';
 import { ContextAdmission } from './context-admission.js';
+import { ProjectInstructions, userInstructionsPath } from './project-instructions.js';
 import { SLASH_COMMANDS } from './tui-commands.js';
 import { TaskWork } from './task-work.js';
 import { TaskBudget } from './task-budget.js';
@@ -74,6 +75,9 @@ import { readToolkitConfig } from './toolkit-config.js';
 import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
+  /** The user-level AGENTS.md for interactive sessions; null turns it off. Default:
+   * /salaam/AGENTS.md or ~/.config/salaam/AGENTS.md. */
+  userInstructions?: string | null;
   hostManifestDigest?: string;
   /** Receipt fields for the launcher profile; reported only by a manifest-served host. */
   hostReceipt?: Record<string, unknown>;
@@ -249,6 +253,13 @@ export class SalaamService {
         this.artifacts = new Artifacts(join(this.stateDir, 'artifacts'), this.store);
         this.tasks = new TaskContext(this.store, this.artifacts);
         this.tasks.admitted = new ContextAdmission(this.store);
+        this.tasks.instructions = new ProjectInstructions(
+          this.store,
+          this.artifacts,
+          options.userInstructions === undefined
+            ? userInstructionsPath()
+            : options.userInstructions,
+        );
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
         if (options.admitModelRequest) {
@@ -2846,6 +2857,48 @@ export class SalaamService {
           );
           return;
         }
+        if (parts[3] === 'route' && req.method === 'POST') {
+          const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          if (!this.tasks.instructions!.applies(id))
+            throw new ServiceError(
+              'route_switch_unavailable',
+              'Only interactive sessions can switch model mid-session',
+              409,
+            );
+          this.supervisor.assertIdle(id);
+          const input = object(body.route);
+          const requested = providerRoute(
+            string(input.provider, 'provider'),
+            input.model === undefined ? undefined : string(input.model, 'model'),
+            undefined,
+            undefined,
+            undefined,
+            input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
+          );
+          const prepared = await this.supervisor.prepareProviderRoute(requested).catch(() => {
+            throw new ServiceError(
+              'provider_auth_required',
+              `Configure ${requested.provider} with sal auth login ${requested.provider} or sal auth set ${requested.provider}, then retry.`,
+              400,
+            );
+          });
+          if (prepared.output_cap !== (this.store.localOutputCap(id) ?? true))
+            throw new ServiceError(
+              'provider_output_cap_changed',
+              'That route enforces output caps differently; start a new session for it',
+              409,
+            );
+          this.supervisor.assertIdle(id);
+          this.store.switchRoute(id, prepared.route);
+          await this.supervisor.stopSession(id);
+          void this.supervisor.start(id).catch(() => {});
+          this.send(res, 200, this.supervisor.inspect(id));
+          return;
+        }
         if (parts[3] === 'resume' && req.method === 'POST') {
           const body = object(await readJson(req));
           this.store.authorizeControl(id, {
@@ -2864,6 +2917,12 @@ export class SalaamService {
             );
           if (session.state !== 'ready' && session.state !== 'starting')
             void this.supervisor.start(id).catch(() => {});
+          // Show the project instructions an interactive session will use before its first turn.
+          try {
+            this.tasks.instructions?.refresh(id);
+          } catch {
+            /* reported on the next turn */
+          }
           this.send(res, 202, this.supervisor.inspect(id));
           return;
         }

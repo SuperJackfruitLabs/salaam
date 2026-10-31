@@ -1582,6 +1582,7 @@ export class Supervisor extends EventEmitter {
     const state = {
       ...this.store.session(id),
       provider_route: this.store.providerRoute(id) ?? undefined,
+      project_instructions: this.tasks.instructions?.summary(id) ?? undefined,
       provider_capabilities:
         cap === undefined
           ? this.providerCapabilities()
@@ -1882,6 +1883,13 @@ export class Supervisor extends EventEmitter {
     };
     w.pi.on('record', record);
     try {
+      // Interactive sessions pick up AGENTS.md edits at the start of each turn (recorded as a new
+      // instructions.loaded revision). A discovery failure never blocks the turn.
+      try {
+        this.tasks.instructions?.refresh(id);
+      } catch {
+        /* the previously loaded guidance stays in force */
+      }
       const response = await w.pi.command('prompt', { message: work.submission.text });
       const disposition = object(response.data ?? {}).disposition;
       if (disposition !== 'started') throw new Error('Pi did not start the dispatched prompt');

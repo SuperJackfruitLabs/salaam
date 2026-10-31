@@ -35,7 +35,13 @@ import {
   providerRoute,
   type ProviderRoute,
 } from './provider-config.js';
-import { SLASH_COMMANDS, SLASH_COMPLETIONS, parseSlashCommand, slashHelp } from './tui-commands.js';
+import {
+  INIT_INSTRUCTION,
+  SLASH_COMMANDS,
+  SLASH_COMPLETIONS,
+  parseSlashCommand,
+  slashHelp,
+} from './tui-commands.js';
 import { conversationExport, writeConversationExport } from './tui-export.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
@@ -45,6 +51,7 @@ import {
   Dynamic,
   DocumentView,
   header,
+  modelLabel,
   tabs,
   status,
   sidebar,
@@ -478,25 +485,41 @@ export class SalaamApp {
     if (this.client.connection === 'offline')
       throw new Error('Service did not become available. Inspect sal service status.');
   }
+  /** Interactive sessions switch in place between turns; otherwise the choice opens a new session. */
+  private async applyRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+    if (this.client.snapshot?.provider_route && this.client.controlling) {
+      await this.client.switchRoute(route);
+      this.client.notice = 'Now using ' + modelLabel(this.client) + ' in this session.';
+      return;
+    }
+    this.selectedRoute = route;
+    await this.newSession();
+  }
   private modelPicker(): void {
+    const configured = (this.client.snapshot?.provider_route ?? this.client.health?.provider_route)
+      ?.provider;
+    const live = PI_PROVIDERS.filter((p) => p.getModels().length);
     this.choice(
-      'Provider · applies to a new session',
+      this.client.snapshot ? 'Provider · switches this session' : 'Provider',
       [
+        // The configured provider first; the scripted demo last, never the default.
+        ...[
+          ...live.filter((p) => p.id === configured),
+          ...live.filter((p) => p.id !== configured),
+        ].map((p) => ({
+          value: p.id,
+          label: p.name,
+          description: p.id + (p.id === configured ? ' · current' : ''),
+        })),
         {
           value: 'offline',
           label: 'Offline demo',
           description: 'Scripted fixture, not an AI model',
         },
-        ...PI_PROVIDERS.filter((p) => p.getModels().length).map((p) => ({
-          value: p.id,
-          label: p.name,
-          description: p.id,
-        })),
       ],
       (provider) => {
         if (provider === 'offline') {
-          this.selectedRoute = providerRoute();
-          void this.execute(() => this.newSession());
+          void this.execute(() => this.applyRoute(providerRoute()));
           return;
         }
         const catalog = PI_PROVIDERS.find((p) => p.id === provider)!;
@@ -507,10 +530,7 @@ export class SalaamApp {
             label: m.name,
             description: m.id + ' · ' + m.contextWindow + ' context tokens',
           })),
-          (model) => {
-            this.selectedRoute = providerRoute(provider, model);
-            void this.execute(() => this.newSession());
-          },
+          (model) => void this.execute(() => this.applyRoute(providerRoute(provider, model))),
         );
       },
     );
@@ -551,10 +571,8 @@ export class SalaamApp {
         return;
       }
       const slash = args.indexOf('/');
-      if (slash <= 0)
-        throw new Error('Use /model provider/model. The choice creates a new session.');
-      this.selectedRoute = providerRoute(args.slice(0, slash), args.slice(slash + 1));
-      await this.newSession();
+      if (slash <= 0) throw new Error('Use /model provider/model.');
+      await this.applyRoute(providerRoute(args.slice(0, slash), args.slice(slash + 1)));
       return;
     }
     if (command === 'provider') {
@@ -563,8 +581,7 @@ export class SalaamApp {
         return;
       }
       if (args === 'offline') {
-        this.selectedRoute = providerRoute();
-        await this.newSession();
+        await this.applyRoute(providerRoute());
         return;
       }
       const provider = PI_PROVIDERS.find((p) => p.id === args);
@@ -573,10 +590,7 @@ export class SalaamApp {
       this.choice(
         'Model · ' + provider.name,
         provider.getModels().map((m) => ({ value: m.id, label: m.name, description: m.id })),
-        (model) => {
-          this.selectedRoute = providerRoute(args, model);
-          void this.execute(() => this.newSession());
-        },
+        (model) => void this.execute(() => this.applyRoute(providerRoute(args, model))),
       );
       return;
     }
@@ -604,7 +618,7 @@ export class SalaamApp {
         [
           { value: 'permissions', label: 'Permissions · inspect, review or scoped edits' },
           { value: 'progression', label: 'Progression · manual, bounded tasks or schedules' },
-          { value: 'model', label: 'Provider and model (new session)' },
+          { value: 'model', label: 'Provider and model' },
           { value: 'theme', label: 'Switch Night / Paper' },
           { value: 'rail', label: 'Toggle workspace rail' },
           { value: 'keys', label: 'Keyboard shortcuts' },
@@ -682,6 +696,13 @@ export class SalaamApp {
         'Fork conversation',
         () => this.client.fork(),
       );
+      return;
+    }
+    if (command === 'init') {
+      if (!snapshot.capabilities.includes('local-coding-reviewed'))
+        throw new Error('/init writes a file. Start a coding session with /coding first.');
+      await this.client.submit(INIT_INSTRUCTION);
+      this.setTab('conversation');
       return;
     }
     if (command === 'compact') {
@@ -913,21 +934,21 @@ export class SalaamApp {
       const current = snapshot.provider_route;
       if (!current || current.provider === 'salaam-proof')
         throw new Error('Choose a live provider/model first with /model.');
-      const choose = (level: string) => {
-        this.selectedRoute = providerRoute(
-          current.provider,
-          current.model,
-          current.max_tokens,
-          current.workspace_id,
-          current.connection,
-          level as import('./provider-config.js').ReasoningLevel,
+      const choose = (level: string) =>
+        this.applyRoute(
+          providerRoute(
+            current.provider,
+            current.model,
+            current.max_tokens,
+            current.workspace_id,
+            current.connection,
+            level as import('./provider-config.js').ReasoningLevel,
+          ),
         );
-        return this.newSession(snapshot.capabilities.includes('local-coding-reviewed'));
-      };
       if (args) await choose(args);
       else
         this.choice(
-          'Reasoning · new session · current ' + (current.reasoning ?? 'automatic low'),
+          'Reasoning · current ' + (current.reasoning ?? 'automatic low'),
           REASONING_LEVELS.map((level) => ({ value: level, label: level })),
           (level) => void this.execute(() => choose(level)),
         );
@@ -1834,7 +1855,11 @@ export class SalaamApp {
         label: 'Operator inbox',
         description: 'Shared durable attention and results',
       },
-      { value: 'model', label: 'Choose model and provider', description: '/model · new session' },
+      {
+        value: 'model',
+        label: 'Choose model and provider',
+        description: '/model · switches this session',
+      },
       { value: 'help', label: 'Slash commands', description: '/help' },
       { value: 'new', label: 'New session', description: 'ctrl+n' },
       {
