@@ -343,7 +343,7 @@ test('installed entry points and a real terminal show the same durable team boar
     await terminal.contains('claim 0');
     await terminal.contains('stored');
     expect(f.service.children.list(f.session.id)).toEqual([]);
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
   } finally {
     await terminal?.close();

@@ -348,7 +348,7 @@ test('a real PTY creates a task, authorizes a bounded plan, detaches and reconne
     await terminal.contains('Run this bounded plan');
     await terminal.write('\x1b[C\r');
     await until(f.task, (t) => !!t.runtime.started_at);
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     const completed = await until(f.task, (t) => t.state === 'succeeded', 15000);
     terminal = new PtyClient(
@@ -369,7 +369,7 @@ test('a real PTY creates a task, authorizes a bounded plan, detaches and reconne
     await terminal.write('Session context\r');
     await terminal.contains('SUCCEEDED');
     expect(completed.verification.completion.fresh).toBe(true);
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
   } finally {
     await terminal?.close();

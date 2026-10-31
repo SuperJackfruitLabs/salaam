@@ -174,14 +174,14 @@ export function status(view: ViewModel, width: number): string[] {
             t.key('enter', 'steer'),
             t.key('tab', 'queue'),
             t.key('alt+enter', 'newline'),
-            t.key('ctrl+c', 'detach'),
+            t.key('ctrl+c ×2', 'leave'),
           ]
         : [
             t.key('enter', 'send'),
             t.key('alt+enter', 'newline'),
             t.key('ctrl+k', 'actions'),
             t.key('ctrl+p', 'sessions'),
-            t.key('ctrl+c', 'detach'),
+            t.key('ctrl+c ×2', 'leave'),
           ]
       ).join('   '),
       width,
@@ -319,7 +319,7 @@ export class DocumentView implements Component {
       ),
       t.fill('', width),
       t.line(t.key('ctrl+n', 'new session') + '     ' + t.key('ctrl+p', 'recent sessions'), width),
-      t.line(t.key('ctrl+k', 'all actions') + '      ' + t.key('ctrl+g', 'review changes'), width),
+      t.line(t.key('ctrl+k', 'all actions') + '      ' + t.key('alt+g', 'review changes'), width),
       ...(c.snapshot
         ? [
             t.fill('', width),

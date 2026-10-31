@@ -84,6 +84,14 @@ import {
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
 import { rewindSummary } from './tui-review.js';
+import {
+  ComposerHistory,
+  ctrlCAction,
+  historyPath,
+  searchHistory,
+  searchPrompt,
+  shellPassthrough,
+} from './tui-composer.js';
 import type { RewindMode } from './turn-rewind.js';
 
 export interface TuiOptions {
@@ -185,6 +193,12 @@ export class SalaamApp {
   private lastSession?: string;
   private lastRevision?: number;
   private readonly historyKeys = new Set<string>();
+  /** Messages this user sent, kept across sessions without secret-looking lines (Ctrl+R searches it). */
+  private readonly sent = new ComposerHistory(historyPath());
+  /** When Ctrl+C was last pressed on an empty composer; a second press within 2 s leaves. */
+  private ctrlCArmed?: number;
+  /** Reverse history search in progress: the query, the matching entry and the draft it replaces. */
+  private search?: { query: string; index: number; draft: string };
   private readonly removeInput: () => void;
   constructor(readonly options: TuiOptions) {
     this.client = new OperatorClient(options.state);
@@ -218,6 +232,7 @@ export class SalaamApp {
     );
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
+    for (const entry of this.sent.entries) this.editor.addToHistory(entry);
     this.editor.setAutocompleteProvider(
       new MentionAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd()),
     );
@@ -334,14 +349,21 @@ export class SalaamApp {
     this.tui.requestRender();
   }
   private input(data: string): { consume: true } | undefined {
-    if (
-      matchesKey(data, 'ctrl+c') ||
-      (matchesKey(data, 'ctrl+d') && !this.editor.getExpandedText())
-    ) {
+    if (this.search) return this.searchKey(data);
+    if (matchesKey(data, 'ctrl+c')) {
+      this.ctrlC();
+      return { consume: true };
+    }
+    this.ctrlCArmed = undefined;
+    if (matchesKey(data, 'ctrl+d') && !this.editor.getExpandedText()) {
       this.finish();
       return { consume: true };
     }
     if (this.modal) return;
+    if (matchesKey(data, 'ctrl+r')) {
+      this.startSearch();
+      return { consume: true };
+    }
     if (
       this.editor.isShowingAutocomplete() &&
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
@@ -382,6 +404,7 @@ export class SalaamApp {
           );
         }
         this.editor.addToHistory(text);
+        this.sent.add(text);
         if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
           this.editor.setText('');
           if (session) this.drafts.delete(session);
@@ -404,12 +427,16 @@ export class SalaamApp {
       else submit();
       return { consume: true };
     }
+    // Ctrl+K kills to the end of the line while the composer has text (readline); on an empty
+    // composer it opens the actions palette, as before. F2 always opens it.
+    if (matchesKey(data, 'ctrl+k') && this.editor.getExpandedText() !== '') return;
     const keys: [KeyId, () => void][] = [
       ['ctrl+k', () => this.palette()],
+      ['f2', () => this.palette()],
       ['ctrl+p', () => void this.execute(() => this.sessions())],
       ['ctrl+n', () => void this.execute(() => this.newSession())],
       ['ctrl+o', () => this.approvals()],
-      ['ctrl+g', () => this.setTab('changes')],
+      ['alt+g', () => this.setTab('changes')],
       ['ctrl+t', () => this.setTab('commands')],
       [
         'ctrl+b',
@@ -418,8 +445,8 @@ export class SalaamApp {
           this.tui.requestRender(true);
         },
       ],
-      ['ctrl+r', () => void this.execute(() => this.refresh())],
-      ['ctrl+e', () => void this.execute(() => this.editPrompt())],
+      ['f5', () => void this.execute(() => this.refresh())],
+      ['ctrl+g', () => void this.execute(() => this.editPrompt())],
       ['shift+tab', () => void this.execute(() => this.cycleMode())],
       ['f1', () => this.help()],
     ];
@@ -1266,6 +1293,14 @@ export class SalaamApp {
       session = this.client.snapshot?.id,
       continuation = this.view.continuation;
     if (!text.trim()) return;
+    const shell = shellPassthrough(text);
+    if (shell) {
+      if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
+      if (!interactiveCoding(this.client.snapshot))
+        throw new Error('!command works in local coding sessions (salaam code).');
+      await this.deliver(shell, session, continuation, false, text);
+      return;
+    }
     const command = parseSlashCommand(text);
     if (command) {
       await this.runSlashCommand(command.name, command.args);
@@ -1293,10 +1328,12 @@ export class SalaamApp {
     session: string,
     continuation: string | undefined,
     confirmSensitive: boolean,
+    typed = text,
   ): Promise<void> {
     await this.client.submit(text, continuation, confirmSensitive);
-    this.editor.addToHistory(text);
-    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
+    this.editor.addToHistory(typed);
+    this.sent.add(typed);
+    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === typed) {
       this.editor.setText('');
       this.drafts.delete(session);
     }
@@ -2395,7 +2432,7 @@ This exact request will be approved without asking in every desk session on this
         label: 'Job actions',
         description: 'Bound one-shot admission and durable occurrence recovery',
       },
-      { value: 'changes', label: 'Review changes', description: 'ctrl+g · guarded workspace diff' },
+      { value: 'changes', label: 'Review changes', description: 'alt+g · guarded workspace diff' },
       { value: 'commands', label: 'Commands and output', description: 'ctrl+t' },
       {
         value: 'context',
@@ -2448,11 +2485,11 @@ This exact request will be approved without asking in every desk session on this
         label: 'Cancel current work',
         description: 'Explicitly cancel a running instruction',
       },
-      { value: 'refresh', label: 'Refresh connection', description: 'ctrl+r' },
+      { value: 'refresh', label: 'Refresh connection', description: 'f5' },
       {
         value: 'editor',
         label: 'Edit prompt externally',
-        description: 'ctrl+e · VISUAL or EDITOR',
+        description: 'ctrl+g · VISUAL or EDITOR',
       },
       {
         value: 'theme',
@@ -2737,13 +2774,29 @@ This exact request will be approved without asking in every desk session on this
         },
         {
           value: 'close',
-          label: 'Ctrl+E · external prompt editor',
+          label: 'Ctrl+G · external prompt editor',
           description: 'Runs VISUAL or EDITOR with terminal modes restored',
         },
         {
           value: 'close',
-          label: 'Ctrl+C · detach',
-          description: 'Work continues. Cancel and stop service are separate actions.',
+          label: 'Ctrl+R · search sent messages',
+          description: 'Type to narrow, Ctrl+R for older, Enter keeps, Esc restores',
+        },
+        {
+          value: 'close',
+          label: 'Ctrl+A/E · Ctrl+U/K/W · Ctrl+Y · Ctrl+-',
+          description: 'Line start/end, kill to start/end/word, yank, undo; Alt+B/F words',
+        },
+        {
+          value: 'close',
+          label: '!command · run a shell command',
+          description: 'Through the same approval, sandbox and danger check as the model',
+        },
+        {
+          value: 'close',
+          label: 'Ctrl+C · stop, clear, then leave',
+          description:
+            'Stops a running coding turn, else clears text; twice on empty leaves. Work continues.',
         },
       ],
       () => {},
@@ -2786,6 +2839,74 @@ This exact request will be approved without asking in every desk session on this
         this.tui.requestRender(true);
       }
     }
+  }
+  /** Ctrl+C: stop a running coding turn, else clear the composer, else arm; twice within 2 s leaves. */
+  private ctrlC(): void {
+    const attempt = interactiveCoding(this.client.snapshot)
+      ? runningAttempt(this.client.snapshot)
+      : undefined;
+    const action = this.modal
+      ? 'exit'
+      : ctrlCAction({
+          running: attempt !== undefined,
+          text: this.editor.getExpandedText(),
+          armedAt: this.ctrlCArmed,
+          now: Date.now(),
+        });
+    this.ctrlCArmed = undefined;
+    if (action === 'exit') this.finish();
+    else if (action === 'interrupt')
+      void this.execute(async () => {
+        await this.client.cancel(attempt!);
+        this.client.report('Stopped the turn. Press ctrl+c twice to leave.');
+      });
+    else if (action === 'clear') {
+      this.editor.setText('');
+      this.client.report('Cleared. Press ctrl+c again to leave, or ctrl+- to undo.');
+    } else {
+      this.ctrlCArmed = Date.now();
+      this.client.report('Press ctrl+c again to leave. Work continues in the service.');
+    }
+  }
+  private startSearch(): void {
+    this.search = { query: '', index: this.sent.entries.length, draft: this.editor.getText() };
+    this.client.report(searchPrompt('', undefined));
+  }
+  /** Keys while Ctrl+R search is open: type to narrow, ctrl+r for older, enter keeps, esc restores. */
+  private searchKey(data: string): { consume: true } {
+    const s = this.search!,
+      entries = this.sent.entries;
+    const show = () => {
+      const match = s.index < entries.length ? entries[s.index] : undefined;
+      if (match !== undefined) this.editor.setText(match);
+      this.client.report(searchPrompt(s.query, match));
+    };
+    if (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c') || matchesKey(data, 'ctrl+g')) {
+      this.editor.setText(s.draft);
+      this.search = undefined;
+      this.client.report('');
+    } else if (matchesKey(data, 'enter') || matchesKey(data, 'right') || matchesKey(data, 'left')) {
+      this.search = undefined;
+      this.client.report('');
+    } else if (matchesKey(data, 'ctrl+r')) {
+      const found = searchHistory(entries, s.query, s.index);
+      if (found >= 0) s.index = found;
+      show();
+    } else if (matchesKey(data, 'backspace')) {
+      s.query = s.query.slice(0, -1);
+      s.index = searchHistory(entries, s.query, entries.length);
+      if (s.index < 0) s.index = entries.length;
+      if (s.query === '') this.editor.setText(s.draft);
+      show();
+    } else if (data.length === 1 && data >= ' ' && data !== '\x7f') {
+      s.query += data;
+      const found = searchHistory(entries, s.query, Math.min(s.index + 1, entries.length));
+      s.index = found >= 0 ? found : entries.length;
+      if (found < 0) this.editor.setText(s.draft);
+      show();
+    }
+    this.tui.requestRender();
+    return { consume: true };
   }
   private async initialize(): Promise<void> {
     await this.execute(async () => {

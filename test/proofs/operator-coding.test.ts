@@ -86,12 +86,12 @@ test('ACP creates a guarded coding session and the TUI reviews the same real fil
       { state, columns: 116, rows: 38 },
     );
     await terminal.contains('You have control');
-    await terminal.write('\x07');
+    await terminal.write('\x1bg');
     await terminal.contains("+export const greeting = 'Salaam';");
     expect(await terminal.screen()).toContain('revision 1');
     if (process.env.SALAAM_TUI_CAPTURE_DIR)
       await terminal.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'paper-changes.svg'));
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
   } finally {
     await terminal?.close();

@@ -113,7 +113,7 @@ test('real PTY opens Salaam, preserves Unicode multiline paste, resizes and rest
       mkdirSync(process.env.SALAAM_TUI_CAPTURE_DIR, { recursive: true });
       await terminal.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'night-conversation.svg'));
     }
-    await terminal.write('\x03');
+    await terminal.leave();
     expect(await terminal.exit()).toEqual({ code: 0, restored: true });
     expect(f.service.supervisor.inspect(session.id).state).toBe('ready');
     const raw = Buffer.concat(terminal.captured).toString();
@@ -162,7 +162,7 @@ test('hard terminal loss, observer reconnect and explicit TUI takeover preserve 
     expect(f.service.store.snapshot(session.id).attempts).toHaveLength(1);
     expect(f.service.store.attempt(attempt.id).state).toBe('completed');
     expect(f.service.supervisor.inspect(session.id).epoch).toBe(original.epoch);
-    await second.write('\x03');
+    await second.leave();
     expect((await second.exit()).restored).toBe(true);
   } finally {
     await first?.close();
@@ -294,7 +294,7 @@ test('external prompt editor runs in cooked mode, returns exact input and resume
       { state: f.dir, env: { EDITOR: process.execPath + ' ' + editor } },
     );
     await terminal.contains('You have control');
-    await terminal.write('\x05');
+    await terminal.write('\x07');
     const { existsSync } = await import('node:fs');
     await until(() => existsSync(gate), Boolean);
     expect((await terminal.command({ op: 'status' })).raw).toBe(false);
@@ -341,7 +341,7 @@ test('slow terminal output recovers a complete fresh frame and still accepts one
     );
     expect(f.service.store.snapshot(session.id).submissions).toHaveLength(1);
     await terminal.contains('Offline reply: After slow output');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
   } finally {
     await terminal?.close();
@@ -396,7 +396,7 @@ test('terminating the TUI while an external editor is open cleans up that editor
       { state: f.dir, env: { EDITOR: process.execPath + ' ' + editor } },
     );
     await terminal.contains('You have control');
-    await terminal.write('\x05');
+    await terminal.write('\x07');
     const { existsSync } = await import('node:fs');
     await until(() => existsSync(gate), Boolean);
     const editorPid = Number(readFileSync(gate, 'utf8'));
@@ -476,7 +476,7 @@ test('TUI preserves M8 daemon compatibility when health and coding routes lack M
     await terminal.contains('Command execution is off');
     await terminal.write('\t');
     await terminal.contains('SESSION CONTEXT');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect(await terminal.exit()).toEqual({ code: 0, restored: true });
     expect(f.service.store.snapshot(session.id).submissions).toHaveLength(0);
   } finally {

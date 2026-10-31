@@ -352,7 +352,7 @@ test('CLI and real PTY inspect the same native worker record after observer reco
     await terminal.contains('salaam/diagnostic');
     await terminal.contains('generation 1');
     await terminal.contains('model requests');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     expect(f.service.children.list(f.parent.id)).toHaveLength(1);
   } finally {
