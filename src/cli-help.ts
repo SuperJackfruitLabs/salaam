@@ -225,12 +225,26 @@ Status prints metadata only. Existing Anthropic keys remain compatible.`,
                      [--a2a-listen-config OWNER_ONLY_FILE]
                      [--agentpod-config OWNER_ONLY_FILE] [--mcp-config FILE]
                      [--tools-user USER]
+                     [--local-sandbox read-only|workspace-write|full-access]
+                     [--local-sandbox-read PATH,…|toolchain] [--unsandboxed-commands allow]
 salaam service status
 salaam service stop
 
 --tools-user USER (or SALAAM_TOOLS_USER) runs local agent commands and edits as
 USER through sudo -n -u USER on Linux. Without it, tools share the provider
 credential's OS user and start prints a warning.
+
+Local commands (session create --local-coding) run under the host OS sandbox:
+bubblewrap on Linux, Seatbelt on macOS. --local-sandbox (or SALAAM_LOCAL_SANDBOX)
+picks the level: workspace-write (default) writes only inside the workspace,
+read-only writes nothing, full-access runs commands unsandboxed with network. A
+sandboxed command has no network and cannot read outside the workspace and the
+system; --local-sandbox-read (or SALAAM_LOCAL_SANDBOX_READ) lists read-only paths
+it may also read, comma-separated, and "toolchain" adds this host's node prefix,
+~/.npm, ~/.nvm, ~/.cargo, ~/.rustup, ~/go and ~/.gitconfig where present. Home
+itself and credential directories (~/.ssh, ~/.aws, keychains …) are refused. On
+macOS commands get the real git from the active developer dir. A host with no
+usable sandbox refuses commands unless --unsandboxed-commands allow.
 
 Without --agentpod-config, start binds to ~/.config/salaam/agentpod-pins.json
 ($XDG_CONFIG_HOME/salaam) when that file exists.
@@ -242,7 +256,8 @@ An AgentPod daemon requires node-bound admissions and a fresh authority lease.
 Keep its private state outside the pinned workspace. Coding, external runtimes,
 effect connectors and managed MCP are unavailable in this profile.`,
   session: `salaam session create [--cwd DIR] [--request-id ID] [--coding | --local | --local-coding]
-  --local-coding allows reviewed edits and native commands (no OS sandbox)
+  --local-coding allows reviewed edits and native commands, each under the host OS sandbox
+                 (see salaam help service for levels and read paths)
   --local allows bounded local file inspection; optionally select --provider ID --model ID
 salaam session list
 salaam session inspect SESSION_ID

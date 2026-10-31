@@ -63,7 +63,7 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
-import { chooseLocalSandbox, type SandboxLevel } from './command-sandbox.js';
+import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
@@ -115,6 +115,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Host config `unsandboxed_commands: "allow"`: run local commands unsandboxed on a host with no
    * usable sandbox. Absent, they are refused (operator ruling 2026-10-30, option A). */
   unsandboxedCommands?: 'allow';
+  /** Read-only paths outside the workspace local commands may read (resolved, `toolchain` expanded). */
+  localSandboxReadPaths?: string[];
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
@@ -374,6 +376,9 @@ export class SalaamService {
         const localSandbox: LocalSandbox = {
           ...chooseLocalSandbox(options.localSandbox ?? 'workspace-write'),
           allowUnsandboxed: options.unsandboxedCommands === 'allow',
+          ...(options.localSandboxReadPaths?.length
+            ? { readPaths: resolveReadPaths(options.localSandboxReadPaths) }
+            : {}),
           ...(options.commandNetwork ? { network: { socket: options.commandNetwork.socket } } : {}),
         };
         this.localCoding = new LocalCoding(

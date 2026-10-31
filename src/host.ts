@@ -32,7 +32,12 @@ import { call } from './transport.js';
 import { readStationConfig } from './station-config.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { OperatorMcp } from './operator-mcp.js';
-import { chooseLocalSandbox, sandboxLabel, type SandboxKind } from './command-sandbox.js';
+import {
+  chooseLocalSandbox,
+  resolveReadPaths,
+  sandboxLabel,
+  type SandboxKind,
+} from './command-sandbox.js';
 import { loadPersona } from './persona.js';
 interface HostIdentity {
   node: string;
@@ -102,6 +107,9 @@ export interface HostLocalSandbox {
   /** Network allowlist (operator rulings 2026-10-30): local commands reach the network only
    * through stk's local-commands socket, whose egress.hosts the host operator sets. */
   command_network?: { mode: 'broker'; socket: string; label: string };
+  /** Phase 1 (2026-10-31): operator-allowed read-only paths outside the workspace, resolved at host
+   * plan (`toolchain` expanded) so the reviewed manifest names every one. */
+  read_paths?: string[];
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
@@ -109,6 +117,7 @@ export function hostLocalSandbox(
   findSb?: Parameters<typeof chooseLocalSandbox>[3],
   allowUnsandboxed = false,
   brokerSocket?: string,
+  readPaths: readonly string[] = [],
 ): HostLocalSandbox {
   const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
   return {
@@ -124,7 +133,13 @@ export function hostLocalSandbox(
           },
         }
       : {}),
+    ...(readPaths.length ? { read_paths: [...readPaths] } : {}),
   };
+}
+/** The read-only paths outside the workspace the reviewed manifest lets local commands read. */
+export function hostReadPaths(m: HostManifest): string[] {
+  const r = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.read_paths;
+  return Array.isArray(r) ? r.filter((p): p is string => typeof p === 'string') : [];
 }
 /** The broker socket local commands reach the network through, or null for no network. */
 export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
@@ -245,6 +260,7 @@ async function planAgentPod(
     'unsandboxed_commands',
     'command_network',
     'command_network_socket',
+    'local_sandbox_read_paths',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -294,6 +310,17 @@ async function planAgentPod(
     const sock = c.command_network_socket;
     if (typeof sock !== 'string' || !isAbsolute(sock) || sock.includes('\0'))
       throw Error('command_network_socket must be an absolute path');
+  }
+  let readPaths: string[] = [];
+  if (c.local_sandbox_read_paths !== undefined) {
+    const raw = c.local_sandbox_read_paths;
+    if (!Array.isArray(raw) || raw.some((p) => typeof p !== 'string'))
+      throw Error('local_sandbox_read_paths is a list of absolute paths or "toolchain"');
+    try {
+      readPaths = resolveReadPaths(raw as string[]);
+    } catch (error) {
+      throw Error((error as Error).message);
+    }
   }
   const brokerSocket =
     c.command_network === 'broker'
@@ -390,6 +417,7 @@ async function planAgentPod(
       undefined,
       allowUnsandboxed,
       brokerSocket,
+      readPaths,
     ),
   };
 }

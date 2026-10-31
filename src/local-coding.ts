@@ -69,6 +69,8 @@ export interface LocalSandbox {
   /** The host config's `command_network: "broker"`: a sandboxed command reaches the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   network?: { socket: string };
+  /** Operator-allowed read-only paths outside the workspace (Phase 1, 2026-10-31). */
+  readPaths?: string[];
 }
 /** The proxy a broker-network command uses: only the relay on loopback, nothing direct. */
 function proxyEnv(port: number): Record<string, string> {
@@ -409,9 +411,12 @@ export class LocalCoding {
     const net = this.brokerNetwork()
       ? 'network: through the broker allowlist (hosts set by the stk policy), nothing direct.'
       : 'has no network.';
+    const reads = this.sandbox.readPaths?.length
+      ? ` It can also read ${this.sandbox.readPaths.length} operator-allowed path${this.sandbox.readPaths.length === 1 ? '' : 's'} outside the workspace.`
+      : '';
     return level === 'read-only'
-      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and ${net}`
-      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}`;
+      ? `in a ${name} sandbox (read-only): it can read this workspace but write nothing, and ${net}${reads}`
+      : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}${reads}`;
   }
   /** Broker network applies only to a sandboxed command: unsandboxed ones are not confined anyway. */
   private brokerNetwork(): { socket: string } | null {
@@ -441,11 +446,16 @@ export class LocalCoding {
               tmp ?? '',
               ['/bin/sh', '-c', s],
               this.sandbox.seatbelt ?? null,
-              { network: false, ...(relay?.port ? { brokerPort: relay.port } : {}) },
+              {
+                network: false,
+                ...(relay?.port ? { brokerPort: relay.port } : {}),
+                readPaths: this.sandbox.readPaths ?? [],
+              },
             )
           : sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
               network: false,
               ...(relay?.dir ? { broker: { dir: relay.dir, node: process.execPath } } : {}),
+              readPaths: this.sandbox.readPaths ?? [],
             });
     if (this.tools.mode !== 'tools-user') return inner(script);
     const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
