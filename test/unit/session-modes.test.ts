@@ -556,3 +556,36 @@ test('an ordinary turn is not bound, even if it mentions !', async () => {
     await f.close();
   }
 });
+
+// Operator ruling 2026-11-01: a push you allow with your own rule (session or user file) does not
+// ask, in any mode; a repo's rule still cannot approve one.
+test('a push allowed by your own session or user rule runs unasked; a repo rule still asks', async () => {
+  for (const mode of ['review', 'auto'] as const) {
+    const f = setup();
+    const userFile = f.root + '/user-rules.json';
+    const rules = new ApprovalRules(f.store, userFile);
+    f.local.rules = rules;
+    try {
+      f.configure(mode);
+      rules.add(
+        f.session.id,
+        'repo',
+        { effect: 'allow', tool: 'command', command: 'git push *' },
+        'r1',
+      );
+      expect(f.state(f.command('git push origin feat').approval)).toBe('pending');
+      writeFileSync(
+        userFile,
+        JSON.stringify({
+          version: 1,
+          rules: [{ effect: 'allow', tool: 'command', command: 'git push *' }],
+        }),
+      );
+      const user = f.command('git push origin feat');
+      expect(f.state(user.approval)).toBe('decided');
+      expect(user.approval.decided_by).toBe('rule:user');
+    } finally {
+      await f.close();
+    }
+  }
+});

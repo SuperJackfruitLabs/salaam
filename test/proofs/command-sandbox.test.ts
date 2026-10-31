@@ -130,6 +130,31 @@ else if (seatbelt)
       const open = runSb('workspace-write', root, `${curl}; echo exit=$?`, true);
       expect(open.out).not.toMatch(/exit=7\b/);
     });
+    // Operator ruling 2026-11-01 asked for loopback-only listening. Seatbelt cannot express it: its
+    // network filters accept only "localhost" or "*", and "localhost" matches every local address,
+    // so a server bound to 0.0.0.0 was reachable from another machine (measured over the tailnet).
+    // Until there is a way to refuse other interfaces, sandboxed commands may not listen at all.
+    test('workspace-write cannot listen on any address, loopback included', () => {
+      const root = fresh('sal-sbx-');
+      for (const bind of ['127.0.0.1', '0.0.0.0']) {
+        const r = runSb(
+          'workspace-write',
+          root,
+          `'${process.execPath}' -e "require('net').createServer().listen(0, '${bind}', () => { console.log('listening'); process.exit(0) }).on('error', (e) => { console.log(e.code); process.exit(1) })"`,
+        );
+        expect(r.out, bind).toContain('EPERM');
+        expect(r.out, bind).not.toContain('listening');
+      }
+    });
+    test('read-only cannot listen at all', () => {
+      const root = fresh('sal-sbx-');
+      const r = runSb(
+        'read-only',
+        root,
+        `'${process.execPath}' -e "require('net').createServer().listen(0, '127.0.0.1', () => { console.log('listening'); process.exit(0) }).on('error', (e) => { console.log(e.code); process.exit(1) })"`,
+      );
+      expect(r.out).not.toContain('listening');
+    });
     test('the home directory and its keys are not readable', () => {
       const root = fresh('sal-sbx-');
       expect(runSb('workspace-write', root, `ls '${homedir()}'`).code).not.toBe(0);
