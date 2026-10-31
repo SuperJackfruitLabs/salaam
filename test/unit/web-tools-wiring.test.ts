@@ -9,6 +9,8 @@ const src = (f: string) => readFileSync(new URL(`../../src/${f}`, import.meta.ur
 test('an interactive coding worker gets web search and fetch in its tool allowlist', () => {
   const coding = workerTools(false, false, undefined, undefined, false, false, false, true, true);
   expect(coding).toContain('salaam_web_search');
+  // Background commands are read and stopped with salaam_tasks (found missing in a live pass).
+  expect(coding).toContain('salaam_tasks');
   expect(coding).toContain('salaam_web_fetch');
   const station = workerTools(false, false, undefined, undefined, false, false, true);
   expect(station).not.toContain('salaam_web_search');
