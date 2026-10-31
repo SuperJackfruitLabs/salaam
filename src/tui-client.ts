@@ -483,7 +483,7 @@ export class OperatorClient extends EventEmitter {
       return lease;
     }
   }
-  private actor(): { client_id: string; token: string } {
+  actor(): { client_id: string; token: string } {
     if (!this.lease) throw new Error('Take control before sending an instruction.');
     return { client_id: this.clientId, token: this.lease.token };
   }
