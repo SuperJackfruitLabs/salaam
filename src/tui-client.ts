@@ -172,6 +172,45 @@ export class OperatorClient extends EventEmitter {
     );
     await this.refresh();
   }
+  /** Desk-session approval rules (phase 2a). */
+  async approvalRules(): Promise<{
+    applies: boolean;
+    rules: import('./approval-rules.js').StoredRule[];
+    problems: string[];
+  }> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`);
+  }
+  /** Turn a reviewed request into a rule: its exact command words or its exact edited paths. */
+  async ruleFromOperation(operation: string, scope: 'session' | 'repo'): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      scope,
+      operation_id: operation,
+    });
+  }
+  async addRule(
+    scope: 'session' | 'repo',
+    rule: import('./approval-rules.js').ApprovalRule,
+  ): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`, {
+      ...this.actor(),
+      request_id: randomUUID(),
+      scope,
+      rule,
+    });
+    this.report('Rule added.');
+  }
+  async removeRule(id: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules/${id}/remove`, {
+      ...this.actor(),
+    });
+    this.report('Rule removed.');
+  }
   async steer(text: string): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const result = await call<{ state: string }>(

@@ -29,6 +29,12 @@ import {
   matchesEditScope,
   assertPermissionBinding,
 } from './autonomy.js';
+import {
+  commandArgv,
+  evaluateRules,
+  type ApprovalRules,
+  type RuleRequest,
+} from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
 import { processIdentity } from './supervisor.js';
 import {
@@ -89,6 +95,8 @@ export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
   private closed = false;
   private unregister: () => void;
+  /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
+  public rules?: ApprovalRules;
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
@@ -292,7 +300,67 @@ export class LocalCoding {
       });
     });
     const policy = permissionPolicy(this.store, session);
+    // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
+    // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
+    if (this.rules && policy.mode !== 'inspect' && this.rules.applies(session)) {
+      const request: RuleRequest =
+        args.action === 'command'
+          ? { tool: 'command', argv: commandArgv(args.command) }
+          : { tool: 'edit', paths: args.edits.map((e) => e.path) };
+      const decided = evaluateRules(this.rules.list(session), request);
+      const approval = this.managed.forOperation(c.operation_id);
+      const rule = decided.rule && {
+        id: decided.rule.id,
+        source: decided.rule.source,
+        effect: decided.rule.effect,
+        tool: decided.rule.tool,
+        ...(decided.rule.command ? { command: decided.rule.command } : {}),
+        ...(decided.rule.paths ? { paths: decided.rule.paths } : {}),
+      };
+      if (decided.effect === 'deny' && rule) {
+        this.managed.decide(
+          approval.id,
+          'rule-deny:' + c.id,
+          approval.revision,
+          approval.operation_digest,
+          'deny',
+        );
+        this.store.transaction(() =>
+          this.store.event(session, 'permission.rule-denied', {
+            rule,
+            call_id: c.id,
+            operation_id: c.operation_id,
+          }),
+        );
+      } else if (decided.effect === 'allow' && rule) {
+        const rules = this.rules;
+        this.managed.decide(
+          approval.id,
+          'rule:' + c.id,
+          approval.revision,
+          approval.operation_digest,
+          'approve',
+          {
+            receipt: {
+              policy_digest: permissionDigest(policy),
+              policy_revision: policy.revision,
+              rule,
+              root,
+              call_id: c.id,
+            },
+            decidedBy: 'rule:' + rule.source,
+            authorize: () => {
+              this.guard(c);
+              const again = evaluateRules(rules.list(session), request);
+              if (again.effect !== 'allow' || again.rule?.id !== rule.id)
+                throw new ServiceError('permission_changed', 'Approval rules changed');
+            },
+          },
+        );
+      }
+    }
     if (
+      this.managed.forOperation(c.operation_id).state === 'pending' &&
       args.action === 'edit' &&
       matchesEditScope(
         policy,

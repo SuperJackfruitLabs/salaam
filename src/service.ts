@@ -65,6 +65,7 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
+import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
@@ -125,6 +126,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Web search config file: optional providers (searxng, brave, tavily, exa) and their key
    * references. Keyless official APIs answer without one (operator ruling 2026-10-31). */
   webSearchConfig?: string;
+  /** The user's approval rules file (default ~/.config/salaam/permissions.json). */
+  permissionsFile?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
@@ -406,6 +409,7 @@ export class SalaamService {
           this.toolIdentity,
           localSandbox,
         );
+        this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
         this.supervisor.localCoding = this.localCoding;
         const webConfig = options.webSearchConfig
           ? loadWebSearchConfig(options.webSearchConfig)
@@ -2148,6 +2152,48 @@ export class SalaamService {
       }
       if (parts[0] === 'v1' && parts[1] === 'sessions' && parts[2]) {
         const id = parts[2];
+        // Desk-session approval rules (phase 2a): list, add (from a reviewed operation or written out),
+        // and remove. Adding or removing needs the session's control lease, like the permission policy.
+        if (parts[3] === 'approval-rules' && (parts.length === 4 || parts.length === 6)) {
+          const rules = this.localCoding.rules!;
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, {
+              applies: rules.applies(id),
+              rules: rules.list(id),
+              problems: rules.problems(id),
+            });
+            return;
+          }
+          const body = object(await readJson(req));
+          this.store.authorizeControl(id, {
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          if (parts.length === 4 && req.method === 'POST') {
+            const scope = string(body.scope, 'scope');
+            if (scope !== 'session' && scope !== 'repo')
+              throw new ServiceError('invalid_field', 'A rule scope is session or repo', 400);
+            const request = string(body.request_id, 'request_id', 128);
+            this.send(
+              res,
+              200,
+              body.operation_id !== undefined
+                ? rules.addFromOperation(
+                    id,
+                    string(body.operation_id, 'operation_id', 128),
+                    scope,
+                    request,
+                  )
+                : rules.add(id, scope, body.rule, request),
+            );
+            return;
+          }
+          if (parts.length === 6 && parts[5] === 'remove' && req.method === 'POST') {
+            rules.remove(id, string(parts[4], 'rule', 128));
+            this.send(res, 200, { removed: parts[4] });
+            return;
+          }
+        }
         if (parts.length === 4 && parts[3] === 'permissions') {
           if (req.method === 'GET') {
             this.send(res, 200, {

@@ -1188,7 +1188,9 @@ export class SalaamApp {
       void this.execute(async () => {
         const approval = approvals.find((a) => a.id === id)!;
         const reviewed = await this.client.review(approval);
-        this.showApproval(reviewed.approval, reviewed.operation);
+        // Desk sessions can approve for the session or always; strict work only ever approves once.
+        const rules = await this.client.approvalRules().catch(() => ({ applies: false }));
+        this.showApproval(reviewed.approval, reviewed.operation, rules.applies);
       });
     if (approvals.length === 1) open(approvals[0]!.id);
     else
@@ -1204,7 +1206,101 @@ export class SalaamApp {
         open,
       );
   }
-  private showApproval(approval: Approval, operation: import('./protocol.js').Operation): void {
+  /** /permissions → Approval rules: list them, remove one, or add one in plain words. */
+  private async approvalRules(): Promise<void> {
+    const { applies, rules, problems } = await this.client.approvalRules();
+    if (!applies) {
+      this.client.report('Approval rules apply only to desk coding sessions.');
+      return;
+    }
+    const describe = (r: import('./approval-rules.js').StoredRule) =>
+      `${r.effect} ${r.tool} ${r.command ?? (r.paths ?? []).join(', ')}`.trim();
+    this.choice(
+      'Approval rules · deny beats ask beats allow · unmatched requests ask',
+      [
+        {
+          value: 'add',
+          label: 'Add a rule',
+          description: 'e.g. allow command npm test *  ·  deny edit src/secrets/**',
+        },
+        ...rules.map((r) => ({
+          value: 'rule:' + r.id,
+          label: describe(r),
+          description:
+            r.source === 'user'
+              ? 'From your permissions.json; edit that file to change it'
+              : r.source === 'repo'
+                ? 'Always, in this repo · choose to remove'
+                : 'This session · choose to remove',
+        })),
+        ...problems.map((p, i) => ({ value: 'problem:' + i, label: 'Problem', description: p })),
+      ],
+      (value) => {
+        if (value === 'add') {
+          this.taskInput(
+            'New approval rule',
+            '',
+            'effect tool words-or-paths',
+            'allow|ask|deny, then command or edit, then command words (a final * takes any further words) or comma-separated path globs. Example: allow command git status',
+            (text) => {
+              const [effect, tool, ...rest] = text.trim().split(/\s+/);
+              const target = rest.join(' ');
+              const rule =
+                tool === 'edit'
+                  ? {
+                      effect,
+                      tool,
+                      paths: target
+                        .split(',')
+                        .map((p) => p.trim())
+                        .filter(Boolean),
+                    }
+                  : { effect, tool, command: target };
+              this.choice(
+                'Keep this rule for…',
+                [
+                  {
+                    value: 'session',
+                    label: 'This session',
+                    description: 'Gone when the session ends',
+                  },
+                  {
+                    value: 'repo',
+                    label: 'This repo',
+                    description: "Every desk session here; kept in Salaam's state",
+                  },
+                ],
+                (scope) =>
+                  void this.execute(() =>
+                    this.client.addRule(
+                      scope as 'session' | 'repo',
+                      rule as import('./approval-rules.js').ApprovalRule,
+                    ),
+                  ),
+              );
+            },
+          );
+          return;
+        }
+        if (!value.startsWith('rule:')) return;
+        const rule = rules.find((r) => 'rule:' + r.id === value)!;
+        if (rule.source === 'user') {
+          this.client.report(
+            'This rule comes from your permissions.json; edit that file to change it.',
+          );
+          return;
+        }
+        this.confirm('Remove this rule?', describe(rule), 'remove', () =>
+          this.client.removeRule(rule.id),
+        );
+      },
+    );
+  }
+  private showApproval(
+    approval: Approval,
+    operation: import('./protocol.js').Operation,
+    offerRules = false,
+  ): void {
     this.showModal(
       new ApprovalModal(
         approval,
@@ -1216,8 +1312,33 @@ export class SalaamApp {
         () => this.closeModal(),
         (decision) => {
           this.closeModal();
-          void this.execute(() => this.client.decide(approval, decision));
+          if (decision === 'approve' || decision === 'deny') {
+            void this.execute(() => this.client.decide(approval, decision));
+            return;
+          }
+          // The rule is the exact request just reviewed: its command words or its edited paths.
+          // If it cannot become a rule (shell features, odd words), nothing is approved; say why.
+          const approveWith = (scope: 'session' | 'repo') => async () => {
+            await this.client.ruleFromOperation(operation.id, scope);
+            await this.client.decide(approval, 'approve');
+            this.client.report(
+              scope === 'session'
+                ? 'Approved, and the same request will be approved for the rest of this session.'
+                : 'Approved, and the same request will always be approved in this repo. Remove it in /permissions.',
+            );
+          };
+          if (decision === 'approve-session') void this.execute(approveWith('session'));
+          else
+            this.confirm(
+              'Always allow in this repo?',
+              `${safeText(operation.target)}
+
+This exact request will be approved without asking in every desk session on this repository, until you remove it in /permissions. It is kept in Salaam's state, not in the repository.`,
+              'always allow',
+              approveWith('repo'),
+            );
         },
+        offerRules,
       ),
       86,
     );
@@ -1271,6 +1392,11 @@ export class SalaamApp {
         ...(current.coding
           ? [
               {
+                value: 'rules',
+                label: 'Approval rules',
+                description: 'Allow, ask or deny by command words and path globs',
+              },
+              {
                 value: 'review',
                 label: 'Review every mutation',
                 description: 'Explicit approval for each edit and unsandboxed shell command',
@@ -1284,6 +1410,10 @@ export class SalaamApp {
           : []),
       ],
       (mode) => {
+        if (mode === 'rules') {
+          void this.execute(() => this.approvalRules());
+          return;
+        }
         if (mode === 'inspect-current') {
           this.showText('Permissions and execution boundary', JSON.stringify(current, null, 2));
           return;
