@@ -228,5 +228,5 @@ test('review and rewind say when background commands are still running', async (
     .render(100)
     .join('\n')
     .replace(/\x1b\[[0-9;]*m/g, '');
-  expect(text).toContain('1 background task running; their writes may change files');
+  expect(text).toContain('1 background task running; its writes may change files');
 });

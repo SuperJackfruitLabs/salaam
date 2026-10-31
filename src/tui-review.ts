@@ -15,7 +15,9 @@ const SHOWN = 12;
 /** Background commands may keep writing while a review or rewind is open (operator ruling). */
 export function backgroundNote(running: number | undefined): string | null {
   if (!running) return null;
-  return `${running} background ${running === 1 ? 'task' : 'tasks'} running; their writes may change files. /jobs shows them.`;
+  return running === 1
+    ? '1 background task running; its writes may change files. /jobs shows it.'
+    : `${running} background tasks running; their writes may change files. /jobs shows them.`;
 }
 
 export function changeCounts(change: CheckpointChange): string {
