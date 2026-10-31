@@ -111,3 +111,21 @@ The model reads a file and supplies its content hash with an edit. Review shows 
 Commands run as your local OS user, **without an OS sandbox**. The approval shows the exact command, working directory and timeout. They can access the user's files and network, even outside the project. Salaam supplies a minimal environment rather than inheriting daemon API keys. Commands have a two-minute maximum runtime and 64 KiB captured-output limit. Foreground process groups are cancelled with the attempt; deliberately daemonized programs are outside this process-group guarantee. Use foreground commands rather than starting background services.
 
 Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The local tabs show recorded proposals and outcomes, not a live Git diff. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
+
+## Attaching files with `@`
+
+In a local coding session, type `@` in the composer to complete a workspace file. The list
+comes from git, so ignored files do not appear. Names with spaces are quoted (`@"my notes.md"`).
+
+When you send the prompt, Salaam attaches each mentioned file:
+
+- A text file is attached in full, up to 64 KiB per file and 256 KiB per prompt. A cut file is
+  marked as truncated.
+- An image (PNG, JPEG, GIF or WebP, recognised by its bytes) goes to the model as an image, up to
+  512 KiB each and four per prompt.
+- A directory attaches its listing. A binary file is named but not attached.
+- A path outside the workspace, including through a symlink, is refused.
+- A file that looks like a secret (`.env`, keys, `.netrc` and similar) needs a confirm first.
+
+Each attachment is named with the start of its SHA-256 so the transcript shows which version the
+model read. Board sessions are sent exactly what was typed; `@` is not expanded there.

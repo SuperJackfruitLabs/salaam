@@ -406,10 +406,10 @@ export class OperatorClient extends EventEmitter {
     await job;
     this.changed();
   }
-  async submit(text: string, continues?: string): Promise<string> {
+  async submit(text: string, continues?: string, confirmSensitive = false): Promise<string> {
     this.actor();
     if (!this.snapshot || !this.outbox) throw new Error('Open a session first.');
-    const record = this.outbox.enqueue(text, this.snapshot.revision, continues);
+    const record = this.outbox.enqueue(text, this.snapshot.revision, continues, confirmSensitive);
     this.notice = 'Instruction saved locally. Delivering…';
     this.changed();
     try {

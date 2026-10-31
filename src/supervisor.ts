@@ -1,4 +1,5 @@
 import { BoardReads } from './board-reads.js';
+import { takeImages } from './mentions.js';
 import { HostBreaker, callThroughBreaker } from './host-breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -1890,7 +1891,11 @@ export class Supervisor extends EventEmitter {
       } catch {
         /* the previously loaded guidance stays in force */
       }
-      const response = await w.pi.command('prompt', { message: work.submission.text });
+      const images = takeImages(this.store.db, work.submission.id);
+      const response = await w.pi.command('prompt', {
+        message: work.submission.text,
+        ...(images.length ? { images } : {}),
+      });
       const disposition = object(response.data ?? {}).disposition;
       if (disposition !== 'started') throw new Error('Pi did not start the dispatched prompt');
       this.store.running(work.attempt.id);
