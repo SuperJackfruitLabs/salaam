@@ -110,6 +110,9 @@ export interface Session {
   provider_route?: ProviderRoute;
   /** Interactive sessions: the AGENTS.md set loaded automatically (project-instructions.ts). */
   project_instructions?: import('./project-instructions.js').InstructionsSummary;
+  /** Desk sessions in the session list: the newest prompt and when the transcript last changed. */
+  last_prompt?: string;
+  last_active_at?: string;
   provider_capabilities?: {
     output_token_cap: boolean;
     durable_tasks: boolean;

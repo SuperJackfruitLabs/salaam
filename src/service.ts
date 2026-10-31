@@ -30,6 +30,7 @@ import { OperatorInbox } from './operator-inbox.js';
 import { RecurringWork } from './recurring-work.js';
 import { JobWork } from './job-work.js';
 import { Store } from './store.js';
+import { pickerSummary } from './session-pick.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
@@ -2028,7 +2029,10 @@ export class SalaamService {
         this.send(
           res,
           200,
-          this.store.sessions().map((x) => this.supervisor.inspect(x.id)),
+          this.store.sessions().map((x) => {
+            const session = this.supervisor.inspect(x.id);
+            return { ...session, ...pickerSummary(session, this.store) };
+          }),
         );
         return;
       }

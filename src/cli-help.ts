@@ -55,16 +55,19 @@ Inspect the effective tools and digest before admission. Project definitions can
 grant themselves authority. Mutations accept --request-id and --takeover.`,
   code: `salaam code [--continue | --new | --resume] [--cwd DIR] [--takeover]
 salaam here   (the same)
+salaam -c     (short for salaam code --continue)
 
 Work in this folder with one command: start the service if it is not running, then continue
 the folder's latest session (the default), start a new local coding session (--new), or pick
-any session from a list (--resume). No session id needed.`,
+any session from a list (--resume), this folder's sessions first. No session id needed.
+SALAAM_TERMINAL_STATUS=off stops the window-title and Herdr status reports.`,
   tui: `salaam tui [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
            [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 
 Bare sal opens the same Salaam terminal interface in a TTY.
 Ctrl+K actions · Ctrl+P sessions · Ctrl+N new · Ctrl+O approvals
 Ctrl+G changes · Ctrl+T commands · Ctrl+E external editor · Ctrl+C detach.
+? on an empty composer (or F1) shows the keys for where you are.
 Work continues in the service when the terminal closes.`,
   remote: `salaam remote SSH_HOST [--remote-bin ABSOLUTE_PATH] [--state REMOTE_DIR]
               [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
@@ -324,7 +327,7 @@ Usage: salaam <command> [options]
        sal <command> [options]
 
 Commands:
-  code          Work in this folder: continue its session or start one (also: here)
+  code          Work in this folder: continue its session or start one (also: here, -c)
   tui           Open the Salaam terminal interface (also bare sal)
   remote        Open the same session over SSH
   providers     List pinned Pi providers and capabilities

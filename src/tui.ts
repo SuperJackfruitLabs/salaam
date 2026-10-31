@@ -84,6 +84,8 @@ import {
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
 import { rewindSummary } from './tui-review.js';
+import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './tui-keymap.js';
+import { HerdrReporter, statusEnabled, terminalState, titleFor } from './terminal-status.js';
 import type { RewindMode } from './turn-rewind.js';
 
 export interface TuiOptions {
@@ -298,8 +300,27 @@ export class SalaamApp {
       this.terminal.columns - (this.rail && this.terminal.columns >= 104 ? 31 : 0),
     );
   }
+  // Trial polish C: the window title and Herdr say working / needs you / idle.
+  private readonly statusOn = statusEnabled();
+  private herdr = new HerdrReporter();
+  private lastTitle?: string;
+  private reportStatus(): void {
+    if (!this.statusOn) return;
+    const snapshot = this.client.snapshot;
+    const state = terminalState(snapshot);
+    const name = snapshot
+      ? (this.client.names[snapshot.id] ?? (snapshot.cwd ? basename(snapshot.cwd) : undefined))
+      : undefined;
+    const title = titleFor(state, name);
+    if (title !== this.lastTitle) {
+      this.lastTitle = title;
+      this.terminal.setTitle(title);
+    }
+    this.herdr.report(state, snapshot?.id);
+  }
   private changed(): void {
     const snapshot = this.client.snapshot;
+    this.reportStatus();
     if (snapshot) {
       if (snapshot.id !== this.lastSession) {
         if (this.lastSession) this.drafts.set(this.lastSession, this.editor.getExpandedText());
@@ -347,6 +368,10 @@ export class SalaamApp {
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
     )
       return;
+    if (data === '?' && this.editor.getExpandedText() === '') {
+      this.help();
+      return { consume: true };
+    }
     // Esc stops the running turn, Enter steers it, Tab queues behind it (interactive coding only).
     const key = turnKey(data);
     const action = key
@@ -404,25 +429,8 @@ export class SalaamApp {
       else submit();
       return { consume: true };
     }
-    const keys: [KeyId, () => void][] = [
-      ['ctrl+k', () => this.palette()],
-      ['ctrl+p', () => void this.execute(() => this.sessions())],
-      ['ctrl+n', () => void this.execute(() => this.newSession())],
-      ['ctrl+o', () => this.approvals()],
-      ['ctrl+g', () => this.setTab('changes')],
-      ['ctrl+t', () => this.setTab('commands')],
-      [
-        'ctrl+b',
-        () => {
-          this.rail = !this.rail;
-          this.tui.requestRender(true);
-        },
-      ],
-      ['ctrl+r', () => void this.execute(() => this.refresh())],
-      ['ctrl+e', () => void this.execute(() => this.editPrompt())],
-      ['shift+tab', () => void this.execute(() => this.cycleMode())],
-      ['f1', () => this.help()],
-    ];
+    const actions = this.globalActions();
+    const keys: [KeyId, () => void][] = GLOBAL_KEYS.map((k) => [k.key, () => actions[k.action]()]);
     for (const [key, action] of keys)
       if (matchesKey(data, key)) {
         if (this.view.busy) this.pendingAction = action;
@@ -452,6 +460,26 @@ export class SalaamApp {
     }
     return;
   }
+  /** What each key in GLOBAL_KEYS does; the table owns the keys, this owns the actions. */
+  private globalActions(): Record<GlobalAction, () => void> {
+    return (this.actionTable ??= {
+      palette: () => this.palette(),
+      sessions: () => void this.execute(() => this.sessions()),
+      new: () => void this.execute(() => this.newSession()),
+      approvals: () => this.approvals(),
+      changes: () => this.setTab('changes'),
+      commands: () => this.setTab('commands'),
+      rail: () => {
+        this.rail = !this.rail;
+        this.tui.requestRender(true);
+      },
+      refresh: () => void this.execute(() => this.refresh()),
+      editor: () => void this.execute(() => this.editPrompt()),
+      mode: () => void this.execute(() => this.cycleMode()),
+      help: () => this.help(),
+    });
+  }
+  private actionTable?: Record<GlobalAction, () => void>;
   private async execute(work: () => Promise<unknown>): Promise<void> {
     if (this.view.busy) {
       const session = this.client.snapshot?.id ?? this.options.session;
@@ -1233,17 +1261,21 @@ export class SalaamApp {
     );
   }
   private async sessions(): Promise<void> {
+    const { pickerOrder, sessionDescription } = await import('./session-pick.js');
     await this.client.list();
+    const now = Date.now();
     this.choice(
       'Your Salaam sessions',
       [
         { value: 'new', label: '+ New session', description: 'Start a fresh workspace' },
-        ...this.client.sessions.map((session) => ({
-          value: session.id,
-          label:
-            (this.client.names[session.id] ?? basename(session.cwd)) + '  ' + shortId(session.id),
-          description: session.state + ' · ' + session.cwd,
-        })),
+        ...pickerOrder(this.client.sessions, resolve(this.options.cwd ?? process.cwd())).map(
+          (session) => ({
+            value: session.id,
+            label:
+              (this.client.names[session.id] ?? basename(session.cwd)) + '  ' + shortId(session.id),
+            description: sessionDescription(session, now),
+          }),
+        ),
       ],
       (value) => {
         if (value === 'model') this.modelPicker();
@@ -1334,17 +1366,23 @@ export class SalaamApp {
     const review = this.view.review;
     if (!review?.data?.files.length) return;
     const file = review.data.files[review.file]!;
-    if (matchesKey(data, 'alt+right') || matchesKey(data, 'alt+left')) {
-      const next = review.file + (matchesKey(data, 'alt+right') ? 1 : -1);
+    if (
+      matchesKey(data, REVIEW_KEYS.nextFile.key) ||
+      matchesKey(data, REVIEW_KEYS.previousFile.key)
+    ) {
+      const next = review.file + (matchesKey(data, REVIEW_KEYS.nextFile.key) ? 1 : -1);
       if (next >= 0 && next < review.data.files.length)
         void this.execute(() => this.loadReview(next));
       return { consume: true };
     }
-    if (matchesKey(data, 'alt+down') || matchesKey(data, 'alt+up')) {
+    if (
+      matchesKey(data, REVIEW_KEYS.nextHunk.key) ||
+      matchesKey(data, REVIEW_KEYS.previousHunk.key)
+    ) {
       const count = review.hunks?.length ?? 0;
       review.hunk = Math.max(
         -1,
-        Math.min(count - 1, review.hunk + (matchesKey(data, 'alt+down') ? 1 : -1)),
+        Math.min(count - 1, review.hunk + (matchesKey(data, REVIEW_KEYS.nextHunk.key) ? 1 : -1)),
       );
       this.document.invalidate();
       this.tui.requestRender();
@@ -1359,11 +1397,11 @@ export class SalaamApp {
       await this.loadReview(review.file);
       this.client.report((action === 'accept' ? 'Accepted ' : 'Reverted ') + what + '.');
     };
-    if (data === 'a') {
+    if (data === REVIEW_KEYS.accept.key) {
       void this.execute(act('accept'));
       return { consume: true };
     }
-    if (data === 'r') {
+    if (data === REVIEW_KEYS.revert.key) {
       this.confirm(
         'Revert ' + what,
         (hunk ? 'Puts this hunk back' : 'Puts this file back') +
@@ -1373,7 +1411,7 @@ export class SalaamApp {
       );
       return { consume: true };
     }
-    if (data === 'i') {
+    if (data === REVIEW_KEYS.instruct.key) {
       this.setTab('conversation');
       this.editor.setText(
         `In ${file.path}${hunk ? ` (the change at ${hunk.text.split('\n')[0]})` : ''}: `,
@@ -2706,46 +2744,17 @@ This exact request will be approved without asking in every desk session on this
       },
     );
   }
+  /** The keys for where you are: `?` on an empty composer, or F1. Built from tui-keymap.ts. */
   private help(): void {
+    const snapshot = this.client.snapshot;
+    const sheet = keySheet({
+      tab: this.view.tab,
+      coding: interactiveCoding(snapshot),
+      running: interactiveCoding(snapshot) && runningAttempt(snapshot) !== undefined,
+    });
     this.choice(
-      'Salaam · keyboard',
-      [
-        {
-          value: 'close',
-          label: 'Enter · send the exact prompt',
-          description: 'The durable outbox saves it before delivery',
-        },
-        {
-          value: 'close',
-          label: 'Alt+Enter / Ctrl+J · new line',
-          description: 'Shift+Enter also works with supported keyboard protocols',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+K · all actions',
-          description: 'Ctrl+P sessions · Ctrl+N new session · Ctrl+O approvals',
-        },
-        {
-          value: 'close',
-          label: 'Tab · switch view',
-          description: 'Conversation · Changes · Commands · Context',
-        },
-        {
-          value: 'close',
-          label: 'PageUp / PageDown · scroll',
-          description: 'Mouse wheel also scrolls; Ctrl+Home/End jump to the top/bottom',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+E · external prompt editor',
-          description: 'Runs VISUAL or EDITOR with terminal modes restored',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+C · detach',
-          description: 'Work continues. Cancel and stop service are separate actions.',
-        },
-      ],
+      sheet.title,
+      sheet.rows.map((row) => ({ value: 'close', ...row })),
       () => {},
     );
   }
@@ -2824,7 +2833,11 @@ This exact request will be approved without asking in every desk session on this
         observe: this.options.observe,
         takeover: this.options.takeover,
       });
-    else await this.client.create(cwd, false, this.selectedRoute, true);
+    else {
+      await this.client.create(cwd, false, this.selectedRoute, true);
+      if (start === 'continue')
+        this.client.notice = 'No earlier session in this folder, so this is a new one.';
+    }
     this.setTab('conversation');
   }
   async run(): Promise<void> {
@@ -2861,6 +2874,7 @@ This exact request will be approved without asking in every desk session on this
       for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.off(signal, close);
       process.stdin.off('end', close);
       process.stdout.off('error', close);
+      if (this.statusOn) this.herdr.release();
       await this.terminal.drainInput(150, 25);
       process.stdin.pause();
       process.stdin.unref();

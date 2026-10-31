@@ -66,8 +66,16 @@ The interface has two native palettes, **Night** and **Paper**, with jade accent
 | PageUp / PageDown                      | Scroll the body; mouse wheel is also supported                                    |
 | Ctrl+R                                 | Refresh service state and the current diff                                        |
 | Ctrl+E                                 | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                           |
-| F1                                     | Keyboard help                                                                     |
+| F1, or `?` with an empty composer      | Keys for where you are (conversation, running turn, change review)                |
 | Ctrl+C / Ctrl+D with an empty composer | Detach and leave work running                                                     |
+
+The key sheet (`?`, F1 or `/keys`) is built from the same table the TUI binds (`src/tui-keymap.ts`), so it lists the keys that actually work. It changes with where you are: a running desk turn shows Esc, Enter and Tab; the Changes review shows its file, hunk, accept, revert and instruct keys. Approvals show their own keys along the bottom.
+
+### Continue, resume and terminal status
+
+`salaam -c` (or `salaam --continue`) is short for `salaam code --continue`: it reopens this folder's latest session, or starts one and says _No earlier session in this folder, so this is a new one._ The session picker (Ctrl+P, `salaam code --resume`) lists this folder's sessions first, newest first, each with what you last asked and how long ago.
+
+The window title says the state: `Salaam · NAME · working`, `· needs you` while an approval waits, or `· idle`. Inside [Herdr](https://herdr.dev) the pane also reports `working`, `blocked` or `idle` and a resume command (`salaam --session ID`) through Herdr's documented `"$HERDR_BIN_PATH" pane report-agent` command, and releases the pane on exit; outside Herdr nothing is sent. Neither carries prompt or command text. `SALAAM_TERMINAL_STATUS=off` turns both off. The previous window title is restored on exit.
 
 The editor accepts multiline Unicode paste, keeps per-session drafts in memory, and offers accepted-input history. Unsubmitted drafts are not persisted after process loss. Quoted editor executable paths and arguments are supported; shell expansion is absent. The external editor gets normal terminal modes, a private temporary prompt file and a 64 KiB result limit. Terminal modes, alternate screen, bracketed paste and title are restored on normal detach and handled signals. A forced process kill cannot run terminal cleanup; open a new attachment to recover.
 
