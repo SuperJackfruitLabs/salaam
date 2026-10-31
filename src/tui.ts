@@ -65,7 +65,9 @@ import {
   type ViewModel,
   type ViewTab,
   type DiffPage,
+  modeLabel,
 } from './tui-view.js';
+import { nextMode, leavingPlanNeedsConfirm } from './autonomy.js';
 import { ChoiceModal, FormModal, ConfirmModal, ApprovalModal, TextModal } from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
@@ -298,6 +300,11 @@ export class SalaamApp {
           this.historyKeys.add(submission.id);
           this.editor.addToHistory(submission.text);
         }
+      // Phase 2b: the status line shows this session's mode; reload it when the session changes.
+      if (this.client.snapshot?.id !== this.modeSession) {
+        this.modeSession = this.client.snapshot?.id;
+        void this.loadMode().catch(() => {});
+      }
       if (this.client.workspace?.revision !== this.lastRevision) {
         this.lastRevision = this.client.workspace?.revision;
         this.view.diff = undefined;
@@ -395,6 +402,7 @@ export class SalaamApp {
       ],
       ['ctrl+r', () => void this.execute(() => this.refresh())],
       ['ctrl+e', () => void this.execute(() => this.editPrompt())],
+      ['shift+tab', () => void this.execute(() => this.cycleMode())],
       ['f1', () => this.help()],
     ];
     for (const [key, action] of keys)
@@ -584,6 +592,78 @@ export class SalaamApp {
           (model) => void this.execute(() => this.applyRoute(providerRoute(provider, model))),
         );
       },
+    );
+  }
+  private modeSession: string | undefined;
+  /** Phase 2b: the session's mode and full access, for the status line. */
+  private async loadMode(): Promise<void> {
+    if (!this.client.snapshot) {
+      this.view.mode = undefined;
+      return;
+    }
+    const current = await this.client.permissions();
+    this.view.mode =
+      current.configurable && current.coding
+        ? { mode: current.policy.mode, full: current.policy.access === 'full' }
+        : undefined;
+    this.tui.requestRender();
+  }
+  /** Shift+Tab: review → accept edits → auto → plan. Leaving plan for a mode that can change the
+   * workspace asks first. Full access is kept as it is; it has its own command. */
+  private async cycleMode(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('Modes are for local coding sessions. No session or files were changed.');
+    const from = current.policy.mode,
+      to = nextMode(from);
+    const apply = async () => {
+      await this.client.setPermissions(session, current.policy.revision, {
+        mode: to,
+        paths: [],
+        ...(current.policy.access === 'full' ? { access: 'full' as const } : {}),
+      });
+      await this.loadMode();
+    };
+    if (leavingPlanNeedsConfirm(from, to))
+      this.confirm(
+        'Leave plan mode?',
+        `Switch from plan to ${modeLabel(to)}. The agent may then change files${to === 'auto' ? ' and run sandboxed commands without asking' : ''}.`,
+        'switch mode',
+        apply,
+      );
+    else await apply();
+  }
+  /** Full access on (with a warning and a confirm) or off (at once). */
+  private async fullAccess(): Promise<void> {
+    const session = this.client.snapshot?.id;
+    if (!session) throw new Error('Open a session first.');
+    const current = await this.client.permissions();
+    if (!current.configurable || !current.coding)
+      throw new Error('Full access is for local coding sessions. Nothing was changed.');
+    const on = current.policy.access === 'full';
+    const apply = async () => {
+      await this.client.setPermissions(session, current.policy.revision, {
+        mode: current.policy.mode,
+        paths: current.policy.paths,
+        ...(on ? {} : { access: 'full' as const }),
+      });
+      await this.loadMode();
+    };
+    if (on) {
+      await apply();
+      return;
+    }
+    if (current.full_access_allowed === false)
+      throw new Error(
+        'The operator does not allow full access on this host. Commands stay in the OS sandbox.',
+      );
+    this.confirm(
+      'Turn on full access?',
+      'Later commands in this session run WITHOUT the OS sandbox: they can read and change any file your user can, and reach the network directly. Each command still asks for your approval, even in auto mode. Run /full-access again to turn it off.',
+      'turn on full access',
+      apply,
     );
   }
   private showText(title: string, text: string): void {
@@ -869,6 +949,14 @@ export class SalaamApp {
           2,
         ),
       );
+      return;
+    }
+    if (command === 'mode') {
+      await this.cycleMode();
+      return;
+    }
+    if (command === 'full-access') {
+      await this.fullAccess();
       return;
     }
     if (command === 'permissions') {

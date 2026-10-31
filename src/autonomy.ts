@@ -1,12 +1,48 @@
 import { realpathSync } from 'node:fs';
 import type { Store } from './store.js';
 import { canonical, digest, object, ServiceError, type Controller } from './protocol.js';
-export type PermissionMode = 'inspect' | 'review' | 'scoped-edit';
+export type PermissionMode =
+  | 'inspect'
+  | 'review'
+  | 'scoped-edit'
+  // Phase 2b (operator-approved plan, 2026-10-31): the one-key modes of an interactive session.
+  | 'plan'
+  | 'accept-edits'
+  | 'auto';
+const MODES: readonly PermissionMode[] = [
+  'inspect',
+  'review',
+  'scoped-edit',
+  'plan',
+  'accept-edits',
+  'auto',
+];
+/** Modes in which the service performs no local mutation, however it was approved. */
+const READ_ONLY_MODES: readonly PermissionMode[] = ['inspect', 'plan'];
+/** Shift+Tab: review → accept edits → auto → plan → review. Full access is never in the cycle. */
+const CYCLE: readonly PermissionMode[] = ['review', 'accept-edits', 'auto', 'plan'];
+export function nextMode(mode: PermissionMode): PermissionMode {
+  const at = CYCLE.indexOf(mode);
+  return at < 0 ? 'review' : CYCLE[(at + 1) % CYCLE.length]!;
+}
+/** Leaving plan mode for any mode that may change the workspace asks the person to confirm. */
+export function leavingPlanNeedsConfirm(from: PermissionMode, to: PermissionMode): boolean {
+  return from === 'plan' && !READ_ONLY_MODES.includes(to);
+}
+const PLAN_NOTE =
+  '[Plan mode: this session is read-only. Read and investigate, then propose a step-by-step plan and stop. Do not edit files or run commands; the person will switch modes when the plan is agreed.]';
+/** The instruction as the model receives it: in plan mode, prefixed with what plan mode means. */
+export function planNote(mode: PermissionMode, text: string): string {
+  return mode === 'plan' ? PLAN_NOTE + '\n\n' + text : text;
+}
 export interface PermissionPolicy {
   revision: number;
   mode: PermissionMode;
   paths: string[];
   root: string;
+  /** Present only when the person chose full access: later commands run without the OS sandbox.
+   * Absent for sandboxed policies, so their digests (and the receipts bound to them) are unchanged. */
+  access?: 'full';
 }
 export function permissionPolicy(store: Store, session: string): PermissionPolicy {
   const root = store.session(session).cwd;
@@ -28,10 +64,16 @@ export function permissionPolicy(store: Store, session: string): PermissionPolic
       !Number.isSafeInteger(saved.revision) ||
       Number(saved.revision) < 1 ||
       saved.root !== root ||
-      Object.keys(saved).some((key) => !['revision', 'root', 'mode', 'paths'].includes(key))
+      Object.keys(saved).some(
+        (key) => !['revision', 'root', 'mode', 'paths', 'access'].includes(key),
+      )
     )
       throw new Error('Invalid saved policy');
-    const policy = validatePermissions({ mode: saved.mode, paths: saved.paths });
+    const policy = validatePermissions({
+      mode: saved.mode,
+      paths: saved.paths,
+      ...(saved.access === undefined ? {} : { access: saved.access }),
+    });
     return { ...policy, revision: Number(saved.revision), root };
   } catch {
     throw new ServiceError(
@@ -40,15 +82,20 @@ export function permissionPolicy(store: Store, session: string): PermissionPolic
     );
   }
 }
-export function validatePermissions(value: unknown): { mode: PermissionMode; paths: string[] } {
+export function validatePermissions(value: unknown): {
+  mode: PermissionMode;
+  paths: string[];
+  access?: 'full';
+} {
   const input = object(value);
   if (
-    Object.keys(input).some((k) => !['mode', 'paths'].includes(k)) ||
-    !['inspect', 'review', 'scoped-edit'].includes(String(input.mode))
+    Object.keys(input).some((k) => !['mode', 'paths', 'access'].includes(k)) ||
+    !(MODES as readonly string[]).includes(String(input.mode)) ||
+    (input.access !== undefined && input.access !== 'full')
   )
     throw new ServiceError(
       'invalid_permissions',
-      'Choose inspect, review or scoped-edit; unknown policy fields are rejected',
+      'Choose inspect, review, scoped-edit, plan, accept-edits or auto, and access "full" or none; unknown policy fields are rejected',
     );
   const paths = input.paths ?? [];
   if (
@@ -81,7 +128,11 @@ export function validatePermissions(value: unknown): { mode: PermissionMode; pat
       'invalid_permissions',
       'Only scoped-edit takes paths, and requires at least one',
     );
-  return { mode: input.mode as PermissionMode, paths: [...paths].sort() };
+  return {
+    mode: input.mode as PermissionMode,
+    paths: [...paths].sort(),
+    ...(input.access === 'full' ? { access: 'full' as const } : {}),
+  };
 }
 export function configurePermissions(
   store: Store,
@@ -90,8 +141,15 @@ export function configurePermissions(
   expected: number,
   value: unknown,
   actor: Controller,
+  /** The operator's setting: may an interactive session choose full access (no OS sandbox)? */
+  opts: { allowFullAccess?: boolean } = {},
 ) {
   const policy = validatePermissions(value);
+  if (policy.access === 'full' && opts.allowFullAccess === false)
+    throw new ServiceError(
+      'full_access_denied',
+      'The operator does not allow full access on this host; commands stay in the OS sandbox',
+    );
   return store.request(
     'local-operator',
     request,
@@ -104,7 +162,7 @@ export function configurePermissions(
           'permissions_unavailable',
           'This policy applies only to local workspace sessions, not managed stations or child workers',
         );
-      if (policy.mode !== 'inspect' && !store.localCoding(session))
+      if (!READ_ONLY_MODES.includes(policy.mode) && !store.localCoding(session))
         throw new ServiceError(
           'local_denied',
           'Create a coding session first; policy cannot grant missing coding capability',
@@ -140,7 +198,7 @@ export function assertPermissionBinding(
   root: string,
 ): void {
   const policy = permissionPolicy(store, session);
-  if (policy.root !== root || policy.mode === 'inspect')
+  if (policy.root !== root || READ_ONLY_MODES.includes(policy.mode))
     throw new ServiceError('permission_denied', 'Current policy does not permit local mutations');
   const binding = store.db
     .prepare(
@@ -152,5 +210,34 @@ export function assertPermissionBinding(
       'permission_changed',
       'Auto-approval belongs to an older policy; prepare and review a fresh operation',
     );
+}
+/** A project-relative path the session's modes may edit without review: not private or hidden. */
+function ordinaryProjectPath(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.startsWith('/') &&
+    path
+      .split('/')
+      .every(
+        (part) =>
+          part !== '' &&
+          part !== '..' &&
+          !part.startsWith('.') &&
+          !['credentials', 'secrets', 'node_modules', 'vendor'].includes(part),
+      )
+  );
+}
+/** Whether this policy approves these edits by itself (scoped edits, accept-edits and auto). */
+export function autoApprovesEdits(policy: PermissionPolicy, paths: string[]): boolean {
+  if (policy.mode === 'scoped-edit') return matchesEditScope(policy, paths);
+  return (
+    (policy.mode === 'accept-edits' || policy.mode === 'auto') &&
+    paths.length > 0 &&
+    paths.every(ordinaryProjectPath)
+  );
+}
+/** Whether this policy approves a command by itself: auto, and only inside the OS sandbox. */
+export function autoApprovesCommands(policy: PermissionPolicy, sandboxed: boolean): boolean {
+  return policy.mode === 'auto' && policy.access !== 'full' && sandboxed;
 }
 export const permissionDigest = (policy: PermissionPolicy) => digest(JSON.parse(canonical(policy)));

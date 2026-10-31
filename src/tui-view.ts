@@ -25,6 +25,21 @@ export interface ViewModel {
   log?: { id: string; text: string; offset: number; complete: boolean };
   busy: boolean;
   continuation?: string;
+  /** Phase 2b: the session's mode and whether full access is on, shown on the status line. */
+  mode?: { mode: string; full: boolean };
+}
+/** How the status line names a mode. */
+export function modeLabel(mode: string): string {
+  return (
+    {
+      review: 'review',
+      'accept-edits': 'accept edits',
+      auto: 'auto',
+      plan: 'plan',
+      inspect: 'inspect only',
+      'scoped-edit': 'scoped edits',
+    }[mode] ?? mode
+  );
 }
 export function modelLabel(client: OperatorClient): string {
   const route = client.snapshot?.provider_route ?? client.health?.provider_route;
@@ -128,6 +143,12 @@ export function status(view: ViewModel, width: number): string[] {
       ' tokens · $' +
       Math.max(c.usage.known_cost, c.usage.estimated_cost).toFixed(2)
     : '';
+  const mode = view.mode
+    ? '  ' +
+      t.ink('mode ' + modeLabel(view.mode.mode), 'muted') +
+      (view.mode.full ? ' ' + t.ink('FULL ACCESS', 'amber') : '') +
+      t.ink(' · shift+tab', 'muted')
+    : '';
   const identity = c.snapshot
     ? '  session ' +
       shortId(c.snapshot.id) +
@@ -136,6 +157,7 @@ export function status(view: ViewModel, width: number): string[] {
   return [
     t.line(
       t.ink(safeText(state).replace(/\bPi\b/g, 'Worker'), tone) +
+        mode +
         t.ink(safeText(guidance) + spend + identity, 'muted'),
       width,
     ),

@@ -2,7 +2,13 @@ import { afterEach, expect, test } from 'vitest';
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { planHost, readHost, hostUnit, hostCommandNetwork } from '../../src/host.js';
+import {
+  planHost,
+  readHost,
+  hostUnit,
+  hostCommandNetwork,
+  hostAllowsFullAccessSessions,
+} from '../../src/host.js';
 import { digest } from '../../src/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
@@ -148,5 +154,25 @@ test('unsandboxed_commands "allow" is the only accepted value and is pinned in t
   writeFileSync(file, JSON.stringify(allowed), { mode: 0o600 });
   expect(readHost(file)).toEqual(allowed);
   // The opt-in is part of the reviewed manifest, so it changes the digest the owner sees.
+  expect(digest(allowed)).not.toBe(digest(plain));
+});
+
+// Phase 2b: a host allows interactive sessions to choose full access only by explicit setting.
+test('allow_full_access_sessions is off by default for hosts, true only by setting, and pinned', async () => {
+  const f = fixture();
+  const sbx = (m: unknown) => (m as { local_sandbox: Record<string, unknown> }).local_sandbox;
+  const plain = await planHost(f.input);
+  expect(sbx(plain)).not.toHaveProperty('full_access_sessions');
+  expect(hostAllowsFullAccessSessions(plain)).toBe(false);
+  const allowed = await planHost({ ...f.input, allow_full_access_sessions: true });
+  expect(sbx(allowed)).toMatchObject({ full_access_sessions: 'allow' });
+  expect(hostAllowsFullAccessSessions(allowed)).toBe(true);
+  for (const allow_full_access_sessions of ['yes', false, 'true', 1, null])
+    await expect(planHost({ ...f.input, allow_full_access_sessions })).rejects.toThrow(
+      'allow_full_access_sessions',
+    );
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(allowed), { mode: 0o600 });
+  expect(readHost(file)).toEqual(allowed);
   expect(digest(allowed)).not.toBe(digest(plain));
 });

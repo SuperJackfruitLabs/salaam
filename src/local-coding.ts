@@ -25,8 +25,9 @@ import {
 } from './local-edits.js';
 import {
   permissionPolicy,
+  autoApprovesEdits,
+  autoApprovesCommands,
   permissionDigest,
-  matchesEditScope,
   assertPermissionBinding,
 } from './autonomy.js';
 import {
@@ -233,20 +234,13 @@ export class LocalCoding {
       const timeout = input.timeout_ms ?? 30000;
       if (!Number.isInteger(timeout) || Number(timeout) < 100 || Number(timeout) > 120000)
         throw new ServiceError('invalid_field', 'Command timeout must be 100–120000 ms');
-      if (
-        this.sandbox.kind === 'bwrap' &&
-        this.sandbox.level !== 'full-access' &&
-        !this.sandbox.bwrap
-      )
+      const sb = this.sandboxFor(session);
+      if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
         throw new ServiceError(
           'sandbox_unavailable',
           'This host has no usable bubblewrap, so it cannot run a sandboxed command; an operator can choose full access explicitly',
         );
-      if (
-        this.sandbox.kind === 'none' &&
-        this.sandbox.level !== 'full-access' &&
-        !this.sandbox.allowUnsandboxed
-      )
+      if (sb.kind === 'none' && sb.level !== 'full-access' && !sb.allowUnsandboxed)
         throw new ServiceError('sandbox_unavailable', UNSANDBOXED_REFUSAL);
       args = {
         action: 'command',
@@ -254,10 +248,10 @@ export class LocalCoding {
         timeout_ms: Number(timeout),
         // Bound into the approval and the operation digest: the sandbox is part of what is approved.
         sandbox: {
-          kind: this.sandbox.kind,
-          level: this.sandbox.level,
-          bwrap: this.sandbox.bwrap?.version ?? null,
-          ...(this.brokerNetwork() ? { network: 'broker' as const } : {}),
+          kind: sb.kind,
+          level: sb.level,
+          bwrap: sb.bwrap?.version ?? null,
+          ...(this.brokerNetwork(sb) ? { network: 'broker' as const } : {}),
         },
       };
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
@@ -266,7 +260,7 @@ export class LocalCoding {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText()}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -302,7 +296,9 @@ export class LocalCoding {
     const policy = permissionPolicy(this.store, session);
     // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
     // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
-    if (this.rules && policy.mode !== 'inspect' && this.rules.applies(session)) {
+    if (this.rules && policy.mode !== 'inspect' &&
+      policy.mode !== 'plan' &&
+      this.rules.applies(session)) {
       const request: RuleRequest =
         args.action === 'command'
           ? { tool: 'command', argv: commandArgv(args.command) }
@@ -359,14 +355,16 @@ export class LocalCoding {
         );
       }
     }
-    if (
-      this.managed.forOperation(c.operation_id).state === 'pending' &&
-      args.action === 'edit' &&
-      matchesEditScope(
-        policy,
-        args.edits.map((e) => e.path),
-      )
-    ) {
+    // The session's mode approves by itself only what it covers (Phase 2b): scoped or ordinary
+    // project edits, and, in auto, commands that stay inside the OS sandbox. Re-checked at decision.
+    const covered = (p: typeof policy) =>
+      args.action === 'edit'
+        ? autoApprovesEdits(
+            p,
+            args.edits.map((e) => e.path),
+          )
+        : autoApprovesCommands(p, this.sandboxed(this.bound(args)));
+    if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(
         approval.id,
@@ -384,16 +382,9 @@ export class LocalCoding {
           authorize: () => {
             this.guard(c);
             const fresh = permissionPolicy(this.store, session);
-            if (
-              permissionDigest(fresh) !== permissionDigest(policy) ||
-              args.action !== 'edit' ||
-              !matchesEditScope(
-                fresh,
-                args.edits.map((e) => e.path),
-              )
-            )
+            if (permissionDigest(fresh) !== permissionDigest(policy) || !covered(fresh))
               throw new ServiceError('permission_changed', 'Scoped edit policy changed');
-            verifyLocalEdits(root, args.edits);
+            if (args.action === 'edit') verifyLocalEdits(root, args.edits);
           },
         },
       );
@@ -465,17 +456,33 @@ export class LocalCoding {
           else this.managed.workspaceDefiniteFailureInTransaction(c.operation_id);
         });
       }
-    } else this.command(c, String(args.command), Number(args.timeout_ms));
+    } else this.command(c, String(args.command), Number(args.timeout_ms), this.bound(args));
     return this.view(id);
   }
-  private sandboxText(): string {
-    const { kind, level } = this.sandbox;
+  /** The sandbox for a new command in this session: the host's, or full access if the person chose
+   * it for this session (Phase 2b). Bound into the command's approval and digest. */
+  private sandboxFor(session: string): LocalSandbox {
+    return permissionPolicy(this.store, session).access === 'full'
+      ? { ...this.sandbox, level: 'full-access' }
+      : this.sandbox;
+  }
+  /** The sandbox a prepared command was approved under. */
+  private bound(args: { sandbox?: { level?: string } }): LocalSandbox {
+    return args.sandbox?.level === 'full-access'
+      ? { ...this.sandbox, level: 'full-access' }
+      : this.sandbox;
+  }
+  private sandboxed(sb: LocalSandbox): boolean {
+    return sb.kind !== 'none' && sb.level !== 'full-access';
+  }
+  private sandboxText(sb: LocalSandbox = this.sandbox): string {
+    const { kind, level } = sb;
     if (level === 'full-access')
       return 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.';
     if (kind === 'none')
       return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
     const name = kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
-    const net = this.brokerNetwork()
+    const net = this.brokerNetwork(sb)
       ? 'network: through the broker allowlist (hosts set by the stk policy), nothing direct.'
       : 'has no network.';
     const reads = this.sandbox.readPaths?.length
@@ -486,12 +493,8 @@ export class LocalCoding {
       : `in a ${name} sandbox (workspace-write): it can write only inside this workspace, and ${net}${reads}`;
   }
   /** Broker network applies only to a sandboxed command: unsandboxed ones are not confined anyway. */
-  private brokerNetwork(): { socket: string } | null {
-    return this.sandbox.network &&
-      this.sandbox.kind !== 'none' &&
-      this.sandbox.level !== 'full-access'
-      ? this.sandbox.network
-      : null;
+  private brokerNetwork(sb: LocalSandbox = this.sandbox): { socket: string } | null {
+    return sb.network && this.sandboxed(sb) ? sb.network : null;
   }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
@@ -501,28 +504,22 @@ export class LocalCoding {
     script: string,
     tmp?: string,
     relay?: BrokerRelay | null,
+    sb: LocalSandbox = this.sandbox,
   ): string[] {
-    const sandboxed = this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access';
+    const sandboxed = this.sandboxed(sb);
     const inner = (s: string) =>
       !sandboxed
         ? ['/bin/sh', '-c', s]
-        : this.sandbox.kind === 'seatbelt'
-          ? seatbeltArgv(
-              this.sandbox.level,
-              root,
-              tmp ?? '',
-              ['/bin/sh', '-c', s],
-              this.sandbox.seatbelt ?? null,
-              {
-                network: false,
-                ...(relay?.port ? { brokerPort: relay.port } : {}),
-                readPaths: this.sandbox.readPaths ?? [],
-              },
-            )
-          : sandboxArgv(this.sandbox.level, root, ['/bin/sh', '-c', s], this.sandbox.bwrap, {
+        : sb.kind === 'seatbelt'
+          ? seatbeltArgv(sb.level, root, tmp ?? '', ['/bin/sh', '-c', s], sb.seatbelt ?? null, {
+              network: false,
+              ...(relay?.port ? { brokerPort: relay.port } : {}),
+              readPaths: sb.readPaths ?? [],
+            })
+          : sandboxArgv(sb.level, root, ['/bin/sh', '-c', s], sb.bwrap, {
               network: false,
               ...(relay?.dir ? { broker: { dir: relay.dir, node: process.execPath } } : {}),
-              readPaths: this.sandbox.readPaths ?? [],
+              readPaths: sb.readPaths ?? [],
             });
     if (this.tools.mode !== 'tools-user') return inner(script);
     const marker = 'umask 0002\nprintf \'salaam-tool-pgid:%s\\n\' "$$"\n';
@@ -538,11 +535,11 @@ export class LocalCoding {
         ])
       : toolArgv(this.tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
   }
-  private command(c: LocalCall, command: string, timeout: number): void {
-    const broker = this.brokerNetwork();
+  private command(c: LocalCall, command: string, timeout: number, sb: LocalSandbox): void {
+    const broker = this.brokerNetwork(sb);
     // The relay is Salaam's, outside the sandbox: it forwards to stk and counts what was reached.
     const relayStarting = broker
-      ? BrokerRelay.start(broker.socket, this.sandbox.kind === 'seatbelt' ? 'tcp' : 'unix')
+      ? BrokerRelay.start(broker.socket, sb.kind === 'seatbelt' ? 'tcp' : 'unix')
       : Promise.resolve(null);
     // A stop that arrives while the relay starts still cancels the command once it is spawned.
     let early = false;
@@ -551,7 +548,7 @@ export class LocalCoding {
     };
     // Seatbelt has no tmpfs: each command gets its own private tmp, removed when it ends.
     const tmp =
-      this.sandbox.kind === 'seatbelt' && this.sandbox.level !== 'full-access'
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
         ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
         : undefined;
     const set = (s: () => void) => {
@@ -559,8 +556,8 @@ export class LocalCoding {
       if (early) s();
     };
     const done = relayStarting.then(
-      (relay) => this.runCommand(c, command, timeout, tmp, relay, set),
-      () => this.runCommand(c, command, timeout, tmp, null, set, !!broker),
+      (relay) => this.runCommand(c, command, timeout, tmp, relay, set, false, sb),
+      () => this.runCommand(c, command, timeout, tmp, null, set, !!broker, sb),
     );
     this.jobs.set(c.id, { stop: () => stop(), done });
     if (tmp) void done.finally(() => rmSync(tmp, { recursive: true, force: true }));
@@ -573,6 +570,7 @@ export class LocalCoding {
     relay: BrokerRelay | null,
     setStop: (stop: () => void) => void,
     relayFailed = false,
+    sb: LocalSandbox = this.sandbox,
   ): Promise<void> {
     let stop = () => {};
     return new Promise<void>((resolve) => {
@@ -585,7 +583,7 @@ export class LocalCoding {
       const tools = this.tools.mode === 'tools-user';
       const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = this.commandArgv(c.root, script, tmp, relay);
+      const argv = this.commandArgv(c.root, script, tmp, relay, sb);
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;
@@ -741,13 +739,8 @@ export class LocalCoding {
           error: error ? 'Command could not start' : null,
           isolation:
             (tools ? 'tools-user-' : 'local-user-') +
-            (this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
-              ? this.sandbox.kind + '-' + this.sandbox.level
-              : 'no-os-sandbox'),
-          sandbox:
-            this.sandbox.kind !== 'none' && this.sandbox.level !== 'full-access'
-              ? this.sandbox.kind
-              : 'none',
+            (this.sandboxed(sb) ? sb.kind + '-' + sb.level : 'no-os-sandbox'),
+          sandbox: this.sandboxed(sb) ? sb.kind : 'none',
           tool_uid: this.tools.uid,
           ...(network ? { network } : {}),
         };

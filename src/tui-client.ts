@@ -150,6 +150,8 @@ export class OperatorClient extends EventEmitter {
     configurable: boolean;
     coding: boolean;
     command_auto_approval: false;
+    /** Phase 2b: whether this host lets a session choose full access. */
+    full_access_allowed?: boolean;
   }> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(this.socket, `/v1/sessions/${this.snapshot.id}/permissions`);
@@ -157,7 +159,7 @@ export class OperatorClient extends EventEmitter {
   async setPermissions(
     session: string,
     expected: number,
-    policy: { mode: import('./autonomy.js').PermissionMode; paths: string[] },
+    policy: { mode: import('./autonomy.js').PermissionMode; paths: string[]; access?: 'full' },
   ): Promise<void> {
     if (this.snapshot?.id !== session)
       throw new Error('Session changed; review permissions again.');

@@ -64,7 +64,7 @@ import { TurnCancellations } from './turn-cancellations.js';
 import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
-import { permissionPolicy, configurePermissions } from './autonomy.js';
+import { permissionPolicy, configurePermissions, planNote } from './autonomy.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
@@ -131,6 +131,9 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
+  /** Phase 2b: may an interactive session choose full access? Default true for local desk use;
+   * a host started from a manifest passes its reviewed `full_access_sessions` setting. */
+  allowFullAccessSessions?: boolean;
   /** Internal test seam: argv prefix replacing `sudo -n -u <toolsUser> --`. */
   toolsLauncher?: string[];
   codingSocket?: string;
@@ -191,7 +194,10 @@ export class SalaamService {
   private readonly hostReceipt: Record<string, unknown> | null;
   private readonly operatorAccess: { group: string; gid: number } | null;
   private readonly agentpodWorkProgression: boolean;
+  /** Phase 2b: whether interactive sessions here may choose full access (no OS sandbox). */
+  private readonly allowFullAccessSessions: boolean;
   private constructor(options: ServiceOptions) {
+    this.allowFullAccessSessions = options.allowFullAccessSessions !== false;
     this.agentpodWorkProgression = options.agentpodWorkProgression === true;
     if (this.agentpodWorkProgression && (!options.stationConfig || !options.agentpodConfig))
       throw Error('Strict work requires reviewed AgentPod protected station configuration');
@@ -2201,6 +2207,7 @@ export class SalaamService {
               configurable: this.store.localWorkspace(id),
               coding: this.store.localCoding(id),
               command_auto_approval: false,
+              full_access_allowed: this.allowFullAccessSessions,
             });
             return;
           }
@@ -2219,6 +2226,7 @@ export class SalaamService {
                   client_id: string(body.client_id, 'client_id', 128),
                   token: string(body.token, 'token', 128),
                 },
+                { allowFullAccess: this.allowFullAccessSessions },
               ),
             );
             return;
@@ -2988,7 +2996,13 @@ export class SalaamService {
             id,
             string(body.request_id, 'request_id', 128),
             integer(body.expected_revision, 'expected_revision'),
-            string(body.text, 'text', 256 * 1024),
+            // Plan mode (Phase 2b): the model is told the session is read-only and to plan.
+            this.store.localCoding(id)
+              ? planNote(
+                  permissionPolicy(this.store, id).mode,
+                  string(body.text, 'text', 256 * 1024),
+                )
+              : string(body.text, 'text', 256 * 1024),
             {
               client_id: string(body.client_id, 'client_id', 128),
               token: string(body.token, 'token', 128),

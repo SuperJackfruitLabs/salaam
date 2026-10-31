@@ -110,6 +110,9 @@ export interface HostLocalSandbox {
   /** Phase 1 (2026-10-31): operator-allowed read-only paths outside the workspace, resolved at host
    * plan (`toolchain` expanded) so the reviewed manifest names every one. */
   read_paths?: string[];
+  /** Phase 2b: whether an interactive session on this host may choose full access (no OS sandbox).
+   * Hosts allow it only when the operator sets `allow_full_access_sessions: true`. */
+  full_access_sessions?: 'allow';
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
@@ -118,6 +121,7 @@ export function hostLocalSandbox(
   allowUnsandboxed = false,
   brokerSocket?: string,
   readPaths: readonly string[] = [],
+  allowFullAccessSessions = false,
 ): HostLocalSandbox {
   const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
   return {
@@ -134,12 +138,19 @@ export function hostLocalSandbox(
         }
       : {}),
     ...(readPaths.length ? { read_paths: [...readPaths] } : {}),
+    ...(allowFullAccessSessions ? { full_access_sessions: 'allow' as const } : {}),
   };
 }
 /** The read-only paths outside the workspace the reviewed manifest lets local commands read. */
 export function hostReadPaths(m: HostManifest): string[] {
   const r = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.read_paths;
   return Array.isArray(r) ? r.filter((p): p is string => typeof p === 'string') : [];
+}
+/** Whether the reviewed manifest lets an interactive session choose full access (Phase 2b). */
+export function hostAllowsFullAccessSessions(m: HostManifest): boolean {
+  return (
+    (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.full_access_sessions === 'allow'
+  );
 }
 /** The broker socket local commands reach the network through, or null for no network. */
 export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
@@ -261,6 +272,7 @@ async function planAgentPod(
     'command_network',
     'command_network_socket',
     'local_sandbox_read_paths',
+    'allow_full_access_sessions',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -302,6 +314,9 @@ async function planAgentPod(
   if (c.unsandboxed_commands !== undefined && c.unsandboxed_commands !== 'allow')
     throw Error('unsandboxed_commands is "allow" or absent');
   const allowUnsandboxed = c.unsandboxed_commands === 'allow';
+  if (c.allow_full_access_sessions !== undefined && c.allow_full_access_sessions !== true)
+    throw Error('allow_full_access_sessions is true or absent');
+  const allowFullAccessSessions = c.allow_full_access_sessions === true;
   if (c.command_network !== undefined && c.command_network !== 'broker')
     throw Error('command_network is "broker" or absent');
   if (c.command_network_socket !== undefined) {
@@ -418,6 +433,7 @@ async function planAgentPod(
       allowUnsandboxed,
       brokerSocket,
       readPaths,
+      allowFullAccessSessions,
     ),
   };
 }
@@ -581,6 +597,8 @@ export function readHost(path: string): HostManifest {
             undefined,
             hostAllowsUnsandboxed(m),
             hostCommandNetwork(m)?.socket,
+            hostReadPaths(m),
+            hostAllowsFullAccessSessions(m),
           ),
         )
     )
