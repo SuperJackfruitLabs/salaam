@@ -690,6 +690,20 @@ async function main(): Promise<void> {
     });
     return;
   }
+  if (group === 'code' || group === 'here') {
+    const { parseCodeStart } = await import('./session-pick.js');
+    const start = parseCodeStart(args.slice(1));
+    const { tui } = await import('./tui.js');
+    await tui({
+      state,
+      start,
+      cwd: option('--cwd'),
+      takeover: args.includes('--takeover'),
+      codingRoot: option('--coding-root'),
+      codingSocket: option('--coding-socket'),
+    });
+    return;
+  }
   if (
     !group ||
     group === 'tui' ||

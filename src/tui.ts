@@ -65,6 +65,8 @@ export interface TuiOptions {
   cwd?: string;
   codingRoot?: string;
   codingSocket?: string;
+  /** `salaam code`: open this folder directly (step 0, 2026-10-31). */
+  start?: import('./session-pick.js').CodeStart;
 }
 /** Frames are atomic. A slow terminal gets one fresh full redraw after drain. */
 export class SalaamTerminal extends ProcessTerminal {
@@ -2246,6 +2248,7 @@ export class SalaamApp {
   }
   private async initialize(): Promise<void> {
     await this.execute(async () => {
+      if (this.options.start) return this.openHere(this.options.start);
       await this.client.list();
       if (this.options.session)
         await this.client.open(this.options.session, {
@@ -2258,6 +2261,22 @@ export class SalaamApp {
         this.tui.requestRender();
       }
     });
+  }
+  /** One command for this folder: start the service if needed, then continue the folder's
+   * latest session, start a new coding session in it, or show the session list. */
+  private async openHere(start: import('./session-pick.js').CodeStart): Promise<void> {
+    const { latestSessionFor } = await import('./session-pick.js');
+    await this.startService();
+    if (start === 'resume') return this.sessions();
+    const cwd = resolve(this.options.cwd ?? process.cwd());
+    const existing = start === 'continue' ? latestSessionFor(this.client.sessions, cwd) : undefined;
+    if (existing)
+      await this.client.open(existing, {
+        observe: this.options.observe,
+        takeover: this.options.takeover,
+      });
+    else await this.client.create(cwd, false, this.selectedRoute, true);
+    this.setTab('conversation');
   }
   async run(): Promise<void> {
     this.running = true;

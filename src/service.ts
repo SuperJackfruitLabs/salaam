@@ -229,7 +229,10 @@ export class SalaamService {
     this.socket = join(this.stateDir, 'operator.sock');
     this.bridgeSocket = join(this.stateDir, 'bridge.sock');
     if (Buffer.byteLength(this.bridgeSocket) > 100)
-      throw new Error('State path is too long for a Unix socket; choose a shorter --state path');
+      throw new Error(
+        `State path is too long for a Unix socket (${Buffer.byteLength(this.bridgeSocket)} bytes; the limit is 100): ` +
+          'use the default (salaam code, no --state), or a shorter --state or SALAAM_STATE_DIR such as /tmp/salaam-state.',
+      );
     this.release = acquireStateLock(this.stateDir);
     try {
       this.store = new Store(join(this.stateDir, 'journal.sqlite'));

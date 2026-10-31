@@ -750,6 +750,15 @@ export class Supervisor extends EventEmitter {
     return w;
   }
   /** Is this attempt a task step that has acceptance checks to decide it? */
+  /** A person's own local coding session: not a delegated child and not AgentPod-admitted work,
+   * whose strict semantics stay as they are. */
+  private interactiveCoding(id: string): boolean {
+    return (
+      this.store.localCoding(id) &&
+      !this.children?.owned(id) &&
+      !this.store.db.prepare('SELECT 1 FROM agentpod_admissions WHERE session_id=?').get(id)
+    );
+  }
   private checkedStepAttempt(attempt: string): boolean {
     const row = this.store.db
       .prepare('SELECT checks FROM task_steps WHERE attempt_id=?')
@@ -1793,11 +1802,14 @@ export class Supervisor extends EventEmitter {
       // A checked task step is decided by its checks, not by a tool error the model went on
       // to recover from (operator decision, 2026-10-23). The error stays in the journal
       // (tool.finished failed=true). A delegated child turn, whose denied probes are its
-      // boundary proof, and any attempt outside a checked step still fail on it.
+      // boundary proof, and any attempt outside a checked step still fail on it, except an
+      // interactive coding turn: at a desk a failed command is feedback, and the turn is
+      // decided by how it ends (step 0, 2026-10-31).
       if (
         value.type === 'tool_execution_end' &&
         value.isError === true &&
-        (this.children?.owned(id) || !this.checkedStepAttempt(work.attempt.id))
+        (this.children?.owned(id) ||
+          (!this.checkedStepAttempt(work.attempt.id) && !this.interactiveCoding(id)))
       )
         outcome ??= {
           version: 1,

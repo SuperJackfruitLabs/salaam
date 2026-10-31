@@ -53,6 +53,12 @@ salaam agents revoke GRANT_ID --session SESSION_ID
 Profiles are data in .salaam/agents/*.md with JSON front matter and a prompt body.
 Inspect the effective tools and digest before admission. Project definitions cannot
 grant themselves authority. Mutations accept --request-id and --takeover.`,
+  code: `salaam code [--continue | --new | --resume] [--cwd DIR] [--takeover]
+salaam here   (the same)
+
+Work in this folder with one command: start the service if it is not running, then continue
+the folder's latest session (the default), start a new local coding session (--new), or pick
+any session from a list (--resume). No session id needed.`,
   tui: `salaam tui [--session SESSION_ID] [--observe|--takeover] [--theme night|paper]
            [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 
@@ -310,6 +316,7 @@ const globalOptions = `Global options:
   -h, --help     Show help without starting a service or model request.
   -V, --version  Show the installed version.`;
 export function cliHelp(group?: string): string | undefined {
+  if (group === 'here') group = 'code';
   if (group) return commands[group] ? `${commands[group]}\n\n${globalOptions}` : undefined;
   return `Salaam — persistent coding sessions
 
@@ -317,6 +324,7 @@ Usage: salaam <command> [options]
        sal <command> [options]
 
 Commands:
+  code          Work in this folder: continue its session or start one (also: here)
   tui           Open the Salaam terminal interface (also bare sal)
   remote        Open the same session over SSH
   providers     List pinned Pi providers and capabilities
