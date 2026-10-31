@@ -65,8 +65,9 @@ SALAAM_TERMINAL_STATUS=off stops the window-title and Herdr status reports.`,
            [--cwd DIR] [--coding-root PRIVATE_DIR] [--coding-socket DOCKER_SOCKET]
 
 Bare sal opens the same Salaam terminal interface in a TTY.
-Ctrl+K actions · Ctrl+P sessions · Ctrl+N new · Ctrl+O approvals
-Ctrl+G changes · Ctrl+T commands · Ctrl+E external editor · Ctrl+C detach.
+Ctrl+K (empty composer) or F2 actions · Ctrl+P sessions · Ctrl+N new · Ctrl+O approvals
+Alt+G changes · Ctrl+T commands · Ctrl+G external editor · Ctrl+R history search
+F5 refresh · !command shell · Ctrl+C stops/clears, twice to detach.
 ? on an empty composer (or F1) shows the keys for where you are.
 Work continues in the service when the terminal closes.`,
   remote: `salaam remote SSH_HOST [--remote-bin ABSOLUTE_PATH] [--state REMOTE_DIR]

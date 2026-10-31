@@ -19,6 +19,9 @@ const KEY_BYTES: Record<string, string> = {
   'ctrl+e': '\x05',
   'shift+tab': '\x1b[Z',
   f1: '\x1bOP',
+  f2: '\x1bOQ',
+  f5: '\x1b[15~',
+  'alt+g': '\x1bg',
 };
 
 function app(snapshot?: Partial<SessionSnapshot>) {
@@ -48,7 +51,9 @@ const rows = (m: ChoiceModal) =>
 test('every bound global key is in the table, and its bytes reach that action', () => {
   const { internal } = app();
   const actions = internal.globalActions();
-  expect(Object.keys(actions).sort()).toEqual(GLOBAL_KEYS.map((k) => k.action).sort());
+  expect(Object.keys(actions).sort()).toEqual(
+    [...new Set(GLOBAL_KEYS.map((k) => k.action))].sort(),
+  );
   for (const k of GLOBAL_KEYS) expect(matchesKey(KEY_BYTES[k.key]!, k.key)).toBe(true);
   let ran = '';
   for (const k of GLOBAL_KEYS) actions[k.action] = () => (ran = k.action);

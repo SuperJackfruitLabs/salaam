@@ -265,7 +265,7 @@ test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bou
     await terminal.write('Session context\r');
     await terminal.contains('SUCCEEDED');
     await terminal.capture(join(ROOT, '.state/evidence/m11/screens/real-completed.svg'));
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     terminal = undefined;
     const commands = await call<any[]>(socket, `/v1/sessions/${session.id}/commands`);

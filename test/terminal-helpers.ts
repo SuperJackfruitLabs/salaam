@@ -209,6 +209,14 @@ export class PtyClient {
       timeout,
     );
   }
+  /** Ctrl+C until the TUI leaves: a press clears typed text, and leaving takes a second press
+   * (trial polish, 2026-10-31). */
+  async leave(): Promise<void> {
+    for (let i = 0; i < 3 && !this.result; i++) {
+      await this.write('\x03').catch(() => {});
+      await until(() => this.result, Boolean, 400).catch(() => {});
+    }
+  }
   async exit(): Promise<{ code: number; restored: boolean }> {
     await until(() => this.result, Boolean);
     await this.writes;

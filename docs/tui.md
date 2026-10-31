@@ -52,32 +52,39 @@ Model and reasoning selection keep existing sessions and running work intact. Ea
 
 Older sessions retain their original capabilities. Create a new local session to gain workspace inspection. If the daemon predates this feature, finish active work, run `sal service stop`, and reopen `sal` to load the updated executable.
 
-The interface has two native palettes, **Night** and **Paper**, with jade accents, quiet surfaces, readable tool outcomes and no icon-font requirement. Choose `--theme night|paper` or switch from the action menu. `NO_COLOR=1` preserves the layout without color. Narrow terminals hide the workspace rail automatically; Ctrl+B toggles it on wide terminals. The terminal title and application chrome identify Salaam.
+The interface has two native palettes, **Night** and **Paper**, with jade accents, quiet surfaces, readable tool outcomes and no icon-font requirement. Choose `--theme night|paper` or switch from the action menu. `NO_COLOR=1` preserves the layout without color. Narrow terminals hide the workspace rail automatically; Ctrl+B toggles it on wide terminals (it is not readline back-char here). The terminal title and application chrome identify Salaam.
 
-| Key                                    | Action                                                                            |
-| -------------------------------------- | --------------------------------------------------------------------------------- |
-| Enter                                  | Save the exact composer text to the durable outbox, then deliver it               |
-| Alt+Enter / Ctrl+J                     | Insert a newline; Shift+Enter also works with supported keyboard protocols        |
-| Ctrl+K                                 | Search actions by visible name, description or ID                                 |
-| Ctrl+P / Ctrl+N                        | Pick an existing session / create a new session                                   |
-| Ctrl+O                                 | Review operation-bound approvals                                                  |
-| Ctrl+G / Ctrl+T                        | Open checked changes / command results                                            |
-| Tab                                    | Complete slash input, otherwise cycle Conversation, Changes, Commands and Context |
-| PageUp / PageDown                      | Scroll the body; mouse wheel is also supported                                    |
-| Ctrl+R                                 | Refresh service state and the current diff                                        |
-| Ctrl+E                                 | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                           |
-| F1, or `?` with an empty composer      | Keys for where you are (conversation, running turn, change review)                |
-| Ctrl+C / Ctrl+D with an empty composer | Detach and leave work running                                                     |
+| Key                                  | Action                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| Enter                                | Save the exact composer text to the durable outbox, then deliver it               |
+| Alt+Enter / Ctrl+J                   | Insert a newline; Shift+Enter also works with supported keyboard protocols        |
+| Ctrl+K (empty composer) / F2         | Search actions by visible name, description or ID                                 |
+| Ctrl+P / Ctrl+N                      | Pick an existing session / create a new session                                   |
+| Ctrl+O                               | Review operation-bound approvals                                                  |
+| Alt+G / Ctrl+T                       | Open checked changes / command results                                            |
+| Tab                                  | Complete slash input, otherwise cycle Conversation, Changes, Commands and Context |
+| PageUp / PageDown                    | Scroll the body; mouse wheel is also supported                                    |
+| F5                                   | Refresh service state and the current diff                                        |
+| Ctrl+G                               | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                           |
+| Ctrl+R                               | Search messages you sent (reverse-i-search); Ctrl+R again for older, Esc restores |
+| Ctrl+A/E, Ctrl+U/K/W, Ctrl+Y, Ctrl+- | Readline editing: line start/end, kill to start/end/word, yank, undo; Alt+B/F     |
+| `!command`                           | Run a shell command yourself (local coding sessions; see below)                   |
+| `?` with an empty composer           | Keys for where you are (conversation, running turn, change review)                |
+| F1                                   | Same key sheet as `?`                                                             |
+| Ctrl+C                               | Stop a running coding turn, else clear the composer; twice on empty detaches      |
+| Ctrl+D with an empty composer        | Detach and leave work running                                                     |
 
 The key sheet (`?`, F1 or `/keys`) is built from the same table the TUI binds (`src/tui-keymap.ts`), so it lists the keys that actually work. It changes with where you are: a running desk turn shows Esc, Enter and Tab; the Changes review shows its file, hunk, accept, revert and instruct keys. Approvals show their own keys along the bottom.
+
+The editor accepts multiline Unicode paste; a paste over 10 lines or 1000 characters collapses to a `[paste #N +L lines]` marker that backspace removes whole, Ctrl+G shows in full, and Enter sends expanded. It keeps per-session drafts in memory. Messages you send are kept for Up-arrow and Ctrl+R across sessions in `$XDG_STATE_HOME/salaam/history.json` (mode 600, newest 500); anything that looks like a credential (API keys, tokens, `password=`, private keys, long base64) is never written, and `SALAAM_HISTORY=off` keeps history in memory only.
+
+`!command` in a local coding session asks the model to run exactly that command through `salaam_local`, so it takes the same approval prompt, session mode, OS sandbox and danger check as any command the model runs; the terminal never runs it itself. Outside local coding it is refused. Unsubmitted drafts are not persisted after process loss. Quoted editor executable paths and arguments are supported; shell expansion is absent. The external editor gets normal terminal modes, a private temporary prompt file and a 64 KiB result limit. Terminal modes, alternate screen, bracketed paste and title are restored on normal detach and handled signals. A forced process kill cannot run terminal cleanup; open a new attachment to recover.
 
 ### Continue, resume and terminal status
 
 `salaam -c` (or `salaam --continue`) is short for `salaam code --continue`: it reopens this folder's latest session, or starts one and says _No earlier session in this folder, so this is a new one._ The session picker (Ctrl+P, `salaam code --resume`) lists this folder's sessions first, newest first, each with what you last asked and how long ago.
 
 The window title says the state: `Salaam · NAME · working`, `· needs you` while an approval waits, or `· idle`. Inside [Herdr](https://herdr.dev) the pane also reports `working`, `blocked` or `idle` and a resume command (`salaam --session ID`) through Herdr's documented `"$HERDR_BIN_PATH" pane report-agent` command, and releases the pane on exit; outside Herdr nothing is sent. Neither carries prompt or command text. `SALAAM_TERMINAL_STATUS=off` turns both off. The previous window title is restored on exit.
-
-The editor accepts multiline Unicode paste, keeps per-session drafts in memory, and offers accepted-input history. Unsubmitted drafts are not persisted after process loss. Quoted editor executable paths and arguments are supported; shell expansion is absent. The external editor gets normal terminal modes, a private temporary prompt file and a 64 KiB result limit. Terminal modes, alternate screen, bracketed paste and title are restored on normal detach and handled signals. A forced process kill cannot run terminal cleanup; open a new attachment to recover.
 
 ## Service truth in each view
 

@@ -82,7 +82,7 @@ test('real TUI creates and triggers a one-shot job; hard terminal loss and obser
       await observer.capture(join(process.env.SALAAM_JOB_CAPTURE_DIR, 'job-completed.svg'));
     expect(f.service.jobs.view(job!.id).occurrence?.id).toBe(before.occurrence?.id);
     expect(f.service.store.snapshot(f.session.id).attempts).toHaveLength(1);
-    await observer.write('\x03');
+    await observer.leave();
     expect((await observer.exit()).restored).toBe(true);
     observer = undefined;
   } finally {
@@ -165,7 +165,7 @@ test('real TUI captures and triggers a recurring template with a fresh session a
       () => terminal!.screen(),
       (screen) => !screen.includes('Salaam · operator inbox'),
     );
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     terminal = undefined;
   } finally {

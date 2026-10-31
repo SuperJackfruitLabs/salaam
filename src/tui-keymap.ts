@@ -19,14 +19,15 @@ export type GlobalAction =
 
 export const GLOBAL_KEYS: readonly { key: KeyId; action: GlobalAction; label: string }[] = [
   { key: 'ctrl+k', action: 'palette', label: 'all actions' },
+  { key: 'f2', action: 'palette', label: 'all actions' },
   { key: 'ctrl+p', action: 'sessions', label: 'sessions' },
   { key: 'ctrl+n', action: 'new', label: 'new session' },
   { key: 'ctrl+o', action: 'approvals', label: 'approvals' },
-  { key: 'ctrl+g', action: 'changes', label: 'changes' },
+  { key: 'alt+g', action: 'changes', label: 'changes' },
   { key: 'ctrl+t', action: 'commands', label: 'commands' },
   { key: 'ctrl+b', action: 'rail', label: 'show or hide the side panel' },
-  { key: 'ctrl+r', action: 'refresh', label: 'refresh' },
-  { key: 'ctrl+e', action: 'editor', label: 'external prompt editor' },
+  { key: 'f5', action: 'refresh', label: 'refresh' },
+  { key: 'ctrl+g', action: 'editor', label: 'external prompt editor' },
   { key: 'shift+tab', action: 'mode', label: 'next mode' },
   { key: 'f1', action: 'help', label: 'these keys' },
 ];
@@ -56,7 +57,22 @@ const COMPOSER: { label: string; description?: string }[] = [
   { label: 'PageUp / PageDown · scroll', description: 'Ctrl+Home/End jump to the top/bottom' },
   { label: '@ · attach a file or image' },
   { label: '/ · slash commands' },
-  { label: 'Ctrl+C · detach', description: 'Work continues in the service' },
+  {
+    label: 'Ctrl+R · search sent messages',
+    description: 'Ctrl+R for older, Enter keeps, Esc restores',
+  },
+  {
+    label: 'Ctrl+A/E · Ctrl+U/K/W · Ctrl+Y · Ctrl+-',
+    description: 'Line start/end, kill to start/end/word, yank, undo; Alt+B/F words',
+  },
+  {
+    label: '!command · run a shell command',
+    description: 'Same approval, sandbox and danger check',
+  },
+  {
+    label: 'Ctrl+C · stop, clear, then leave',
+    description: 'Stops a running turn, else clears text; twice on empty leaves. Work continues.',
+  },
 ];
 const CODING_COMMANDS = [
   { label: '/rewind · go back to an earlier turn' },
