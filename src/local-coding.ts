@@ -562,7 +562,9 @@ export class LocalCoding {
   private sandboxText(sb: LocalSandbox = this.sandbox): string {
     const { kind, level } = sb;
     if (level === 'full-access')
-      return 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.';
+      return this.sandbox.level === 'full-access'
+        ? 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.'
+        : 'unsandboxed: you turned on full access for this session. May access files and network beyond this workspace.';
     if (kind === 'none')
       return 'unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.';
     const name = kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';

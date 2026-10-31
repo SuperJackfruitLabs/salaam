@@ -1,3 +1,6 @@
+import { visibleWidth } from '@earendil-works/pi-tui';
+import { FormModal } from '../../src/tui-modals.js';
+import { SalaamTheme } from '../../src/tui-theme.js';
 import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -201,7 +204,8 @@ test('full access runs ordinary commands unsandboxed without asking; dangerous o
     f.configure('review', 'full');
     const cmd = f.command('npm test');
     expect(f.args(cmd.call).sandbox.level).toBe('full-access');
-    expect(String(cmd.operation.value)).toContain('unsandboxed');
+    expect(String(cmd.operation.value)).toContain('you turned on full access for this session');
+    expect(String(cmd.operation.value)).not.toContain('operator');
     expect(f.state(cmd.approval)).toBe('decided');
     const push = f.command('git push --force origin main');
     expect(f.state(push.approval)).toBe('pending');
@@ -318,4 +322,27 @@ test('Shift+Tab cycles review, accept edits, auto and back to review', () => {
   expect(nextMode('auto')).toBe('review');
   expect(nextMode('scoped-edit')).toBe('review');
   expect(nextMode('inspect')).toBe('review');
+});
+
+test('a long confirm hint (the YOLO warning) wraps inside its frame', () => {
+  const hint =
+    'NO approvals at all: every edit and command runs at once, without the OS sandbox, including force pushes, deletes and publishing. Each one is recorded. /yolo again turns it off.';
+  const modal = new FormModal(
+    'Turn on YOLO?',
+    '',
+    new SalaamTheme('night', false),
+    false,
+    () => {},
+    () => {},
+    () => {},
+    { field: 'Type yolo', submit: 'continue', hint },
+  );
+  const lines = modal.render(60);
+  for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(60);
+  expect(
+    lines
+      .join(' ')
+      .replace(/\x1b\[[0-9;]*m|│/g, '')
+      .replace(/\s+/g, ' '),
+  ).toContain('/yolo again turns it off.');
 });

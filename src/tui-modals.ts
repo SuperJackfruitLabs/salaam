@@ -153,13 +153,17 @@ export class FormModal implements Component, Focusable {
         this.theme.ink(this.labels?.field ?? 'Project directory', 'muted'),
         ...this.input.render(Math.max(1, width - 4)).map((line) => this.theme.ink(line)),
         '',
-        this.theme.ink(
-          this.allowCoding
-            ? this.coding
-              ? '[✓] Coding workspace · guarded tools'
-              : '[ ] Conversation session'
-            : (this.labels?.hint ?? 'Conversation session · coding service is off'),
-          this.coding ? 'jade' : 'muted',
+        // A long hint (the YOLO warning) wraps instead of running past the frame.
+        ...wrapTextWithAnsi(
+          this.theme.ink(
+            this.allowCoding
+              ? this.coding
+                ? '[✓] Coding workspace · guarded tools'
+                : '[ ] Conversation session'
+              : (this.labels?.hint ?? 'Conversation session · coding service is off'),
+            this.coding ? 'jade' : 'muted',
+          ),
+          Math.max(1, width - 4),
         ),
         '',
         this.theme.key('enter', this.labels?.submit ?? 'create') +

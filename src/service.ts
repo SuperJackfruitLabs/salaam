@@ -2355,6 +2355,16 @@ export class SalaamService {
           (parts[3] === 'checkpoints' || parts[3] === 'rewind' || parts[3] === 'review')
         ) {
           const checkpoints = this.tasks.checkpoints!;
+          // Operator ruling 2026-10-31: background commands may keep writing; say so, do not block.
+          const running = <T extends object | null>(value: T): T =>
+            value && this.localCoding
+              ? {
+                  ...value,
+                  background_running: this.localCoding
+                    .tasks(id)
+                    .filter((t) => t.state === 'running').length,
+                }
+              : value;
           const controller = (body: Record<string, unknown>) => ({
             client_id: string(body.client_id, 'client_id', 128),
             token: string(body.token, 'token', 128),
@@ -2378,10 +2388,12 @@ export class SalaamService {
             this.send(
               res,
               200,
-              checkpoints.reviewRewind(
-                id,
-                string(url.searchParams.get('attempt'), 'attempt', 128),
-                string(url.searchParams.get('mode'), 'mode', 16) as RewindMode,
+              running(
+                checkpoints.reviewRewind(
+                  id,
+                  string(url.searchParams.get('attempt'), 'attempt', 128),
+                  string(url.searchParams.get('mode'), 'mode', 16) as RewindMode,
+                ),
               ),
             );
             return;
@@ -2426,7 +2438,7 @@ export class SalaamService {
             return;
           }
           if (parts[3] === 'review' && parts.length === 4 && req.method === 'GET') {
-            this.send(res, 200, { review: checkpoints.review(id) });
+            this.send(res, 200, { review: running(checkpoints.review(id)) });
             return;
           }
           if (parts[3] === 'review' && parts[4] === 'hunks' && req.method === 'GET') {
@@ -2446,17 +2458,19 @@ export class SalaamService {
                     patch: string(object(body.hunk).patch, 'hunk.patch', 256 * 1024),
                   };
             this.send(res, 200, {
-              review: checkpoints.act(
-                id,
-                {
-                  action: string(body.action, 'action', 16) as 'accept' | 'revert',
-                  path: string(body.path, 'path', 1024),
-                  ...(hunk ? { hunk } : {}),
-                  base: string(body.base, 'base', 128),
-                  current: string(body.current, 'current', 128),
-                },
-                controller(body),
-                idle,
+              review: running(
+                checkpoints.act(
+                  id,
+                  {
+                    action: string(body.action, 'action', 16) as 'accept' | 'revert',
+                    path: string(body.path, 'path', 1024),
+                    ...(hunk ? { hunk } : {}),
+                    base: string(body.base, 'base', 128),
+                    current: string(body.current, 'current', 128),
+                  },
+                  controller(body),
+                  idle,
+                ),
               ),
             });
             return;

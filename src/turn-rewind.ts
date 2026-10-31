@@ -26,11 +26,15 @@ export interface RewindReview {
   /** What restoring does to the folder, file by file. */
   changes: CheckpointChange[];
   digest: string;
+  /** Background commands still running in the session; they may write while you decide. */
+  background_running?: number;
 }
 export interface ChangeReview {
   base: string;
   current: string;
   files: CheckpointChange[];
+  /** Background commands still running in the session; they may write while you decide. */
+  background_running?: number;
 }
 
 /** Local coding sessions only: a checkpoint of the folder at the start of every turn, rewind to

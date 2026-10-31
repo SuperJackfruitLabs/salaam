@@ -6,7 +6,7 @@ import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
 import { interactiveCoding, runningAttempt } from './tui-turn-keys.js';
-import { changeCounts } from './tui-review.js';
+import { backgroundNote, changeCounts } from './tui-review.js';
 
 export type ViewTab = 'conversation' | 'changes' | 'commands' | 'context';
 export interface DiffPage {
@@ -222,6 +222,8 @@ export class DocumentView implements Component {
           width,
         ),
       ];
+    const note = backgroundNote(review.data.background_running);
+    if (note) lines.push(...this.text(note, width));
     if (!review.data.files.length)
       return [
         ...lines,

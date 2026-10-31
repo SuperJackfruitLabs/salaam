@@ -12,6 +12,12 @@ export interface ReviewView {
 
 const SHOWN = 12;
 
+/** Background commands may keep writing while a review or rewind is open (operator ruling). */
+export function backgroundNote(running: number | undefined): string | null {
+  if (!running) return null;
+  return `${running} background ${running === 1 ? 'task' : 'tasks'} running; their writes may change files. /jobs shows them.`;
+}
+
 export function changeCounts(change: CheckpointChange): string {
   return change.added === null ? 'binary' : `+${change.added} −${change.removed}`;
 }
@@ -46,5 +52,7 @@ export function rewindSummary(review: RewindReview): string {
       : `The conversation continues in a new session from before turn ${review.turn}; this session stays as it is, and its instruction comes back to edit.`,
   );
   lines.push('Commands and anything outside this folder are not undone.');
+  const note = backgroundNote(review.background_running);
+  if (note) lines.push(note);
   return lines.join('\n');
 }

@@ -151,9 +151,9 @@ const hunks = [
   { text: '@@ -1 +1 @@\n-one\n+ONE\n', patch: 'h1' },
   { text: '@@ -9 +9 @@\n-ten\n+TEN\n', patch: 'h2' },
 ];
-async function reviewing() {
+async function reviewing(data: ChangeReview = review) {
   const { a, internal, top } = app();
-  a.client.changeReview = async () => review;
+  a.client.changeReview = async () => data;
   const loaded = vi.fn(async () => hunks);
   a.client.changeHunks = loaded;
   const act = vi.fn(async () => ({ ...review, files: review.files.slice(1) }));
@@ -214,4 +214,19 @@ test('review letters are ordinary typing once the editor has text', async () => 
   a.editor.setText('x');
   expect(internal.input('a')).toBeUndefined();
   expect(act).not.toHaveBeenCalled();
+});
+
+// Operator ruling 2026-10-31: background commands may write during review and rewind; the
+// screens say so instead of blocking.
+test('review and rewind say when background commands are still running', async () => {
+  expect(rewindSummary({ ...rewindReview('files'), background_running: 2 })).toContain(
+    '2 background tasks running; their writes may change files',
+  );
+  expect(rewindSummary(rewindReview('files'))).not.toContain('background');
+  const { a } = await reviewing({ ...review, background_running: 1 });
+  const text = a.document
+    .render(100)
+    .join('\n')
+    .replace(/\x1b\[[0-9;]*m/g, '');
+  expect(text).toContain('1 background task running; their writes may change files');
 });
