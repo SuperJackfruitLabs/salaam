@@ -1,7 +1,7 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
-import { instructionsLabel, type OperatorClient } from './tui-client.js';
+import { instructionsLabel, sessionFailure, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
@@ -182,7 +182,8 @@ export function status(view: ViewModel, width: number): string[] {
         ? 'Working…'
         : pending
           ? `${pending} approval${pending === 1 ? '' : 's'} waiting · ctrl+o to review`
-          : c.notice ||
+          : sessionFailure(c.snapshot) ||
+            c.notice ||
             (!c.snapshot
               ? 'ctrl+n to start · ctrl+p to return to a session'
               : active
@@ -192,11 +193,13 @@ export function status(view: ViewModel, width: number): string[] {
                   : 'Observing · ctrl+k → Take control');
   const tone = pending
     ? 'amber'
-    : turn
-      ? 'jade'
-      : c.connection === 'reconnecting'
-        ? 'amber'
-        : 'muted';
+    : sessionFailure(c.snapshot) && !view.busy
+      ? 'red'
+      : turn
+        ? 'jade'
+        : c.connection === 'reconnecting'
+          ? 'amber'
+          : 'muted';
   const guidance = c.snapshot?.project_instructions?.files.length
     ? '  Using ' + instructionsLabel(c.snapshot.project_instructions)
     : '';
@@ -585,6 +588,8 @@ export class DocumentView implements Component {
         ),
       );
     } else if (tab === 'changes') {
+      const failed = sessionFailure(c.snapshot);
+      if (failed && !c.workspace) return this.text(failed, width);
       if (!c.workspace)
         return this.text(
           'This session has no coding workspace. Create a coding session to review guarded edits.',

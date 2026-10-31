@@ -565,6 +565,8 @@ export class OperatorClient extends EventEmitter {
         'Delivery pending. The saved instruction will be retried: ' + (error as Error).message;
     }
     await this.refresh().catch(() => {});
+    // A failed worker cannot take the instruction: say so instead of "accepted".
+    this.notice = sessionFailure(this.snapshot) ?? this.notice;
     this.changed();
     return record.request_id;
   }
@@ -903,4 +905,13 @@ export class OperatorClient extends EventEmitter {
     this.stopped = true;
     await this.leave();
   }
+}
+
+/** What went wrong when a session's worker has failed, for the status line and the Changes tab. */
+export function sessionFailure(
+  s: { state: string; error: string | null } | undefined,
+): string | undefined {
+  if (!s) return undefined;
+  if (s.state !== 'unhealthy' && !(s.state === 'exited' && s.error)) return undefined;
+  return `Session stopped: ${s.error ?? 'the worker is not healthy'}. Fix it, then /new or ctrl+n for a fresh session.`;
 }
