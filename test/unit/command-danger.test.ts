@@ -1,4 +1,7 @@
 import { test, expect } from 'vitest';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { classifyCommand, DANGER_RULES } from '../../src/command-danger.js';
 
 // Operator ruling 2026-10-31: full access runs commands without asking, except the ones this check
@@ -92,6 +95,9 @@ const DANGEROUS: [string, string][] = [
 ];
 
 const ORDINARY = [
+  // Operator ruling 2026-10-31: inline code is not dangerous by rule.
+  "node -e 'console.log(1)'",
+  "python3 -c 'print(1)'",
   'npm test',
   'npm run build',
   'npx vitest run test/unit/a.test.ts',
@@ -169,4 +175,36 @@ test('wrappers deeper than three levels fail closed', () => {
     dangerous: true,
     category: 'depth',
   });
+});
+
+// Operator ruling 2026-10-31: path checks resolve symlinks, so a link inside the workspace that
+// points out of it is a write outside the workspace.
+test('a write through a symlink that leaves the workspace is outside the workspace', () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'danger-link-')));
+  try {
+    const root = join(base, 'app'),
+      outside = join(base, 'elsewhere'),
+      home = join(base, 'home');
+    for (const d of [root, outside, join(home, '.ssh')]) mkdirSync(d, { recursive: true });
+    symlinkSync(outside, join(root, 'out'));
+    symlinkSync(join(home, '.ssh'), join(root, 'keys'));
+    mkdirSync(join(root, 'src'));
+    symlinkSync(join(root, 'src'), join(root, 'inside'));
+    const real = { root, home, tmp: join(base, 'tmp') };
+    expect(classifyCommand('echo x > out/file', real)).toMatchObject({
+      category: 'outside-workspace',
+    });
+    expect(classifyCommand('cp a.txt out/new/deeper', real)).toMatchObject({
+      category: 'outside-workspace',
+    });
+    expect(classifyCommand('cat keys/config', real)).toMatchObject({ category: 'credentials' });
+    expect(classifyCommand('echo x > inside/file', real)).toEqual({ dangerous: false });
+    // A workspace reached through a symlink is still the workspace.
+    symlinkSync(root, join(base, 'via'));
+    expect(classifyCommand('echo x > src/file', { ...real, root: join(base, 'via') })).toEqual({
+      dangerous: false,
+    });
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });

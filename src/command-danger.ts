@@ -1,4 +1,5 @@
-import { basename, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 // Operator ruling 2026-10-31: in full access a command runs without asking unless this check calls it
 // dangerous. The check reads the command as a shell would, but only the plain subset: simple commands
 // joined by && || ; |, quoted words and redirects to files. Anything else is "unparseable" and asks.
@@ -730,6 +731,19 @@ const CREDENTIAL_DIRS = [
   '.npmrc',
   '.pypirc',
 ];
+/** Where a path really lands: symlinks in its existing part resolved, the rest kept as written. */
+function real(p: string): string {
+  for (let head = p, tail = ''; ;) {
+    try {
+      return tail ? join(realpathSync(head), tail) : realpathSync(head);
+    } catch {
+      const up = dirname(head);
+      if (up === head) return p;
+      tail = tail ? join(basename(head), tail) : basename(head);
+      head = up;
+    }
+  }
+}
 function credentialPath(abs: string, home: string): boolean {
   const name = basename(abs);
   return (
@@ -774,12 +788,14 @@ function simple(
   text: string,
 ): DangerVerdict {
   const tmps = Array.isArray(ctx.tmp) ? ctx.tmp : [ctx.tmp];
-  const abs = (p: string) => resolve(ctx.root, p);
+  // Operator ruling 2026-10-31: paths are checked where they really land, through symlinks.
+  const abs = (p: string) => real(resolve(ctx.root, p));
+  const roots = [ctx.root, ...tmps].map(real);
   const inside = (p: string) =>
-    [ctx.root, ...tmps].some((r) => p === r || p.startsWith(r + sep)) || SAFE_TARGETS.has(p);
+    roots.some((r) => p === r || p.startsWith(r + sep)) || SAFE_TARGETS.has(p);
   for (const r of s.redirects) {
     const p = abs(r.target);
-    if (credentialPath(p, ctx.home))
+    if (credentialPath(p, ctx.home) || credentialPath(p, real(ctx.home)))
       return yes('credentials', `reads or writes a credential file (${r.target})`, text);
     if (r.out && !inside(p))
       return yes('outside-workspace', `writes ${r.target}, outside this workspace`, text);
@@ -855,7 +871,7 @@ function simple(
     return inner(next);
   }
   const paths = positional(args).map(abs);
-  const cred = paths.find((p) => credentialPath(p, ctx.home));
+  const cred = paths.find((p) => credentialPath(p, ctx.home) || credentialPath(p, real(ctx.home)));
   if (cred) return yes('credentials', `touches a credential file (${cred})`, text);
   const writes =
     WRITERS.has(cmd) ||
