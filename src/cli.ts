@@ -525,6 +525,7 @@ async function main(): Promise<void> {
       hostAllowsUnsandboxed,
       hostAllowsFullAccessSessions,
       hostAllowsYoloSessions,
+      hostDangerClassifier,
       hostCommandNetwork,
       hostReadPaths,
     } = await import('./host.js');
@@ -673,6 +674,13 @@ async function main(): Promise<void> {
           // A host session may choose full access only when the reviewed manifest says so.
           allowFullAccessSessions: hostAllowsFullAccessSessions(m),
           allowYoloSessions: hostAllowsYoloSessions(m),
+          // The command reviewer only as the reviewed manifest names it (forbidden when absent).
+          ...(hostDangerClassifier(m).config
+            ? { dangerClassifierConfig: hostDangerClassifier(m).config }
+            : {}),
+          ...(hostDangerClassifier(m).pin
+            ? { dangerClassifierPin: hostDangerClassifier(m).pin }
+            : {}),
           ...(hostCommandNetwork(m) ? { commandNetwork: hostCommandNetwork(m)! } : {}),
           ...(hostReadPaths(m).length ? { localSandboxReadPaths: hostReadPaths(m) } : {}),
         });

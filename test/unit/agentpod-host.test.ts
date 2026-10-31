@@ -215,18 +215,30 @@ test('danger_classifier: a host forbids the reviewer or pins one option, digest-
   writeFileSync(
     config,
     JSON.stringify({
-      options: [{ name: 'local', provider: 'openai-compatible', model: 'q', url: 'http://127.0.0.1:9/v1' }],
+      options: [
+        { name: 'local', provider: 'openai-compatible', model: 'q', url: 'http://127.0.0.1:9/v1' },
+      ],
     }),
   );
   const pinned = await planHost({ ...f.input, danger_classifier: { config, pin: 'local' } });
   expect(hostDangerClassifier(pinned)).toEqual({ config, pin: 'local' });
   const free = await planHost({ ...f.input, danger_classifier: { config } });
   expect(hostDangerClassifier(free)).toEqual({ config });
-  for (const bad of ['on', { config, pin: 'nope' }, { config: 'relative.json' }, { config, extra: 1 }])
-    await expect(planHost({ ...f.input, danger_classifier: bad })).rejects.toThrow('danger_classifier');
+  for (const bad of [
+    'on',
+    { config, pin: 'nope' },
+    { config: 'relative.json' },
+    { config, extra: 1 },
+  ])
+    await expect(planHost({ ...f.input, danger_classifier: bad })).rejects.toThrow(
+      'danger_classifier',
+    );
   const file = join(f.root, 'host.json');
   writeFileSync(file, JSON.stringify(pinned), { mode: 0o600 });
   expect(readHost(file)).toEqual(pinned);
-  writeFileSync(config, JSON.stringify({ provider: 'openai-compatible', model: 'other', url: 'http://127.0.0.1:9/v1' }));
+  writeFileSync(
+    config,
+    JSON.stringify({ provider: 'openai-compatible', model: 'other', url: 'http://127.0.0.1:9/v1' }),
+  );
   expect(() => readHost(file)).toThrow(/reviewer config changed/);
 });

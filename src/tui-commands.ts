@@ -100,9 +100,9 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('tasks', 'Open durable task actions'),
   command(
     'classifier',
-    'Turn the small-model command reviewer on or off for this session',
+    'Pick the small-model command reviewer for this session, or turn it off',
     [],
-    '[on|off]',
+    '[name|on|off]',
   ),
   command(
     'hooks',

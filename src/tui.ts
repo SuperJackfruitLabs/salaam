@@ -102,6 +102,7 @@ import {
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
 import { rewindSummary } from './tui-review.js';
+import { classifierItems, classifierNotice, type ClassifierView } from './tui-classifier.js';
 import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './tui-keymap.js';
 import { HerdrReporter, statusEnabled, terminalState, titleFor } from './terminal-status.js';
 import {
@@ -1057,27 +1058,36 @@ export class SalaamApp {
     }
     if (command === 'classifier') {
       const path = `/v1/sessions/${snapshot.id}/danger-classifier`;
-      type View = {
-        configured: boolean;
-        enabled: boolean;
-        model?: string;
-        on_unavailable?: string;
+      const set = async (choice: string) => {
+        const v = await call<ClassifierView>(this.client.socket, path, {
+          ...this.client.actor(),
+          choice,
+        });
+        this.client.notice = classifierNotice(v);
+        this.tui.requestRender();
       };
       const want = args.trim();
-      const v =
-        want === 'on' || want === 'off'
-          ? await call<View>(this.client.socket, path, {
-              ...this.client.actor(),
-              enabled: want === 'on',
-            })
-          : await call<View>(this.client.socket, path);
-      this.client.notice = !v.configured
-        ? 'No command reviewer is configured; set --danger-classifier-config on the service.'
-        : `Command reviewer ${v.model}: ${v.enabled ? 'on' : 'off'} for this session` +
-          (v.enabled
-            ? ` (if it does not answer: ${v.on_unavailable === 'ask' ? 'ask' : 'rules only'})`
-            : '') +
-          '. It can only make a command ask, never let one run.';
+      if (want === 'on') {
+        const v = await call<ClassifierView>(this.client.socket, path, {
+          ...this.client.actor(),
+          enabled: true,
+        });
+        this.client.notice = classifierNotice(v);
+        return;
+      }
+      if (want) {
+        await set(want);
+        return;
+      }
+      const v = await call<ClassifierView>(this.client.socket, path);
+      const items = classifierItems(v);
+      if (!items.length) {
+        this.client.notice = classifierNotice(v);
+        return;
+      }
+      this.choice('Command reviewer · ' + classifierNotice(v).split('.')[0], items, (choice) => {
+        void this.execute(() => set(choice));
+      });
       return;
     }
     if (command === 'jobs') {
