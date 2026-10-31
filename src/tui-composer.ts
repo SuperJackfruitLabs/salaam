@@ -121,18 +121,4 @@ export function searchPrompt(query: string, match: string | undefined): string {
  * model to run exactly this command through salaam_local, so it takes the same approval path,
  * session mode, sandbox and danger check as any model command. Returns undefined for other text.
  */
-export function shellPassthrough(text: string): string | undefined {
-  const t = text.trim();
-  if (!t.startsWith('!') || t.startsWith('!!')) return undefined;
-  const command = t.slice(1).trim();
-  if (command === '' || command.includes('\n')) return undefined;
-  return [
-    'I want to run this shell command myself. Run exactly this command with salaam_local',
-    '(action "command"), unchanged: no edits, no extra flags, no other commands. Then show me its',
-    'output and exit status, and do nothing else unless I ask.',
-    '',
-    '```sh',
-    command,
-    '```',
-  ].join('\n');
-}
+export { shellPassthrough } from './shell-passthrough.js';

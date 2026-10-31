@@ -130,6 +130,7 @@ export const LOCAL_TOOL_ERRORS = [
   'command_conflict',
   'command_limit',
   'invalid_cursor',
+  'shell_binding',
 ];
 export function processIdentity(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;

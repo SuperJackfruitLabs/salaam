@@ -14,6 +14,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
+import { boundShellCommand } from './shell-passthrough.js';
 import type { ClassifierReview } from './danger-classifier.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
@@ -271,6 +272,30 @@ export class LocalCoding {
       .prepare('SELECT 1 FROM local_calls WHERE session_id=? AND epoch=? AND tool_call=?')
       .get(session, epoch, toolCall);
   }
+  /** A `!command` turn runs only what was typed, once (trial polish #12): enforced here, not by
+   * the model following its instruction, so it holds in auto, full access and YOLO alike. */
+  private assertShellBinding(session: string, attempt: string, input: Record<string, unknown>) {
+    const row = this.store.db
+      .prepare(
+        'SELECT s.text FROM attempts a JOIN submissions s ON s.id=a.submission_id WHERE a.id=? AND a.session_id=?',
+      )
+      .get(attempt, session) as { text: string } | undefined;
+    const bound = row ? boundShellCommand(row.text) : undefined;
+    if (bound === undefined) return;
+    if (input.action !== 'command' || input.command !== bound || input.background)
+      throw new ServiceError(
+        'shell_binding',
+        `This turn runs only the command you typed: ${bound}. Run exactly that, unchanged.`,
+      );
+    const ran = this.store.db
+      .prepare('SELECT 1 FROM local_calls WHERE session_id=? AND attempt_id=?')
+      .get(session, attempt);
+    if (ran)
+      throw new ServiceError(
+        'shell_binding',
+        'This turn already ran the command you typed. Report its output; do not run anything else.',
+      );
+  }
   prepare(
     session: string,
     epoch: number,
@@ -289,6 +314,7 @@ export class LocalCoding {
         throw new ServiceError('request_conflict', 'Tool call already binds different arguments');
       return this.view(String(prior.id));
     }
+    this.assertShellBinding(session, attempt, input);
     const root = this.store.session(session).cwd;
     const c: LocalCall = {
       id: randomUUID(),

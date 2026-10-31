@@ -19,6 +19,7 @@ import {
 import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { localHash } from '../../src/local-edits.js';
 import { ApprovalRules } from '../../src/approval-rules.js';
+import { shellPassthrough } from '../../src/shell-passthrough.js';
 
 // Phase 2b (operator rulings 2026-10-31): one-key modes for interactive coding sessions — review,
 // accept edits, auto — plus full access (no sandbox; dangerous commands ask) and YOLO (no approvals).
@@ -28,6 +29,7 @@ function setup(
     allowYolo?: boolean;
     desk?: boolean;
     workspace?: boolean;
+    text?: string;
   } = {},
 ) {
   const root = realpathSync(mkdtempSync('/tmp/sal-modes-')),
@@ -44,7 +46,12 @@ function setup(
         });
   const lease = store.control(session.id, 'lease', 'operator', 'acquire', 0),
     actor = { client_id: 'operator', token: lease.token };
-  const submission = store.accept(session.id, 'submit', store.session(session.id).revision, 'go');
+  const submission = store.accept(
+    session.id,
+    'submit',
+    store.session(session.id).revision,
+    opts.text ?? 'go',
+  );
   const epoch = store.allocate(session.id, 'boot');
   store.state(session.id, epoch, 'ready');
   store.claim(session.id, epoch);
@@ -509,6 +516,42 @@ test('without a reviewer nothing changes', async () => {
       command: 'node -e "x"',
     });
     expect(f.state(call.approval)).toBe('decided');
+  } finally {
+    await f.close();
+  }
+});
+
+// Trial polish #12 (2026-10-31): `!command` runs exactly what was typed. The service binds the
+// turn to that text, so a model that runs anything else is refused in every mode, YOLO included.
+test('a !command turn may run only the typed command, once, in every mode', async () => {
+  for (const [mode, access] of [
+    ['review', undefined],
+    ['auto', undefined],
+    ['review', 'full'],
+    ['review', 'yolo'],
+  ] as const) {
+    const f = setup({ text: shellPassthrough('!git status --short')! });
+    try {
+      f.configure(mode, access);
+      expect(() => f.command('git status --short; rm -rf src')).toThrow(
+        /only the command you typed/,
+      );
+      expect(() => f.command('git status')).toThrow(/only the command you typed/);
+      expect(() => f.edit()).toThrow(/only the command you typed/);
+      const ok = f.command('git status --short');
+      expect(ok.operation).toBeTruthy();
+      expect(() => f.command('git status --short')).toThrow(/already ran the command you typed/);
+    } finally {
+      await f.close();
+    }
+  }
+});
+
+test('an ordinary turn is not bound, even if it mentions !', async () => {
+  const f = setup({ text: 'please run !ls for me' });
+  try {
+    f.configure('auto');
+    expect(f.command('echo hi').operation).toBeTruthy();
   } finally {
     await f.close();
   }

@@ -11,3 +11,9 @@ test('every error a local edit can raise is feedback to the model, not a failed 
   expect(codes).toContain('edit_mismatch');
   for (const code of new Set(codes)) expect(LOCAL_TOOL_ERRORS).toContain(code);
 });
+
+// Trial polish #12: a refused `!command` substitute is feedback, so the model can retry the exact
+// command instead of the session turning unhealthy.
+test('a refused !command substitute is feedback to the model', () => {
+  expect(LOCAL_TOOL_ERRORS).toContain('shell_binding');
+});
