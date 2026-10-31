@@ -97,7 +97,8 @@ test.each([
 
 test('home itself is refused as home, not only because it holds credentials', () => {
   expect(() => resolveReadPaths([home])).toThrow(/whole home directory/);
-  expect(() => resolveReadPaths([dirname(home)])).toThrow(/whole home directory/);
+  // On a host where home sits directly under / (root's /root), its parent is the whole filesystem.
+  expect(() => resolveReadPaths([dirname(home)])).toThrow(/whole (home directory|filesystem)/);
 });
 
 test('toolchain expands to the existing toolchain paths, never home or credentials', () => {
