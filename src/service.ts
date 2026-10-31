@@ -65,6 +65,7 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
+import { expandPrompt, storeImages, type PromptImage } from './mentions.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
@@ -3027,11 +3028,24 @@ export class SalaamService {
         }
         if (parts[3] === 'submissions' && req.method === 'POST') {
           const body = object(await readJson(req));
+          const local = this.store.localCoding(id);
+          let text = string(body.text, 'text', 256 * 1024);
+          let images: PromptImage[] = [];
+          // Desk prompts attach their @mentions (Phase 3b); board work never reads the tree here.
+          if (local) {
+            if (body.confirm_sensitive !== undefined && typeof body.confirm_sensitive !== 'boolean')
+              throw new ServiceError('invalid_field', 'Invalid confirm_sensitive flag', 400);
+            ({ text, images } = expandPrompt(
+              this.store.session(id).cwd,
+              text,
+              body.confirm_sensitive === true,
+            ));
+          }
           const submission = this.store.accept(
             id,
             string(body.request_id, 'request_id', 128),
             integer(body.expected_revision, 'expected_revision'),
-            string(body.text, 'text', 256 * 1024),
+            text,
             {
               client_id: string(body.client_id, 'client_id', 128),
               token: string(body.token, 'token', 128),
@@ -3040,6 +3054,8 @@ export class SalaamService {
               ? null
               : string(body.continues_attempt_id, 'continues_attempt_id', 128),
           );
+          // Same tick as the acceptance, so dispatch cannot claim the submission without them.
+          storeImages(this.store.db, submission.id, images);
           this.send(res, 202, submission);
           return;
         }

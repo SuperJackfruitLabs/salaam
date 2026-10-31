@@ -11,6 +11,8 @@ import {
   type OverlayHandle,
   type KeyId,
 } from '@earendil-works/pi-tui';
+import { extractMentions, isSensitivePath } from './mentions.js';
+import { MentionAutocompleteProvider } from './tui-mentions.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
@@ -214,7 +216,7 @@ export class SalaamApp {
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
     this.editor.setAutocompleteProvider(
-      new CombinedAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd(), null),
+      new MentionAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd()),
     );
     this.editor.onChange = () => {
       const text = this.editor.getExpandedText(),
@@ -1263,7 +1265,25 @@ export class SalaamApp {
     if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
     if (Buffer.byteLength(text) > 65536)
       throw new Error('The composer accepts at most 64 KiB. Use an artifact for longer input.');
-    await this.client.submit(text, continuation);
+    const secrets = extractMentions(text).filter(isSensitivePath);
+    if (secrets.length) {
+      this.confirm(
+        'Attach secret-looking files?',
+        `${secrets.map((s) => '@' + s).join(', ')} will be sent to the model in full.`,
+        'Attach and send',
+        () => this.deliver(text, session, continuation, true),
+      );
+      return;
+    }
+    await this.deliver(text, session, continuation, false);
+  }
+  private async deliver(
+    text: string,
+    session: string,
+    continuation: string | undefined,
+    confirmSensitive: boolean,
+  ): Promise<void> {
+    await this.client.submit(text, continuation, confirmSensitive);
     this.editor.addToHistory(text);
     if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
       this.editor.setText('');

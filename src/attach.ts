@@ -29,6 +29,7 @@ interface Pending {
   expected_revision: number;
   text: string;
   continues_attempt_id?: string;
+  confirm_sensitive?: boolean;
   command?:
     | {
         kind: 'decision';
@@ -74,7 +75,7 @@ export class Outbox {
     renameSync(temporary, path);
     syncDirectory(this.dir);
   }
-  enqueue(text: string, revision: number, continues?: string): Pending {
+  enqueue(text: string, revision: number, continues?: string, confirmSensitive = false): Pending {
     if (!text.trim() || text.length > 256 * 1024 || text.trimStart().startsWith('/'))
       throw new Error('Enter a plain instruction of at most 256 Ki characters');
     const created = this.records().reduce(
@@ -87,6 +88,7 @@ export class Outbox {
       expected_revision: revision,
       text,
       ...(continues ? { continues_attempt_id: continues } : {}),
+      ...(confirmSensitive ? { confirm_sensitive: true } : {}),
     };
     this.save(record);
     return record;
@@ -228,6 +230,7 @@ export class Outbox {
               'approval_mismatch',
               'binding_changed',
               'attempt_settled',
+              'sensitive_attachment',
             ].includes(error.code) ||
               (record.command && error.code === 'not_found') ||
               (['task', 'job'].includes(record.command?.kind ?? '') &&
