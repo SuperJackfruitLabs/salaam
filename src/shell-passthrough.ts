@@ -30,3 +30,9 @@ export function boundShellCommand(prompt: string): string | undefined {
   const command = lines[5]!;
   return shellPassthrough('!' + command) === prompt ? command : undefined;
 }
+
+/** What the person typed, for display: `! COMMAND` for a `!command` prompt, else the text. */
+export function typedText(prompt: string): string {
+  const command = boundShellCommand(prompt);
+  return command === undefined ? prompt : '! ' + command;
+}

@@ -1,6 +1,7 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
+import { typedText } from './shell-passthrough.js';
 import { instructionsLabel, sessionFailure, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
@@ -449,9 +450,11 @@ export class DocumentView implements Component {
           ),
         );
         lines.push(
-          ...this.prose(message.entry_id, message.text, width - 4).map((line) =>
-            t.line(line, width),
-          ),
+          ...this.prose(
+            message.entry_id,
+            message.role === 'user' ? typedText(message.text) : message.text,
+            width - 4,
+          ).map((line) => t.line(line, width)),
           ...(message.truncated
             ? this.text(
                 'Message preview truncated. Read its full history entry to inspect all content.',
@@ -470,7 +473,7 @@ export class DocumentView implements Component {
             width,
             'muted',
           ),
-          ...this.text(submission.text, width),
+          ...this.text(typedText(submission.text), width),
           t.fill('', width),
         );
       }
