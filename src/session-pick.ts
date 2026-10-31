@@ -1,3 +1,4 @@
+import { typedText } from './shell-passthrough.js';
 import { statSync } from 'node:fs';
 import { OFFLINE_ROUTE } from './provider-config.js';
 
@@ -95,7 +96,7 @@ export function pickerSummary(
     /* no transcript yet */
   }
   return {
-    ...(prompt ? { last_prompt: prompt.slice(0, 200) } : {}),
+    ...(prompt ? { last_prompt: typedText(prompt).slice(0, 200) } : {}),
     ...(at ? { last_active_at: at } : {}),
   };
 }

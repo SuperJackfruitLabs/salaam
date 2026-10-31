@@ -36,3 +36,14 @@ test('a desk session lists its newest prompt and when its transcript last change
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Live pass 2026-11-01: a !command was the latest prompt, and the picker showed the fixed instruction.
+test('a !command prompt shows in the picker as typed', async () => {
+  const { pickerSummary } = await import('../../src/session-pick.js');
+  const { shellPassthrough } = await import('../../src/shell-passthrough.js');
+  const summary = pickerSummary(
+    { id: 's', capabilities: ['local-coding-reviewed'], pi_session_file: null },
+    { lastPrompt: () => shellPassthrough('!git status')! },
+  );
+  expect(summary.last_prompt).toBe('! git status');
+});
