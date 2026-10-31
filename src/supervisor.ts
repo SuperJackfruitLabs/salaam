@@ -1266,7 +1266,7 @@ export class Supervisor extends EventEmitter {
           throw new ServiceError('local_denied', 'Local coding is not admitted', 403);
         this.assertActive(id, w.epoch, w.attempt);
         if (method === 'local.prepare')
-          return this.localCoding.prepare(
+          return await this.localCoding.prepareReviewed(
             id,
             w.epoch,
             w.attempt,

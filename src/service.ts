@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { DangerClassifier, loadDangerClassifierConfig } from './danger-classifier.js';
 import { WebSearch, loadWebSearchConfig } from './web-search.js';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { loadPersona } from './persona.js';
@@ -129,6 +131,8 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Web search config file: optional providers (searxng, brave, tavily, exa) and their key
    * references. Keyless official APIs answer without one (operator ruling 2026-10-31). */
   webSearchConfig?: string;
+  /** Phase 4c: the optional small-model command reviewer (a JSON file); absent means off. */
+  dangerClassifierConfig?: string;
   /** The user's approval rules file (default ~/.config/salaam/permissions.json). */
   permissionsFile?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
@@ -203,6 +207,13 @@ export class SalaamService {
   /** Phase 2b: whether interactive sessions here may choose full access (no OS sandbox). */
   private readonly allowFullAccessSessions: boolean;
   private readonly allowYoloSessions: boolean;
+  private dangerReviewer?: DangerClassifier;
+  private classifierOn(session: string): boolean {
+    return (
+      !!this.dangerReviewer &&
+      !this.store.db.prepare('SELECT 1 FROM danger_classifier_off WHERE session_id=?').get(session)
+    );
+  }
   private constructor(options: ServiceOptions) {
     this.allowFullAccessSessions = options.allowFullAccessSessions !== false;
     this.allowYoloSessions = options.allowYoloSessions !== false;
@@ -431,6 +442,21 @@ export class SalaamService {
         this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
         this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
         this.supervisor.localCoding = this.localCoding;
+        if (options.dangerClassifierConfig) {
+          const reviewer = new DangerClassifier(
+            loadDangerClassifierConfig(
+              JSON.parse(readFileSync(options.dangerClassifierConfig, 'utf8')),
+            )!,
+          );
+          this.store.db.exec(
+            'CREATE TABLE IF NOT EXISTS danger_classifier_off(session_id TEXT PRIMARY KEY)',
+          );
+          this.dangerReviewer = reviewer;
+          this.localCoding.classifier = {
+            review: (s, command, cwd) =>
+              this.classifierOn(s) ? reviewer.review(s, command, cwd) : Promise.resolve(null),
+          };
+        }
         const webConfig = options.webSearchConfig
           ? loadWebSearchConfig(options.webSearchConfig)
           : { providers: [] };
@@ -2255,6 +2281,50 @@ export class SalaamService {
                 },
               ),
             );
+            return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'danger-classifier') {
+          const view = () => ({
+            configured: !!this.dangerReviewer,
+            enabled: this.classifierOn(id),
+            ...(this.dangerReviewer
+              ? {
+                  provider: this.dangerReviewer.config.provider,
+                  model: this.dangerReviewer.config.model,
+                  on_unavailable: this.dangerReviewer.config.on_unavailable,
+                }
+              : {}),
+          });
+          if (req.method === 'GET') {
+            this.send(res, 200, view());
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.store.authorizeControl(id, {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            });
+            if (typeof body.enabled !== 'boolean')
+              throw new ServiceError('invalid_field', 'enabled must be true or false');
+            if (body.enabled && !this.dangerReviewer)
+              throw new ServiceError(
+                'classifier_unavailable',
+                'No command reviewer is configured on this host (--danger-classifier-config)',
+              );
+            this.store.transaction(() => {
+              if (body.enabled)
+                this.store.db
+                  .prepare('DELETE FROM danger_classifier_off WHERE session_id=?')
+                  .run(id);
+              else if (this.dangerReviewer)
+                this.store.db
+                  .prepare('INSERT OR IGNORE INTO danger_classifier_off(session_id) VALUES(?)')
+                  .run(id);
+              this.store.event(id, 'permission.classifier-set', { enabled: body.enabled });
+            });
+            this.send(res, 200, view());
             return;
           }
         }

@@ -94,6 +94,7 @@ function setup(
       action: 'command',
       command: text,
     });
+  const ids = (): [number, string, string] => [epoch, submission.attempt_id, 'rv-' + n++];
   const args = (call: { id: string }) =>
     JSON.parse(
       String(store.db.prepare('SELECT args FROM local_calls WHERE id=?').get(call.id)!.args),
@@ -112,6 +113,7 @@ function setup(
     command,
     state,
     args,
+    ids,
     async close() {
       await local.close();
       await managed.close();
@@ -382,6 +384,56 @@ test('YOLO approves a push and records that it would have asked', async () => {
   }
 });
 
+// Phase 4c (operator rulings 2026-10-31): an optional small-model reviewer can make a command ask
+// that the rules let run; it can never let one run that would otherwise ask.
+const reviewer = (
+  escalate: boolean,
+  verdict: 'ok' | 'ask' | 'unavailable' = escalate ? 'ask' : 'ok',
+) => {
+  const seen: string[] = [];
+  return {
+    seen,
+    review: async (_s: string, command: string) => {
+      seen.push(command);
+      return {
+        escalate,
+        verdict,
+        reason: escalate ? 'removes files outside the build' : '',
+        model: 'small-1',
+      };
+    },
+  };
+};
+
+test('the reviewer makes an opaque command ask in full access and in auto, with its reason recorded', async () => {
+  const f = setup();
+  try {
+    f.local.classifier = reviewer(true);
+    f.configure('review', 'full');
+    const call = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "x"',
+    });
+    expect(f.state(call.approval)).toBe('pending');
+    expect(String(call.operation.value)).toMatch(
+      /Dangerous \(classifier\): removes files outside the build \(reviewed by small-1\)/,
+    );
+    f.configure('auto');
+    const auto = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "y"',
+    });
+    expect(f.state(auto.approval)).toBe('pending');
+    const notes = f.store.db
+      .prepare("SELECT payload FROM events WHERE kind='permission.classifier' ORDER BY seq")
+      .all()
+      .map((r) => JSON.parse((r as { payload: string }).payload));
+    expect(notes[0]).toMatchObject({ model: 'small-1', verdict: 'ask', escalated: true });
+  } finally {
+    await f.close();
+  }
+});
+
 test('the person’s own session rule can approve a push', async () => {
   const f = setup();
   const rules = new ApprovalRules(f.store, f.root + '/no-user-rules.json');
@@ -395,6 +447,68 @@ test('the person’s own session rule can approve a push', async () => {
       'r1',
     );
     expect(f.state(f.command('git push origin feat').approval)).toBe('decided');
+  } finally {
+    await f.close();
+  }
+});
+
+test('an ok verdict changes nothing, and the reviewer is never asked for what the rules already ask', async () => {
+  const f = setup();
+  try {
+    const r = reviewer(false);
+    f.local.classifier = r;
+    f.configure('review', 'full');
+    const ok = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "x"',
+    });
+    expect(f.state(ok.approval)).toBe('decided');
+    const push = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'git push --force origin main',
+    });
+    expect(f.state(push.approval)).toBe('pending');
+    expect(r.seen).toEqual(['node -e "x"']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('in review mode the reviewer is not consulted; in YOLO it only records what it would have asked', async () => {
+  const f = setup();
+  try {
+    const r = reviewer(true);
+    f.local.classifier = r;
+    f.configure('review');
+    await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "x"',
+    });
+    expect(r.seen).toEqual([]);
+    f.configure('review', 'yolo');
+    const y = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "z"',
+    });
+    expect(f.state(y.approval)).toBe('decided');
+    const note = f.store.db
+      .prepare("SELECT payload FROM events WHERE kind='permission.yolo-approved' ORDER BY seq DESC")
+      .get() as { payload: string };
+    expect(JSON.parse(note.payload).would_have_asked).toMatchObject({ category: 'classifier' });
+  } finally {
+    await f.close();
+  }
+});
+
+test('without a reviewer nothing changes', async () => {
+  const f = setup();
+  try {
+    f.configure('review', 'full');
+    const call = await f.local.prepareReviewed(f.session.id, ...f.ids(), {
+      action: 'command',
+      command: 'node -e "x"',
+    });
+    expect(f.state(call.approval)).toBe('decided');
   } finally {
     await f.close();
   }

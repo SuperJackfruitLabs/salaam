@@ -14,6 +14,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
+import type { ClassifierReview } from './danger-classifier.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -130,6 +131,10 @@ export class LocalCoding {
   private unregister: () => void;
   /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
   public rules?: ApprovalRules;
+  /** The optional small-model command reviewer (Phase 4c); absent means the rules alone decide. */
+  public classifier?: {
+    review(session: string, command: string, cwd: string): Promise<ClassifierReview | null>;
+  };
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
@@ -232,12 +237,40 @@ export class LocalCoding {
         'Another operation or uncertain outcome owns this workspace',
       );
   }
+  /** prepare, after the optional reviewer has looked at a command the session would run unasked. */
+  async prepareReviewed(
+    session: string,
+    epoch: number,
+    attempt: string,
+    toolCall: string,
+    input: Record<string, unknown>,
+  ) {
+    let review: ClassifierReview | null = null;
+    if (this.classifier && input.action === 'command' && typeof input.command === 'string') {
+      const p = permissionPolicy(this.store, session);
+      // Only where the mode would run the command without asking; review mode asks anyway.
+      if (p.access || p.mode === 'auto') {
+        const root = this.store.session(session).cwd;
+        if (!classifyCommand(input.command, this.dangerContext(root)).dangerous)
+          review = await this.classifier.review(session, input.command, root);
+      }
+    }
+    return this.prepare(session, epoch, attempt, toolCall, input, review);
+  }
+  private dangerContext(root: string) {
+    return {
+      root,
+      home: homedir(),
+      tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
+    };
+  }
   prepare(
     session: string,
     epoch: number,
     attempt: string,
     toolCall: string,
     input: Record<string, unknown>,
+    review: ClassifierReview | null = null,
   ) {
     const prior = this.store.db
       .prepare(
@@ -309,14 +342,20 @@ export class LocalCoding {
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
     c.args = JSON.stringify(args);
     // Operator ruling 2026-10-31: full access asks only for commands this check calls dangerous.
-    const danger: DangerVerdict =
+    const rulesDanger: DangerVerdict =
       args.action === 'command'
-        ? classifyCommand(args.command, {
-            root,
-            home: homedir(),
-            tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
-          })
+        ? classifyCommand(args.command, this.dangerContext(root))
         : { dangerous: false };
+    // Phase 4c: the reviewer can only add a reason to ask, never remove one.
+    const escalated = !rulesDanger.dangerous && args.action === 'command' && !!review?.escalate;
+    const danger: DangerVerdict = escalated
+      ? {
+          dangerous: true,
+          category: 'classifier',
+          reason: `${review!.reason} (reviewed by ${review!.model})`,
+          segment: (args as { command: string }).command,
+        }
+      : rulesDanger;
     // Pushing and opening a pull request ask in every mode but YOLO (operator ruling 2026-10-31).
     const publishes = args.action === 'command' ? publishesToRemote(args.command) : null;
     this.store.transaction(() => {
@@ -356,6 +395,17 @@ export class LocalCoding {
         action: kind,
       });
     });
+    if (review)
+      this.store.transaction(() =>
+        this.store.event(session, 'permission.classifier', {
+          call_id: c.id,
+          operation_id: c.operation_id,
+          model: review.model,
+          verdict: review.verdict,
+          escalated,
+          ...(review.reason ? { reason: review.reason } : {}),
+        }),
+      );
     const policy = permissionPolicy(this.store, session);
     // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
     // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
@@ -435,7 +485,7 @@ export class LocalCoding {
             this.sandboxed(this.bound(args)),
             danger.dangerous,
             publishes !== null,
-          );
+          ) && !(escalated && p.access !== 'yolo');
     if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(

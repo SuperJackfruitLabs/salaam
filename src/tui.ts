@@ -1003,6 +1003,31 @@ export class SalaamApp {
       this.taskActions();
       return;
     }
+    if (command === 'classifier') {
+      const path = `/v1/sessions/${snapshot.id}/danger-classifier`;
+      type View = {
+        configured: boolean;
+        enabled: boolean;
+        model?: string;
+        on_unavailable?: string;
+      };
+      const want = args.trim();
+      const v =
+        want === 'on' || want === 'off'
+          ? await call<View>(this.client.socket, path, {
+              ...this.client.actor(),
+              enabled: want === 'on',
+            })
+          : await call<View>(this.client.socket, path);
+      this.client.notice = !v.configured
+        ? 'No command reviewer is configured; set --danger-classifier-config on the service.'
+        : `Command reviewer ${v.model}: ${v.enabled ? 'on' : 'off'} for this session` +
+          (v.enabled
+            ? ` (if it does not answer: ${v.on_unavailable === 'ask' ? 'ask' : 'rules only'})`
+            : '') +
+          '. It can only make a command ask, never let one run.';
+      return;
+    }
     if (command === 'jobs') {
       const base = `/v1/sessions/${snapshot.id}/local-tasks`;
       const stop = /^stop\s+(\S+)$/.exec(args.trim());
