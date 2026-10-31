@@ -57,6 +57,8 @@ export interface ToolActivity {
     input?: string;
     input_truncated?: boolean;
     failed?: boolean;
+    output?: string;
+    output_truncated?: boolean;
   };
 }
 export interface LivePreview {

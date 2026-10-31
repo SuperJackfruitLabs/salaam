@@ -78,6 +78,7 @@ import {
   FormModal,
   ConfirmModal,
   ApprovalModal,
+  approvalReason,
   onceOnlyReason,
   TextModal,
 } from './tui-modals.js';
@@ -416,6 +417,13 @@ export class SalaamApp {
         () => {
           this.rail = !this.rail;
           this.tui.requestRender(true);
+        },
+      ],
+      [
+        'ctrl+x',
+        () => {
+          this.view.transcript = !this.view.transcript;
+          this.setTab('conversation');
         },
       ],
       ['ctrl+r', () => void this.execute(() => this.refresh())],
@@ -1246,6 +1254,11 @@ export class SalaamApp {
         })),
       ],
       (value) => {
+        if (value === 'transcript') {
+          this.view.transcript = !this.view.transcript;
+          this.setTab('conversation');
+          return;
+        }
         if (value === 'model') this.modelPicker();
         else if (value === 'help') void this.execute(() => this.runSlashCommand('help'));
         else if (value === 'coding') void this.execute(() => this.newSession(true));
@@ -1498,6 +1511,7 @@ export class SalaamApp {
           reviewed.operation,
           rules.applies && !onceOnly,
           onceOnly,
+          rules.applies,
         );
       });
     if (approvals.length === 1) open(approvals[0]!.id);
@@ -1609,6 +1623,7 @@ export class SalaamApp {
     operation: import('./protocol.js').Operation,
     offerRules = false,
     onceOnly?: string,
+    desk = false,
   ): void {
     this.showModal(
       new ApprovalModal(
@@ -1623,6 +1638,33 @@ export class SalaamApp {
           this.closeModal();
           if (decision === 'approve' || decision === 'deny') {
             void this.execute(() => this.client.decide(approval, decision));
+            return;
+          }
+          if (decision === 'deny-feedback') {
+            // Deny, then tell the agent why in its own turn, the way steering reaches it.
+            this.taskInput(
+              'Deny and tell it why',
+              '',
+              'Why not, or what to do instead',
+              'One line. The request is denied and this reaches the agent as feedback.',
+              (why) =>
+                void this.execute(async () => {
+                  await this.client.decide(approval, 'deny');
+                  const text = why.trim();
+                  if (!text) return;
+                  // The turn has usually moved on by now; if it ended, put the reason in the
+                  // composer instead of losing it.
+                  const feedback = `I denied that request (${safeText(operation.target)}). ${text}`;
+                  try {
+                    await this.client.steer(feedback);
+                  } catch {
+                    this.editor.setText(feedback);
+                    this.client.report(
+                      'Denied. The turn had ended, so your reason is in the composer; press enter to send it.',
+                    );
+                  }
+                }),
+            );
             return;
           }
           // The rule is the exact request just reviewed: its command words or its edited paths.
@@ -1659,6 +1701,7 @@ This exact request will be approved without asking in every desk session on this
         },
         offerRules,
         onceOnly,
+        { desk, reason: approvalReason(String(operation.value), this.view.mode?.mode) },
       ),
       86,
     );
@@ -2398,6 +2441,11 @@ This exact request will be approved without asking in every desk session on this
       { value: 'changes', label: 'Review changes', description: 'ctrl+g · guarded workspace diff' },
       { value: 'commands', label: 'Commands and output', description: 'ctrl+t' },
       {
+        value: 'transcript',
+        label: 'Full transcript',
+        description: 'ctrl+x · every tool call and its output',
+      },
+      {
         value: 'context',
         label: 'Session context',
         description: 'Identity, task facts, child results and usage',
@@ -2846,7 +2894,11 @@ This exact request will be approved without asking in every desk session on this
         if (
           this.client.preview ||
           this.client.snapshot?.approvals.some((a) => a.state === 'pending') ||
-          this.client.commands.some((run) => !commandTerminal(run.state))
+          this.client.commands.some((run) => !commandTerminal(run.state)) ||
+          // The progress line counts seconds while a turn runs, so it never shows a stale state.
+          this.client.snapshot?.attempts.some((a) =>
+            ['accepted', 'dispatching', 'running'].includes(a.state),
+          )
         )
           this.tui.requestRender();
       }, 1000);
