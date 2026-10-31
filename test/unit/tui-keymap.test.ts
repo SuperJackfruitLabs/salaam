@@ -17,6 +17,7 @@ const KEY_BYTES: Record<string, string> = {
   'ctrl+b': '\x02',
   'ctrl+r': '\x12',
   'ctrl+e': '\x05',
+  'ctrl+x': '\x18',
   'shift+tab': '\x1b[Z',
   f1: '\x1bOP',
   f2: '\x1bOQ',

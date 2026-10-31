@@ -171,6 +171,49 @@ test('hard terminal loss, observer reconnect and explicit TUI takeover preserve 
   }
 }, 30000);
 
+test('a running turn shows a live progress line that counts seconds and says esc interrupts', async () => {
+  const f = await fixture({ extensionPath: join(ROOT, 'test/fixtures/blocked-extension.mjs') });
+  let terminal: PtyClient | undefined;
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'attach', session.id, '--state', f.dir],
+      {
+        state: f.dir,
+        columns: 116,
+        rows: 38,
+      },
+    );
+    await terminal.contains('You have control');
+    await terminal.write('Keep one running turn\r');
+    const { existsSync } = await import('node:fs');
+    await until(() => existsSync(join(f.dir, 'probe-entered')), Boolean);
+    await terminal.contains('esc to interrupt');
+    // Trial polish #8: the line keeps counting on its own, with no input and no refresh.
+    const seconds = (screen: string) => Number(/… · (\d+)s · /.exec(screen)?.[1] ?? -1);
+    const first = await until(
+      () => terminal!.screen(),
+      (screen) => seconds(screen) >= 0,
+    );
+    await until(
+      () => terminal!.screen(),
+      (screen) => seconds(screen) >= seconds(first) + 2,
+    );
+    writeFileSync(join(f.dir, 'release-probe'), 'go');
+    await terminal.contains('Offline reply: Keep one running turn');
+    await until(
+      () => terminal!.screen(),
+      (screen) => !screen.includes('esc to interrupt'),
+    );
+    await terminal.leave();
+    expect((await terminal.exit()).restored).toBe(true);
+  } finally {
+    await terminal?.close();
+    await f.close();
+  }
+}, 30000);
+
 test('TUI reviews two operation-bound approvals in reverse order and observer decisions do not take control', async () => {
   const f = await fixture();
   let writer: PtyClient | undefined, observer: PtyClient | undefined;
@@ -216,14 +259,15 @@ test('TUI reviews two operation-bound approvals in reverse order and observer de
     );
     if (process.env.SALAAM_TUI_CAPTURE_DIR)
       await observer.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'approval.svg'));
-    await observer.write('\x1b[C\r');
+    // Focus opens on Approve once (trial polish #2).
+    await observer.write('\r');
     await until(
       () => f.service.store.approvals(session.id),
       (approvals) => approvals.some((a) => a.decision === 'approve'),
     );
     await observer.write('\x0f');
     await observer.contains('Approve?');
-    await observer.write('\r');
+    await observer.write('n');
     await until(
       () => f.service.store.snapshot(session.id),
       (snapshot) => snapshot.attempts[0]?.state === 'completed',

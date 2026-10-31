@@ -239,7 +239,24 @@ export class ConfirmModal implements Component, Focusable {
     this.renderAgain();
   }
 }
-export type ApprovalDecision = 'approve' | 'approve-session' | 'always' | 'deny';
+export type ApprovalDecision = 'approve' | 'approve-session' | 'always' | 'deny' | 'deny-feedback';
+/**
+ * Why a request asks, in one plain line (trial polish #2): the danger check's verdict when it has
+ * one, otherwise what the session mode leaves to a person.
+ */
+export function approvalReason(value: string, mode: string | undefined): string {
+  const danger = /^Dangerous \(([^)]+)\): (.*)$/m.exec(value);
+  if (danger) return `Asks because this command is dangerous (${danger[1]}): ${danger[2]}`;
+  const edit = /^(---|\+\+\+) /m.test(value) && !/\nCommand:\n/.test(value);
+  if (mode === 'review') return 'Asks because review mode asks before every edit and command.';
+  if (mode === 'accept-edits' && !edit)
+    return 'Asks because accept edits still asks before commands.';
+  if (mode === 'auto')
+    return edit
+      ? 'Asks because this edit is outside what auto mode approves on its own.'
+      : 'Asks because auto mode approves only sandboxed commands it can read.';
+  return 'Asks because nothing approves this request on its own.';
+}
 /**
  * The approval prompt (phase 2a): what will run, in plain words, with the exact binding (approval
  * id, digest, revision, expiry) one key away rather than in the way. Desk sessions can also approve
@@ -276,7 +293,14 @@ export class ApprovalModal implements Component, Focusable {
     readonly offerRules = false,
     /** Why only Approve once and Deny are offered, shown above the choices. */
     readonly onceOnly?: string,
-  ) {}
+    /**
+     * Desk sessions (trial polish #1) see the change and decide; there is no read-to-the-end gate
+     * there, since the person chose the session and its mode. Strict work keeps the gate.
+     */
+    readonly options: { desk?: boolean; reason?: string } = {},
+  ) {
+    this.choice = 1;
+  }
   private choices(): {
     decision: ApprovalDecision;
     key: string;
@@ -286,6 +310,16 @@ export class ApprovalModal implements Component, Focusable {
     return [
       { decision: 'deny', key: 'n', label: 'Deny', colour: 'amber' },
       { decision: 'approve', key: 'y', label: 'Approve once', colour: 'jade' },
+      ...(this.options.desk
+        ? [
+            {
+              decision: 'deny-feedback' as const,
+              key: 'f',
+              label: 'Deny and tell it why',
+              colour: 'amber' as const,
+            },
+          ]
+        : []),
       ...(this.offerRules
         ? [
             {
@@ -310,19 +344,31 @@ export class ApprovalModal implements Component, Focusable {
       op = this.operation,
       t = this.theme,
       inner = Math.max(1, width - 4);
+    // A diff reads as a diff: added lines jade, removed lines red, hunk headers muted.
+    const diffInk = (line: string) =>
+      /^(\+\+\+|---) /.test(line) || line.startsWith('@@')
+        ? t.ink(line, 'muted')
+        : line.startsWith('+')
+          ? t.ink(line, 'jade')
+          : line.startsWith('-')
+            ? t.ink(line, 'red')
+            : t.ink(line);
     const body = [
-      safeText(op.target),
-      '',
-      safeText(op.value),
-      ...(this.showDetails
-        ? [
-            '',
-            `Approval ${a.id} · revision ${a.revision} · worker epoch ${a.worker_epoch}`,
-            `Digest ${a.operation_digest}`,
-            `Target version ${safeText(op.target_version)} · expires ${new Date(a.expires_at).toISOString()}`,
-          ]
-        : []),
-    ].flatMap((line) => wrapTextWithAnsi(t.ink(line), inner));
+      ...[safeText(op.target), ''].flatMap((line) => wrapTextWithAnsi(t.ink(line), inner)),
+      ...safeText(op.value)
+        .split('\n')
+        .flatMap((line) => wrapTextWithAnsi(diffInk(line), inner)),
+      ...[
+        ...(this.showDetails
+          ? [
+              '',
+              `Approval ${a.id} · revision ${a.revision} · worker epoch ${a.worker_epoch}`,
+              `Digest ${a.operation_digest}`,
+              `Target version ${safeText(op.target_version)} · expires ${new Date(a.expires_at).toISOString()}`,
+            ]
+          : []),
+      ].flatMap((line) => wrapTextWithAnsi(t.ink(line), inner)),
+    ];
     const current = this.current();
     this.stale =
       !current ||
@@ -333,7 +379,9 @@ export class ApprovalModal implements Component, Focusable {
     this.total = body.length;
     this.pageSize = Math.max(1, Math.min(18, this.rows() - 11));
     this.offset = Math.max(0, Math.min(this.offset, Math.max(0, this.total - this.pageSize)));
-    if (this.rows() >= 12 && this.offset + this.pageSize >= this.total) this.reviewed = true;
+    if (this.options.desk || (this.rows() >= 12 && this.offset + this.pageSize >= this.total))
+      this.reviewed = true;
+    const below = this.total - (this.offset + this.pageSize);
     const disabled = !this.reviewed || this.stale;
     const choices = this.choices();
     this.choice = Math.max(0, Math.min(this.choice, choices.length - 1));
@@ -353,11 +401,21 @@ export class ApprovalModal implements Component, Focusable {
                   'muted',
                 ),
               ]),
+        ...(this.options.desk && below > 0
+          ? [t.ink(`${below} more lines · ↓ to scroll`, 'muted')]
+          : []),
+        ...(this.options.reason
+          ? wrapTextWithAnsi(t.ink(this.options.reason, 'amber'), inner)
+          : []),
         ...(this.onceOnly ? wrapTextWithAnsi(t.ink(this.onceOnly, 'muted'), inner) : []),
         ...choices.map((c, i) =>
           t.ink(
             (i === this.choice ? '› ' : '  ') + `${c.key}  ${c.label}`,
-            c.decision !== 'deny' && disabled ? 'muted' : i === this.choice ? c.colour : 'muted',
+            !c.decision.startsWith('deny') && disabled
+              ? 'muted'
+              : i === this.choice
+                ? c.colour
+                : 'muted',
           ),
         ),
         '',
@@ -375,7 +433,8 @@ export class ApprovalModal implements Component, Focusable {
     );
   }
   private pick(decision: ApprovalDecision): void {
-    if (decision !== 'deny' && (this.stale || !this.reviewed)) return;
+    if (decision !== 'deny' && decision !== 'deny-feedback' && (this.stale || !this.reviewed))
+      return;
     this.decide(decision);
   }
   handleInput(data: string): void {

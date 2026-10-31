@@ -12,6 +12,7 @@ export type GlobalAction =
   | 'changes'
   | 'commands'
   | 'rail'
+  | 'transcript'
   | 'refresh'
   | 'editor'
   | 'mode'
@@ -26,6 +27,7 @@ export const GLOBAL_KEYS: readonly { key: KeyId; action: GlobalAction; label: st
   { key: 'alt+g', action: 'changes', label: 'changes' },
   { key: 'ctrl+t', action: 'commands', label: 'commands' },
   { key: 'ctrl+b', action: 'rail', label: 'show or hide the side panel' },
+  { key: 'ctrl+x', action: 'transcript', label: 'full transcript on or off' },
   { key: 'f5', action: 'refresh', label: 'refresh' },
   { key: 'ctrl+g', action: 'editor', label: 'external prompt editor' },
   { key: 'shift+tab', action: 'mode', label: 'next mode' },
