@@ -167,6 +167,33 @@ export function processIdentity(pid: number): string | null {
     return null;
   }
 }
+/**
+ * When a process started, keyed to this boot. Unlike processIdentity it survives exec, so it
+ * names a background task whose gated shell has since become the user's command.
+ */
+export function processStart(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
+  try {
+    if (process.platform === 'linux') {
+      const value = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const fields = value
+        .slice(value.lastIndexOf(') ') + 2)
+        .trim()
+        .split(/\s+/);
+      const boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+      return /^\d+$/.test(fields[19] ?? '') ? `linux-start-v1:${pid}:${boot}:${fields[19]}` : null;
+    }
+    const started = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+      killSignal: 'SIGKILL',
+    }).trim();
+    return started ? `ps-start-v1:${pid}:${started}` : null;
+  } catch {
+    return null;
+  }
+}
 function groupExists(pid: number): boolean {
   try {
     process.kill(-pid, 0);

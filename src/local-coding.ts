@@ -38,7 +38,7 @@ import {
   type RuleRequest,
 } from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
-import { processIdentity } from './supervisor.js';
+import { processIdentity, processStart } from './supervisor.js';
 
 const TASK_TAIL = 65536;
 const TASK_LIMIT = 4;
@@ -154,7 +154,7 @@ export class LocalCoding {
     // A background task never outlives its controller: kill what a restart left and say so.
     for (const raw of store.db.prepare("SELECT * FROM local_tasks WHERE state='running'").all()) {
       const t = raw as unknown as TaskRow;
-      if (t.pid && t.identity && processIdentity(t.pid) === t.identity)
+      if (t.pid && t.identity && processStart(t.pid) === t.identity)
         try {
           process.kill(-t.pid, 'SIGKILL');
         } catch {
@@ -954,7 +954,8 @@ export class LocalCoding {
     child.once('close', (code) => finish(code));
     child.once('spawn', () => {
       try {
-        const identity = processIdentity(child.pid!);
+        // The start time, not processIdentity: the gated shell execs into the command.
+        const identity = processStart(child.pid!);
         if (!identity) throw Error('No process identity');
         this.store.transaction(() =>
           this.store.db
