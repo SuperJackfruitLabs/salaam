@@ -71,6 +71,7 @@ import { LocalCoding, type LocalSandbox } from './local-coding.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
+import { TurnCheckpoints, type RewindMode } from './turn-rewind.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
@@ -268,6 +269,11 @@ export class SalaamService {
           options.userInstructions === undefined
             ? userInstructionsPath()
             : options.userInstructions,
+        );
+        this.tasks.checkpoints = new TurnCheckpoints(
+          this.store,
+          this.stateDir,
+          this.toolIdentity.mode !== 'tools-user',
         );
         this.taskWork = new TaskWork(this.store, this.tasks);
         this.taskBudget = new TaskBudget(this.store, this.taskWork);
@@ -2306,6 +2312,118 @@ export class SalaamService {
                 this.toolIdentity,
               ),
             );
+            return;
+          }
+        }
+        if (
+          (parts.length === 4 || parts.length === 5) &&
+          (parts[3] === 'checkpoints' || parts[3] === 'rewind' || parts[3] === 'review')
+        ) {
+          const checkpoints = this.tasks.checkpoints!;
+          const controller = (body: Record<string, unknown>) => ({
+            client_id: string(body.client_id, 'client_id', 128),
+            token: string(body.token, 'token', 128),
+          });
+          const idle = () => {
+            this.supervisor.assertIdle(id);
+            if (
+              this.store.db
+                .prepare(
+                  "SELECT 1 FROM attempts WHERE session_id=? AND state IN ('accepted','dispatching','running')",
+                )
+                .get(id)
+            )
+              throw new ServiceError('session_busy', 'Wait for the current turn to finish');
+          };
+          if (parts[3] === 'checkpoints' && parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { checkpoints: checkpoints.list(id) });
+            return;
+          }
+          if (parts[3] === 'rewind' && parts.length === 4 && req.method === 'GET') {
+            this.send(
+              res,
+              200,
+              checkpoints.reviewRewind(
+                id,
+                string(url.searchParams.get('attempt'), 'attempt', 128),
+                string(url.searchParams.get('mode'), 'mode', 16) as RewindMode,
+              ),
+            );
+            return;
+          }
+          if (parts[3] === 'rewind' && parts.length === 4 && req.method === 'POST') {
+            if (this.agentpod)
+              throw new ServiceError(
+                'admission_required',
+                'Managed station sessions cannot rewind',
+              );
+            const body = object(await readJson(req));
+            const request = string(body.request_id, 'request_id', 128);
+            this.send(
+              res,
+              200,
+              checkpoints.rewind(
+                id,
+                request,
+                string(body.attempt_id, 'attempt_id', 128),
+                string(body.mode, 'mode', 16) as RewindMode,
+                string(body.review_digest, 'review_digest', 128),
+                controller(body),
+                idle,
+                (leaf, summary) =>
+                  this.store.forkLocal(
+                    id,
+                    request + ':fork',
+                    this.store.session(id).revision,
+                    controller(body),
+                    (source, target) => {
+                      const dir = join(this.stateDir, 'workers', target, 'sessions');
+                      mkdirSync(dir, { recursive: true, mode: 0o700 });
+                      return forkPiSession(source.pi_session_file!, source.cwd, dir, target, {
+                        leaf,
+                        summary,
+                      });
+                    },
+                    { leaf },
+                  ),
+              ),
+            );
+            return;
+          }
+          if (parts[3] === 'review' && parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { review: checkpoints.review(id) });
+            return;
+          }
+          if (parts[3] === 'review' && parts[4] === 'hunks' && req.method === 'GET') {
+            const q = (name: string) => string(url.searchParams.get(name), name, 1024);
+            this.send(res, 200, {
+              hunks: checkpoints.hunks(id, q('path'), q('base'), q('current')),
+            });
+            return;
+          }
+          if (parts[3] === 'review' && parts.length === 4 && req.method === 'POST') {
+            const body = object(await readJson(req));
+            const hunk =
+              body.hunk === undefined
+                ? undefined
+                : {
+                    text: string(object(body.hunk).text, 'hunk.text', 256 * 1024),
+                    patch: string(object(body.hunk).patch, 'hunk.patch', 256 * 1024),
+                  };
+            this.send(res, 200, {
+              review: checkpoints.act(
+                id,
+                {
+                  action: string(body.action, 'action', 16) as 'accept' | 'revert',
+                  path: string(body.path, 'path', 1024),
+                  ...(hunk ? { hunk } : {}),
+                  base: string(body.base, 'base', 128),
+                  current: string(body.current, 'current', 128),
+                },
+                controller(body),
+                idle,
+              ),
+            });
             return;
           }
         }
