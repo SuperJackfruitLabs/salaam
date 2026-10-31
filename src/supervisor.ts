@@ -754,6 +754,9 @@ export class Supervisor extends EventEmitter {
   /** Is this attempt a task step that has acceptance checks to decide it? */
   /** A person's own local coding session: not a delegated child and not AgentPod-admitted work,
    * whose strict semantics stay as they are. */
+  isInteractiveCoding(id: string): boolean {
+    return this.interactiveCoding(id);
+  }
   private interactiveCoding(id: string): boolean {
     return (
       this.store.localCoding(id) &&
@@ -1194,6 +1197,16 @@ export class Supervisor extends EventEmitter {
           );
           return { ok: false, url, error: message };
         }
+      }
+      if (method.startsWith('bgtask.')) {
+        if (!this.localCoding || !this.interactiveCoding(id) || !w.attempt)
+          throw new ServiceError('background_denied', 'Background commands are not admitted', 403);
+        this.assertActive(id, w.epoch, w.attempt);
+        if (method === 'bgtask.list') return { tasks: this.localCoding.tasks(id) };
+        const task = string(body.task_id, 'task_id', 64);
+        if (method === 'bgtask.output') return this.localCoding.taskOutput(id, task);
+        if (method === 'bgtask.stop') return this.localCoding.stopTask(id, task);
+        throw new ServiceError('invalid_field', 'Unsupported background task method');
       }
       if (method.startsWith('local.') && method !== 'local.read') {
         if (

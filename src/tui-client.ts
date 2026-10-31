@@ -713,6 +713,7 @@ export class OperatorClient extends EventEmitter {
         (event: DurableEvent) => {
           if (event.seq <= cursor || generation !== this.generation) return;
           cursor = event.seq;
+          this.emit('durable', event);
           if (
             [
               'attempt.completed',

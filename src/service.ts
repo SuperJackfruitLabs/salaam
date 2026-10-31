@@ -421,6 +421,7 @@ export class SalaamService {
           localSandbox,
         );
         this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
+        this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
         this.supervisor.localCoding = this.localCoding;
         const webConfig = options.webSearchConfig
           ? loadWebSearchConfig(options.webSearchConfig)
@@ -2243,6 +2244,26 @@ export class SalaamService {
                 },
               ),
             );
+            return;
+          }
+        }
+        if (parts[3] === 'local-tasks' && this.localCoding) {
+          if (!this.supervisor.isInteractiveCoding(id))
+            throw new ServiceError(
+              'background_denied',
+              'Background commands are not admitted',
+              403,
+            );
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { tasks: this.localCoding.tasks(id) });
+            return;
+          }
+          if (parts.length === 5 && req.method === 'GET') {
+            this.send(res, 200, this.localCoding.taskOutput(id, parts[4]!));
+            return;
+          }
+          if (parts.length === 6 && parts[5] === 'stop' && req.method === 'POST') {
+            this.send(res, 200, this.localCoding.stopTask(id, parts[4]!));
             return;
           }
         }

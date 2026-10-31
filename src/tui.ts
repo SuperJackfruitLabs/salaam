@@ -52,6 +52,8 @@ import {
 import { conversationExport, writeConversationExport } from './tui-export.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
+import { notificationFor, notify, notifyMode, jobsText, type JobRow } from './tui-notify.js';
+import type { DurableEvent } from './protocol.js';
 import { OperatorClient } from './tui-client.js';
 import { SalaamTheme, safeText, shortId, type ThemeName } from './tui-theme.js';
 import {
@@ -280,6 +282,10 @@ export class SalaamApp {
     this.done = new Promise((resolve) => (this.finish = resolve));
     this.removeInput = this.tui.addInputListener((data) => this.input(data));
     this.client.on('change', () => this.changed());
+    this.client.on('durable', (event: DurableEvent) => {
+      const message = notificationFor(event);
+      if (message) notify(message, notifyMode());
+    });
   }
   private contentWidth(): number {
     return Math.max(
@@ -888,6 +894,23 @@ export class SalaamApp {
     }
     if (command === 'tasks') {
       this.taskActions();
+      return;
+    }
+    if (command === 'jobs') {
+      const base = `/v1/sessions/${snapshot.id}/local-tasks`;
+      const stop = /^stop\s+(\S+)$/.exec(args.trim());
+      if (stop) {
+        await call(this.client.socket, `${base}/${stop[1]}/stop`, {});
+        this.client.notice = 'Stopping background command ' + stop[1];
+        return;
+      }
+      const { tasks } = await call<{ tasks: JobRow[] }>(this.client.socket, base);
+      const outputs = await Promise.all(
+        tasks
+          .slice(0, 4)
+          .map((t) => call<{ output: string }>(this.client.socket, `${base}/${t.id}`)),
+      );
+      this.showText('Background commands', jobsText(tasks, outputs));
       return;
     }
     if (command === 'cancel') {
