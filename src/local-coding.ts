@@ -38,6 +38,30 @@ import {
 } from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
 import { processIdentity } from './supervisor.js';
+
+const TASK_TAIL = 65536;
+const TASK_LIMIT = 4;
+const BACKGROUND_LIFETIME = 2 * 3600 * 1000;
+type TaskState = 'running' | 'exited' | 'stopped' | 'timed_out' | 'lost';
+interface TaskRow {
+  id: string;
+  session_id: string;
+  call_id: string;
+  command: string;
+  state: TaskState;
+  pid: number | null;
+  identity: string | null;
+  exit_code: number | null;
+  started_at: string;
+  ended_at: string | null;
+}
+interface BackgroundTask {
+  id: string;
+  session: string;
+  done: Promise<void>;
+  output: () => { output: string; bytes: number; truncated: boolean };
+  stop: (why: TaskState) => void;
+}
 import {
   applyEditsAsTools,
   killToolGroup,
@@ -94,6 +118,12 @@ function proxyEnv(port: number): Record<string, string> {
 }
 export class LocalCoding {
   private jobs = new Map<string, { stop: () => void; done: Promise<void> }>();
+  /** Background tasks this controller owns; they belong to the session, not to a turn. */
+  private live = new Map<string, BackgroundTask>();
+  /** Output of recently ended tasks, so the model can read why one stopped. */
+  private kept = new Map<string, { output: string; bytes: number; truncated: boolean }>();
+  /** Background commands are for a person's own desk session only (Phase 3c). */
+  public interactive: (session: string) => boolean = () => false;
   private closed = false;
   private unregister: () => void;
   /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
@@ -117,6 +147,20 @@ export class LocalCoding {
           throw new ServiceError('local_busy', 'Command resources are still active');
       },
     });
+    store.db.exec(
+      'CREATE TABLE IF NOT EXISTS local_tasks(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,call_id TEXT NOT NULL,command TEXT NOT NULL,state TEXT NOT NULL,pid INTEGER,identity TEXT,exit_code INTEGER,started_at TEXT NOT NULL,ended_at TEXT)',
+    );
+    // A background task never outlives its controller: kill what a restart left and say so.
+    for (const raw of store.db.prepare("SELECT * FROM local_tasks WHERE state='running'").all()) {
+      const t = raw as unknown as TaskRow;
+      if (t.pid && t.identity && processIdentity(t.pid) === t.identity)
+        try {
+          process.kill(-t.pid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      this.endTask(t, 'lost', null);
+    }
     // A lost controller must never retry a possibly executed edit or command.
     for (const raw of store.db.prepare("SELECT * FROM local_calls WHERE state='running'").all()) {
       const c = raw as unknown as LocalCall;
@@ -227,6 +271,7 @@ export class LocalCoding {
           action: 'command';
           command: string;
           timeout_ms: number;
+          background?: true;
           sandbox: { kind: string; level: string; bwrap: string | null; network?: 'broker' };
         };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
@@ -234,6 +279,10 @@ export class LocalCoding {
       const timeout = input.timeout_ms ?? 30000;
       if (!Number.isInteger(timeout) || Number(timeout) < 100 || Number(timeout) > 120000)
         throw new ServiceError('invalid_field', 'Command timeout must be 100–120000 ms');
+      const background = input.background === true;
+      if (input.background !== undefined && typeof input.background !== 'boolean')
+        throw new ServiceError('invalid_field', 'background must be true or false');
+      if (background) this.assertBackground(session);
       const sb = this.sandboxFor(session);
       if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
         throw new ServiceError(
@@ -245,7 +294,8 @@ export class LocalCoding {
       args = {
         action: 'command',
         command: string(input.command, 'command', 8192),
-        timeout_ms: Number(timeout),
+        timeout_ms: background ? BACKGROUND_LIFETIME : Number(timeout),
+        ...(background ? { background: true as const } : {}),
         // Bound into the approval and the operation digest: the sandbox is part of what is approved.
         sandbox: {
           kind: sb.kind,
@@ -260,7 +310,7 @@ export class LocalCoding {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}\nTimeout: ${args.timeout_ms} ms\nCommand:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\nCommand:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -459,7 +509,8 @@ export class LocalCoding {
           else this.managed.workspaceDefiniteFailureInTransaction(c.operation_id);
         });
       }
-    } else this.command(c, String(args.command), Number(args.timeout_ms), this.bound(args));
+    } else if (args.background === true) this.background(c, String(args.command), this.bound(args));
+    else this.command(c, String(args.command), Number(args.timeout_ms), this.bound(args));
     return this.view(id);
   }
   /** The sandbox for a new command in this session: the host's, or full access if the person chose
@@ -764,11 +815,203 @@ export class LocalCoding {
       child.once('close', (code) => finish(code));
     });
   }
+  private assertBackground(session: string): void {
+    if (!this.interactive(session))
+      throw new ServiceError(
+        'background_denied',
+        'Background commands are only for an interactive local coding session',
+      );
+    if (this.tools.mode === 'tools-user')
+      throw new ServiceError(
+        'background_denied',
+        'Background commands do not yet run as a separate tools user',
+      );
+    if ([...this.live.values()].filter((t) => t.session === session).length >= TASK_LIMIT)
+      throw new ServiceError(
+        'background_limit',
+        `A session runs at most ${TASK_LIMIT} background commands; stop one first`,
+      );
+  }
+  /** Launch an approved background command. Its operation settles once the process is owned;
+   * the process then lives as a session task until it exits, is stopped, or the session ends. */
+  private background(c: LocalCall, command: string, sb: LocalSandbox): void {
+    const settle = (ok: boolean, result: Record<string, unknown>) =>
+      this.store.transaction(() => {
+        this.change(c, ok ? 'succeeded' : 'failed', result);
+        this.managed.localExecutionResultInTransaction(c.operation_id, ok, result);
+      });
+    try {
+      this.assertBackground(c.session_id);
+    } catch (error) {
+      settle(false, { error: (error as Error).message, background: true });
+      return;
+    }
+    const id = 'task_' + randomUUID().slice(0, 8);
+    const tmp =
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
+        ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
+        : undefined;
+    // Network for a long-lived task needs a relay that lives as long; keep it simple and honest.
+    const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
+    const argv = this.commandArgv(c.root, script, tmp, null, sb);
+    const child = spawn(argv[0]!, argv.slice(1), {
+      cwd: c.root,
+      detached: true,
+      env: {
+        PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+        HOME: process.env.HOME ?? c.root,
+        LANG: 'en_US.UTF-8',
+        TMPDIR: '/tmp',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let tail = Buffer.alloc(0),
+      bytes = 0,
+      ended: TaskState | null = null,
+      resolve = () => {};
+    const done = new Promise<void>((r) => (resolve = r));
+    const kill = () => {
+      if (child.pid)
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+    };
+    const task: BackgroundTask = {
+      id,
+      session: c.session_id,
+      done,
+      output: () => ({ output: tail.toString('utf8'), bytes, truncated: bytes > tail.length }),
+      stop: (why) => {
+        ended ??= why;
+        kill();
+      },
+    };
+    const collect = (chunk: Buffer) => {
+      bytes += chunk.length;
+      tail = Buffer.concat([tail, chunk]);
+      if (tail.length > TASK_TAIL) tail = tail.subarray(tail.length - TASK_TAIL);
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.stdin.on('error', () => {});
+    const lifetime = setTimeout(() => task.stop('timed_out'), BACKGROUND_LIFETIME);
+    // The session, not the turn, owns the task: it ends when local coding or its root goes away.
+    const watch = setInterval(() => {
+      try {
+        if (this.closed || !this.store.localCoding(c.session_id)) throw Error('closed');
+        if (this.store.session(c.session_id).cwd !== c.root) throw Error('moved');
+      } catch {
+        task.stop('stopped');
+      }
+    }, 1000);
+    const finish = (code: number | null) => {
+      clearTimeout(lifetime);
+      clearInterval(watch);
+      kill();
+      this.live.delete(id);
+      this.kept.set(id, task.output());
+      if (this.kept.size > 32) this.kept.delete(this.kept.keys().next().value!);
+      if (tmp) rmSync(tmp, { recursive: true, force: true });
+      const row = this.store.db.prepare('SELECT * FROM local_tasks WHERE id=?').get(id) as
+        TaskRow | undefined;
+      if (row) this.endTask(row, ended ?? 'exited', code);
+      else settle(false, { error: 'Command could not start', background: true });
+      resolve();
+    };
+    child.once('error', () => finish(null));
+    child.once('close', (code) => finish(code));
+    child.once('spawn', () => {
+      try {
+        const identity = processIdentity(child.pid!);
+        if (!identity) throw Error('No process identity');
+        this.store.transaction(() =>
+          this.store.db
+            .prepare(
+              "INSERT INTO local_tasks(id,session_id,call_id,command,state,pid,identity,started_at) VALUES (?,?,?,?,'running',?,?,?)",
+            )
+            .run(id, c.session_id, c.id, command, child.pid!, identity, new Date().toISOString()),
+        );
+        this.live.set(id, task);
+        settle(true, {
+          background: true,
+          task_id: id,
+          state: 'running',
+          isolation:
+            'local-user-' + (this.sandboxed(sb) ? sb.kind + '-' + sb.level : 'no-os-sandbox'),
+          sandbox: this.sandboxed(sb) ? sb.kind : 'none',
+          note: 'Read its output with salaam_tasks; it keeps running after this turn.',
+        });
+        child.stdin.end('start\n');
+      } catch {
+        ended = 'lost';
+        kill();
+      }
+    });
+  }
+  private endTask(t: TaskRow, state: TaskState, code: number | null): void {
+    this.store.transaction(() => {
+      this.store.db
+        .prepare(
+          "UPDATE local_tasks SET state=?,exit_code=?,ended_at=? WHERE id=? AND state='running'",
+        )
+        .run(state, code, new Date().toISOString(), t.id);
+      this.store.event(t.session_id, 'local.task_finished', {
+        task_id: t.id,
+        command: t.command.slice(0, 200),
+        state,
+        exit_code: code,
+      });
+    });
+  }
+  /** The session's background tasks, newest first. */
+  tasks(session: string) {
+    return (
+      this.store.db
+        .prepare(
+          'SELECT * FROM local_tasks WHERE session_id=? ORDER BY started_at DESC, rowid DESC',
+        )
+        .all(session) as unknown as TaskRow[]
+    ).map((t) => ({
+      id: t.id,
+      command: t.command,
+      state: t.state,
+      exit_code: t.exit_code,
+      pid: t.pid,
+      started_at: t.started_at,
+      ended_at: t.ended_at,
+      bytes: this.live.get(t.id)?.output().bytes ?? null,
+    }));
+  }
+  private task(session: string, id: string): TaskRow {
+    const row = this.store.db
+      .prepare('SELECT * FROM local_tasks WHERE id=? AND session_id=?')
+      .get(id, session) as TaskRow | undefined;
+    if (!row) throw new ServiceError('not_found', 'No such background task in this session', 404);
+    return row;
+  }
+  /** The kept tail of a task's output. Output of a task this controller no longer owns is gone. */
+  taskOutput(session: string, id: string) {
+    const row = this.task(session, id);
+    const live = this.live.get(id);
+    return {
+      task: { id: row.id, state: row.state, exit_code: row.exit_code },
+      ...(live?.output() ?? this.kept.get(id) ?? { output: '', bytes: 0, truncated: false }),
+    };
+  }
+  stopTask(session: string, id: string) {
+    this.task(session, id);
+    this.live.get(id)?.stop('stopped');
+    return { stopping: this.live.has(id) };
+  }
   async close(): Promise<void> {
     this.closed = true;
     const jobs = [...this.jobs.values()];
     for (const job of jobs) job.stop();
-    await Promise.all(jobs.map((j) => j.done));
+    const tasks = [...this.live.values()];
+    for (const t of tasks) t.stop('stopped');
+    await Promise.all([...jobs.map((j) => j.done), ...tasks.map((t) => t.done)]);
     this.unregister();
   }
 }

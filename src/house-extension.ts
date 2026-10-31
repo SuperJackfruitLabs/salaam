@@ -735,7 +735,7 @@ export default function house(pi: ExtensionAPI): void {
       name: 'salaam_local',
       label: 'Reviewed local coding',
       description:
-        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless the operator chose full access. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. Inspect actual results; do not claim success after failure.',
+        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless the operator chose full access. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. For a long-running command such as a dev server or watcher, set background: true; it returns a task id at once and keeps running after this turn (read or stop it with salaam_tasks). Inspect actual results; do not claim success after failure.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('edit'), Type.Literal('command')]),
         edits: Type.Optional(
@@ -756,6 +756,7 @@ export default function house(pi: ExtensionAPI): void {
         ),
         command: Type.Optional(Type.String()),
         timeout_ms: Type.Optional(Type.Integer({ minimum: 100, maximum: 120000 })),
+        background: Type.Optional(Type.Boolean()),
       }),
       async execute(id, args, signal, _update, ctx) {
         type Result = ReturnType<import('./local-coding.js').LocalCoding['view']>;
@@ -785,6 +786,36 @@ export default function house(pi: ExtensionAPI): void {
             ],
             details: result,
             isError: result.call.state !== 'succeeded',
+          };
+        } catch (error) {
+          if (!(error instanceof ServiceError)) throw error;
+          return {
+            content: [{ type: 'text' as const, text: error.message }],
+            details: { code: error.code },
+            isError: true,
+          };
+        }
+      },
+    });
+  if (c.localCoding && !c.child)
+    pi.registerTool({
+      name: 'salaam_tasks',
+      label: 'Background commands',
+      description:
+        'List this session’s background commands, read the kept tail of one’s output (last 64 KiB), or stop one. Stopping needs no approval.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('list'), Type.Literal('output'), Type.Literal('stop')]),
+        task_id: Type.Optional(Type.String()),
+      }),
+      async execute(_id, args) {
+        try {
+          const result = await bridge<unknown>(
+            'bgtask.' + args.action,
+            args.action === 'list' ? {} : { task_id: args.task_id },
+          );
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+            details: result,
           };
         } catch (error) {
           if (!(error instanceof ServiceError)) throw error;
@@ -1347,7 +1378,7 @@ export default function house(pi: ExtensionAPI): void {
               ...(c.station ? ['salaam_station'] : []),
               ...(c.operator_mcp?.length ? ['salaam_operator_mcp'] : []),
               ...(c.local ? ['salaam_workspace'] : []),
-              ...(c.localCoding ? ['salaam_local'] : []),
+              ...(c.localCoding ? ['salaam_local', 'salaam_tasks'] : []),
             ],
       ),
       ...(c.mcp ? { mcp: c.mcp } : {}),
