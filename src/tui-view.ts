@@ -2,7 +2,13 @@ import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earen
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
 import { typedText } from './shell-passthrough.js';
-import { instructionsLabel, sessionFailure, type OperatorClient } from './tui-client.js';
+import {
+  instructionsLabel,
+  sessionFailure,
+  usageCost,
+  usageInput,
+  type OperatorClient,
+} from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
@@ -62,12 +68,11 @@ export function toolLines(
       parent: p.parent_tool_call_id ? p.attempt_id + ':' + p.parent_tool_call_id : before?.parent,
     });
   }
-  return [...calls.entries()].map(([key, c]) => ({
-    key,
-    parent: c.parent,
-    output: c.finished?.output,
-    ...toolLine(c.tool, c.input, c.finished),
-  }));
+  return [...calls.entries()].map(([key, c]) => {
+    const line = toolLine(c.tool, c.input, c.finished);
+    // A command's recorded result is JSON; the transcript shows its output as text.
+    return { key, parent: c.parent, output: line.full ?? c.finished?.output, ...line };
+  });
 }
 /** How the status line names a mode. */
 export function modeLabel(mode: string): string {
@@ -206,9 +211,9 @@ export function status(view: ViewModel, width: number): string[] {
     : '';
   const spend = c.usage?.observations
     ? '  ' +
-      compactTokens(c.usage.known_input + c.usage.known_output) +
+      compactTokens(usageInput(c.usage) + c.usage.known_output) +
       ' tokens · $' +
-      Math.max(c.usage.known_cost, c.usage.estimated_cost).toFixed(2)
+      usageCost(c.usage).toFixed(2)
     : '';
   const mode = view.mode
     ? '  ' +
@@ -408,6 +413,51 @@ export class DocumentView implements Component {
         : []),
     ];
   }
+  /** Compact lines for tool calls (with their output in the full transcript), children indented. */
+  private toolBlock(
+    calls: ReturnType<typeof toolLines>,
+    byKey: Map<string, ReturnType<typeof toolLines>[number]>,
+    width: number,
+  ): string[] {
+    const t = this.view.theme,
+      lines: string[] = [],
+      shown = this.view.transcript ? calls : calls.slice(-8);
+    if (shown.length < calls.length)
+      lines.push(
+        t.line(
+          t.ink(`  … ${calls.length - shown.length} earlier calls · ctrl+x shows all`, 'muted'),
+          width,
+        ),
+      );
+    for (const call of shown) {
+      let depth = 0,
+        parent = call.parent;
+      const visited = new Set<string>();
+      while (parent && !visited.has(parent) && depth < 4) {
+        visited.add(parent);
+        depth++;
+        parent = byKey.get(parent)?.parent;
+      }
+      const indent = depth ? '  '.repeat(depth) + '└─ ' : '';
+      lines.push(
+        t.line(
+          t.ink(
+            call.state === 'running' ? '◌ ' : call.state === 'failed' ? '× ' : '✓ ',
+            call.state === 'failed' ? 'red' : call.state === 'running' ? 'amber' : 'jade',
+          ) + t.ink(indent + call.label),
+          width,
+        ),
+      );
+      const detail = this.view.transcript
+        ? call.output
+          ? safeText(call.output).split('\n').slice(0, 40)
+          : []
+        : call.tail;
+      for (const tail of detail)
+        lines.push(...this.text('  ' + ' '.repeat(indent.length) + '│ ' + tail, width));
+    }
+    return lines;
+  }
   render(width: number): string[] {
     const { client: c, theme: t, tab } = this.view;
     if (!c.snapshot) {
@@ -441,7 +491,37 @@ export class DocumentView implements Component {
           t.fill('', width),
         );
       const ids = new Set(c.snapshot.messages.map((m) => m.entry_id));
+      // Each turn's tool calls sit where they ran: before the message that followed them.
+      const calls = toolLines(this.view),
+        byKey = new Map(calls.map((l) => [l.key, l])),
+        groups = new Map<string, typeof calls>(),
+        rootOf = new Map<string, string>(),
+        placed = new Set<string>();
+      for (const call of calls) {
+        let root = call.key;
+        const visited = new Set<string>();
+        while (byKey.get(root)?.parent && !visited.has(root) && visited.size < 8) {
+          visited.add(root);
+          root = byKey.get(root)!.parent!;
+        }
+        groups.set(root, [...(groups.get(root) ?? []), call]);
+        rootOf.set(root.slice(root.indexOf(':') + 1), root);
+      }
       for (const message of c.snapshot.messages) {
+        const before = (message.tool_calls ?? [])
+          .map((id) => rootOf.get(id))
+          .filter((root): root is string => !!root && !placed.has(root));
+        if (before.length) {
+          for (const root of before) placed.add(root);
+          lines.push(
+            ...this.toolBlock(
+              before.flatMap((root) => groups.get(root)!),
+              byKey,
+              width,
+            ),
+            t.fill('', width),
+          );
+        }
         lines.push(
           ...this.title(
             message.role === 'user' ? 'YOU' : 'SALAAM',
@@ -477,9 +557,9 @@ export class DocumentView implements Component {
           t.fill('', width),
         );
       }
-      const calls = toolLines(this.view);
-      if (calls.length) {
-        const byKey = new Map(calls.map((l) => [l.key, l]));
+      // Calls not placed before a message: the turn still running, or ones history no longer shows.
+      const rest = [...groups.entries()].filter(([root]) => !placed.has(root));
+      if (rest.length) {
         lines.push(
           ...this.title(
             this.view.transcript
@@ -488,35 +568,13 @@ export class DocumentView implements Component {
             width,
             'muted',
           ),
+          ...this.toolBlock(
+            rest.flatMap(([, group]) => group),
+            byKey,
+            width,
+          ),
+          t.fill('', width),
         );
-        for (const call of this.view.transcript ? calls : calls.slice(-8)) {
-          let depth = 0,
-            parent = call.parent;
-          const visited = new Set<string>();
-          while (parent && !visited.has(parent) && depth < 4) {
-            visited.add(parent);
-            depth++;
-            parent = byKey.get(parent)?.parent;
-          }
-          const indent = depth ? '  '.repeat(depth) + '└─ ' : '';
-          lines.push(
-            t.line(
-              t.ink(
-                call.state === 'running' ? '◌ ' : call.state === 'failed' ? '× ' : '✓ ',
-                call.state === 'failed' ? 'red' : call.state === 'running' ? 'amber' : 'jade',
-              ) + t.ink(indent + call.label),
-              width,
-            ),
-          );
-          const detail = this.view.transcript
-            ? call.output
-              ? safeText(call.output).split('\n').slice(0, 40)
-              : []
-            : call.tail;
-          for (const tail of detail)
-            lines.push(...this.text('  ' + ' '.repeat(indent.length) + '│ ' + tail, width));
-        }
-        lines.push(t.fill('', width));
       }
       if (c.preview)
         lines.push(
@@ -1003,7 +1061,7 @@ export class DocumentView implements Component {
             width,
           ),
           ...this.text(
-            `Recorded tokens: ${c.usage.known_input} input · ${c.usage.known_output} output`,
+            `Recorded tokens: ${usageInput(c.usage)} input (${c.usage.known_cache_read ?? 0} cache reads, ${c.usage.known_cache_write ?? 0} cache writes) · ${c.usage.known_output} output`,
             width,
           ),
           ...this.text(
@@ -1074,12 +1132,14 @@ export function sidebar(view: ViewModel, width: number): string[] {
   if (c.usage) {
     label('USAGE');
     row(
-      c.usage.known_input.toLocaleString() +
+      usageInput(c.usage).toLocaleString() +
         ' in · ' +
         c.usage.known_output.toLocaleString() +
         ' out',
     );
-    row('Est. $' + c.usage.estimated_cost.toFixed(4), 'muted');
+    if (c.usage.known_cache_read)
+      row(c.usage.known_cache_read.toLocaleString() + ' from cache', 'muted');
+    row((c.usage.estimated_observations ? 'Est. $' : '$') + usageCost(c.usage).toFixed(4), 'muted');
     if (c.usage.unknown_observations)
       row(c.usage.unknown_observations + ' unknown entries', 'amber');
   }

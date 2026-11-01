@@ -187,7 +187,16 @@ export interface SessionSnapshot extends Session {
   control: ControlView;
   attempts: (Attempt & { result_truncated: boolean })[];
   submissions: (Submission & { text_truncated: boolean })[];
-  messages: { entry_id: string; role: string; text: string; truncated: boolean }[];
+  messages: {
+    entry_id: string;
+    role: string;
+    text: string;
+    truncated: boolean;
+    /** Tool calls made just before this message, oldest first. */
+    tool_calls?: string[];
+  }[];
+  /** Tool calls after the last message, e.g. a turn still running. */
+  trailing_tool_calls?: string[];
   history_truncated: boolean;
   approvals: Approval[];
   operations: Operation[];
