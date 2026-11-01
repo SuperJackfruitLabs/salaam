@@ -79,7 +79,7 @@ describe('gitIdentityEnv', () => {
     const root = repo();
     git(root, 'config', 'user.name', 'Ada Example');
     git(root, 'config', 'user.email', 'ada@example.test');
-    expect(gitIdentityEnv(root, isolated)).toEqual({
+    expect(gitIdentityEnv(root, { ...process.env, ...isolated })).toEqual({
       GIT_AUTHOR_NAME: 'Ada Example',
       GIT_AUTHOR_EMAIL: 'ada@example.test',
       GIT_COMMITTER_NAME: 'Ada Example',
@@ -87,18 +87,18 @@ describe('gitIdentityEnv', () => {
     });
   });
   it('never invents one', () => {
-    expect(gitIdentityEnv(repo(), isolated)).toEqual({});
+    expect(gitIdentityEnv(repo(), { ...process.env, ...isolated })).toEqual({});
   });
   it('gives nothing when only half is configured', () => {
     const root = repo();
     git(root, 'config', 'user.name', 'Ada Example');
-    expect(gitIdentityEnv(root, isolated)).toEqual({});
+    expect(gitIdentityEnv(root, { ...process.env, ...isolated })).toEqual({});
   });
   it('lets a commit with no readable git config carry the real author', () => {
     const root = repo();
     git(root, 'config', 'user.name', 'Ada Example');
     git(root, 'config', 'user.email', 'ada@example.test');
-    const env = gitIdentityEnv(root, isolated);
+    const env = gitIdentityEnv(root, { ...process.env, ...isolated });
     git(root, 'config', '--unset', 'user.name');
     git(root, 'config', '--unset', 'user.email');
     writeFileSync(join(root, 'a.txt'), 'a\n');
