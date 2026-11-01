@@ -665,3 +665,62 @@ test('full access needs no listen allowance: the command is not sandboxed', asyn
     await f.close();
   }
 });
+
+// Operator ruling 2026-11-01 (option 1): one command may ask to run outside the OS sandbox and say
+// why. It always asks except in YOLO; auto mode and repo rules never approve it; your own rule may.
+// It runs once without the sandbox, and the session stays sandboxed.
+test('a command may ask to run outside the sandbox: it says why, always asks, and runs unsandboxed once', async () => {
+  const f = setup({ seatbelt: true });
+  const rules = new ApprovalRules(f.store, f.root + '/no-user-rules.json');
+  f.local.rules = rules;
+  try {
+    f.configure('auto');
+    expect(f.state(f.command('ps -axo comm').approval)).toBe('decided');
+    const out = f.command('ps -axo comm', { outside_sandbox: 'list the apps that are running' });
+    expect(f.state(out.approval)).toBe('pending');
+    expect(String(out.operation.value)).toMatch(
+      /unsandboxed for this one command[\s\S]*Outside the sandbox: list the apps that are running\. This one command runs without the OS sandbox; the session stays sandboxed/,
+    );
+    // The approved sandbox is part of the bound request: this one runs with none.
+    expect(f.args(out.call)).toMatchObject({
+      outside_sandbox: 'list the apps that are running',
+      sandbox: { kind: 'seatbelt', level: 'full-access' },
+    });
+    // The session itself stays sandboxed.
+    expect(f.args(f.command('ls').call).sandbox.level).toBe('workspace-write');
+    rules.add(f.session.id, 'repo', { effect: 'allow', tool: 'command', command: 'ps *' }, 'r1');
+    expect(f.state(f.command('ps -axo comm', { outside_sandbox: 'list apps' }).approval)).toBe(
+      'pending',
+    );
+    rules.add(
+      f.session.id,
+      'session',
+      { effect: 'allow', tool: 'command', command: 'ps -axo comm' },
+      'r2',
+    );
+    expect(f.state(f.command('ps -axo comm', { outside_sandbox: 'list apps' }).approval)).toBe(
+      'decided',
+    );
+    expect(() => f.command('ps', { outside_sandbox: '  ' })).toThrow(/say why/);
+    expect(() => f.command('ps', { outside_sandbox: true })).toThrow(/say why/);
+  } finally {
+    await f.close();
+  }
+});
+
+test('outside the sandbox is refused where the host forbids full access, and moot under full access', async () => {
+  const f = setup({ seatbelt: true });
+  try {
+    f.configure('review', 'full');
+    const moot = f.command('ps', { outside_sandbox: 'list apps' });
+    expect(String(moot.operation.value)).not.toMatch(/Outside the sandbox/);
+    expect(f.args(moot.call).outside_sandbox).toBeUndefined();
+    f.configure('review');
+    f.local.allowOutsideSandbox = false;
+    expect(() => f.command('ps', { outside_sandbox: 'list apps' })).toThrow(
+      /does not allow commands outside the OS sandbox/,
+    );
+  } finally {
+    await f.close();
+  }
+});

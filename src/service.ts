@@ -452,6 +452,7 @@ export class SalaamService {
         );
         this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
         this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
+        this.localCoding.allowOutsideSandbox = this.allowFullAccessSessions;
         this.supervisor.localCoding = this.localCoding;
         if (options.dangerClassifierConfig) {
           const loaded = loadDangerClassifierOptions(

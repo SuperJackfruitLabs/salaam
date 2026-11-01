@@ -1204,6 +1204,9 @@ export class Store {
     );
     let remaining = 256 * 1024;
     const messages: SessionSnapshot['messages'] = [];
+    // Walking back from the newest entry: tool calls belong just before the message that follows
+    // them, so a turn's calls are shown in place rather than gathered at the end.
+    let trailing: string[] = [];
     while (
       cursor &&
       !seen.has(cursor) &&
@@ -1218,6 +1221,14 @@ export class Store {
       cursor = entry.parentId ?? null;
       const message = entry.message;
       if (!message || !['user', 'assistant'].includes(message.role)) continue;
+      if (Array.isArray(message.content)) {
+        const calls = message.content
+          .filter((part: { type: string; id?: unknown }) => part.type === 'toolCall')
+          .map((part: { id: unknown }) => String(part.id));
+        const later = messages.at(-1);
+        if (calls.length && later) later.tool_calls = [...calls, ...(later.tool_calls ?? [])];
+        else if (calls.length) trailing = [...calls, ...trailing];
+      }
       const text =
         typeof message.content === 'string'
           ? message.content
@@ -1249,6 +1260,7 @@ export class Store {
       attempts: boundedAttempts,
       submissions: boundedSubmissions,
       messages: messages.reverse(),
+      ...(trailing.length ? { trailing_tool_calls: trailing } : {}),
       history_truncated: cursor !== null,
       approvals: this.approvals(id),
       operations: this.operations(id),

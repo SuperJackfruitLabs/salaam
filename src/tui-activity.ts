@@ -10,6 +10,8 @@ export interface ToolLine {
   label: string;
   /** The last output lines of a finished command (at most `tail` lines). */
   tail: string[];
+  /** A command's full output as text, for the transcript; absent when only the raw record exists. */
+  full?: string;
 }
 const lineCount = (text: string) => (text === '' ? 0 : text.replace(/\n$/, '').split('\n').length);
 function short(text: string, max = 60): string {
@@ -98,6 +100,7 @@ export function toolLine(
           : state,
       label: `Bash ${short(args.command)}${ended}`,
       tail: finished ? lines.slice(-tail).map((l) => short(l, 120)) : [],
+      ...(result.text !== undefined ? { full: result.text.replace(/\n+$/, '') } : {}),
     };
   }
   return { state, label: humanTool(tool, input), tail: [] };

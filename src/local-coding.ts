@@ -133,6 +133,9 @@ export class LocalCoding {
   private unregister: () => void;
   /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
   public rules?: ApprovalRules;
+  /** Operator ruling 2026-11-01 (option 1): one command may ask to run outside the OS sandbox.
+   * Off where the host forbids full access, since it is full access for that one command. */
+  public allowOutsideSandbox = true;
   /** The optional small-model command reviewer (Phase 4c); absent means the rules alone decide. */
   public classifier?: {
     review(session: string, command: string, cwd: string): Promise<ClassifierReview | null>;
@@ -361,6 +364,8 @@ export class LocalCoding {
           timeout_ms: number;
           background?: true;
           listen?: true;
+          /** Why this one command asked to run without the OS sandbox. */
+          outside_sandbox?: string;
           sandbox: { kind: string; level: string; bwrap: string | null; network?: 'broker' };
         };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
@@ -374,7 +379,27 @@ export class LocalCoding {
       if (background) this.assertBackground(session);
       if (input.listen !== undefined && typeof input.listen !== 'boolean')
         throw new ServiceError('invalid_field', 'listen must be true or false');
-      const sb = this.sandboxFor(session);
+      if (
+        input.outside_sandbox !== undefined &&
+        (typeof input.outside_sandbox !== 'string' || !input.outside_sandbox.trim())
+      )
+        throw new ServiceError(
+          'invalid_field',
+          'outside_sandbox must say why the command needs to run without the sandbox',
+        );
+      const session_sb = this.sandboxFor(session);
+      // Only a sandboxed session has anything to step out of; under full access it changes nothing.
+      const outside =
+        typeof input.outside_sandbox === 'string' && this.sandboxed(session_sb)
+          ? input.outside_sandbox.trim().slice(0, 300)
+          : undefined;
+      if (outside !== undefined && (!this.allowOutsideSandbox || this.tools.mode === 'tools-user'))
+        throw new ServiceError(
+          'outside_sandbox_denied',
+          'The operator does not allow commands outside the OS sandbox on this host. Ask the person to run it themselves.',
+        );
+      const sb: LocalSandbox =
+        outside !== undefined ? { ...session_sb, level: 'full-access' } : session_sb;
       // Operator ruling 2026-11-01 (option C): a sandboxed command listens only when a person
       // approves that exact command to. Linux's sandbox has its own network, so it cannot serve.
       const listen = input.listen === true && this.sandboxed(sb);
@@ -396,6 +421,7 @@ export class LocalCoding {
         timeout_ms: background ? BACKGROUND_LIFETIME : Number(timeout),
         ...(background ? { background: true as const } : {}),
         ...(listen ? { listen: true as const } : {}),
+        ...(outside !== undefined ? { outside_sandbox: outside } : {}),
         // Bound into the approval and the operation digest: the sandbox is part of what is approved.
         sandbox: {
           kind: sb.kind,
@@ -427,7 +453,7 @@ export class LocalCoding {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}${publishes ? `Publishes: ${publishes}; this always asks, except in YOLO\n` : ''}${args.listen ? 'May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule\n' : ''}Command:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args), !!args.outside_sandbox)}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}${publishes ? `Publishes: ${publishes}; this always asks, except in YOLO\n` : ''}${args.outside_sandbox ? `Outside the sandbox: ${args.outside_sandbox}. This one command runs without the OS sandbox; the session stays sandboxed. This always asks, except in YOLO or your own rule\n` : ''}${args.listen ? 'May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule\n' : ''}Command:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -482,7 +508,9 @@ export class LocalCoding {
       // A repo's allow rules cannot approve a dangerous or publishing command: only the person's own
       // rules can.
       const usable = (all: ReturnType<ApprovalRules['list']>) =>
-        danger.dangerous || publishes || (args.action === 'command' && args.listen)
+        danger.dangerous ||
+        publishes ||
+        (args.action === 'command' && (args.listen || args.outside_sandbox))
           ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow'))
           : all;
       const decided = evaluateRules(usable(this.rules.list(session)), request);
@@ -549,7 +577,7 @@ export class LocalCoding {
             p,
             this.sandboxed(this.bound(args)),
             danger.dangerous,
-            publishes !== null || args.listen === true,
+            publishes !== null || args.listen === true || !!args.outside_sandbox,
           ) && !(escalated && p.access !== 'yolo');
     if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
@@ -687,8 +715,10 @@ export class LocalCoding {
       return this.sandbox.allowUnsandboxed ? 'no sandbox' : 'refused';
     return this.sandbox.kind === 'seatbelt' ? 'Seatbelt' : 'bubblewrap';
   }
-  private sandboxText(sb: LocalSandbox = this.sandbox): string {
+  private sandboxText(sb: LocalSandbox = this.sandbox, outside = false): string {
     const { kind, level } = sb;
+    if (outside)
+      return 'unsandboxed for this one command, at its own request: it can read and change any file your user can and reach the network.';
     if (level === 'full-access')
       return this.sandbox.level === 'full-access'
         ? 'unsandboxed: the operator chose full access. May access files and network beyond this workspace.'

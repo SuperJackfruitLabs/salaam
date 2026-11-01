@@ -36,6 +36,33 @@ test('the status line names the loaded instructions and the session’s tokens a
   expect(line).toContain('12k tokens · $0.04');
 });
 
+test('usage counts cached input and adds recorded and estimated cost', () => {
+  const app = new SalaamApp({ state: '/tmp/salaam-session-controls' });
+  app.client.snapshot = {
+    id: 'session-1234',
+    state: 'ready',
+    approvals: [],
+    attempts: [],
+    capabilities: [],
+  } as unknown as SessionSnapshot;
+  // What a cached Anthropic turn records: 20 uncached input tokens, the rest from the cache.
+  app.client.usage = {
+    observations: 2,
+    unknown_observations: 0,
+    estimated_observations: 1,
+    known_input: 20,
+    known_cache_read: 18_000,
+    known_cache_write: 2_000,
+    known_output: 561,
+    known_cost: 0.03,
+    estimated_cost: 0.02,
+  } as never;
+  const line = status({ client: app.client, theme: new SalaamTheme('night', false) } as never, 160)
+    .join('\n')
+    .replace(/\x1b\[[0-9;]*m/g, '');
+  expect(line).toContain('21k tokens · $0.05');
+});
+
 test('labels and compact counts', () => {
   expect(instructionsLabel({ digest: 'd', revision: 1, files: [files[1]!], skipped: [] })).toBe(
     'AGENTS.md',

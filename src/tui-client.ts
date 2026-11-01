@@ -45,7 +45,15 @@ export interface UsageView {
   known_output: number;
   known_cost: number;
   estimated_cost: number;
+  /** Prompt tokens read from or written to the provider's cache; most of a turn's input. */
+  known_cache_read?: number;
+  known_cache_write?: number;
 }
+/** All input tokens, cached or not. `known_input` alone is only the uncached part. */
+export const usageInput = (u: UsageView) =>
+  u.known_input + (u.known_cache_read ?? 0) + (u.known_cache_write ?? 0);
+/** Known and estimated costs come from different observations, so the spend is their sum. */
+export const usageCost = (u: UsageView) => u.known_cost + u.estimated_cost;
 export interface ToolActivity {
   seq: number;
   kind: string;
