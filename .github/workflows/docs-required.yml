@@ -1,0 +1,35 @@
+name: Docs updated with behaviour
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: A user-facing change also changes docs/ or README.md (label no-docs to skip)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'no-docs') }}
+        run: |
+          if [ "$SKIP" = "true" ]; then
+            echo "::notice::Labelled no-docs; not checked."
+            exit 0
+          fi
+          files=$(gh pr diff "$PR" --repo "$REPO" --name-only)
+          # Files whose changes users see: commands, keys, CLI, host config, permissions,
+          # sandbox, the editor adapter and the agent's own tools.
+          user_facing=$(printf '%s\n' "$files" | grep -E '^src/(tui-commands|tui-keymap|cli|cli-help|host|host-start|acp|acp-desk|approval-rules|autonomy|command-sandbox|command-danger|command-network|local-coding|house-extension|project-instructions|hooks|custom-commands|operator-mcp-cli)\.ts$' || true)
+          docs=$(printf '%s\n' "$files" | grep -E '^(docs/.*\.md|README\.md)$' || true)
+          if [ -n "$user_facing" ] && [ -z "$docs" ]; then
+            echo "::error::These files change what users see, but no page under docs/ or README.md changed:"
+            printf '%s\n' "$user_facing"
+            echo "Update the docs in this PR, or add the no-docs label if nothing users see changed."
+            exit 1
+          fi
+          echo "ok"

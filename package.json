@@ -58,6 +58,7 @@
     "test:coding": "npm run build && node scripts/coding-acceptance.mjs",
     "demo:session": "npm run build && node scripts/demo.mjs",
     "demo:managed": "npm run build && node scripts/demo-managed.mjs",
+    "docs:generate": "npm run build && node scripts/docs-generate.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "demo:children": "npm run build && node scripts/demo-children.mjs",

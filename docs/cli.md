@@ -59,22 +59,49 @@ what you reviewed.
 
 ## All commands
 
-| Command                                          | Purpose                                                                |
-| ------------------------------------------------ | ---------------------------------------------------------------------- |
-| `code`, `tui`, `attach`, `remote`                | Open a session in the terminal                                         |
-| `acp`                                            | Connect an editor over ACP ([Editors](editors.md))                     |
-| `providers`, `models`, `auth`                    | [Providers](providers.md) and credentials                              |
-| `service`                                        | Start, inspect or stop the service                                     |
-| `session`, `history`, `artifacts`, `compactions` | Sessions, their history and saved evidence                             |
-| `approvals`, `operations`                        | Answer approvals; reconcile outcomes Salaam could not confirm          |
-| `mcp`                                            | [MCP servers](mcp.md) the service offers                               |
-| `tasks`, `task`                                  | [Durable tasks](durable-tasks.md): plans, checks, budgets, checkpoints |
-| `jobs`, `schedules`, `inbox`                     | [Jobs and schedules](jobs.md), and the shared attention inbox          |
-| `agents`, `team`, `workers`, `children`          | [Specialists and teams](agents.md)                                     |
-| `harness`                                        | [External harnesses](external-harnesses.md)                            |
-| `a2a`                                            | [A2A peers](a2a.md)                                                    |
-| `workspace`, `commands`, `execution`             | [Coding in a container](coding.md)                                     |
-| `host`                                           | [Host operation](host-operation.md)                                    |
+<!-- generated:cli-commands -->
+
+| Command       | What it does                                                            |
+| ------------- | ----------------------------------------------------------------------- |
+| `code`        | Work in this folder: continue its session or start one (also: here, -c) |
+| `tui`         | Open the Salaam terminal interface (also bare sal)                      |
+| `remote`      | Open the same session over SSH                                          |
+| `providers`   | List pinned Pi providers and capabilities                               |
+| `models`      | List pinned chat models                                                 |
+| `auth`        | Configure provider credentials or OAuth                                 |
+| `service`     | Start, inspect or stop the session service                              |
+| `session`     | Create, inspect, submit, resume or cancel work                          |
+| `mcp`         | Declare operator MCP servers (add, list, rm)                            |
+| `attach`      | Open an interactive terminal on a session                               |
+| `acp`         | Connect an editor over ACP v1 stdio                                     |
+| `approvals`   | Inspect, approve or deny managed operations                             |
+| `operations`  | Inspect, reconcile or resolve effect outcomes                           |
+| `children`    | Inspect, read or acknowledge durable child results                      |
+| `tasks`       | Durable plans, verification, budgets and checkpoints                    |
+| `jobs`        | Durable one-shot jobs and recovery                                      |
+| `schedules`   | Fresh recurring occurrences and explicit missed-run rules               |
+| `inbox`       | Durable shared operator attention                                       |
+| `host`        | Pinned host bootstrap, supervision and health                           |
+| `task`        | Inspect and update durable task facts                                   |
+| `history`     | Retrieve older history and evidence                                     |
+| `artifacts`   | Save durable text evidence                                              |
+| `compactions` | Inspect or cancel a managed checkpoint                                  |
+| `execution`   | Prove the container boundary with disposable fixtures                   |
+| `workspace`   | Inspect coding copies, review diffs or acknowledge human edits          |
+| `agents`      | Inspect and admit specialist profiles                                   |
+| `team`        | Assign task steps and inspect the durable team inbox                    |
+| `workers`     | Inspect and explicitly integrate isolated coding proposals              |
+| `harness`     | Prepare, inspect and reconcile pinned external workers                  |
+| `a2a`         | Configure bounded peer analysis and inspect remote work                 |
+| `commands`    | Start, inspect, cancel or reconcile isolated commands                   |
+
+<!-- /generated:cli-commands -->
+
+Each area has its own page: [Providers](providers.md), [MCP servers](mcp.md),
+[Durable tasks](durable-tasks.md), [Jobs and schedules](jobs.md),
+[Specialists and teams](agents.md), [External harnesses](external-harnesses.md),
+[A2A peers](a2a.md), [Coding in a container](coding.md) and
+[Host operation](host-operation.md).
 
 ## Global options
 
