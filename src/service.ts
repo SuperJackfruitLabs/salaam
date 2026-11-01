@@ -3343,7 +3343,8 @@ export class SalaamService {
         if (parts[3] === 'submissions' && req.method === 'POST') {
           // Room for pasted images; every other route keeps the 1 MiB limit.
           const body = object(await readJson(req, SUBMISSION_BODY_LIMIT));
-          const local = this.store.localCoding(id);
+          // Any desk session, read-only or coding; board sessions get exactly what was typed.
+          const local = this.store.localWorkspace(id);
           let text = string(body.text, 'text', 256 * 1024);
           let images: PromptImage[] = [];
           if (!local && body.images !== undefined)

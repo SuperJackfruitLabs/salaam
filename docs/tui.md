@@ -273,8 +273,8 @@ Commit trailers are yours to choose in `~/.config/salaam/git.json`:
 
 ## Attaching files with `@`
 
-In a local coding session, type `@` in the composer to complete a workspace file. The list
-comes from git, so ignored files do not appear. Names with spaces are quoted (`@"my notes.md"`).
+In a local session (`salaam` in a folder, or a coding session), type `@` in the composer to
+complete a workspace file. The list comes from git, so ignored files do not appear. Names with spaces are quoted (`@"my notes.md"`).
 
 When you send the prompt, Salaam attaches each mentioned file:
 

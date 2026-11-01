@@ -14,16 +14,16 @@ const PNG = Buffer.from(
   'hex',
 );
 
-async function setup(coding: boolean) {
+async function setup(coding: boolean, workspace = coding) {
   const f = await fixture();
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'sal-mention-svc-')));
   writeFileSync(join(root, 'notes.md'), 'remember the milk\n');
   writeFileSync(join(root, 'shot.png'), PNG);
   writeFileSync(join(root, '.env'), 'TOKEN=abc\n');
-  const session = coding
+  const session = workspace
     ? f.service.store.create(root, 'create', false, {
         workspace: true,
-        coding: true,
+        coding,
         route: OFFLINE_ROUTE,
       })
     : f.service.store.create(root, 'create', false);
@@ -143,6 +143,17 @@ test('a pasted image must be the image it claims, within the size limit', async 
       await expect(s.submit('look [image #1]', { images: [bad] })).rejects.toMatchObject({
         code: 'invalid_field',
       });
+  } finally {
+    await s.close();
+  }
+});
+
+test('a read-only workspace session takes pasted images and mentions too', async () => {
+  const s = await setup(false, true);
+  try {
+    const sub = await s.submit('compare [image #1] with @shot.png', { images: [pasted()] });
+    expect(s.images(sub.id)).toEqual([{ mime: 'image/png' }, { mime: 'image/png' }]);
+    expect(s.text(sub.id)).toContain('[image #1] (pasted image, attached)');
   } finally {
     await s.close();
   }

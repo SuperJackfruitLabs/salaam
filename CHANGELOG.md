@@ -6,6 +6,12 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- A plain `salaam` session (read-only, no commands) refused pasted images with "Only a local
+  session takes pasted images" and sent `@` mentions as bare text. Every local session now
+  attaches both; board sessions still get exactly what was typed.
+
 ## [0.0.6] - 2026-11-01
 
 Images and network for daily work, and Zed without a terminal: paste a screenshot into the
