@@ -6,6 +6,11 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+### Fixed
+
+- Zed can open the desk session when the service is not running: `salaam acp --local` starts it,
+  and a new session uses the same model a new terminal session would.
+
 ## [0.0.5] - 2026-11-01
 
 Salaam as a desk-side coding driver: an interactive terminal session in your own checkout, the same
