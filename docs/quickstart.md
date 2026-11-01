@@ -1,6 +1,9 @@
-# Your first session
+# Try it offline
 
-[Install Salaam](install.md), then start an offline service in disposable state:
+Run a session without a provider account, in throwaway state. Nothing here calls a
+model or costs anything. To start real work, follow the [Intro](index.md).
+
+[Install Salaam](install.md), then start an offline service:
 
 ```sh
 sal service start --state /tmp/salaam-try
@@ -30,6 +33,5 @@ Without `--state`, clients use `SALAAM_STATE_DIR` or `~/.local/state/salaam`. Ke
 the same path for one service. Short paths avoid macOS Unix-socket limits.
 The daemon detaches by default; `--foreground` keeps it under an external supervisor.
 
-The offline CLI example above uses the managed probe profile. For actual local file inspection, configure
-[Claude](providers.md), open `sal` and create a session (or use `sal session create --local`). Local inspection needs no Docker and cannot edit or run commands. To write code, enable [coding](coding.md), or read [terminal controls](tui.md).
-Creation and readiness make no model request.
+When you are ready for real work, [connect a provider](providers.md) and run
+`salaam code` in your project.

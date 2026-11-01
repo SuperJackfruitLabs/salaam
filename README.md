@@ -153,4 +153,4 @@ Published assets are never silently replaced.
 See [release process](docs/releases.md), [site maintenance](docs/sites.md),
 [architecture](docs/architecture.md), and [milestones](docs/milestones.md).
 
-For local coding, use `/coding` in the TUI. Each proposed edit or command is reviewed before execution. Commands run as your OS user without an OS sandbox; read-only sessions keep their existing permissions. See [local coding](docs/tui.md#local-coding) for limits and recovery behavior.
+For local coding, use `/coding` in the TUI. Each proposed edit or command is reviewed before execution. Commands run as your OS user inside the OS sandbox (Seatbelt on macOS, bubblewrap on Linux); read-only sessions keep their existing permissions. See [permissions](docs/permissions.md) and [sandbox](docs/sandbox.md).

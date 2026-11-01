@@ -1,4 +1,4 @@
-# Terminal, SSH and ACP clients
+# ACP and SSH reference
 
 All clients connect to one host-local Salaam service. They share session IDs, accepted attempts, approvals, child results and event history. Closing a client detaches it; explicit cancellation and service shutdown are separate commands.
 
@@ -38,7 +38,7 @@ Configure an ACP client's agent subprocess command as:
 }
 ```
 
-Add `--local` to the adapter arguments to open your desk session in the editor's project folder, the same session `salaam` opens in a terminal there (see [Your desk session in an editor](#your-desk-session-in-an-editor)). Add `--coding` instead to create guarded coding sessions in an owned copy. The service must already be running with `--coding-root`; commands additionally require its proven execution backend. A `session/new` caller may explicitly select `_meta["salaam.dev/coding"]`; load/resume retain the saved session’s original authority.
+Add `--local` to the adapter arguments to open your desk session in the editor's project folder, the same session `salaam` opens in a terminal there (see [Editors](editors.md)). Add `--coding` instead to create guarded coding sessions in an owned copy. The service must already be running with `--coding-root`; commands additionally require its proven execution backend. A `session/new` caller may explicitly select `_meta["salaam.dev/coding"]`; load/resume retain the saved session’s original authority.
 
 The service must already be running. The adapter uses newline-delimited UTF-8 JSON-RPC on stdin/stdout; diagnostics use stderr. It negotiates protocol version **1**. Its tested subset follows the official [initialization](https://agentclientprotocol.com/protocol/v1/initialization), [session setup](https://agentclientprotocol.com/protocol/v1/session-setup), [prompt lifecycle](https://agentclientprotocol.com/protocol/v1/prompt-turn), [permission](https://agentclientprotocol.com/protocol/v1/tool-calls) and [stdio transport](https://agentclientprotocol.com/protocol/v1/transports) contracts, checked on 2026-10-17. ACP v2 draft behavior is not advertised.
 
@@ -78,49 +78,9 @@ The transport request ID `42` is not the logical submission identity. Salaam fsy
 
 Permission replies are correlated to the exact persisted binding. Malformed, expired or mismatched replies cannot grant execution. Concurrent replies serialize their durable outbox writes. A disconnected approver leaves decisions pending. A cancelled permission response from a controlling client requests explicit session cancellation; it never counts as permission to execute.
 
-## Configure Zed
+## Editors
 
-Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#custom-agents) accepts an `agent_servers` entry. This template pins the executable runtime explicitly; replace the absolute paths for your installed CLI and service state:
-
-```json
-{
-  "agent_servers": {
-    "Salaam": {
-      "type": "custom",
-      "command": "/absolute/path/to/node-26.7.0",
-      "args": [
-        "/absolute/path/to/salaam/bin/salaam.mjs",
-        "acp",
-        "--local",
-        "--state",
-        "/absolute/path/to/salaam-state"
-      ],
-      "env": {}
-    }
-  }
-}
-```
-
-This opens your desk session in the project Zed has open; the service must already be running. For a guarded owned copy instead, replace `--local` with `--coding` and start the service with its coding root and selected executor; that copy holds edits and the original checkout remains the baseline. Do not forward MCP servers or additional directories; Salaam rejects those unsupported additions.
-
-Zed forwards your own MCP servers when it starts an external agent. A desk session (`--local`) ignores them: Salaam never connects to an editor's MCP servers, and says on stderr how many it ignored. For other sessions, if Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the project in `.zed/settings.json`:
-
-```json
-{
-  "context_servers": {
-    "YOUR_EXISTING_MCP_SERVER": { "enabled": false }
-  }
-}
-```
-
-## Your desk session in an editor
-
-With `--local`, the adapter starts the service if it is not running, as `salaam` does in a terminal, and a new editor thread is a local coding session in the project folder itself, using the same model a new terminal session would, with the same approvals, rules, sandbox and checkpoints as `salaam` in a terminal there. Open the same session in the terminal with `salaam -c` from that folder.
-
-- **Modes.** The editor's mode picker offers Review, Accept edits, Auto and Full access, sent both as `modes` and as the `mode` config option. Picking Full access shows a confirmation with the warning first; cancelling keeps the current mode. Picking any other mode turns full access off. YOLO is not offered: it is turned on only in the terminal (`/yolo`, then type `yolo`). While it is on, the picker shows it, and picking another mode turns it off. A mode changed in the terminal (Shift+Tab) reaches the editor as `current_mode_update` and `config_option_update`.
-- **Approvals.** Each prompt says why it asks (the mode, a dangerous command, a push, a command that may listen or asks to run outside the sandbox) and shows an edit as a `diff` per file, or a command's exact text. Besides Allow once and Reject, it offers **Allow for this session** (`allow_always`), which saves the exact request as a session rule, as the terminal does. A command with shell features can only be approved once. Rules for always in this repo are made in the terminal.
-- **Finished edits** carry their `diff`, whichever mode applied them.
-- **`/rewind`** lists the turns. `/rewind N` shows what restoring changes, and on **Restore files** puts the files back as they were before turn N. The conversation is kept. Going back in the conversation continues in a new session, which an editor thread cannot follow, so do that with `/rewind` in the terminal. The command is handled by Salaam and never sent to the model.
+To set up Zed and use your desk session in an editor, see [Editors](editors.md).
 
 ## Operator attention
 
