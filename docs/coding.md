@@ -1,20 +1,12 @@
-# Guarded coding
+# Coding in a container
 
 File tools are available in explicitly created coding sessions. Commands require the configured executor to pass its startup proof. Ordinary sessions and read-only children do not receive these coding tools.
 
-## Local coding in your own checkout
-
-`salaam session create --cwd DIR --local-coding` edits files and runs commands in
-`DIR` itself, with no coding root and no Docker. Every edit and command needs
-approval, and commands run under the host OS sandbox (bubblewrap on Linux,
-Seatbelt on macOS): they write only inside `DIR`, have no network, and read only
-the system and `DIR`. To let them use a toolchain or package cache outside the
-checkout, start the service with `--local-sandbox-read toolchain` or a list of
-paths; `--local-sandbox full-access` turns the sandbox off. See
-[security and isolation](security.md) for the exact rules.
-
-The sections below describe the separate `--coding` mode, which runs commands in a
-pinned Docker container under a private coding root.
+Most work happens in your own checkout with `salaam code`, under
+[permissions](permissions.md) and the [sandbox](sandbox.md). This page covers the
+separate `--coding` mode: the agent edits a private copy of the project and runs
+commands in a pinned Docker container that sees only that copy. You review the
+result as a diff and apply it yourself.
 
 ## Setup
 
