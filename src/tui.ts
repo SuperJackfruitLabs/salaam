@@ -650,9 +650,19 @@ export class SalaamApp {
   /** Interactive sessions switch in place between turns; otherwise the choice opens a new session. */
   private async applyRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
     if (this.client.snapshot?.provider_route && this.client.controlling) {
-      await this.client.switchRoute(route);
-      this.client.notice = 'Now using ' + modelLabel(this.client) + ' in this session.';
-      return;
+      try {
+        await this.client.switchRoute(route);
+        this.client.notice = 'Now using ' + modelLabel(this.client) + ' in this session.';
+        return;
+      } catch (error) {
+        // A route that limits output differently cannot join this session. Keep the choice and
+        // open the new session with it, rather than leaving the old model selected.
+        if ((error as { code?: string }).code !== 'provider_output_cap_changed') throw error;
+        this.selectedRoute = route;
+        this.client.notice = `${route.model ?? route.provider} limits output differently from this session's model, so it starts in a new session. This session stays as it is.`;
+        await this.newSession();
+        return;
+      }
     }
     this.selectedRoute = route;
     await this.newSession();
