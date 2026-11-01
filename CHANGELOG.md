@@ -6,6 +6,12 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-11-01
+
+Images and network for daily work, and Zed without a terminal: paste a screenshot into the
+message, let background servers and watchers reach allowed hosts, and open Salaam in Zed with no
+service running.
+
 ### Added
 
 - Paste an image with Ctrl+V: the terminal reads the system clipboard (macOS and Windows natively,
@@ -18,9 +24,14 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 - A background command's approval said it had network through the broker allowlist, but it had
   none.
-
 - Zed can open the desk session when the service is not running: `salaam acp --local` starts it,
   and a new session uses the same model a new terminal session would.
+
+### Documentation
+
+- docs.salaam.sh is restructured into Intro, Usage, Configure and Operate, with new pages for the
+  CLI, editors, permissions, sandbox, rules (`AGENTS.md`), commands, hooks and troubleshooting.
+  Command and key tables are generated from the code.
 
 ## [0.0.5] - 2026-11-01
 
