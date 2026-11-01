@@ -6,6 +6,45 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-11-01
+
+Salaam as a desk-side coding driver: an interactive terminal session in your own checkout, the same
+session in Zed, and the approvals, sandbox and recovery to work in it daily.
+
+### Added
+
+- Modes: Shift+Tab cycles review → accept edits → auto. `/full-access` runs commands without the
+  OS sandbox and asks only for dangerous ones; `/yolo` (typed confirmation, host setting
+  `allow_yolo_sessions`) asks for nothing and records everything.
+- Approvals: Enter approves once, approve for the session or always in this repo, deny with a
+  reason that reaches the agent, and rules in `/permissions`. Each prompt says why it asks.
+- Danger check: a parser-based check of commands (it unwraps `sudo`, `env`, `xargs`, `sh -c` and
+  more; anything unreadable is dangerous), plus an optional small-model classifier that can only
+  make a command ask (`/classifier`, off by default, hosts can pin or forbid it).
+- Run one command outside the sandbox: a command may ask, saying why. It always asks except in
+  YOLO; auto mode and repo rules never approve it.
+- Listening: a command you approve to listen may serve a dev server; macOS cannot limit it to
+  localhost, and the approval says so. Refused on Linux.
+- Pushes and pull requests always ask, except in YOLO or your own rule.
+- Rewind to any turn (files, conversation or both) and a per-file review of changes.
+- `@` mentions attach files and images; background commands (`/jobs`) and desk notifications.
+- Git helpers `/commit`, `/branch`, `/pr`, `/diff`; your own slash commands; hooks (a repo's hooks
+  run only after you trust them).
+- Terminal: compact tool lines with Ctrl+X for the full transcript, a progress line with Esc to
+  stop, Ctrl+C to clear, Ctrl+R history, Ctrl+G editor, readline keys, `!command`, `salaam -c`,
+  a session picker, the `?` key sheet and the window title.
+- Zed and other ACP editors: `salaam acp --local` opens your desk session in the project folder,
+  with the mode picker, approvals that show diffs and offer Allow for this session, finished edits
+  as diffs, and `/rewind` for files.
+
+### Fixed
+
+- Tool calls show in the turn they belong to, and the full transcript shows command output as text.
+- Usage counts cached input and the whole cost.
+- Choosing a model that needs a new session opens one with that model instead of the old one.
+- A failed session shows its error; leftover background commands are stopped after a restart on
+  macOS.
+
 ## [0.0.4] - 2026-10-30
 
 Board work on a protected AgentPod station, made to match the Hermes workflow, plus a sandbox
