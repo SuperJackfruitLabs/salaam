@@ -39,6 +39,8 @@ session in Zed, and the approvals, sandbox and recovery to work in it daily.
 
 ### Fixed
 
+- Salaam starts in Zed when you have MCP servers configured: the desk session ignores the editor's
+  own MCP servers instead of refusing them.
 - Tool calls show in the turn they belong to, and the full transcript shows command output as text.
 - Usage counts cached input and the whole cost.
 - Choosing a model that needs a new session opens one with that model instead of the old one.
