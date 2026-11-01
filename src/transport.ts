@@ -1,12 +1,17 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { ServiceError } from './protocol.js';
 
-export async function readJson(req: IncomingMessage): Promise<unknown> {
+export async function readJson(req: IncomingMessage, limit = 1024 * 1024): Promise<unknown> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1024 * 1024) throw new ServiceError('body_too_large', 'Request exceeds 1 MiB', 413);
+    if (size > limit)
+      throw new ServiceError(
+        'body_too_large',
+        `Request exceeds ${limit >= 2 * 1024 * 1024 ? Math.floor(limit / 1024 / 1024) + ' MiB' : '1 MiB'}`,
+        413,
+      );
     chunks.push(Buffer.from(chunk));
   }
   try {

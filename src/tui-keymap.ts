@@ -58,6 +58,7 @@ const COMPOSER: { label: string; description?: string }[] = [
   { label: 'Tab · switch view', description: 'Conversation · Changes · Commands · Context' },
   { label: 'PageUp / PageDown · scroll', description: 'Ctrl+Home/End jump to the top/bottom' },
   { label: '@ · attach a file or image' },
+  { label: 'Ctrl+V · paste an image', description: 'From the system clipboard, as [image #N]' },
   { label: '/ · slash commands' },
   {
     label: 'Ctrl+R · search sent messages',

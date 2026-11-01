@@ -117,6 +117,7 @@ The interface has two native palettes, **Night** and **Paper**, with jade accent
 | `Tab`                | switch view: Conversation · Changes · Commands · Context                                                |
 | `PageUp / PageDown`  | scroll: Ctrl+Home/End jump to the top/bottom                                                            |
 | `@`                  | attach a file or image                                                                                  |
+| `Ctrl+V`             | paste an image: From the system clipboard, as [image #N]                                                |
 | `/`                  | slash commands                                                                                          |
 | `Ctrl+R`             | search sent messages: Ctrl+R for older, Enter keeps, Esc restores                                       |
 | `Ctrl+A/E`           | Ctrl+U/K/W · Ctrl+Y · Ctrl+-: Line start/end, kill to start/end/word, yank, undo; Alt+B/F words         |
@@ -287,3 +288,17 @@ When you send the prompt, Salaam attaches each mentioned file:
 
 Each attachment is named with the start of its SHA-256 so the transcript shows which version the
 model read. Board sessions are sent exactly what was typed; `@` is not expanded there.
+
+## Pasting an image
+
+A terminal pastes only text, so press **Ctrl+V** to paste an image from the clipboard, such as a
+screenshot. It appears in the message as `[image #1]` and goes to the model with it.
+
+- macOS and Windows read the clipboard directly; Linux uses `wl-paste` (Wayland) or `xclip` (X11).
+- PNG, JPEG, GIF and WebP, up to 3.75 MB each. On macOS a larger image is scaled down to 1568
+  pixels on its longest side first; elsewhere it is refused, so crop it.
+- A message carries at most four images, pasted and `@`-mentioned together. Delete the marker to
+  leave an image out.
+- The image is saved with the message in the outbox, so a message delivered later still has it.
+  It is never written into your project.
+- Steering a running turn carries text only; press Tab to queue a message with an image.

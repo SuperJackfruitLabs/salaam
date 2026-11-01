@@ -120,7 +120,7 @@ export function rankFiles(files: string[], query: string): string[] {
     .map((x) => x.file);
 }
 
-function imageMime(bytes: Buffer): string | undefined {
+export function imageMime(bytes: Buffer): string | undefined {
   if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
   if (bytes.subarray(0, 4).toString('latin1') === 'GIF8') return 'image/gif';
@@ -244,18 +244,68 @@ export interface PromptImage {
 
 export const MAX_IMAGES = 4;
 
+/** An image pasted into the composer: the bytes travel with the prompt, named by its marker. */
+export interface PastedPromptImage {
+  /** The marker in the prompt text, without brackets: `image #2`. */
+  label: string;
+  mime: string;
+  /** base64 */
+  data: string;
+}
+/** Providers take about 5 MB of base64 per image; this raw size stays under it. */
+export const PASTED_IMAGE_LIMIT = 3_750_000;
+
+/** Check a submission's pasted images: real images of the type they claim, within the limits. */
+export function pastedImages(value: unknown): PastedPromptImage[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_IMAGES)
+    throw new ServiceError('invalid_field', `images is a list of at most ${MAX_IMAGES}`, 400);
+  return value.map((item) => {
+    const i = item as Partial<PastedPromptImage>;
+    if (
+      !i ||
+      typeof i.label !== 'string' ||
+      !/^image #\d{1,4}$/.test(i.label) ||
+      typeof i.mime !== 'string' ||
+      typeof i.data !== 'string' ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(i.data)
+    )
+      throw new ServiceError(
+        'invalid_field',
+        'Each image needs a label, a mime type and base64 data',
+        400,
+      );
+    const bytes = Buffer.from(i.data, 'base64');
+    if (bytes.length > PASTED_IMAGE_LIMIT)
+      throw new ServiceError(
+        'invalid_field',
+        `A pasted image is larger than ${PASTED_IMAGE_LIMIT / 1e6} MB`,
+        400,
+      );
+    if (imageMime(bytes) !== i.mime)
+      throw new ServiceError(
+        'invalid_field',
+        'A pasted image is not the PNG, JPEG, GIF or WebP it claims',
+        400,
+      );
+    return { label: i.label, mime: i.mime, data: i.data };
+  });
+}
+
 /**
- * Expand a desk prompt's mentions. A secret-looking file is attached only after the user
- * confirms it; the refusal names the files so the client can ask.
+ * Expand a desk prompt's mentions and pasted images. A secret-looking file is attached only after
+ * the user confirms it; the refusal names the files so the client can ask. Pasted images come
+ * first; mentioned images fill what is left of the per-prompt limit.
  */
 export function expandPrompt(
   root: string,
   text: string,
   confirmSensitive: boolean,
+  pasted: PastedPromptImage[] = [],
 ): { text: string; images: PromptImage[]; attachments: Attachment[] } {
   const mentions = extractMentions(text);
-  if (!mentions.length) return { text, images: [], attachments: [] };
-  const attachments = resolveMentions(root, mentions);
+  if (!mentions.length && !pasted.length) return { text, images: [], attachments: [] };
+  const attachments = mentions.length ? resolveMentions(root, mentions) : [];
   const sensitive = attachments
     .filter((a) => a.sensitive && a.kind !== 'binary')
     .map((a) => a.path);
@@ -265,7 +315,11 @@ export function expandPrompt(
       `Confirm attaching secret-looking files: ${sensitive.join(', ')}`,
       409,
     );
-  const images: PromptImage[] = [];
+  const images: PromptImage[] = pasted.map((p) => ({
+    type: 'image',
+    data: p.data,
+    mimeType: p.mime,
+  }));
   for (const a of attachments) {
     if (a.kind !== 'image') continue;
     if (images.length >= MAX_IMAGES) {
@@ -276,7 +330,17 @@ export function expandPrompt(
     }
     images.push({ type: 'image', data: a.data!, mimeType: a.mime! });
   }
-  return { text: `${text}\n\n${attachmentContext(attachments)}`, images, attachments };
+  const pastedContext = pasted.map((p) => {
+    const sha = createHash('sha256').update(Buffer.from(p.data, 'base64')).digest('hex');
+    return `[${p.label}] (pasted image, attached) [sha256 ${sha.slice(0, 12)}]`;
+  });
+  const context = [
+    ...(pastedContext.length
+      ? [`<pasted-images>\n${pastedContext.join('\n')}\n</pasted-images>`]
+      : []),
+    ...(attachments.length ? [attachmentContext(attachments)] : []),
+  ];
+  return { text: `${text}\n\n${context.join('\n\n')}`, images, attachments };
 }
 
 function imageTable(db: DatabaseSync): void {

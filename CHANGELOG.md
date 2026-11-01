@@ -6,7 +6,18 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- Paste an image with Ctrl+V: the terminal reads the system clipboard (macOS and Windows natively,
+  Linux through `wl-paste` or `xclip`) and the image goes with the message as `[image #N]`, saved
+  in the outbox with it. Up to 3.75 MB each; macOS scales a larger one down first.
+- Background commands get network through the broker allowlist, like foreground ones, for as long
+  as they run. A refused host is listed in their output; the agent also sees what they reached.
+
 ### Fixed
+
+- A background command's approval said it had network through the broker allowlist, but it had
+  none.
 
 - Zed can open the desk session when the service is not running: `salaam acp --local` starts it,
   and a new session uses the same model a new terminal session would.
