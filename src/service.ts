@@ -2434,6 +2434,22 @@ export class SalaamService {
           this.send(res, 200, { text: await localDiff(this.store.session(id).cwd) });
           return;
         }
+        // An edit request's exact files, before and after, so an editor can show it as a diff.
+        if (parts.length === 4 && parts[3] === 'local-edits' && req.method === 'GET') {
+          if (!this.store.localCoding(id))
+            throw new ServiceError('local_denied', 'Local coding session required');
+          this.send(
+            res,
+            200,
+            this.localCoding.edits(
+              id,
+              url.searchParams.has('operation_id')
+                ? { operation: string(url.searchParams.get('operation_id'), 'operation_id', 128) }
+                : { toolCall: string(url.searchParams.get('tool_call'), 'tool_call', 512) },
+            ),
+          );
+          return;
+        }
         if (parts.length === 4 && parts[3] === 'steer' && req.method === 'POST') {
           const body = object(await readJson(req));
           this.send(

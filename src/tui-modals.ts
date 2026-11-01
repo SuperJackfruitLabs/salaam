@@ -1,4 +1,3 @@
-import { commandArgv } from './approval-rules.js';
 import {
   Input,
   SelectList,
@@ -264,14 +263,7 @@ export function approvalReason(value: string, mode: string | undefined): string 
  * request longer than the screen must be read to the end before anything but Deny is possible, and
  * a request that changed or expired cannot be approved at all.
  */
-/** Why a reviewed request can only be approved once: a command with shell features (pipes,
- * redirects, substitutions) can never become an approval rule. Undefined when a rule is possible. */
-export function onceOnlyReason(value: string): string | undefined {
-  const command = /\nCommand:\n([\s\S]*)$/.exec(value)?.[1];
-  return command !== undefined && commandArgv(command) === null
-    ? 'This command uses shell features (pipes, redirects, substitutions), so it cannot become a rule. Approve it once or deny it.'
-    : undefined;
-}
+export { onceOnlyReason } from './approval-rules.js';
 export class ApprovalModal implements Component, Focusable {
   focused = false;
   offset = 0;

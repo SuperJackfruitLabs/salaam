@@ -98,9 +98,11 @@ Run the M9.1 boundary proof on a pre-provisioned local Linux Docker engine.
 Only disposable fixtures are mounted. The pinned image must already be present.
 No coding tools are enabled. A failed/unavailable backend exits nonzero.
 Cleanup reconciles the saved proof run without replaying commands.`,
-  acp: `salaam acp [--state DIR] [--coding]
+  acp: `salaam acp [--state DIR] [--local | --coding]
 
 Run the ACP v1 stdio client adapter against an already running Salaam service.
+--local creates your desk session in the editor's project folder, the same as
+salaam in a terminal there: modes, approvals with diffs, rules and /rewind.
 --coding creates owned coding sessions; the service must have --coding-root.
 Loading an existing session preserves its original tool authority.`,
   artifacts: `salaam artifacts put SESSION_ID --text TEXT [--request-id ID] [--takeover]

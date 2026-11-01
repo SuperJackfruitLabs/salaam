@@ -17,6 +17,24 @@ import {
 import type { CancellationReceipt } from './turn-cancellations.js';
 import { validateManagedMcpDeclarations } from './mcp-acp.js';
 import {
+  askReason,
+  checkpointList,
+  CONVERSATION_REWIND_NOTE,
+  DESK_COMMANDS,
+  editDiffs,
+  FULL_ACCESS_WARNING,
+  modeState,
+  parseDeskCommand,
+  policyFor,
+  REWIND_CHOICES,
+  type DeskPermissions,
+} from './acp-desk.js';
+import { onceOnlyReason } from './approval-rules.js';
+import { rewindSummary } from './tui-review.js';
+import type { PermissionMode } from './autonomy.js';
+import type { LocalEdit } from './local-edits.js';
+import type { RewindReview, TurnCheckpoint } from './turn-rewind.js';
+import {
   object,
   string,
   ServiceError,
@@ -49,9 +67,14 @@ interface Connection {
   failed?: Error;
   /** The last plan sent, so an unchanged task sends nothing. */
   plan?: string;
+  /** Your own local coding session: modes, rules, diffs and /rewind apply. */
+  desk?: { rules: boolean; mode?: string; policyMode?: PermissionMode };
 }
 /** ACP v1 newline-delimited stdio adapter. The daemon remains the only worker owner. */
-export async function acp(state: string, options: { coding?: boolean } = {}): Promise<void> {
+export async function acp(
+  state: string,
+  options: { coding?: boolean; local?: boolean } = {},
+): Promise<void> {
   const socket = join(state, 'operator.sock');
   const client = acpClientState(state);
   const journal = new AcpJournal(client);
@@ -84,6 +107,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     wantsTypedStops = false;
   const sessions = new Map<string, Connection>();
   const permissionReplies = new Map<string, (result: Json) => Promise<void>>();
+  /** Questions asked through the editor's permission prompt; an error or cancel counts as no. */
+  const confirmations = new Map<string, (option: string) => void>();
   const activeRequests = new Set<string>();
   let output = Promise.resolve();
   const send = (value: unknown): Promise<void> => {
@@ -166,6 +191,130 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       content: { type: 'text', text: content },
     });
   const snapshot = (id: string) => call<SessionSnapshot>(socket, `/v1/sessions/${id}/snapshot`);
+  const permissions = (id: string) =>
+    call<DeskPermissions & { coding: boolean; configurable: boolean }>(
+      socket,
+      `/v1/sessions/${id}/permissions`,
+    );
+  const say = (id: string, text: string) =>
+    update(id, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+  /** Ask one question in the editor and wait for the chosen option id. */
+  const ask = async (
+    c: Connection,
+    title: string,
+    body: string,
+    options: { optionId: string; name: string; kind: string }[],
+  ): Promise<string> => {
+    const id = 'confirm:' + randomUUID();
+    const toolCall = {
+      toolCallId: 'salaam-' + id,
+      title,
+      kind: 'other',
+      status: 'pending',
+      content: [{ type: 'content', content: { type: 'text', text: body } }],
+    };
+    await update(c.id, { sessionUpdate: 'tool_call', ...toolCall });
+    const chosen = new Promise<string>((resolve) => confirmations.set(id, resolve));
+    await send({
+      jsonrpc: '2.0',
+      id,
+      method: 'session/request_permission',
+      params: { sessionId: c.id, toolCall, options },
+    });
+    const option = await chosen;
+    await update(c.id, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: toolCall.toolCallId,
+      status: option === 'cancel' || option === 'cancelled' ? 'failed' : 'completed',
+    });
+    return option;
+  };
+  /** The mode picker's state; sent again when the mode changes anywhere, e.g. Shift+Tab in the terminal. */
+  const deskState = async (c: Connection, announce = false) => {
+    if (!c.desk) return {};
+    const current = await permissions(c.id);
+    const state = modeState(current);
+    const changed = c.desk.mode !== state.modes.currentModeId;
+    c.desk.mode = state.modes.currentModeId;
+    c.desk.policyMode = current.policy.mode;
+    if (announce && changed) {
+      await update(c.id, {
+        sessionUpdate: 'current_mode_update',
+        currentModeId: state.modes.currentModeId,
+      });
+      await update(c.id, {
+        sessionUpdate: 'config_option_update',
+        configOptions: state.configOptions,
+      });
+    }
+    return state;
+  };
+  const setMode = async (c: Connection, modeId: string) => {
+    if (!c.desk)
+      throw new ServiceError(
+        'modes_unavailable',
+        'Modes are for your own local coding sessions (salaam acp --local)',
+      );
+    const current = await permissions(c.id);
+    const next = policyFor(modeId, { full: current.full_access_allowed });
+    if (next.access === 'full' && current.policy.access !== 'full') {
+      const choice = await ask(c, 'Turn on full access?', FULL_ACCESS_WARNING, [
+        { optionId: 'on', name: 'Turn on full access', kind: 'allow_once' },
+        { optionId: 'cancel', name: 'Keep the current mode', kind: 'reject_once' },
+      ]);
+      if (choice !== 'on') {
+        // The picker already moved; put it back.
+        c.desk.mode = undefined;
+        return deskState(c, true);
+      }
+    }
+    await call(socket, `/v1/sessions/${c.id}/permissions`, {
+      ...(await controller(c)),
+      request_id: randomUUID(),
+      expected_revision: current.policy.revision,
+      policy: next,
+    });
+    return deskState(c, true);
+  };
+  /** /rewind from the editor: list turns, or review one turn's files and restore them on a yes. */
+  const rewind = async (c: Connection, turn: number | undefined) => {
+    if (!c.desk) throw new Error('/rewind is for your own local coding sessions.');
+    const { checkpoints } = await call<{ checkpoints: TurnCheckpoint[] }>(
+      socket,
+      `/v1/sessions/${c.id}/checkpoints`,
+    );
+    if (turn === undefined) return say(c.id, checkpointList(checkpoints));
+    const point = checkpoints.find((p) => p.turn === turn);
+    if (!point) return say(c.id, `No checkpoint for turn ${turn}. /rewind lists them.`);
+    const review = await call<RewindReview>(
+      socket,
+      `/v1/sessions/${c.id}/rewind?attempt=${encodeURIComponent(point.attempt_id)}&mode=files`,
+    );
+    const body =
+      rewindSummary(review) +
+      (review.background_running
+        ? `\n${review.background_running} background command(s) are still running and may write while you decide.`
+        : '') +
+      '\n\n' +
+      CONVERSATION_REWIND_NOTE;
+    if (
+      (await ask(c, `Rewind files to before turn ${review.turn}`, body, REWIND_CHOICES)) !== 'files'
+    )
+      return say(c.id, 'Nothing was restored.');
+    const result = await call<{ state: string }>(socket, `/v1/sessions/${c.id}/rewind`, {
+      ...(await controller(c)),
+      request_id: randomUUID(),
+      attempt_id: review.attempt_id,
+      mode: review.mode,
+      review_digest: review.digest,
+    });
+    return say(
+      c.id,
+      result.state === 'completed'
+        ? `Files restored to before turn ${review.turn}. The conversation is kept as it is.`
+        : 'Rewind outcome is uncertain; inspect files before continuing.',
+    );
+  };
   const toolDetails = async (session: string, id: string, name: string, input: unknown) =>
     (await call<Json | null>(
       socket,
@@ -282,11 +431,36 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       const op = await call<Operation>(socket, `/v1/operations/${approval.operation_id}`);
       c.permissions.add(approval.id);
       const id = 'permission:' + randomUUID();
+      const value = String(op.value);
+      // Your own session can approve for the rest of it, unless the command can never be a rule.
+      const sessionRule = !!c.desk?.rules && !onceOnlyReason(value);
+      const edits = c.desk
+        ? await call<{ root: string; edits: LocalEdit[] } | null>(
+            socket,
+            `/v1/sessions/${c.id}/local-edits?operation_id=${encodeURIComponent(op.id)}`,
+          ).catch(() => null)
+        : null;
       const toolCall = {
         toolCallId: 'salaam-operation:' + op.id,
         title: op.kind + ': ' + op.target,
-        kind: permissionKind(op.kind),
+        kind: edits ? 'edit' : permissionKind(op.kind),
         status: 'pending',
+        ...(c.desk
+          ? {
+              content: [
+                {
+                  type: 'content',
+                  content: { type: 'text', text: askReason(value, c.desk.policyMode) },
+                },
+                ...(edits?.edits.length
+                  ? editDiffs(edits.root, edits.edits)
+                  : [{ type: 'content', content: { type: 'text', text: value } }]),
+              ],
+              ...(edits?.edits.length
+                ? { locations: editDiffs(edits.root, edits.edits).map((d) => ({ path: d.path })) }
+                : {}),
+            }
+          : {}),
         rawInput: {
           target: op.target,
           value: op.value,
@@ -304,16 +478,38 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         }
         if (
           outcome.outcome !== 'selected' ||
-          !['allow-once', 'reject-once'].includes(String(outcome.optionId))
+          !['allow-once', 'reject-once', ...(sessionRule ? ['allow-session'] : [])].includes(
+            String(outcome.optionId),
+          )
         )
           throw new Error('Invalid permission outcome');
+        if (outcome.optionId === 'allow-session') {
+          // The rule is the exact request just reviewed. If it cannot become one, nothing is
+          // approved and the request is asked again.
+          try {
+            await call(socket, `/v1/sessions/${c.id}/approval-rules`, {
+              ...(await controller(c)),
+              request_id: randomUUID(),
+              scope: 'session',
+              operation_id: op.id,
+            });
+          } catch (error) {
+            await say(
+              c.id,
+              `Not saved as a rule: ${(error as Error).message} Nothing was approved; it will ask again.`,
+            );
+            c.permissions.delete(approval.id);
+            void refresh(c).catch(() => {});
+            return;
+          }
+        }
         const decide = async () => {
           const outbox = new Outbox(client, c.id);
           outbox.enqueueDecision(
             approval.id,
             approval.operation_digest,
             approval.revision,
-            outcome.optionId === 'allow-once' ? 'approve' : 'deny',
+            outcome.optionId === 'reject-once' ? 'deny' : 'approve',
           );
           await outbox.flush(socket, c.id);
         };
@@ -329,6 +525,15 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           toolCall,
           options: [
             { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+            ...(sessionRule
+              ? [
+                  {
+                    optionId: 'allow-session',
+                    name: 'Allow for this session',
+                    kind: 'allow_always',
+                  },
+                ]
+              : []),
             { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
           ],
         },
@@ -407,29 +612,55 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
           const started = event.kind === 'tool.started';
           const fresh = !c.liveTools.has(p.tool_call_id);
           c.liveTools.add(p.tool_call_id);
-          void update(c.id, {
-            sessionUpdate: started && fresh ? 'tool_call' : 'tool_call_update',
-            toolCallId: p.tool_call_id,
-            title: p.tool ? toolTitle(p.tool, p.input) : 'Tool',
-            ...(started
-              ? {
-                  kind: p.kind ?? toolMetadata(p.tool ?? '', p.input).kind,
-                  locations: p.locations ?? [],
-                }
-              : {}),
-            status: started ? 'in_progress' : p.failed ? 'failed' : 'completed',
-            ...(started && p.input ? { rawInput: p.input } : {}),
-            ...(!started && p.output
-              ? { content: [{ type: 'content', content: { type: 'text', text: p.output } }] }
-              : {}),
-            ...(p.parent_tool_call_id
-              ? { _meta: { 'salaam.dev/parentToolCallId': p.parent_tool_call_id } }
-              : {}),
-          }).catch((error) => {
-            c.failed = error;
-          });
+          const callId = p.tool_call_id;
+          // A finished edit in your own session shows as a diff, whichever mode applied it.
+          const diffs =
+            !started && !p.failed && c.desk && p.tool === 'salaam_local'
+              ? call<{ root: string; edits: LocalEdit[] } | null>(
+                  socket,
+                  `/v1/sessions/${c.id}/local-edits?tool_call=${encodeURIComponent(callId)}`,
+                )
+                  .then((found) => (found ? editDiffs(found.root, found.edits) : []))
+                  .catch(() => [])
+              : Promise.resolve([]);
+          void diffs
+            .then(async (diff) =>
+              update(c.id, {
+                sessionUpdate: started && fresh ? 'tool_call' : 'tool_call_update',
+                toolCallId: p.tool_call_id,
+                title: p.tool ? toolTitle(p.tool, p.input) : 'Tool',
+                ...(started
+                  ? {
+                      kind: p.kind ?? toolMetadata(p.tool ?? '', p.input).kind,
+                      locations: p.locations ?? [],
+                    }
+                  : {}),
+                status: started ? 'in_progress' : p.failed ? 'failed' : 'completed',
+                ...(started && p.input ? { rawInput: p.input } : {}),
+                ...(!started && (p.output || diff.length)
+                  ? {
+                      content: [
+                        ...diff,
+                        ...(p.output
+                          ? [{ type: 'content', content: { type: 'text', text: p.output } }]
+                          : []),
+                      ],
+                    }
+                  : {}),
+                ...(p.parent_tool_call_id
+                  ? { _meta: { 'salaam.dev/parentToolCallId': p.parent_tool_call_id } }
+                  : {}),
+              }),
+            )
+            .catch((error) => {
+              c.failed = error;
+            });
         }
       }
+      if (event.kind === 'permissions.configured' && c.desk)
+        void deskState(c, true).catch((error) => {
+          c.failed = error;
+        });
       if (event.kind.startsWith('work_task.'))
         void sendPlan(c).catch((error) => {
           c.failed = error;
@@ -498,6 +729,16 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     };
     sessions.set(id, c);
     try {
+      if (!bound) {
+        const current = await permissions(id).catch(() => undefined);
+        if (current?.coding && current.configurable) {
+          const rules = await call<{ applies: boolean }>(
+            socket,
+            `/v1/sessions/${id}/approval-rules`,
+          ).catch(() => ({ applies: false }));
+          c.desk = { rules: rules.applies };
+        }
+      }
       if (view.state !== 'ready') {
         const actor = await controller(
           c,
@@ -543,10 +784,20 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       for (const record of journal.records(id))
         if (record.receipt) await promptReceipt(id, record.request_id, record.receipt.attempt_id);
       if (wantsCancellations) await cancellationReceipts(c);
+      if (c.desk) await deskState(c);
       await approvals(c, view);
       // The plan is visible before any step runs.
       await sendPlan(c, view.work_task ?? null);
       watch(c);
+      if (c.desk)
+        // After the response, so the editor knows the session first.
+        setImmediate(
+          () =>
+            void update(id, {
+              sessionUpdate: 'available_commands_update',
+              availableCommands: DESK_COMMANDS,
+            }).catch(() => {}),
+        );
     } catch (error) {
       sessions.delete(id);
       c.feed?.close();
@@ -647,6 +898,21 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         }
         const coding = object(params._meta ?? {})['salaam.dev/coding'] ?? options.coding ?? false;
         if (typeof coding !== 'boolean') throw new Error('Coding selection must be a boolean.');
+        const local = object(params._meta ?? {})['salaam.dev/local'] ?? options.local ?? false;
+        if (typeof local !== 'boolean') throw new Error('Local selection must be a boolean.');
+        if (local && coding)
+          throw new Error('Choose a local session in the project folder or a guarded coding copy.');
+        if (local) {
+          // Your desk session in the project folder itself, the same as salaam in a terminal there.
+          const created = await call<{ id: string }>(socket, '/v1/sessions', {
+            request_id: randomUUID(),
+            cwd,
+            local_workspace: true,
+            local_coding: true,
+          });
+          const c = await connect(created.id, false, params);
+          return { sessionId: created.id, ...(await deskState(c)) };
+        }
         if (coding) {
           const health = await call<{ coding_root?: string | null }>(socket, '/v1/health');
           if (!health.coding_root)
@@ -662,8 +928,23 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         await connect(created.id, false, params);
         return { sessionId: created.id };
       }
-      await connect(string(params.sessionId, 'sessionId', 128), method === 'session/load', params);
-      return {};
+      const c = await connect(
+        string(params.sessionId, 'sessionId', 128),
+        method === 'session/load',
+        params,
+      );
+      return await deskState(c);
+    }
+    if (method === 'session/set_mode' || method === 'session/set_config_option') {
+      const c = sessions.get(string(params.sessionId, 'sessionId', 128));
+      if (!c) throw new Error('Load or resume this session first');
+      if (method === 'session/set_mode') {
+        await setMode(c, string(params.modeId, 'modeId', 64));
+        return {};
+      }
+      if (params.configId !== 'mode') throw new Error('Unknown setting');
+      const state = await setMode(c, string(params.value, 'value', 64));
+      return { configOptions: 'configOptions' in state ? state.configOptions : [] };
     }
     if (!['session/cancel', 'session/prompt'].includes(method))
       throw new ServiceError('method_not_found', 'Unsupported ACP method', 404);
@@ -695,6 +976,12 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
         throw new Error('Only text and resource links are supported');
       })
       .join('\n');
+    const command = c.desk ? parseDeskCommand(input) : null;
+    if (command) {
+      // Handled here, never sent to the model.
+      await rewind(c, command.turn);
+      return { stopReason: 'end_turn' };
+    }
     const meta = object(params._meta ?? {});
     const logical =
       meta['salaam.dev/requestId'] === undefined
@@ -819,6 +1106,15 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
       id = value.id;
       if (typeof value.method !== 'string') {
         response = true;
+        if (typeof id === 'string' && confirmations.has(id)) {
+          const resolve = confirmations.get(id)!;
+          confirmations.delete(id);
+          const outcome = object(object(value.result ?? {}).outcome ?? {});
+          resolve(
+            !value.error && outcome.outcome === 'selected' ? String(outcome.optionId) : 'cancelled',
+          );
+          return;
+        }
         if (typeof id === 'string' && permissionReplies.has(id)) {
           const respond = permissionReplies.get(id)!;
           permissionReplies.delete(id);
@@ -893,6 +1189,8 @@ export async function acp(state: string, options: { coding?: boolean } = {}): Pr
     clearInterval(renew);
     clearInterval(cancellationPoll);
     permissionReplies.clear();
+    for (const resolve of confirmations.values()) resolve('cancelled');
+    confirmations.clear();
     for (const c of sessions.values()) {
       c.feed?.close();
       if (c.lease)

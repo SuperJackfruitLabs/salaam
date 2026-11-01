@@ -191,6 +191,26 @@ export class LocalCoding {
       });
     }
   }
+  /** The exact edits an edit request carries, or none for a command; files over 256 KiB are left out. */
+  edits(
+    session: string,
+    by: { operation: string } | { toolCall: string },
+  ): { root: string; edits: LocalEdit[] } | null {
+    const row = this.store.db
+      .prepare(
+        `SELECT root,args FROM local_calls WHERE session_id=? AND ${'operation' in by ? 'operation_id' : 'tool_call'}=? ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(session, 'operation' in by ? by.operation : by.toolCall) as
+      { root: string; args: string } | undefined;
+    if (!row) return null;
+    const args = object(JSON.parse(row.args));
+    if (args.action !== 'edit') return null;
+    const small = (text: string | null) => text === null || Buffer.byteLength(text) <= 256 * 1024;
+    return {
+      root: row.root,
+      edits: (args.edits as LocalEdit[]).filter((e) => small(e.before) && small(e.after)),
+    };
+  }
   get(id: string): LocalCall {
     const row = this.store.db.prepare('SELECT * FROM local_calls WHERE id=?').get(id);
     if (!row) throw new ServiceError('not_found', 'Local operation not found', 404);
