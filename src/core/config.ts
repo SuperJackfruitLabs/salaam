@@ -121,6 +121,7 @@ export function bundleDigest(): string {
       readFileSync(join(ROOT, 'dist/src/store/worker-boundary.js'), 'utf8'),
     ),
     worker_binding: textDigest(readFileSync(join(ROOT, 'dist/src/core/worker-binding.js'), 'utf8')),
+    persona: textDigest(readFileSync(join(ROOT, 'dist/src/runtime/persona.js'), 'utf8')),
     agent_profiles: textDigest(
       readFileSync(join(ROOT, 'dist/src/runtime/agent-profiles.js'), 'utf8'),
     ),
@@ -134,17 +135,28 @@ export function bundleDigest(): string {
     transport: textDigest(readFileSync(join(ROOT, 'dist/src/core/transport.js'), 'utf8')),
   });
 }
-const hashDir = (path: string) =>
-  digest(
-    readdirSync(path)
-      .filter((f) => /\.(ts|js)$/.test(f))
-      .sort()
-      .map((file) => ({ file, content: readFileSync(join(path, file), 'utf8') })),
-  );
+/** Every .ts/.js file under `top`, by its path relative to `top`, so a nested file counts. */
+export function hashTree(top: string): string {
+  const files: { file: string; content: string }[] = [];
+  const visit = (dir: string, prefix: string): void => {
+    // Code-unit order: the digest must not depend on the host's locale.
+    const entries = readdirSync(dir, { withFileTypes: true }).toSorted((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
+    for (const entry of entries) {
+      const rel = prefix + entry.name;
+      if (entry.isDirectory()) visit(join(dir, entry.name), rel + '/');
+      else if (/\.(ts|js)$/.test(entry.name))
+        files.push({ file: rel, content: readFileSync(join(dir, entry.name), 'utf8') });
+    }
+  };
+  visit(top, '');
+  return digest(files);
+}
 export function hostDigests() {
   return {
-    source_digest: hashDir(join(ROOT, 'src')),
-    build_digest: hashDir(join(ROOT, 'dist/src')),
+    source_digest: hashTree(join(ROOT, 'src')),
+    build_digest: hashTree(join(ROOT, 'dist/src')),
     pi_bundle_digest: bundleDigest(),
   };
 }

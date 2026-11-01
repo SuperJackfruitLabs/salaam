@@ -24,7 +24,7 @@ jobs:
           files=$(gh pr diff "$PR" --repo "$REPO" --name-only)
           # Files whose changes users see: commands, keys, CLI, host config, permissions,
           # sandbox, the editor adapter and the agent's own tools.
-          user_facing=$(printf '%s\n' "$files" | grep -E '^src/(tui-commands|tui-keymap|cli|cli-help|host|host-start|acp|acp-desk|approval-rules|autonomy|command-sandbox|command-danger|command-network|local-coding|house-extension|project-instructions|hooks|custom-commands|operator-mcp-cli)\.ts$' || true)
+          user_facing=$(printf '%s\n' "$files" | grep -E '^src/(core/slash-commands|tui/keymap|cli/cli|cli/help|cli/mcp-commands|host/host|host/start|acp/server|acp/desk|local/(approval-rules|autonomy|command-sandbox|command-danger|command-network|coding|hooks)|runtime/(house-extension|project-instructions|custom-commands))\.ts$' || true)
           docs=$(printf '%s\n' "$files" | grep -E '^(docs/.*\.md|README\.md)$' || true)
           if [ -n "$user_facing" ] && [ -z "$docs" ]; then
             echo "::error::These files change what users see, but no page under docs/ or README.md changed:"

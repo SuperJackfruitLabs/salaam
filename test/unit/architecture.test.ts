@@ -144,7 +144,7 @@ const PROCESS_ENTRIES = [
   'execution/orphan.ts',
 ];
 /** Files Pi loads with the house extension that bundleDigest in core/config.ts does not hash. */
-const UNDIGESTED_HOUSE_FILES = ['runtime/persona.ts'];
+const UNDIGESTED_HOUSE_FILES: string[] = [];
 
 export interface Import {
   from: string;
@@ -296,4 +296,20 @@ test('the module rules see what they should', () => {
   ]);
   expect(layerViolations(all, [['a'], ['b', 'p']])).toEqual(['a>b']);
   expect(cycles(moduleGraph(all))).toEqual([['a', 'b']]);
+});
+
+test('the docs-required workflow watches files that exist', () => {
+  const workflow = readFileSync(
+    join(import.meta.dirname, '../../.github/workflows/docs-required.yml'),
+    'utf8',
+  );
+  const pattern = /grep -E '(\^src\/[^']+)'/.exec(workflow)?.[1];
+  expect(pattern, 'the workflow names its watched files with grep -E').toBeDefined();
+  const watched = new RegExp(pattern ?? '$^');
+  const matched = sources(SRC)
+    .map((f) => 'src/' + relative(SRC, f))
+    .filter((f) => watched.test(f));
+  // One alternative per watched file: a renamed file would silently drop out of the list.
+  const alternatives = (pattern ?? '').split('|').length;
+  expect(matched.length).toBe(alternatives);
 });
