@@ -101,6 +101,7 @@ export async function acp(
   )
     throw new Error('Unsupported authenticated work control handoff');
   let closed = false,
+    ignoredMcp = false,
     initialized = false,
     wantsReceipts = false,
     wantsCancellations = false,
@@ -879,7 +880,18 @@ export async function acp(
     }
     if (['session/new', 'session/load', 'session/resume'].includes(method)) {
       const cwd = string(params.cwd, 'cwd');
-      validateManagedMcpDeclarations(params.mcpServers, bound?.managed_mcp);
+      // An editor forwards its own MCP servers. A desk session never connects to them, so it
+      // ignores the list; station work keeps the exact node assignment check.
+      const desk =
+        !bound && (object(params._meta ?? {})['salaam.dev/local'] ?? options.local) === true;
+      if (desk && Array.isArray(params.mcpServers)) {
+        if (params.mcpServers.length && !ignoredMcp) {
+          ignoredMcp = true;
+          console.error(
+            `Salaam does not use the editor's MCP servers; ignored ${params.mcpServers.length}.`,
+          );
+        }
+      } else validateManagedMcpDeclarations(params.mcpServers, bound?.managed_mcp);
       if (
         !isAbsolute(cwd) ||
         (Array.isArray(params.additionalDirectories) && params.additionalDirectories.length)
