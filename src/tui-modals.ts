@@ -246,6 +246,8 @@ export type ApprovalDecision = 'approve' | 'approve-session' | 'always' | 'deny'
 export function approvalReason(value: string, mode: string | undefined): string {
   const danger = /^Dangerous \(([^)]+)\): (.*)$/m.exec(value);
   if (danger) return `Asks because this command is dangerous (${danger[1]}): ${danger[2]}`;
+  const outside = /^Outside the sandbox: (.*?)\. This one command/m.exec(value);
+  if (outside) return `Asks because it wants to run outside the sandbox: ${outside[1]}`;
   const edit = /^(---|\+\+\+) /m.test(value) && !/\nCommand:\n/.test(value);
   if (mode === 'review') return 'Asks because review mode asks before every edit and command.';
   if (mode === 'accept-edits' && !edit)

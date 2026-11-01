@@ -738,7 +738,7 @@ export default function house(pi: ExtensionAPI): void {
       name: 'salaam_local',
       label: 'Reviewed local coding',
       description:
-        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless full access is on. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. For a long-running command such as a dev server or watcher, set background: true; it returns a task id at once and keeps running after this turn (read or stop it with salaam_tasks). A sandboxed command cannot listen for connections; for a server the person should reach, also set listen: true, which always asks them (on Linux it is refused, since the sandbox has its own network). Inspect actual results; do not claim success after failure.',
+        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless full access is on. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. For a long-running command such as a dev server or watcher, set background: true; it returns a task id at once and keeps running after this turn (read or stop it with salaam_tasks). A sandboxed command cannot listen for connections; for a server the person should reach, also set listen: true, which always asks them (on Linux it is refused, since the sandbox has its own network). If a command fails only because the sandbox blocks it (for example "Operation not permitted" when listing processes, or no access to your home folder or system services), you may run it again with outside_sandbox set to one sentence saying why it needs out; that one command then runs without the sandbox, and the person is always asked. Never use it to get around a denial. Inspect actual results; do not claim success after failure.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('edit'), Type.Literal('command')]),
         edits: Type.Optional(
@@ -761,6 +761,7 @@ export default function house(pi: ExtensionAPI): void {
         timeout_ms: Type.Optional(Type.Integer({ minimum: 100, maximum: 120000 })),
         background: Type.Optional(Type.Boolean()),
         listen: Type.Optional(Type.Boolean()),
+        outside_sandbox: Type.Optional(Type.String({ maxLength: 300 })),
       }),
       async execute(id, args, signal, _update, ctx) {
         type Result = ReturnType<import('./local-coding.js').LocalCoding['view']>;

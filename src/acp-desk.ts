@@ -96,6 +96,8 @@ export function editDiffs(root: string, edits: readonly LocalEdit[]) {
 export function askReason(value: string, mode: PermissionMode | undefined): string {
   const danger = /^Dangerous \(([^)]+)\): (.*)$/m.exec(value);
   if (danger) return `Asks because this command is dangerous (${danger[1]}): ${danger[2]}`;
+  const outside = /^Outside the sandbox: (.*?)\. This one command/m.exec(value);
+  if (outside) return `Asks because it wants to run outside the sandbox: ${outside[1]}`;
   if (/^Publishes: /m.test(value))
     return 'Asks because pushing and opening pull requests always ask.';
   if (/^May listen: /m.test(value))
