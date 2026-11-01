@@ -159,6 +159,11 @@ test('hard terminal loss, observer reconnect and explicit TUI takeover preserve 
     expect(f.service.store.controlView(session.id).epoch).toBeGreaterThan(1);
     writeFileSync(join(f.dir, 'release-probe'), 'go');
     await second.contains('Offline reply: Keep one running turn');
+    // The reply reaches the screen before the attempt is recorded as finished.
+    await until(
+      () => f.service.store.attempt(attempt.id).state,
+      (state) => state !== 'running',
+    );
     expect(f.service.store.snapshot(session.id).attempts).toHaveLength(1);
     expect(f.service.store.attempt(attempt.id).state).toBe('completed');
     expect(f.service.supervisor.inspect(session.id).epoch).toBe(original.epoch);
