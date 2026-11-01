@@ -1,4 +1,12 @@
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { promisify } from 'node:util';
+import { ROOT } from './config.js';
+import { credentialPath } from './credentials.js';
+import { providerRoute } from './provider-config.js';
+import { deskUsesAnthropic } from './session-pick.js';
+import { call } from './transport.js';
 import type { PermissionMode, PermissionPolicy, SessionAccess } from './autonomy.js';
 import type { LocalEdit } from './local-edits.js';
 import type { TurnCheckpoint } from './turn-rewind.js';
@@ -153,3 +161,29 @@ export const REWIND_CHOICES = [
 ];
 export const CONVERSATION_REWIND_NOTE =
   'To go back in the conversation too, run /rewind in the terminal (salaam -c opens this session): it continues in a new session.';
+
+/** An editor starts the adapter on its own, so the desk session starts the service the way
+ * `salaam` in a terminal does, instead of failing with a missing socket. */
+export async function ensureDeskService(state: string): Promise<void> {
+  const socket = join(state, 'operator.sock');
+  try {
+    await call(socket, '/v1/health');
+    return;
+  } catch {}
+  await promisify(execFile)(
+    process.execPath,
+    [join(ROOT, 'bin/salaam.mjs'), 'service', 'start', '--state', state, '--provider', 'offline'],
+    { timeout: 20000, maxBuffer: 65536 },
+  );
+  await call(socket, '/v1/health');
+}
+/** The model a new desk session uses, chosen as `salaam` in a terminal chooses it: Anthropic when
+ * the service runs the offline default and you have saved an Anthropic key. */
+export function deskRoute(
+  serviceProvider: string | undefined,
+  hasKey = existsSync(credentialPath()) || existsSync(credentialPath() + '.json'),
+): { provider: string; model: string } | undefined {
+  if (!deskUsesAnthropic(false, serviceProvider, hasKey)) return undefined;
+  const route = providerRoute('anthropic');
+  return { provider: route.provider, model: route.model };
+}

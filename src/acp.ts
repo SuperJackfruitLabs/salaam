@@ -19,6 +19,8 @@ import { validateManagedMcpDeclarations } from './mcp-acp.js';
 import {
   askReason,
   checkpointList,
+  deskRoute,
+  ensureDeskService,
   CONVERSATION_REWIND_NOTE,
   DESK_COMMANDS,
   editDiffs,
@@ -76,6 +78,7 @@ export async function acp(
   options: { coding?: boolean; local?: boolean } = {},
 ): Promise<void> {
   const socket = join(state, 'operator.sock');
+  if (options.local) await ensureDeskService(state);
   const client = acpClientState(state);
   const journal = new AcpJournal(client);
   const admission = process.env.SALAAM_AGENTPOD_ADMISSION,
@@ -916,11 +919,17 @@ export async function acp(
           throw new Error('Choose a local session in the project folder or a guarded coding copy.');
         if (local) {
           // Your desk session in the project folder itself, the same as salaam in a terminal there.
+          const health = await call<{ provider_route?: { provider: string } }>(
+            socket,
+            '/v1/health',
+          );
+          const route = deskRoute(health.provider_route?.provider);
           const created = await call<{ id: string }>(socket, '/v1/sessions', {
             request_id: randomUUID(),
             cwd,
             local_workspace: true,
             local_coding: true,
+            ...(route ? { route } : {}),
           });
           const c = await connect(created.id, false, params);
           return { sessionId: created.id, ...(await deskState(c)) };

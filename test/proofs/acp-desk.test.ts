@@ -1,5 +1,11 @@
 import { test, expect } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { call } from '../../src/transport.js';
+import { ROOT } from '../../src/config.js';
+import { deskRoute } from '../../src/acp-desk.js';
+import { OFFLINE_ROUTE } from '../../src/provider-config.js';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
 import { client } from '../acp-helpers.js';
@@ -216,3 +222,43 @@ test("the desk session ignores the editor's own MCP servers; other sessions stil
     await f.close();
   }
 }, 60000);
+
+test('Zed can start the desk session with no service running: the adapter starts it', async () => {
+  const dir = realpathSync(mkdtempSync('/tmp/sal-acp-start-')),
+    state = join(dir, 'state'),
+    root = join(dir, 'project');
+  mkdirSync(root);
+  // An empty home: no saved provider key is read, so the session stays on the offline model.
+  const a = client(state, { HOME: dir, XDG_CONFIG_HOME: join(dir, 'config') }, ['--local']);
+  try {
+    await a.initialize();
+    const created = await a.request('session/new', { cwd: root, mcpServers: [] });
+    expect(created.modes.currentModeId).toBe('review');
+    const health = await call<{ ok?: boolean }>(join(state, 'operator.sock'), '/v1/health');
+    expect(health).toBeTruthy();
+    expect(
+      (
+        await call<{ provider_route: { provider: string } }>(
+          join(state, 'operator.sock'),
+          `/v1/sessions/${created.sessionId}/snapshot`,
+        )
+      ).provider_route.provider,
+    ).toBe(OFFLINE_ROUTE.provider);
+  } finally {
+    await a.close();
+    await promisify(execFile)(process.execPath, [
+      join(ROOT, 'bin/salaam.mjs'),
+      'service',
+      'stop',
+      '--state',
+      state,
+    ]).catch(() => {});
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60000);
+
+test('a new desk session uses Anthropic, as the terminal does, when you saved a key and the service runs offline', () => {
+  expect(deskRoute(OFFLINE_ROUTE.provider, true)).toMatchObject({ provider: 'anthropic' });
+  expect(deskRoute(OFFLINE_ROUTE.provider, false)).toBeUndefined();
+  expect(deskRoute('openai-codex', true)).toBeUndefined();
+});
