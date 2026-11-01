@@ -1,5 +1,16 @@
 name: Deploy public sites
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'landing/**'
+      - 'site.config.mjs'
+      - 'install.sh'
+      - 'scripts/sync-docs.mjs'
+      - 'scripts/check-sites.mjs'
+      - 'scripts/deploy-sites.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,17 +24,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Skip until the Cloudflare token is configured
+        id: token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set in the websites environment; the sites were not deployed."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.token.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.token.outputs.ready == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install --global npm@11.19.0 --ignore-scripts
-      - run: npm ci --ignore-scripts
-      - run: npm --prefix landing ci --ignore-scripts
-      - run: npm --prefix docs-site ci --ignore-scripts
-      - run: npm run sites:build
-      - name: Deploy the verified static assets to the declared domains
+      - if: steps.token.outputs.ready == 'true'
+        run: npm install --global npm@11.19.0 --ignore-scripts
+      - if: steps.token.outputs.ready == 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.token.outputs.ready == 'true'
+        run: npm --prefix landing ci --ignore-scripts
+      - if: steps.token.outputs.ready == 'true'
+        run: npm --prefix docs-site ci --ignore-scripts
+      - if: steps.token.outputs.ready == 'true'
+        run: npm run sites:build
+      - if: steps.token.outputs.ready == 'true'
+        name: Deploy the verified static assets to the declared domains
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

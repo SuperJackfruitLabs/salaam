@@ -113,7 +113,7 @@ command as is, and only when the operator chooses it.
 
 A host with no usable sandbox refuses local commands. To run them unsandboxed
 anyway, the operator sets `unsandboxed_commands: "allow"` in the host config,
-or passes `--unsandboxed-commands allow` to `salaam serve`. Host plan pins that
+or passes `--unsandboxed-commands allow` to `salaam service start`. Host plan pins that
 choice in the manifest, and every approval says "unsandboxed". Edits are not
 commands and are unaffected.
 

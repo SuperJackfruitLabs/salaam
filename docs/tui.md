@@ -24,31 +24,59 @@ run anything.
 
 ## Slash commands
 
-Type `/` to see command completions. Tab or Enter accepts a completion; Enter then runs the command. Commands and aliases share one registry with the action palette and `/help`. Unknown commands and malformed arguments remain in the composer. Only `/queue`, `/steer`, `/plan`, and `/review` send instructions to the model; plan and review ask for confirmation first.
+Type `/` to see command completions. Tab or Enter accepts a completion; Enter then runs the command. Commands and aliases share one registry with the action palette and `/help`. Unknown commands and malformed arguments remain in the composer. `/queue`, `/steer`, `/plan`, `/review`, `/init` and the git helpers send instructions to the model; the others act locally.
 
-| Command                                                     | What it does                                                                         |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `/help [command]`, `/keys`                                  | Commands and keyboard shortcuts                                                      |
-| `/exit`, `/quit`, `/q`                                      | Detach; the session and running work carry on                                        |
-| `/model [provider/model]`, `/provider`, `/thinking [level]` | Switch the model, provider or reasoning effort                                       |
-| `/new [folder]`, `/coding [folder]`                         | A read-only session, or a coding session                                             |
-| `/sessions [id]`, `/resume`, `/name <name>`                 | Switch sessions, or name this one                                                    |
-| `/init`                                                     | Draft an `AGENTS.md` for this repository ([Rules](rules.md))                         |
-| `/mode`, `/full-access`, `/yolo`, `/classifier`             | Permission mode, full access, YOLO, command reviewer ([Permissions](permissions.md)) |
-| `/permissions`, `/progression`                              | Scoped edit approval, and how tasks advance                                          |
-| `/approvals`                                                | Review pending approvals                                                             |
-| `/diff`                                                     | Review changes file by file                                                          |
-| `/commit`, `/branch <name>`, `/pr [base]`                   | Git helpers (below)                                                                  |
-| `/rewind [turn]`, `/undo`                                   | Go back to before a turn, or reverse the last edit                                   |
-| `/fork`                                                     | Branch an idle conversation; both share the folder                                   |
-| `/queue [text]`, `/steer <text>`                            | Save an instruction for the next turn, or guide the running one                      |
-| `/cancel`, `/stop`                                          | Cancel an instruction, after confirming                                              |
-| `/plan [request]`, `/review [focus]`                        | Ask for a plan or a code review (these use the model)                                |
-| `/jobs`, `/bg`                                              | Background commands and their output                                                 |
-| `/history`, `/compact`, `/context`, `/status`, `/usage`     | History, context, connection and usage                                               |
-| `/copy`, `/export [path]`                                   | Copy the last reply, or export the conversation to Markdown                          |
-| `/skills`, `/mcp`, `/agents`, `/tasks`, `/hooks`            | Skills, MCP tools, specialists, tasks and hooks                                      |
-| `/settings`                                                 | Appearance, shortcuts and model                                                      |
+<!-- generated:slash-commands -->
+
+| Command                              | Also          | What it does                                                                                |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------- |
+| `/help [command]`                    | `/commands`   | Show commands and their execution type                                                      |
+| `/exit`                              | `/quit`, `/q` | Detach; preserve the session and running work                                               |
+| `/keys`                              | `/hotkeys`    | Show keyboard shortcuts                                                                     |
+| `/model [provider/model]`            | `/models`     | Switch this session’s provider and model                                                    |
+| `/provider [provider]`               |               | Switch this session’s provider                                                              |
+| `/thinking [level]`                  |               | Switch this session’s reasoning effort                                                      |
+| `/coding [workspace]`                |               | New local coding session with reviewed edits and commands                                   |
+| `/init`                              |               | Draft an AGENTS.md for this repository; the edit asks for approval                          |
+| `/new [workspace]`                   |               | Create a session in a workspace                                                             |
+| `/sessions [session-id]`             | `/resume`     | Switch or resume a session                                                                  |
+| `/name <name>`                       | `/rename`     | Set a durable session label                                                                 |
+| `/history`                           |               | Browse complete durable session history                                                     |
+| `/compact`                           |               | Compact an idle session using its durable checkpoint                                        |
+| `/cancel`                            | `/stop`       | Cancel an instruction with explicit confirmation                                            |
+| `/queue [text]`                      |               | Save a durable next-turn instruction, or inspect the queue                                  |
+| `/steer <text>`                      |               | Send recorded guidance to an active local turn; uncertain delivery never replays            |
+| `/diff`                              |               | Review workspace changes file by file                                                       |
+| `/commit`                            |               | Draft a commit of the current work; staging and the commit each ask (uses provider credits) |
+| `/branch <name>`                     |               | Switch to a branch, creating it if needed                                                   |
+| `/pr [base]`                         |               | Push this branch and open a pull request; both always ask, except in YOLO                   |
+| `/tools`                             |               | Inspect available capabilities and recorded tool activity                                   |
+| `/permissions`                       |               | Configure local permissions independently of task progression                               |
+| `/mode`                              |               | Cycle review → accept edits → auto (shift+tab)                                              |
+| `/full-access`                       |               | Turn full access on or off: commands run without the OS sandbox; dangerous ones still ask   |
+| `/yolo`                              |               | Turn YOLO on (type yolo to confirm) or off: no sandbox and no approvals                     |
+| `/approvals`                         |               | Review exact pending approval requests                                                      |
+| `/context`                           |               | Inspect session context, facts and usage                                                    |
+| `/usage`                             |               | Show recorded usage and unknown observations                                                |
+| `/status`                            |               | Show connection, model and session capabilities                                             |
+| `/copy`                              |               | Copy the last complete assistant response to the local clipboard                            |
+| `/export [path]`                     |               | Export full durable conversation as Markdown; never overwrite                               |
+| `/settings`                          |               | Choose terminal appearance and model settings                                               |
+| `/fork`                              |               | Fork an idle local conversation; keep the same workspace                                    |
+| `/rewind [turn]`                     |               | Rewind files, conversation or both to before an earlier turn                                |
+| `/undo [reconcile]`                  |               | Review and revert the last completed local edit; retain conversation history                |
+| `/plan [request]`                    |               | Ask the model for a plan (uses provider credits; not a permission mode)                     |
+| `/review [focus]`                    |               | Ask the model to review workspace changes (uses provider credits)                           |
+| `/skills [review <paths...>\|clear]` |               | Inspect or review digest-bound context and skills                                           |
+| `/mcp`                               |               | Show admitted managed MCP capabilities                                                      |
+| `/agents`                            |               | Inspect native/external worker profiles and child work                                      |
+| `/progression`                       |               | Choose manual or bounded task progression; permissions stay separate                        |
+| `/tasks`                             |               | Open durable task actions                                                                   |
+| `/classifier [name\|on\|off]`        |               | Pick the small-model command reviewer for this session, or turn it off                      |
+| `/hooks [trust\|revoke]`             |               | Show your hooks and this workspace’s; trust or revoke the workspace file                    |
+| `/jobs [stop <id>]`                  | `/bg`         | Show background commands and their output, or stop one                                      |
+
+<!-- /generated:slash-commands -->
 
 Your own saved prompts appear here too; see [Commands](commands.md).
 
@@ -78,28 +106,90 @@ Older sessions retain their original capabilities. Create a new local session to
 
 The interface has two native palettes, **Night** and **Paper**, with jade accents, quiet surfaces, readable tool outcomes and no icon-font requirement. Choose `--theme night|paper` or switch from the action menu. `NO_COLOR=1` preserves the layout without color. Narrow terminals hide the workspace rail automatically; Ctrl+B toggles it on wide terminals (it is not readline back-char here). The terminal title and application chrome identify Salaam.
 
-| Key                                  | Action                                                                            |
-| ------------------------------------ | --------------------------------------------------------------------------------- |
-| Enter                                | Save the exact composer text to the durable outbox, then deliver it               |
-| Alt+Enter / Ctrl+J                   | Insert a newline; Shift+Enter also works with supported keyboard protocols        |
-| Ctrl+K (empty composer) / F2         | Search actions by visible name, description or ID                                 |
-| Ctrl+P / Ctrl+N                      | Pick an existing session / create a new session                                   |
-| Ctrl+O                               | Review operation-bound approvals                                                  |
-| Alt+G / Ctrl+T                       | Open checked changes / command results                                            |
-| Tab                                  | Complete slash input, otherwise cycle Conversation, Changes, Commands and Context |
-| PageUp / PageDown                    | Scroll the body; mouse wheel is also supported                                    |
-| Ctrl+X                               | Toggle the full transcript: every tool call and its recorded output               |
-| F5                                   | Refresh service state and the current diff                                        |
-| Ctrl+G                               | Edit the prompt with `VISUAL`, then `EDITOR`, then `vi`                           |
-| Ctrl+R                               | Search messages you sent (reverse-i-search); Ctrl+R again for older, Esc restores |
-| Ctrl+A/E, Ctrl+U/K/W, Ctrl+Y, Ctrl+- | Readline editing: line start/end, kill to start/end/word, yank, undo; Alt+B/F     |
-| `!command`                           | Run a shell command yourself (local coding sessions; see below)                   |
-| `?` with an empty composer           | Keys for where you are (conversation, running turn, change review)                |
-| F1                                   | Same key sheet as `?`                                                             |
-| Ctrl+C                               | Stop a running coding turn, else clear the composer; twice on empty detaches      |
-| Ctrl+D with an empty composer        | Detach and leave work running                                                     |
+<!-- generated:keys -->
 
-The key sheet (`?`, F1 or `/keys`) is built from the same table the TUI binds (`src/tui-keymap.ts`), so it lists the keys that actually work. It changes with where you are: a running desk turn shows Esc, Enter and Tab; the Changes review shows its file, hunk, accept, revert and instruct keys. Approvals show their own keys along the bottom.
+**In the conversation**
+
+| Key                  | Action                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `Enter`              | send: The durable outbox saves it before delivery                                                       |
+| `Alt+Enter / Ctrl+J` | new line                                                                                                |
+| `Tab`                | switch view: Conversation · Changes · Commands · Context                                                |
+| `PageUp / PageDown`  | scroll: Ctrl+Home/End jump to the top/bottom                                                            |
+| `@`                  | attach a file or image                                                                                  |
+| `/`                  | slash commands                                                                                          |
+| `Ctrl+R`             | search sent messages: Ctrl+R for older, Enter keeps, Esc restores                                       |
+| `Ctrl+A/E`           | Ctrl+U/K/W · Ctrl+Y · Ctrl+-: Line start/end, kill to start/end/word, yank, undo; Alt+B/F words         |
+| `!command`           | run a shell command: Same approval, sandbox and danger check                                            |
+| `Ctrl+C`             | stop, clear, then leave: Stops a running turn, else clears text; twice on empty leaves. Work continues. |
+| `/rewind`            | go back to an earlier turn                                                                              |
+| `/jobs`              | background commands                                                                                     |
+| `/undo`              | revert the last edit                                                                                    |
+| `Ctrl+K`             | all actions                                                                                             |
+| `F2`                 | all actions                                                                                             |
+| `Ctrl+P`             | sessions                                                                                                |
+| `Ctrl+N`             | new session                                                                                             |
+| `Ctrl+O`             | approvals                                                                                               |
+| `Alt+G`              | changes                                                                                                 |
+| `Ctrl+T`             | commands                                                                                                |
+| `Ctrl+B`             | show or hide the side panel                                                                             |
+| `Ctrl+X`             | full transcript on or off                                                                               |
+| `F5`                 | refresh                                                                                                 |
+| `Ctrl+G`             | external prompt editor                                                                                  |
+| `Shift+Tab`          | next mode                                                                                               |
+| `F1`                 | these keys                                                                                              |
+
+**While a turn runs**
+
+| Key         | Action                      |
+| ----------- | --------------------------- |
+| `Esc`       | stop the turn               |
+| `Enter`     | steer it                    |
+| `Tab`       | queue for after             |
+| `Ctrl+K`    | all actions                 |
+| `F2`        | all actions                 |
+| `Ctrl+P`    | sessions                    |
+| `Ctrl+N`    | new session                 |
+| `Ctrl+O`    | approvals                   |
+| `Alt+G`     | changes                     |
+| `Ctrl+T`    | commands                    |
+| `Ctrl+B`    | show or hide the side panel |
+| `Ctrl+X`    | full transcript on or off   |
+| `F5`        | refresh                     |
+| `Ctrl+G`    | external prompt editor      |
+| `Shift+Tab` | next mode                   |
+| `F1`        | these keys                  |
+
+**Reviewing changes**
+
+| Key         | Action                      |
+| ----------- | --------------------------- |
+| `Alt+→`     | next file                   |
+| `Alt+←`     | previous file               |
+| `Alt+↓`     | next hunk                   |
+| `Alt+↑`     | previous hunk               |
+| `a`         | accept the file or hunk     |
+| `r`         | revert it (asks first)      |
+| `i`         | tell the model about it     |
+| `Ctrl+K`    | all actions                 |
+| `F2`        | all actions                 |
+| `Ctrl+P`    | sessions                    |
+| `Ctrl+N`    | new session                 |
+| `Ctrl+O`    | approvals                   |
+| `Alt+G`     | changes                     |
+| `Ctrl+T`    | commands                    |
+| `Ctrl+B`    | show or hide the side panel |
+| `Ctrl+X`    | full transcript on or off   |
+| `F5`        | refresh                     |
+| `Ctrl+G`    | external prompt editor      |
+| `Shift+Tab` | next mode                   |
+| `F1`        | these keys                  |
+
+<!-- /generated:keys -->
+
+Approvals show their own keys along the bottom of the card. `Ctrl+D` with an empty message box detaches.
+
+The tables above and the in-app key sheet (`?`, F1 or `/keys`) are both built from the table the terminal binds, so they list the keys that actually work. It changes with where you are: a running desk turn shows Esc, Enter and Tab; the Changes review shows its file, hunk, accept, revert and instruct keys. Approvals show their own keys along the bottom.
 
 While a turn runs, the status line shows a live progress line: what the agent is doing (Thinking, Editing, Running a command), elapsed seconds, tokens and `esc to interrupt`. It repaints every second without input.
 
