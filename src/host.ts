@@ -363,7 +363,7 @@ async function planAgentPod(
     try {
       readPaths = resolveReadPaths(raw as string[]);
     } catch (error) {
-      throw Error((error as Error).message);
+      throw new Error((error as Error).message, { cause: error });
     }
   }
   const brokerSocket =
@@ -494,7 +494,7 @@ function parseHostDangerClassifier(raw: unknown): HostLocalSandbox['danger_class
       anyKey,
     ).options.map((o) => o.name);
   } catch (error) {
-    throw Error('danger_classifier.config: ' + (error as Error).message);
+    throw new Error('danger_classifier.config: ' + (error as Error).message, { cause: error });
   }
   if (c.pin !== undefined && (typeof c.pin !== 'string' || !names.includes(c.pin)))
     throw Error("danger_classifier.pin must name one of the config's options");

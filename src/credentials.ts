@@ -98,7 +98,8 @@ export async function readSecret(
       stdin.setRawMode(wasRaw);
       stdin.pause();
       process.stderr.write('\n');
-      error ? reject(error) : resolve(key);
+      if (error) reject(error);
+      else resolve(key);
     };
     const data = (chunk: Buffer) => {
       for (const char of chunk.toString('utf8')) {

@@ -2881,8 +2881,7 @@ This exact request will be approved without asking in every desk session on this
       } else if (value === 'rail') {
         this.rail = !this.rail;
         this.tui.requestRender(true);
-      } else if (value === 'help') this.help();
-      else if (value === 'stop')
+      } else if (value === 'stop')
         this.confirm(
           'Stop Salaam service',
           'This interrupts model work in every session using this service. Running commands may require reconciliation after restart. Closing this terminal would simply detach.',

@@ -73,6 +73,7 @@ try {
   if (plan.baseline) {
     await execute('format', 'npm', ['run', 'format:check']);
     await execute('types', 'npm', ['run', 'check']);
+    await execute('lint', 'npm', ['run', 'lint']);
     await execute('pin', 'npm', ['run', 'verify:pi']);
     const full = join(dir, 'full-suite.json');
     await execute('full-suite', 'npm', ['test', '--', '--reporter=json', '--outputFile=' + full]);

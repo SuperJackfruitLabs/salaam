@@ -2,7 +2,7 @@
 
 Use the exact Node and npm versions in `.nvmrc` and `package.json`. Install with `npm ci --ignore-scripts`; dependencies and Pi artifacts are pinned.
 
-Before finishing a code change, run `npm run format:check`, `npm run check`, and the tests relevant to the changed behavior. `npm test` builds first and exercises the real pinned Pi executable with an offline provider. Local socket and process supervision tests need host permissions when a sandbox blocks them.
+Before finishing a code change, run `npm run format:check`, `npm run check`, `npm run lint`, and the tests relevant to the changed behavior. `npm test` builds first and exercises the real pinned Pi executable with an offline provider. Local socket and process supervision tests need host permissions when a sandbox blocks them.
 
 Keep Pi-specific wire records inside the adapter and house extension. Never edit Pi JSONL directly. Commit application state and its events in one transaction, and publish events only after commit. Check saved request IDs before testing new-mutation revisions.
 

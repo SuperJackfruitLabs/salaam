@@ -250,7 +250,9 @@ export class Outbox {
             const rejected = join(this.dir, record.request_id + '.rejected.json');
             renameSync(join(this.dir, record.request_id + '.json'), rejected);
             syncDirectory(this.dir);
-            throw new Error(`${error.message}; rejected input saved at ${rejected}`);
+            throw new Error(`${error.message}; rejected input saved at ${rejected}`, {
+              cause: error,
+            });
           }
           if (
             record.command?.kind === 'decision' ||

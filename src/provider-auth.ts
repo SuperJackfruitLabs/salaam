@@ -49,7 +49,7 @@ function privateRead(path: string): string | undefined {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw new Error('Unsafe provider credential file');
+    throw new Error('Unsafe provider credential file', { cause: error });
   }
   try {
     const stat = fstatSync(fd);
@@ -109,7 +109,7 @@ export class ProviderCredentialStore implements CredentialStore {
           break;
         } catch (error) {
           if (!String(error).includes('locked') || Date.now() > deadline)
-            throw new Error('Provider credential lock unavailable');
+            throw new Error('Provider credential lock unavailable', { cause: error });
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
       }

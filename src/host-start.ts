@@ -24,7 +24,8 @@ export async function startHost(path: string) {
       release = acquireStateLock(join(m.state, 'startup'));
     } catch (error) {
       if (!(error instanceof ServiceError) || error.code !== 'state_locked') throw error;
-      if (Date.now() >= deadline) throw Error('Timed out waiting for concurrent host startup');
+      if (Date.now() >= deadline)
+        throw new Error('Timed out waiting for concurrent host startup', { cause: error });
       await new Promise((r) => setTimeout(r, 50));
     }
   }

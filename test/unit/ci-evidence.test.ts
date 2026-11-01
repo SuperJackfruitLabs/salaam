@@ -88,7 +88,7 @@ function fixture(profile = 'full') {
         commands: [],
         tests: 1,
       };
-      const labels = plan.baseline ? ['format', 'types', 'pin', 'full-suite'] : [];
+      const labels = plan.baseline ? ['format', 'types', 'lint', 'pin', 'full-suite'] : [];
       for (const [group, field] of [
         ['operators', 'operator'],
         ['tasks', 'task'],
