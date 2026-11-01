@@ -190,3 +190,29 @@ test('a session opened without --local keeps its old behaviour: no modes or comm
     await f.close();
   }
 }, 60000);
+
+test("the desk session ignores the editor's own MCP servers; other sessions still refuse them", async () => {
+  const f = await fixture(),
+    a = client(f.dir);
+  try {
+    const root = join(realpathSync(f.dir), 'mcp');
+    mkdirSync(root);
+    await a.initialize();
+    // What Zed forwards from the user's context_servers.
+    const zed = [{ name: 'swiggy-food', command: '/usr/local/bin/swiggy', args: [], env: [] }];
+    const created = await a.request('session/new', {
+      cwd: root,
+      mcpServers: zed,
+      _meta: { 'salaam.dev/local': true },
+    });
+    await ready(f.service, created.sessionId);
+    expect(created.modes.currentModeId).toBe('review');
+    expect(a.stderr()).toContain("does not use the editor's MCP servers; ignored 1");
+    await expect(a.request('session/new', { cwd: root, mcpServers: zed })).rejects.toThrow(
+      'must match the private node assignment',
+    );
+  } finally {
+    await a.close();
+    await f.close();
+  }
+}, 60000);

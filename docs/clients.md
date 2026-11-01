@@ -103,7 +103,7 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
 
 This opens your desk session in the project Zed has open; the service must already be running. For a guarded owned copy instead, replace `--local` with `--coding` and start the service with its coding root and selected executor; that copy holds edits and the original checkout remains the baseline. Do not forward MCP servers or additional directories; Salaam rejects those unsupported additions.
 
-Zed may forward existing MCP configuration when starting an external agent. If Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the project in `.zed/settings.json`:
+Zed forwards your own MCP servers when it starts an external agent. A desk session (`--local`) ignores them: Salaam never connects to an editor's MCP servers, and says on stderr how many it ignored. For other sessions, if Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the project in `.zed/settings.json`:
 
 ```json
 {
