@@ -38,7 +38,7 @@ Configure an ACP client's agent subprocess command as:
 }
 ```
 
-Add `--coding` to the adapter arguments to create guarded coding sessions. The service must already be running with `--coding-root`; commands additionally require its proven execution backend. A `session/new` caller may explicitly select `_meta["salaam.dev/coding"]`; load/resume retain the saved session’s original authority.
+Add `--local` to the adapter arguments to open your desk session in the editor's project folder, the same session `salaam` opens in a terminal there (see [Your desk session in an editor](#your-desk-session-in-an-editor)). Add `--coding` instead to create guarded coding sessions in an owned copy. The service must already be running with `--coding-root`; commands additionally require its proven execution backend. A `session/new` caller may explicitly select `_meta["salaam.dev/coding"]`; load/resume retain the saved session’s original authority.
 
 The service must already be running. The adapter uses newline-delimited UTF-8 JSON-RPC on stdin/stdout; diagnostics use stderr. It negotiates protocol version **1**. Its tested subset follows the official [initialization](https://agentclientprotocol.com/protocol/v1/initialization), [session setup](https://agentclientprotocol.com/protocol/v1/session-setup), [prompt lifecycle](https://agentclientprotocol.com/protocol/v1/prompt-turn), [permission](https://agentclientprotocol.com/protocol/v1/tool-calls) and [stdio transport](https://agentclientprotocol.com/protocol/v1/transports) contracts, checked on 2026-10-17. ACP v2 draft behavior is not advertised.
 
@@ -52,8 +52,10 @@ The service must already be running. The adapter uses newline-delimited UTF-8 JS
 | `session/update`             | Sends committed message/tool updates; permission presentation can occur while a tool is waiting                   |
 | `session/request_permission` | Presents the exact operation, target/value/version, digest and approval revision; offers allow-once/reject-once   |
 | `session/cancel`             | Explicitly journals cancellation before requesting abort; unknown external outcomes stay unknown                  |
+| `session/set_mode`           | Desk sessions only: review, accept edits, auto or full access (full access confirms first)                        |
+| `session/set_config_option`  | Desk sessions only: the same choice as the `mode` option; returns every option                                    |
 
-The adapter sends committed transcript chunks and normalized live tool start/finish updates, deduplicating tool identities when the transcript catches up. Volatile token previews remain TUI-only. It advertises no image/audio/embedded-resource prompt capability, additional directories, client terminal/filesystem execution, modes, model selection or dynamic MCP connections. Use `mcpServers: []`; nonempty server lists are rejected. Resource links become prompt references and do not cause the adapter to fetch arbitrary resources. New/load/resume use an absolute `cwd`, matching the saved session directory when reconnecting. The checked-in independent client fixture proves this subset; a named editor's UI is a separate integration observation.
+The adapter sends committed transcript chunks and normalized live tool start/finish updates, deduplicating tool identities when the transcript catches up. Volatile token previews remain TUI-only. It advertises no image/audio/embedded-resource prompt capability, additional directories, client terminal/filesystem execution, model selection or dynamic MCP connections. Modes and the `/rewind` command are offered only for desk sessions. Use `mcpServers: []`; nonempty server lists are rejected. Resource links become prompt references and do not cause the adapter to fetch arbitrary resources. New/load/resume use an absolute `cwd`, matching the saved session directory when reconnecting. The checked-in independent client fixture proves this subset; a named editor's UI is a separate integration observation.
 
 Loading a running session can observe and answer approvals without taking control. Prompting acquires the normal controller lease and fails if another controller owns it. `_meta: {"salaam.dev/takeover": true}` requests an explicit takeover. Leases renew every five seconds. Losing the ACP process leaves the daemon and current work alive; reconnect to the same session rather than creating another session.
 
@@ -89,7 +91,7 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
       "args": [
         "/absolute/path/to/salaam/bin/salaam.mjs",
         "acp",
-        "--coding",
+        "--local",
         "--state",
         "/absolute/path/to/salaam-state"
       ],
@@ -99,7 +101,7 @@ Zed’s [custom agent configuration](https://zed.dev/docs/ai/external-agents#cus
 }
 ```
 
-Start the service first with its coding root and selected executor. Do not forward MCP servers or additional directories; Salaam rejects those unsupported additions. Select Salaam as the external agent, send a coding instruction and inspect actual tool outcomes and the workspace diff through the same session ID. The guarded owned copy holds edits; the original project checkout remains the baseline.
+This opens your desk session in the project Zed has open; the service must already be running. For a guarded owned copy instead, replace `--local` with `--coding` and start the service with its coding root and selected executor; that copy holds edits and the original checkout remains the baseline. Do not forward MCP servers or additional directories; Salaam rejects those unsupported additions.
 
 Zed may forward existing MCP configuration when starting an external agent. If Salaam reports `Use an absolute cwd and no extra MCP servers/directories`, disable each configured server for the project in `.zed/settings.json`:
 
@@ -110,6 +112,15 @@ Zed may forward existing MCP configuration when starting an external agent. If S
   }
 }
 ```
+
+## Your desk session in an editor
+
+With `--local`, a new editor thread is a local coding session in the project folder itself, with the same approvals, rules, sandbox and checkpoints as `salaam` in a terminal there. Open the same session in the terminal with `salaam -c` from that folder.
+
+- **Modes.** The editor's mode picker offers Review, Accept edits, Auto and Full access, sent both as `modes` and as the `mode` config option. Picking Full access shows a confirmation with the warning first; cancelling keeps the current mode. Picking any other mode turns full access off. YOLO is not offered: it is turned on only in the terminal (`/yolo`, then type `yolo`). While it is on, the picker shows it, and picking another mode turns it off. A mode changed in the terminal (Shift+Tab) reaches the editor as `current_mode_update` and `config_option_update`.
+- **Approvals.** Each prompt says why it asks (the mode, a dangerous command, a push, a command that may listen) and shows an edit as a `diff` per file, or a command's exact text. Besides Allow once and Reject, it offers **Allow for this session** (`allow_always`), which saves the exact request as a session rule, as the terminal does. A command with shell features can only be approved once. Rules for always in this repo are made in the terminal.
+- **Finished edits** carry their `diff`, whichever mode applied them.
+- **`/rewind`** lists the turns. `/rewind N` shows what restoring changes, and on **Restore files** puts the files back as they were before turn N. The conversation is kept. Going back in the conversation continues in a new session, which an editor thread cannot follow, so do that with `/rewind` in the terminal. The command is handled by Salaam and never sent to the model.
 
 ## Operator attention
 

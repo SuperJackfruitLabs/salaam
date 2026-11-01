@@ -876,7 +876,7 @@ async function main(): Promise<void> {
     return;
   }
   if (group === 'acp') {
-    await acp(state, { coding: args.includes('--coding') });
+    await acp(state, { coding: args.includes('--coding'), local: args.includes('--local') });
     return;
   }
   if (group === 'providers' && verb === 'list') {

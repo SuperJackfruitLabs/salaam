@@ -443,29 +443,33 @@ export function toolMetadata(
   const kind =
     name === 'salaam_board'
       ? 'read'
-      : name === 'salaam_command' || (name === 'salaam_station' && action === 'check')
-        ? ['start', 'cancel', 'check'].includes(action)
-          ? 'execute'
-          : ['status', 'logs'].includes(action)
-            ? 'read'
-            : 'other'
-        : ['salaam_files', 'salaam_station'].includes(name) && action === 'patch'
-          ? args.content === null
-            ? 'delete'
-            : 'edit'
-          : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
-              ['search', 'list'].includes(action)
-            ? 'search'
-            : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
-                ['read', 'inspect', ...(name === 'salaam_repository' ? ['diff'] : [])].includes(
-                  action,
-                )
+      : name === 'salaam_local' && ['edit', 'command'].includes(action)
+        ? action === 'edit'
+          ? 'edit'
+          : 'execute'
+        : name === 'salaam_command' || (name === 'salaam_station' && action === 'check')
+          ? ['start', 'cancel', 'check'].includes(action)
+            ? 'execute'
+            : ['status', 'logs'].includes(action)
               ? 'read'
-              : ['salaam_history', 'inspect_child', 'consume_child_result'].includes(name)
+              : 'other'
+          : ['salaam_files', 'salaam_station'].includes(name) && action === 'patch'
+            ? args.content === null
+              ? 'delete'
+              : 'edit'
+            : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
+                ['search', 'list'].includes(action)
+              ? 'search'
+              : ['salaam_files', 'salaam_repository', 'salaam_station'].includes(name) &&
+                  ['read', 'inspect', ...(name === 'salaam_repository' ? ['diff'] : [])].includes(
+                    action,
+                  )
                 ? 'read'
-                : name === 'salaam_operator_mcp'
-                  ? operatorMcpKind(action, args.tool)
-                  : 'other';
+                : ['salaam_history', 'inspect_child', 'consume_child_result'].includes(name)
+                  ? 'read'
+                  : name === 'salaam_operator_mcp'
+                    ? operatorMcpKind(action, args.tool)
+                    : 'other';
   const locations: { path: string; line?: number }[] = [];
   if (
     ['salaam_files', 'salaam_station'].includes(name) &&
