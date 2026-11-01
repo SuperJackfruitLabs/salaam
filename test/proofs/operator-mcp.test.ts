@@ -9,17 +9,17 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { fixture, create, ready, until } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { digest } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { digest } from '../../src/core/protocol.js';
 import {
   OperatorMcp,
   declarationDigest,
   validateOperatorMcp,
   type McpDeclaration,
   type StdioDeclaration,
-} from '../../src/operator-mcp.js';
-import { mcpCli } from '../../src/operator-mcp-cli.js';
+} from '../../src/mcp/operator-mcp.js';
+import { mcpCli } from '../../src/cli/mcp-commands.js';
 // @ts-expect-error untyped test fixture
 import { fixtureServer } from '../fixtures/operator-mcp-server.mjs';
 
@@ -296,7 +296,7 @@ test('salaam mcp add, list and rm round-trip through the real CLI', () => {
   const scratch = mkdtempSync('/tmp/sal-omcp-');
   const env = { ...process.env, XDG_CONFIG_HOME: scratch };
   const cli = (...args: string[]) =>
-    execFileSync(process.execPath, [join(ROOT, 'dist/src/cli.js'), 'mcp', ...args], {
+    execFileSync(process.execPath, [join(ROOT, 'dist/src/cli/cli.js'), 'mcp', ...args], {
       env,
       encoding: 'utf8',
     });

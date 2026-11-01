@@ -12,15 +12,19 @@ import {
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
-import { localHash } from '../../src/local-edits.js';
-import { localDiff } from '../../src/local-diff.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from '../../src/tool-identity.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
+import { localHash } from '../../src/local/edits.js';
+import { localDiff } from '../../src/local/diff.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import {
+  probeToolsUser,
+  serviceToolIdentity,
+  type ToolIdentity,
+} from '../../src/runtime/tool-identity.js';
 import { fixture, fake, until } from '../helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 
 const linux = process.platform === 'linux';
 // Conditional tests are left undefined rather than skipped: CI evidence rejects pending tests.

@@ -10,10 +10,10 @@ import {
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SalaamService } from '../../dist/src/service.js';
-import { digest } from '../../dist/src/protocol.js';
-import { ToolkitAdmission } from '../../dist/src/toolkit-admission.js';
-import { ToolkitCalls } from '../../dist/src/toolkit-calls.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { digest } from '../../dist/src/core/protocol.js';
+import { ToolkitAdmission } from '../../dist/src/toolkit/admission.js';
+import { ToolkitCalls } from '../../dist/src/toolkit/calls.js';
 
 const options = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const service = await SalaamService.open({ stateDir: options.state, agentpodConfig: options.pins });

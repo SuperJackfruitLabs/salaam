@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, rmSync, realpathSync } from 'node:fs';
 import { fixture, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
+import { OperatorClient } from '../../src/tui/client.js';
 
 // At a desk a failed command is feedback: the model sees the exit and carries on, so the turn is
 // decided by how it ends, not by the first non-zero exit (step 0, 2026-10-31: every attempt that

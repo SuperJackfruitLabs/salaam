@@ -2,13 +2,13 @@ import { test, expect } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until, ready, control } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { conversationExport } from '../../src/tui-export.js';
-import { call } from '../../src/transport.js';
-import { ROOT } from '../../src/config.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { conversationExport } from '../../src/tui/export.js';
+import { call } from '../../src/core/transport.js';
+import { ROOT } from '../../src/core/config.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { SalaamService } from '../../src/service.js';
-import type { Session } from '../../src/protocol.js';
+import { SalaamService } from '../../src/service/service.js';
+import type { Session } from '../../src/core/protocol.js';
 
 test('local naming, native Pi fork, export and branch recovery preserve the source session', async () => {
   const f = await fixture(),

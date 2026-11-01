@@ -10,12 +10,12 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { DockerHarnessBoundary } from '../../src/harness-container.js';
-import { DockerCodingExecutor } from '../../src/coding-executor.js';
-import { engineRequest } from '../../src/execution-boundary.js';
-import { HarnessRpc } from '../../src/harness-rpc.js';
-import { ROOT } from '../../src/config.js';
-import { hostDigests } from '../../src/host.js';
+import { DockerHarnessBoundary } from '../../src/harness/container.js';
+import { DockerCodingExecutor } from '../../src/coding/executor.js';
+import { engineRequest } from '../../src/execution/boundary.js';
+import { HarnessRpc } from '../../src/harness/rpc.js';
+import { ROOT } from '../../src/core/config.js';
+import { hostDigests } from '../../src/host/host.js';
 
 test('whole harness: actual filesystem, descendant and network confinement with an isolated loopback gateway', async () => {
   const socket = process.env.SALAAM_TASK_REAL_SOCKET,

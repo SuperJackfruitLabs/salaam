@@ -3,7 +3,7 @@ import {
   classifierItems,
   classifierNotice,
   type ClassifierView,
-} from '../../src/tui-classifier.js';
+} from '../../src/tui/classifier.js';
 
 // Operator 2026-10-31: /classifier picks the reviewer's model like /model, from what the service
 // offers, plus Off; a pinned host shows the pin and offers nothing to change.

@@ -4,8 +4,8 @@ import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, create, ready, control, until } from '../helpers.js';
 import { effectFixture, decide } from '../managed-helpers.js';
-import { call } from '../../src/transport.js';
-import { SalaamService } from '../../src/service.js';
+import { call } from '../../src/core/transport.js';
+import { SalaamService } from '../../src/service/service.js';
 import corpus from '../fixtures/agentpod-acp-v1.json' with { type: 'json' };
 
 test('cancellation before dispatch durably fences only its logical prompt and deduplicates before controller checks', async () => {

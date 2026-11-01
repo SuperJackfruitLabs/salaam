@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
-import { Store } from '../../src/store.js';
-import { ManagedWork, type McpPermissionController } from '../../src/managed.js';
-import type { Operation } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork, type McpPermissionController } from '../../src/execution/managed.js';
+import type { Operation } from '../../src/core/protocol.js';
 
 function fixture() {
   const store = new Store(':memory:');

@@ -1,11 +1,11 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
-import { TaskWork } from '../../src/task-work.js';
-import { TaskCritic, CRITIC_BUDGET } from '../../src/task-critic.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/tasks/context.js';
+import { TaskWork } from '../../src/tasks/work.js';
+import { TaskCritic, CRITIC_BUDGET } from '../../src/tasks/critic.js';
 
 // Item 8: the completion critic's verdict, bound to the exact verified evidence.
 function fixture(rubric: string | null = 'Every claim cites RFC 9110.') {

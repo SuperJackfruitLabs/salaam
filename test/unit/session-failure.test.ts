@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { sessionFailure } from '../../src/tui-client.js';
+import { sessionFailure } from '../../src/tui/client.js';
 
 // PR #103 live pass: a desk session whose worker failed showed "Instruction accepted." and "no
 // coding workspace", never the error. The TUI now shows what actually happened.

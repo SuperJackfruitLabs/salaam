@@ -1,6 +1,6 @@
-import { SalaamService } from '../../dist/src/service.js';
-import { PiProcess } from '../../dist/src/pi.js';
-import { ROOT } from '../../dist/src/config.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { PiProcess } from '../../dist/src/runtime/pi.js';
+import { ROOT } from '../../dist/src/core/config.js';
 import { join } from 'node:path';
 
 let workerStopped = true;

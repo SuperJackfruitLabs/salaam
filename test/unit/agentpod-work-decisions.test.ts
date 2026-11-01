@@ -1,13 +1,13 @@
 import { test, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import type { AgentPodWork } from '../../src/agentpod-work.js';
-import { AgentPodWorkDecisions, approvalDetail } from '../../src/agentpod-work-decisions.js';
-import { RunGrants } from '../../src/run-grants.js';
-import { workDecision, workDecisionAnswer } from '../../src/agentpod-work-decision-protocol.js';
-import { digest } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import type { AgentPodWork } from '../../src/agentpod/work.js';
+import { AgentPodWorkDecisions, approvalDetail } from '../../src/agentpod/work-decisions.js';
+import { RunGrants } from '../../src/tasks/run-grants.js';
+import { workDecision, workDecisionAnswer } from '../../src/agentpod/work-decision-protocol.js';
+import { digest } from '../../src/core/protocol.js';
 const corpus = JSON.parse(
   readFileSync(new URL('../fixtures/agentpod-work-decision-v1.json', import.meta.url), 'utf8'),
 );

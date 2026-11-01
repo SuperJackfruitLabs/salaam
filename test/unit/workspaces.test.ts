@@ -9,10 +9,10 @@ import {
   linkSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { Workspaces, filePath, readTree } from '../../src/workspaces.js';
-import { digest } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { Workspaces, filePath, readTree } from '../../src/workers/workspaces.js';
+import { digest } from '../../src/core/protocol.js';
 
 function fixture() {
   const dir = mkdtempSync('/tmp/sal-workspace-'),

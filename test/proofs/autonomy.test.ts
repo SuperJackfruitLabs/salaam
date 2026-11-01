@@ -2,9 +2,9 @@ import { test, expect } from 'vitest';
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, ready, sandboxFallback, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { SalaamService } from '../../src/service.js';
-import { permissionPolicy } from '../../src/autonomy.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { SalaamService } from '../../src/service/service.js';
+import { permissionPolicy } from '../../src/runtime/autonomy.js';
 test('real Pi executes only scoped edits automatically and permission policy survives daemon recovery', async () => {
   const f = await fixture(),
     client = new OperatorClient(f.dir);
@@ -63,7 +63,7 @@ test('real Pi executes only scoped edits automatically and permission policy sur
 
 test('real terminal configures reviewed permissions separately from manual progression', async () => {
   const { PtyClient } = await import('../terminal-helpers.js');
-  const { ROOT } = await import('../../src/config.js');
+  const { ROOT } = await import('../../src/core/config.js');
   const f = await fixture(),
     client = new OperatorClient(f.dir);
   let terminal: InstanceType<typeof PtyClient> | undefined;

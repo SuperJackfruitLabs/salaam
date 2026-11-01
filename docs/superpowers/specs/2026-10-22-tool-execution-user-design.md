@@ -21,9 +21,9 @@ These run on the agent's behalf and touch the host:
 
 | Path                                     | Code                                          | Today                                                        |
 | ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
-| `salaam_local` command                   | `LocalCoding.command` (`src/local-coding.ts`) | `/bin/sh -c` as the service user                             |
-| `salaam_local` edit (create, replace)    | `applyLocalEdits` (`src/local-edits.ts`)      | in-process fs writes as the service user                     |
-| Operator undo of a local edit            | `applyUndo` (`src/local-undo.ts`)             | in-process fs writes and unlinks                             |
+| `salaam_local` command                   | `LocalCoding.command` (`src/local/coding.ts`) | `/bin/sh -c` as the service user                             |
+| `salaam_local` edit (create, replace)    | `applyLocalEdits` (`src/local/edits.ts`)      | in-process fs writes as the service user                     |
+| Operator undo of a local edit            | `applyUndo` (`src/local/undo.ts`)             | in-process fs writes and unlinks                             |
 | `salaam_command` (coding sessions)       | Docker executor                               | already a non-root container user with no network; unchanged |
 | `salaam_files` patches (coding sessions) | owned workspace copies under Salaam state     | Salaam-owned copies; unchanged                               |
 | `salaam_workspace` read, list, search    | `LocalWorkspace`                              | path-confined reads as the service user; see Non-goals       |
@@ -86,7 +86,7 @@ another uid, so the daemon cannot signal them directly. It still kills the
 sudo process group as before. The script starts with `umask 0002`, so files
 it creates are readable by the shared group.
 
-File edits: `sudo -n -u T -- <node> <dist>/src/local-edit-helper.js`. The
+File edits: `sudo -n -u T -- <node> <dist>/src/local/edit-helper.js`. The
 helper receives the reviewed edit list as JSON on stdin and applies it with
 the existing `applyLocalEdits` (O_EXCL temp file, O_NOFOLLOW, per-file atomic
 rename, fsync). It prints one line per applied path. The daemon still verifies

@@ -2,15 +2,15 @@ import { test, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { call } from '../../src/transport.js';
-import { ROOT } from '../../src/config.js';
-import { deskRoute } from '../../src/acp-desk.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
+import { call } from '../../src/core/transport.js';
+import { ROOT } from '../../src/core/config.js';
+import { deskRoute } from '../../src/acp/desk.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
 import { client } from '../acp-helpers.js';
-import { permissionPolicy } from '../../src/autonomy.js';
-import { localHash } from '../../src/local-edits.js';
+import { permissionPolicy } from '../../src/runtime/autonomy.js';
+import { localHash } from '../../src/local/edits.js';
 
 type Message = Record<string, any>;
 const updates = (messages: Message[], kind: string) =>

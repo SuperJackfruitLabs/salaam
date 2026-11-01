@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { taskPolicy } from '../../src/task-policy.js';
+import { taskPolicy } from '../../src/tasks/policy.js';
 
 test('token budgeting defaults remain capped and null explicitly disables aggregate and default output bounds', () => {
   expect(taskPolicy({}).limits).toMatchObject({ token_units: 16777216, output_token_bound: 8192 });
@@ -35,7 +35,7 @@ test.each([
 
 // Item 8: completion hooks are checks required at completion, keyed hook-<key>. A plan without a
 // gate keeps its exact shape (and so its digest).
-import { requiredChecks } from '../../src/task-policy.js';
+import { requiredChecks } from '../../src/tasks/policy.js';
 const hook = (key: string) => ({ key, command: 'true', cwd: '.' });
 test('a completion gate parses, round-trips, and adds its hooks to the required checks', () => {
   const policy = taskPolicy({

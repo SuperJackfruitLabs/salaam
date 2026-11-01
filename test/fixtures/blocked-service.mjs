@@ -1,4 +1,4 @@
-import { SalaamService } from '../../dist/src/service.js';
+import { SalaamService } from '../../dist/src/service/service.js';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';

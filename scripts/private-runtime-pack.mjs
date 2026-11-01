@@ -86,7 +86,7 @@ try {
   if (pkg.engines.node !== pin.node.version) throw Error('Package Node pin mismatch');
   if (pkg.packageManager !== `npm@${pin.npm}`) throw Error('Package npm pin mismatch');
   const storeSource = readFileSync(
-    join(stage, 'app/node_modules/@superjackfruitlabs/salaam/src/store.ts'),
+    join(stage, 'app/node_modules/@superjackfruitlabs/salaam/src/store/store.ts'),
     'utf8',
   );
   const schemaMaximum = Number(/if \(version > (\d+)\)/.exec(storeSource)?.[1]);

@@ -1,18 +1,18 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { localHash } from '../../src/local-edits.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { localHash } from '../../src/local/edits.js';
 import {
   ApprovalRules,
   commandArgv,
   evaluateRules,
   validateRule,
   type StoredRule,
-} from '../../src/approval-rules.js';
+} from '../../src/runtime/approval-rules.js';
 
 // Operator plan 2026-10-31, phase 2a: desk sessions get OpenCode-style allow/ask/deny rules. Commands are
 // matched on their parsed words, never on a substring, so `npm test; rm -rf /` can never ride on an

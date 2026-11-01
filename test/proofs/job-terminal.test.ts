@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { existsSync, writeFileSync } from 'node:fs';
 import { taskFixture } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 import { PtyClient } from '../terminal-helpers.js';
 
 test('real TUI creates and triggers a one-shot job; hard terminal loss and observer reconnect preserve its running occurrence', async () => {

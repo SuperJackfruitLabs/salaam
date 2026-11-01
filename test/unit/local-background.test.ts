@@ -1,10 +1,10 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { until } from '../helpers.js';
 function setup() {
   const root = realpathSync(mkdtempSync('/tmp/sal-local-code-'));

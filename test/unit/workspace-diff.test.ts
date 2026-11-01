@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { workspaceDiff } from '../../src/workspace-diff.js';
+import { workspaceDiff } from '../../src/workers/workspace-diff.js';
 const file = (content: string) => ({
   content: Buffer.from(content).toString('base64'),
   executable: false,

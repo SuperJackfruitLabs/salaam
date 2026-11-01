@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { fixture, create, ready, until } from '../helpers.js';
 import { client } from '../acp-helpers.js';
-import { ROOT, VERSION } from '../../src/config.js';
-import { AcpJournal } from '../../src/acp-journal.js';
+import { ROOT, VERSION } from '../../src/core/config.js';
+import { AcpJournal } from '../../src/acp/journal.js';
 
 const prompt = (text: string, requestId?: string) => ({
   prompt: [{ type: 'text', text }],

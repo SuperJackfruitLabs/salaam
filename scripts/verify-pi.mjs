@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { ROOT, PI_ROOT, bundleDigest } from '../dist/src/config.js';
+import { ROOT, PI_ROOT, bundleDigest } from '../dist/src/core/config.js';
 import { join } from 'node:path';
 
 const pin = JSON.parse(readFileSync(join(ROOT, 'pi-pin.json'), 'utf8'));

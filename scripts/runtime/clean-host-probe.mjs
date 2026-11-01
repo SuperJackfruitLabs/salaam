@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 const [prefix, version] = process.argv.slice(2);
 const runtime = realpathSync(join(prefix, 'current'));
 const pkg = join(runtime, 'app/node_modules/@superjackfruitlabs/salaam');
-const { call } = await import(pathToFileURL(join(pkg, 'dist/src/transport.js')));
+const { call } = await import(pathToFileURL(join(pkg, 'dist/src/core/transport.js')));
 const exec = promisify(execFile);
 const sal = join(prefix, 'bin/sal'),
   state = '/proof/state',

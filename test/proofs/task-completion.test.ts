@@ -3,9 +3,9 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until, ready } from '../helpers.js';
-import { readTree } from '../../src/workspaces.js';
-import { digest } from '../../src/protocol.js';
-import { call } from '../../src/transport.js';
+import { readTree } from '../../src/workers/workspaces.js';
+import { digest } from '../../src/core/protocol.js';
+import { call } from '../../src/core/transport.js';
 
 test('completion requires fresh command receipts and deliverables; edits invalidate previous success', async () => {
   const f = await taskFixture();

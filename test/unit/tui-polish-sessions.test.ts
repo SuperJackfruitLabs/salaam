@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
-import { SalaamApp } from '../../src/tui.js';
-import type { ChoiceModal } from '../../src/tui-modals.js';
-import type { Session } from '../../src/protocol.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import type { ChoiceModal } from '../../src/tui/modals.js';
+import type { Session } from '../../src/core/protocol.js';
 
 // Trial polish C (2026-10-31): the session picker puts this folder's sessions first with what you
 // last asked and when; `salaam code --continue` in a folder with no session says it started one.
@@ -93,7 +93,7 @@ test('the window title and Herdr follow the session state, and stay quiet when t
     approvals: [{ id: 'p', state: 'pending' }],
     operations: [],
     messages: [],
-  } as unknown as import('../../src/protocol.js').SessionSnapshot;
+  } as unknown as import('../../src/core/protocol.js').SessionSnapshot;
   changed();
   expect(titles.at(-1)).toBe('Salaam · app · needs you');
   expect(reports.at(-1)).toBe('blocked s1');

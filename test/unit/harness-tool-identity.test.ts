@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { harnessToolIds, matchesCodexCommandScope } from '../../src/harness-tool-identity.js';
+import { harnessToolIds, matchesCodexCommandScope } from '../../src/harness/tool-identity.js';
 test('only pinned Gemini namespaces correlate to the recorded model tool call', () => {
   expect(harnessToolIds('gemini-acp', '0.64.0', { id: 'toolu_fixture', name: 'replace' })).toEqual([
     'toolu_fixture',

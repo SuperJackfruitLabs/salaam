@@ -9,12 +9,16 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
-import { configurePermissions, permissionPolicy, validatePermissions } from '../../src/autonomy.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { localHash } from '../../src/local-edits.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
+import {
+  configurePermissions,
+  permissionPolicy,
+  validatePermissions,
+} from '../../src/runtime/autonomy.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { localHash } from '../../src/local/edits.js';
 function setup() {
   const root = realpathSync(mkdtempSync('/tmp/sal-autonomy-')),
     store = new Store(':memory:');
@@ -221,7 +225,7 @@ test('permission revisions deduplicate before fresh control checks without chang
 });
 
 test('inspect mode denies even exact manual approval and local undo', async () => {
-  const { applyUndo } = await import('../../src/local-undo.js');
+  const { applyUndo } = await import('../../src/local/undo.js');
   const f = setup();
   try {
     const pending = f.edit();

@@ -3,10 +3,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync } from '
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fixture, sandboxFallback, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { call } from '../../src/transport.js';
-import { SalaamService } from '../../src/service.js';
-import type { Session } from '../../src/protocol.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { call } from '../../src/core/transport.js';
+import { SalaamService } from '../../src/service/service.js';
+import type { Session } from '../../src/core/protocol.js';
 
 test('local TUI session reads a real workspace through pinned Pi and recovers its admission', async () => {
   const f = await fixture();

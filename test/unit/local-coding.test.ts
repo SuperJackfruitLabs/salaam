@@ -9,16 +9,16 @@ import {
   existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
 import {
   localHash,
   prepareLocalEdits,
   applyLocalEdits,
   reviewLocalEdits,
-} from '../../src/local-edits.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
+} from '../../src/local/edits.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { until } from '../helpers.js';
 function setup() {
   const root = realpathSync(mkdtempSync('/tmp/sal-local-code-'));
@@ -207,7 +207,7 @@ test('lost execution is fenced durably rather than replayed after restart', asyn
 });
 
 test('lost undo completion fences the root and reconciles only after original files are restored', async () => {
-  const { reviewUndo, assertUndoSettled, reconcileUndo } = await import('../../src/local-undo.js');
+  const { reviewUndo, assertUndoSettled, reconcileUndo } = await import('../../src/local/undo.js');
   const f = setup();
   try {
     writeFileSync(join(f.root, 'a.txt'), 'before');
@@ -299,7 +299,7 @@ test('failed process ownership persistence never releases the command', async ()
 });
 
 // Item 10: local commands run sandboxed where the host can, and say plainly when it cannot.
-import type { LocalSandbox } from '../../src/local-coding.js';
+import type { LocalSandbox } from '../../src/local/coding.js';
 function sandboxed(sandbox: LocalSandbox) {
   const f = setup();
   (f.local as unknown as { sandbox: LocalSandbox }).sandbox = sandbox;
@@ -358,7 +358,7 @@ test('the tools user still reports its own host process group, then runs bubblew
 });
 
 test('a Linux host without a usable bubblewrap chooses none; macOS chooses Seatbelt when usable', async () => {
-  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { chooseLocalSandbox } = await import('../../src/local/command-sandbox.js');
   expect(
     chooseLocalSandbox(
       'workspace-write',
@@ -525,7 +525,7 @@ test('an unsandboxed command records sandbox none in its execution result', asyn
 });
 
 test('host plan names the command sandbox, refused without one unless the operator allows it', async () => {
-  const { hostLocalSandbox } = await import('../../src/host.js');
+  const { hostLocalSandbox } = await import('../../src/host/host.js');
   const sb = () => ({ path: '/usr/bin/sandbox-exec' });
   expect(
     hostLocalSandbox(
@@ -582,7 +582,7 @@ test('host plan names the command sandbox, refused without one unless the operat
 // skipped test): Seatbelt on macOS, bubblewrap on a Linux host that has it, and a refusal where no
 // sandbox can start (a CI container).
 test('a real command runs under the host sandbox and records it, or is refused where there is none', async () => {
-  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { chooseLocalSandbox } = await import('../../src/local/command-sandbox.js');
   const chosen = chooseLocalSandbox('workspace-write');
   if (process.platform === 'darwin') expect(chosen.kind).toBe('seatbelt');
   const f = sandboxed(chosen);
@@ -646,7 +646,7 @@ test('a broker-network host says in every approval that the network goes through
 // Every host runs this with its own sandbox and nothing is skipped: Seatbelt on macOS, bubblewrap on
 // a Linux host that has it; where no sandbox can start, the command is refused.
 test('a real broker-network command reaches only the allowlisted host, and nothing directly', async () => {
-  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { chooseLocalSandbox } = await import('../../src/local/command-sandbox.js');
   const { fakeBroker, helloServer } = await import('../helpers/fake-broker.js');
   const chosen = chooseLocalSandbox('workspace-write');
   if (process.platform === 'darwin') expect(chosen.kind).toBe('seatbelt');
@@ -694,7 +694,7 @@ test('a real broker-network command reaches only the allowlisted host, and nothi
 }, 60000);
 
 test('a broker-network command with the broker socket missing still runs, with no network', async () => {
-  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { chooseLocalSandbox } = await import('../../src/local/command-sandbox.js');
   const chosen = chooseLocalSandbox('workspace-write');
   const f = sandboxed({ ...chosen, network: { socket: '/nonexistent/salaam/broker.sock' } });
   try {
@@ -727,7 +727,7 @@ test('a broker-network command with the broker socket missing still runs, with n
 // Background commands get the same broker network as foreground ones, through a relay that lives
 // as long as the task. They used to get none while the approval said "through the broker".
 test('a real broker-network background command reaches only the allowlisted host', async () => {
-  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { chooseLocalSandbox } = await import('../../src/local/command-sandbox.js');
   const { fakeBroker, helloServer } = await import('../helpers/fake-broker.js');
   const chosen = chooseLocalSandbox('workspace-write');
   const up = await helloServer();
@@ -954,7 +954,7 @@ test('a large review is bounded and says how much it left out', () => {
 });
 
 test('undo after a targeted edit restores the original file', async () => {
-  const { reviewUndo } = await import('../../src/local-undo.js');
+  const { reviewUndo } = await import('../../src/local/undo.js');
   const f = setup();
   try {
     writeFileSync(join(f.root, 'big.txt'), LINES);

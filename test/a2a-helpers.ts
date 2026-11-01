@@ -10,9 +10,9 @@ import {
 import { ClientFactory, JsonRpcTransportFactory } from '@a2a-js/sdk/client';
 import { taskFixture, checkedPlan } from './task-helpers.js';
 import { until } from './helpers.js';
-import { ROOT } from '../src/config.js';
-import { digest } from '../src/protocol.js';
-import { A2AInbound, type A2AInboundGrant } from '../src/a2a-inbound.js';
+import { ROOT } from '../src/core/config.js';
+import { digest } from '../src/core/protocol.js';
+import { A2AInbound, type A2AInboundGrant } from '../src/a2a/inbound.js';
 
 export async function inboundFixture(client?: A2AInboundGrant['client']) {
   const options = {

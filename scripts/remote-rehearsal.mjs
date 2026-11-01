@@ -7,8 +7,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PtyClient } from '../dist/test/terminal-helpers.js';
 import { until } from '../dist/test/helpers.js';
-import { shellQuote } from '../dist/src/remote.js';
-import { digest } from '../dist/src/protocol.js';
+import { shellQuote } from '../dist/src/cli/remote.js';
+import { digest } from '../dist/src/core/protocol.js';
 import { DemoAcpClient } from './acp-client.mjs';
 const option = (name) => {
   const i = process.argv.indexOf(name);
@@ -56,7 +56,7 @@ const get = async (path) =>
       node,
       '--input-type=module',
       '-e',
-      `import{call}from${JSON.stringify(repo + '/dist/src/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)})));`,
+      `import{call}from${JSON.stringify(repo + '/dist/src/core/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)})));`,
     ]),
   );
 const snapshot = (id) => get('/v1/sessions/' + id + '/snapshot');
@@ -112,7 +112,7 @@ try {
       node,
       '--input-type=module',
       '-e',
-      `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=bytes=>createHash('sha256').update(bytes).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')&&!f.startsWith('._')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
+      `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/core/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=bytes=>createHash('sha256').update(bytes).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')&&!f.startsWith('._')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
     ]),
   );
   save();

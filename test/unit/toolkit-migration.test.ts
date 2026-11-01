@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
+import { Store } from '../../src/store/store.js';
 
 test('v21 upgrade preserves all saved receipts and events without inventing native resource ownership', () => {
   const dir = mkdtempSync('/tmp/stkm-'),

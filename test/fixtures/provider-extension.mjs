@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { syncBuiltinESMExports } from 'node:module';
-import house from '../../dist/src/house-extension.js';
+import house from '../../dist/src/runtime/house-extension.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NodeHttpHandler, NodeHttp2Handler } from '@smithy/node-http-handler';

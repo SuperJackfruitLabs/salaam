@@ -4,14 +4,14 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ROOT } from '../../src/config.js';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
-import { acquireControl, Outbox } from '../../src/attach.js';
-import type { Session, SessionSnapshot, Approval, Operation } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
+import { acquireControl, Outbox } from '../../src/tui/attach.js';
+import type { Session, SessionSnapshot, Approval, Operation } from '../../src/core/protocol.js';
 import { effectFixture, submit, decide } from '../managed-helpers.js';
 import { fixture, create, ready, until } from '../helpers.js';
-import { PiProcess } from '../../src/pi.js';
+import { PiProcess } from '../../src/runtime/pi.js';
 
 async function kill(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return;

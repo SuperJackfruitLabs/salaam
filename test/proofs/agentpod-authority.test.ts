@@ -2,11 +2,11 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
 import { client } from '../acp-helpers.js';
 import { ready, until } from '../helpers.js';
-import { digest } from '../../src/protocol.js';
+import { digest } from '../../src/core/protocol.js';
 
 async function setup() {
   const base = realpathSync(mkdtempSync('/tmp/sal-ap-authority-'));

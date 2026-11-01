@@ -2,14 +2,14 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SalaamService } from '../../src/service.js';
-import { ROOT, bundleDigest } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
-import { call } from '../../src/transport.js';
+import { SalaamService } from '../../src/service/service.js';
+import { ROOT, bundleDigest } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
+import { call } from '../../src/core/transport.js';
 import { ready, control, until } from '../helpers.js';
-import { readTree } from '../../src/workspaces.js';
-import type { TeamAssignment } from '../../src/team-work.js';
-import { hostDigests } from '../../src/host.js';
+import { readTree } from '../../src/workers/workspaces.js';
+import type { TeamAssignment } from '../../src/tasks/team-work.js';
+import { hostDigests } from '../../src/host/host.js';
 
 test('real proven executor: two private native builders, independent reviewer and fresh integrated acceptance preserve dirty bytes', async () => {
   const engineSocket = process.env.SALAAM_TASK_REAL_SOCKET,

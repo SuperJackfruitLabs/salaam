@@ -2,8 +2,8 @@
 // Live smoke for the built-in web search and fetch: real keyless APIs, no keys. Not part of the
 // test suite (the CI evidence gate refuses skipped tests); run by hand after `npm run build`:
 //   node scripts/web-search-smoke.mjs
-import { WebSearch } from '../dist/src/web-search.js';
-import { fetchPage } from '../dist/src/web-fetch.js';
+import { WebSearch } from '../dist/src/web/search.js';
+import { fetchPage } from '../dist/src/web/fetch.js';
 
 const ws = new WebSearch();
 const cases = [

@@ -4,8 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { RecurringWork } from '../../src/recurring-work.js';
-import { call } from '../../src/transport.js';
+import { RecurringWork } from '../../src/tasks/recurring-work.js';
+import { call } from '../../src/core/transport.js';
 const define = async (
   f: Awaited<ReturnType<typeof taskFixture>>,
   def: unknown = null,
@@ -216,8 +216,8 @@ test('changed execution scope blocks accepted reservation before any task or mod
 
 test('a recurring trigger lost reply stays in the TUI outbox and a replacement controller recovers the same reservation', async () => {
   const f = await taskFixture();
-  const { OperatorClient } = await import('../../src/tui-client.js');
-  const { Outbox } = await import('../../src/attach.js');
+  const { OperatorClient } = await import('../../src/tui/client.js');
+  const { Outbox } = await import('../../src/tui/attach.js');
   let client: InstanceType<typeof OperatorClient> | undefined;
   try {
     const job = await define(f);

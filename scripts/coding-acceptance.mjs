@@ -6,12 +6,12 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, chmodSync 
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { SalaamService } from '../dist/src/service.js';
-import { call } from '../dist/src/transport.js';
-import { digest } from '../dist/src/protocol.js';
-import { readTree } from '../dist/src/workspaces.js';
-import { commandTerminal } from '../dist/src/coding.js';
-import { providerRoute } from '../dist/src/provider-config.js';
+import { SalaamService } from '../dist/src/service/service.js';
+import { call } from '../dist/src/core/transport.js';
+import { digest } from '../dist/src/core/protocol.js';
+import { readTree } from '../dist/src/workers/workspaces.js';
+import { commandTerminal } from '../dist/src/coding/coding.js';
+import { providerRoute } from '../dist/src/providers/config.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const option = (name) => {

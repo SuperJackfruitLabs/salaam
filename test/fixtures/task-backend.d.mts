@@ -1,4 +1,4 @@
-import type { ExecutionBackend } from '../../src/coding-executor.js';
+import type { ExecutionBackend } from '../../src/coding/executor.js';
 export class TaskFixtureBackend implements ExecutionBackend {
   constructor(launchLog?: string);
   profileDigest: string;

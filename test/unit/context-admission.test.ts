@@ -11,10 +11,10 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { Store } from '../../src/store.js';
-import { ContextAdmission } from '../../src/context-admission.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
+import { Store } from '../../src/store/store.js';
+import { ContextAdmission } from '../../src/runtime/context-admission.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/tasks/context.js';
 
 const roots: string[] = [];
 afterEach(() => {

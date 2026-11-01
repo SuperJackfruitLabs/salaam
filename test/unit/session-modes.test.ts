@@ -1,12 +1,12 @@
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { FormModal } from '../../src/tui-modals.js';
-import { SalaamTheme } from '../../src/tui-theme.js';
+import { FormModal } from '../../src/tui/modals.js';
+import { SalaamTheme } from '../../src/tui/theme.js';
 import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
 import {
   configurePermissions,
   permissionPolicy,
@@ -15,11 +15,11 @@ import {
   nextMode,
   autoApprovesEdits,
   type PermissionMode,
-} from '../../src/autonomy.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { localHash } from '../../src/local-edits.js';
-import { ApprovalRules } from '../../src/approval-rules.js';
-import { shellPassthrough } from '../../src/shell-passthrough.js';
+} from '../../src/runtime/autonomy.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { localHash } from '../../src/local/edits.js';
+import { ApprovalRules } from '../../src/runtime/approval-rules.js';
+import { shellPassthrough } from '../../src/runtime/shell-passthrough.js';
 
 // Phase 2b (operator rulings 2026-10-31): one-key modes for interactive coding sessions — review,
 // accept edits, auto — plus full access (no sandbox; dangerous commands ask) and YOLO (no approvals).

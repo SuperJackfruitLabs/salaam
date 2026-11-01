@@ -8,9 +8,9 @@ import {
   rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { TurnCheckpoints } from '../../src/turn-rewind.js';
+import { Store } from '../../src/store/store.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { TurnCheckpoints } from '../../src/runtime/turn-rewind.js';
 
 function setup(coding = true, restorable = true) {
   const root = realpathSync(mkdtempSync('/tmp/sal-rewind-')),

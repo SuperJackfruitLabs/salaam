@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
+import { OperatorClient } from '../../src/tui/client.js';
 
 /** One local edit turn through the real service, approved. */
 async function edit(

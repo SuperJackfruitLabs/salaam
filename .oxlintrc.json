@@ -42,9 +42,9 @@
         "scripts/**",
         "bin/**",
         "test/**",
-        "src/cli.ts",
-        "src/cli-help.ts",
-        "src/operator-mcp-cli.ts"
+        "src/cli/cli.ts",
+        "src/cli/help.ts",
+        "src/cli/mcp-commands.ts"
       ],
       "rules": {
         "no-console": "off"

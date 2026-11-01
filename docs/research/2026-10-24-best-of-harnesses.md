@@ -86,7 +86,7 @@ harness without new transport work.
 
 | Capability                                           | Best at             | Why                                                                                                                                                                | Source                                                                                             |
 | ---------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Bound admission, operation digests, unknown outcomes | **Salaam**          | Every effect is bound to a plan digest and approval. It never replays or claims an unknown outcome.                                                                | salaam `src/agentpod-work.ts`, `docs/limitations.md`                                               |
+| Bound admission, operation digests, unknown outcomes | **Salaam**          | Every effect is bound to a plan digest and approval. It never replays or claims an unknown outcome.                                                                | salaam `src/agentpod/work.ts`, `docs/limitations.md`                                               |
 | Checked tasks that need real evidence                | **Salaam**          | `task-verification`, `station-task-verification`, budgets.                                                                                                         | salaam `docs/durable-tasks.md`                                                                     |
 | Hook-enforced completion                             | Claude Code         | `PreToolUse` can block a call. A `Stop` hook that exits 2 or returns `"decision": "block"` prevents Claude from stopping. A hook that fails to run does not block. | https://code.claude.com/docs/en/hooks                                                              |
 | Adversarial critic before completion                 | Jules               | A critic reviews each proposed change before it is finished. Version one is a single pass over the final output.                                                   | https://developers.googleblog.com/meet-jules-sharpest-critic-and-most-valuable-ally/ (vendor blog) |
@@ -167,7 +167,7 @@ harness without new transport work.
 
 | Capability                    | Best at     | Why                                                                                   | Source                                        |
 | ----------------------------- | ----------- | ------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Hard per-task budgets         | **Salaam**  | Task budgets and bounded progression.                                                 | salaam `src/task-budget.ts`                   |
+| Hard per-task budgets         | **Salaam**  | Task budgets and bounded progression.                                                 | salaam `src/tasks/budget.ts`                  |
 | Planner/editor model split    | Aider       | Architect mode: the main model proposes and an `--editor-model` writes the edits.     | https://aider.chat/docs/usage/modes.html      |
 | Targeted compaction           | Claude Code | "Summarize from here" or "Summarize up to here" in `/rewind`, with optional guidance. | https://code.claude.com/docs/en/checkpointing |
 | Compaction at a safe boundary | **Salaam**  | It compacts only at an idle boundary.                                                 | salaam `docs/task-context.md`                 |
@@ -189,7 +189,7 @@ harness without new transport work.
 | OTel events                 | Codex             | An `[otel]` table with OTLP HTTP/gRPC exporters; `codex.tool_decision` and `tool_result` events; prompts redacted by default.                   | https://learn.chatgpt.com/docs/config-file/config-advanced |
 | OTel logs, metrics, traces  | Gemini CLI        | Tool-call and API events, token metrics, GenAI semantic metrics and optional traces.                                                            | https://geminicli.com/docs/cli/telemetry/                  |
 | Traces by default           | OpenAI Agents SDK | Agent, generation, function, guardrail and handoff spans. Pluggable trace processors.                                                           | https://openai.github.io/openai-agents-python/tracing/     |
-| Execution evidence contract | **Salaam**        | Contract-typed evidence and artifacts.                                                                                                          | agentpod `packages/contract/src/execution-evidence.ts`     |
+| Execution evidence contract | **Salaam**        | Contract-typed evidence and artifacts.                                                                                                          | agentpod `packages/contract/src/execution/evidence.ts`     |
 
 ### Operator UX and errors
 

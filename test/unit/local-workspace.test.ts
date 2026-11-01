@@ -9,8 +9,8 @@ import {
   realpathSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { readLocalWorkspace } from '../../src/local-workspace.js';
-import { slashCommand, SLASH_COMMANDS } from '../../src/tui-commands.js';
+import { readLocalWorkspace } from '../../src/local/workspace.js';
+import { slashCommand, SLASH_COMMANDS } from '../../src/tui/commands.js';
 
 test('local inspection reads actual files and excludes private paths, symlinks and hard links', () => {
   const root = realpathSync(mkdtempSync('/tmp/sal-local-'));

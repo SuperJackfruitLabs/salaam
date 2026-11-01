@@ -1,8 +1,8 @@
-import type { ExternalBackend, ExternalHooks } from '../../src/external-runtime.js';
-import type { ExternalRuntime, WorkerBinding } from '../../src/worker-binding.js';
-import type { HarnessCheckpoint } from '../../src/harness-protocol.js';
-import type { WorkspaceTree } from '../../src/records.js';
-import { digest, ServiceError } from '../../src/protocol.js';
+import type { ExternalBackend, ExternalHooks } from '../../src/workers/external-runtime.js';
+import type { ExternalRuntime, WorkerBinding } from '../../src/core/worker-binding.js';
+import type { HarnessCheckpoint } from '../../src/harness/protocol.js';
+import type { WorkspaceTree } from '../../src/core/records.js';
+import { digest, ServiceError } from '../../src/core/protocol.js';
 
 /** Deterministic transport only; never execution, live-model or interoperability evidence. */
 export class FixtureExternalBackend implements ExternalBackend {

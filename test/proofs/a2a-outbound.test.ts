@@ -3,8 +3,8 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { sdkPeer } from '../fixtures/a2a-peer.js';
-import { A2ABackend } from '../../src/a2a-backend.js';
-import { digest } from '../../src/protocol.js';
+import { A2ABackend } from '../../src/a2a/backend.js';
+import { digest } from '../../src/core/protocol.js';
 import { until } from '../helpers.js';
 
 async function setup() {

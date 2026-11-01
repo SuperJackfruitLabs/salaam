@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { workerTools } from '../../src/protocol.js';
+import { workerTools } from '../../src/core/protocol.js';
 
 // Web search and fetch are offered to interactive local coding sessions only: never to child
 // workers, and not to station (board) work, which reaches the web through the broker.
@@ -31,7 +31,7 @@ test('an interactive coding worker gets web search and fetch in its tool allowli
 });
 
 test('the extension registers both tools for interactive coding roots only', () => {
-  const ext = src('house-extension.ts');
+  const ext = src('runtime/house-extension.ts');
   const registered = [
     ...ext.matchAll(
       /if \(c\.localCoding && !c\.child\)\s*pi\.registerTool\(\{\s*name: '([a-z_]+)'/g,
@@ -45,7 +45,7 @@ test('the extension registers both tools for interactive coding roots only', () 
 });
 
 test('the supervisor serves web calls only to admitted interactive coding sessions', () => {
-  const sup = src('supervisor.ts');
+  const sup = src('runtime/supervisor.ts');
   const block =
     /if \(method === 'web\.search' \|\| method === 'web\.fetch'\) \{([\s\S]*?)\n {6}\}/.exec(sup);
   expect(block, 'web dispatch block').toBeTruthy();

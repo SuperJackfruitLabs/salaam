@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
-import { ApprovalModal, onceOnlyReason } from '../../src/tui-modals.js';
-import { SalaamTheme } from '../../src/tui-theme.js';
-import type { Approval, Operation } from '../../src/protocol.js';
+import { ApprovalModal, onceOnlyReason } from '../../src/tui/modals.js';
+import { SalaamTheme } from '../../src/tui/theme.js';
+import type { Approval, Operation } from '../../src/core/protocol.js';
 
 // Phase 2a: the approval prompt reads in plain words, keeps internals behind a details toggle, and in
 // desk sessions offers once / for this session / always for this repo / deny from the keyboard.

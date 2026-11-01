@@ -1,10 +1,10 @@
 // Disposable crash-proof controller. Real SDK/HTTP/SQLite, synthetic work authority.
 import { readFileSync } from 'node:fs';
-import { Store } from '../../dist/src/store.js';
-import { ManagedWork } from '../../dist/src/managed.js';
-import { Artifacts } from '../../dist/src/artifacts.js';
-import { McpAdmission } from '../../dist/src/mcp-admission.js';
-import { McpWork } from '../../dist/src/mcp-work.js';
+import { Store } from '../../dist/src/store/store.js';
+import { ManagedWork } from '../../dist/src/execution/managed.js';
+import { Artifacts } from '../../dist/src/store/artifacts.js';
+import { McpAdmission } from '../../dist/src/mcp/admission.js';
+import { McpWork } from '../../dist/src/mcp/work.js';
 
 const c = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const store = new Store(c.database);

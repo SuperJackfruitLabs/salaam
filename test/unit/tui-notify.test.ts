@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { notificationFor, notify, notifyMode, jobsText } from '../../src/tui-notify.js';
-import type { DurableEvent } from '../../src/protocol.js';
+import { notificationFor, notify, notifyMode, jobsText } from '../../src/tui/notify.js';
+import type { DurableEvent } from '../../src/core/protocol.js';
 
 const ev = (kind: string, payload: unknown = {}) =>
   ({ kind, payload, seq: 1 }) as unknown as DurableEvent;

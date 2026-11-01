@@ -3,11 +3,11 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ROOT } from '../src/config.js';
-import { call } from '../src/transport.js';
-import { SocketEffectConnector } from '../src/effect-connector.js';
-import type { SalaamService } from '../src/service.js';
-import type { Approval } from '../src/protocol.js';
+import { ROOT } from '../src/core/config.js';
+import { call } from '../src/core/transport.js';
+import { SocketEffectConnector } from '../src/execution/effect-connector.js';
+import type { SalaamService } from '../src/service/service.js';
+import type { Approval } from '../src/core/protocol.js';
 import { control } from './helpers.js';
 
 export async function effectFixture(opaque = false) {

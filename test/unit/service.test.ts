@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 import { request } from 'node:http';
 import { fixture, fake, create, ready, until, control, probe } from '../helpers.js';
-import { call } from '../../src/transport.js';
-import { SalaamService } from '../../src/service.js';
-import type { DurableEvent, Session } from '../../src/protocol.js';
+import { call } from '../../src/core/transport.js';
+import { SalaamService } from '../../src/service/service.js';
+import type { DurableEvent, Session } from '../../src/core/protocol.js';
 
 test('create is idempotent; a second service cannot own its state', async () => {
   const f = await fixture(fake());

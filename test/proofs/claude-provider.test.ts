@@ -3,13 +3,13 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { PiProcess } from '../../src/pi.js';
-import { ROOT } from '../../src/config.js';
-import { SalaamService } from '../../src/service.js';
-import { providerRoute } from '../../src/provider-config.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import { ROOT } from '../../src/core/config.js';
+import { SalaamService } from '../../src/service/service.js';
+import { providerRoute } from '../../src/providers/config.js';
 import { create, ready, until, control } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 
 async function setup(mode = 'tool') {
   const dir = mkdtempSync('/tmp/sal-claude-');
@@ -226,12 +226,17 @@ test('Claude service death preserves the route and unknown request without repla
     ]);
     await once(serviceProcess.stdout!, 'data');
     const socket = join(f.dir, 'operator.sock');
-    const session = await call<import('../../src/protocol.js').Session>(socket, '/v1/sessions', {
-      request_id: 'create',
-      cwd: f.dir,
-    });
+    const session = await call<import('../../src/core/protocol.js').Session>(
+      socket,
+      '/v1/sessions',
+      {
+        request_id: 'create',
+        cwd: f.dir,
+      },
+    );
     await until(
-      () => call<import('../../src/protocol.js').Session>(socket, `/v1/sessions/${session.id}`),
+      () =>
+        call<import('../../src/core/protocol.js').Session>(socket, `/v1/sessions/${session.id}`),
       (x) => x.state === 'ready',
     );
     const lease = await call<{ token: string }>(socket, `/v1/sessions/${session.id}/control`, {
@@ -240,7 +245,7 @@ test('Claude service death preserves the route and unknown request without repla
       action: 'acquire',
       expected_epoch: 0,
     });
-    const current = await call<import('../../src/protocol.js').Session>(
+    const current = await call<import('../../src/core/protocol.js').Session>(
       socket,
       `/v1/sessions/${session.id}`,
     );

@@ -2,11 +2,11 @@ import { test, expect } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { AgentPodAuthority } from '../../src/agentpod-authority.js';
-import { ManagedWork } from '../../src/managed.js';
-import { StationWork } from '../../src/station-work.js';
-import { RunGrants } from '../../src/run-grants.js';
+import { Store } from '../../src/store/store.js';
+import { AgentPodAuthority } from '../../src/agentpod/authority.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import { RunGrants } from '../../src/tasks/run-grants.js';
 
 // Operator ruling 2026-10-28, across the boundary that was missed three times: the rule a hub
 // renewal newly lists must reach the write check of the run already in flight. Nothing between the

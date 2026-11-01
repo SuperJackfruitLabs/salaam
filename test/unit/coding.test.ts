@@ -1,11 +1,11 @@
 import { expect, test, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { Workspaces } from '../../src/workspaces.js';
-import { CodingWork, commandTerminal } from '../../src/coding.js';
-import type { ExecutionBackend } from '../../src/coding-executor.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { Workspaces } from '../../src/workers/workspaces.js';
+import { CodingWork, commandTerminal } from '../../src/coding/coding.js';
+import type { ExecutionBackend } from '../../src/coding/executor.js';
 import { until } from '../helpers.js';
 
 class FakeExecutor implements ExecutionBackend {

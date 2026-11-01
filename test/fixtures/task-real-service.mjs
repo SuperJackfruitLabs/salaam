@@ -1,4 +1,4 @@
-import { SalaamService } from '../../dist/src/service.js';
+import { SalaamService } from '../../dist/src/service/service.js';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 const [stateDir, codingRoot, codingSocket, mode] = process.argv.slice(2);

@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until, control } from '../helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 import { FixtureExternalBackend } from '../fixtures/external-backend.js';
-import { digest } from '../../src/protocol.js';
+import { digest } from '../../src/core/protocol.js';
 
 async function setup(invocations?: number) {
   const backend = new FixtureExternalBackend(),

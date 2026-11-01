@@ -4,12 +4,12 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { join } from 'node:path';
-import { SalaamService } from '../../src/service.js';
-import { ROOT } from '../../src/config.js';
-import type { Session } from '../../src/protocol.js';
-import type { SessionRevocation } from '../../src/execution-authority.js';
-import { call } from '../../src/transport.js';
-import { acquireControl } from '../../src/attach.js';
+import { SalaamService } from '../../src/service/service.js';
+import { ROOT } from '../../src/core/config.js';
+import type { Session } from '../../src/core/protocol.js';
+import type { SessionRevocation } from '../../src/store/execution-authority.js';
+import { call } from '../../src/core/transport.js';
+import { acquireControl } from '../../src/tui/attach.js';
 import { control, create, fixture, ready, until } from '../helpers.js';
 
 test('the installed CLI revokes a session and retrieves the same saved receipt without another controller', async () => {
@@ -95,7 +95,7 @@ test('session revocation fences active and queued work, survives reopening, and 
       async () => {
         body.expected_revision = service.store.session(session.id).revision;
         try {
-          return await call<import('../../src/execution-authority.js').SessionRevocation>(
+          return await call<import('../../src/store/execution-authority.js').SessionRevocation>(
             service.socket,
             `/v1/sessions/${session.id}/revoke`,
             body,

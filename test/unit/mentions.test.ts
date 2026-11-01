@@ -16,7 +16,7 @@ import {
   expandPrompt,
   storeImages,
   takeImages,
-} from '../../src/mentions.js';
+} from '../../src/runtime/mentions.js';
 
 const PNG = Buffer.from(
   '89504e470d0a1a0a0000000d4948445200000001000000010806000000' +

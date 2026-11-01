@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
-import { ManagedHttpMcp, mcpCatalogDigest, mcpToolDigest } from '../../src/mcp-http.js';
-import { mcpAssignment, mcpProfile } from '../../src/mcp-protocol.js';
+import { ManagedHttpMcp, mcpCatalogDigest, mcpToolDigest } from '../../src/mcp/http.js';
+import { mcpAssignment, mcpProfile } from '../../src/mcp/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const tool = {

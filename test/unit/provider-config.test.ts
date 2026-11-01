@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync, chmodSync, symlinkSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { providerRoute, validateClaudePayload } from '../../src/provider-config.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { loadApiKey, saveApiKey, validateApiKey } from '../../src/credentials.js';
+import { Store } from '../../src/store/store.js';
+import { providerRoute, validateClaudePayload } from '../../src/providers/config.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { loadApiKey, saveApiKey, validateApiKey } from '../../src/providers/credentials.js';
 
 test('Claude credentials persist privately and environment values override the local file', () => {
   const dir = mkdtempSync('/tmp/sal-credentials-'),
@@ -100,9 +100,9 @@ test('schema v4 sessions remain pinned to offline, and a live route persists acr
 });
 
 test('resolved endpoints bind before first dispatch and reject endpoint or environment drift', async () => {
-  const { bindProviderConfiguration } = await import('../../src/provider-model.js');
+  const { bindProviderConfiguration } = await import('../../src/providers/model.js');
   const { InMemoryCredentialStore } = await import('@earendil-works/pi-ai');
-  const { resolveProviderAuth } = await import('../../src/provider-auth.js');
+  const { resolveProviderAuth } = await import('../../src/providers/auth.js');
   const route = providerRoute('openai', 'gpt-4', 512);
   const bound = bindProviderConfiguration(route, { auth: { apiKey: 'sk-fixture' } });
   expect(bound.connection?.endpoint).toBe('https://api.openai.com/v1');

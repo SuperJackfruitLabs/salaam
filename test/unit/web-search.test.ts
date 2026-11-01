@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WebSearch, loadWebSearchConfig, type Transport } from '../../src/web-search.js';
+import { WebSearch, loadWebSearchConfig, type Transport } from '../../src/web/search.js';
 
 // Operator ruling 2026-10-31: "Official free APIs go as default and then other providers can be
 // configured as per the user requirement. It could searxng or brave or tavily or exa."

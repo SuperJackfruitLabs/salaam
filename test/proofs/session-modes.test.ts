@@ -2,14 +2,14 @@ import { test, expect } from 'vitest';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, ready, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { permissionPolicy } from '../../src/autonomy.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { permissionPolicy } from '../../src/runtime/autonomy.js';
 
 // Phase 2b in a real terminal (operator rulings 2026-10-31): Shift+Tab cycles review → accept edits →
 // auto, full access is its own command with a warning, and YOLO needs the word typed.
 test('real terminal cycles modes with shift+tab and turns on full access only after a warning', async () => {
   const { PtyClient } = await import('../terminal-helpers.js');
-  const { ROOT } = await import('../../src/config.js');
+  const { ROOT } = await import('../../src/core/config.js');
   const f = await fixture(),
     client = new OperatorClient(f.dir);
   let terminal: InstanceType<typeof PtyClient> | undefined;

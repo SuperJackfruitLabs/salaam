@@ -1,5 +1,5 @@
-import { SalaamService } from '../../dist/src/service.js';
-import { ROOT } from '../../dist/src/config.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { ROOT } from '../../dist/src/core/config.js';
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

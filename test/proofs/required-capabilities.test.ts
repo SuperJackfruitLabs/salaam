@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { fixture, fake, create, ready, until, control, probe } from '../helpers.js';
-import { call } from '../../src/transport.js';
-import type { Session } from '../../src/protocol.js';
-import { PiProcess } from '../../src/pi.js';
+import { call } from '../../src/core/transport.js';
+import type { Session } from '../../src/core/protocol.js';
+import { PiProcess } from '../../src/runtime/pi.js';
 
 const repetitions = Number(process.env.SALAAM_PROOF_REPETITIONS ?? 1);
 if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 100)

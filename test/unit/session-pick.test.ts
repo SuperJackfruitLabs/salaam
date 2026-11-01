@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import {
   continueArgs,
   deskUsesAnthropic,
@@ -8,7 +8,7 @@ import {
   pickerOrder,
   relativeTime,
   sessionDescription,
-} from '../../src/session-pick.js';
+} from '../../src/tui/session-pick.js';
 
 // `salaam code` in a folder continues that folder's latest session, or starts one (step 0,
 // 2026-10-31: starting took three commands and resuming needed the full session id).
@@ -33,7 +33,7 @@ test('salaam code takes one of --continue (the default), --new or --resume', () 
 });
 
 test('a state path too long for a Unix socket names its length and the fix', async () => {
-  const { SalaamService } = await import('../../src/service.js');
+  const { SalaamService } = await import('../../src/service/service.js');
   const { mkdtempSync, rmSync } = await import('node:fs');
   const base = mkdtempSync('/tmp/sal-long-');
   const long = base + '/' + 'x'.repeat(110);

@@ -15,9 +15,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { ToolkitAdmission } from '../../src/toolkit-admission.js';
-import { digest } from '../../src/protocol.js';
-import type { AgentPodBinding } from '../../src/agentpod-protocol.js';
+import { ToolkitAdmission } from '../../src/toolkit/admission.js';
+import { digest } from '../../src/core/protocol.js';
+import type { AgentPodBinding } from '../../src/agentpod/protocol.js';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
 
 const sha = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');

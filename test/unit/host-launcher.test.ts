@@ -17,11 +17,11 @@ import {
   stationWorkspaceIdentity,
   stationRuntimeFingerprint,
   stationHash,
-} from '../../src/station-config.js';
-import { planHost, readHost, resolveOperatorGroup } from '../../src/host.js';
-import { startHostUnit } from '../../src/host-start.js';
-import { acpClientState } from '../../src/acp.js';
-import { SalaamService } from '../../src/service.js';
+} from '../../src/agentpod/station-config.js';
+import { planHost, readHost, resolveOperatorGroup } from '../../src/host/host.js';
+import { startHostUnit } from '../../src/host/start.js';
+import { acpClientState } from '../../src/acp/server.js';
+import { SalaamService } from '../../src/service/service.js';
 
 const root = process.getuid?.() === 0 && process.platform === 'linux';
 
@@ -213,7 +213,7 @@ test('ACP clients of a daemon state they do not own keep their journal in their 
 test('the CLI passes --unit and --state through to unit-start', async () => {
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
-  const { ROOT } = await import('../../src/config.js');
+  const { ROOT } = await import('../../src/core/config.js');
   const run = (...args: string[]) =>
     promisify(execFile)(process.execPath, [join(ROOT, 'bin/salaam.mjs'), ...args]).then(
       () => '',

@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { call } from '../dist/src/transport.js';
+import { call } from '../dist/src/core/transport.js';
 import { DemoAcpClient } from './acp-client.mjs';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const state = mkdtempSync('/tmp/sal-accept-demo-'),

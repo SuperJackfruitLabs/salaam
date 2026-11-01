@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { fixture, create, ready, control, until } from '../helpers.js';
-import { digest, canonical } from '../../src/protocol.js';
-import { SalaamService } from '../../src/service.js';
+import { digest, canonical } from '../../src/core/protocol.js';
+import { SalaamService } from '../../src/service/service.js';
 
 /** Seed a private recovery record; no native tool or effect is executed. */
 function resource(service: SalaamService, session: string) {

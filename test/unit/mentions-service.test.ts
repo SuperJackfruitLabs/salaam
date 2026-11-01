@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { call } from '../../src/transport.js';
-import { OFFLINE_ROUTE } from '../../src/provider-route.js';
-import { Outbox } from '../../src/attach.js';
+import { call } from '../../src/core/transport.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { Outbox } from '../../src/tui/attach.js';
 import { fixture } from '../helpers.js';
 
 // Phase 3b: a desk prompt's @mentions reach the model as attached contents and images; board
@@ -82,7 +82,7 @@ test('a board session submission is not expanded', async () => {
 });
 
 test('dispatch sends the stored images with the prompt', () => {
-  const sup = readFileSync(new URL('../../src/supervisor.ts', import.meta.url), 'utf8');
+  const sup = readFileSync(new URL('../../src/runtime/supervisor.ts', import.meta.url), 'utf8');
   expect(sup).toMatch(
     /const images = takeImages\(this\.store\.db, work\.submission\.id\);\s*const response = await w\.pi\.command\('prompt', \{\s*message,\s*\.\.\.\(images\.length \? \{ images \} : \{\}\)/,
   );
@@ -95,7 +95,7 @@ test('the outbox keeps the confirmation and gives up on a refused secret', () =>
   const box = new Outbox(dir, '00000000-0000-4000-8000-000000000000');
   expect(box.enqueue('read @.env', 1, undefined, true).confirm_sensitive).toBe(true);
   expect(box.enqueue('plain', 1)).not.toHaveProperty('confirm_sensitive');
-  expect(readFileSync(new URL('../../src/attach.ts', import.meta.url), 'utf8')).toContain(
+  expect(readFileSync(new URL('../../src/tui/attach.ts', import.meta.url), 'utf8')).toContain(
     "'sensitive_attachment',",
   );
 });
@@ -193,11 +193,11 @@ test('the outbox saves pasted images with the prompt, so a retry sends them', ()
 
 test('every other route keeps the 1 MiB body limit', async () => {
   const { Readable } = await import('node:stream');
-  const { readJson } = await import('../../src/transport.js');
+  const { readJson } = await import('../../src/core/transport.js');
   const body = () =>
     Readable.from([Buffer.from(JSON.stringify({ padding: 'x'.repeat(1_100_000) }))]) as never;
   await expect(readJson(body())).rejects.toMatchObject({ code: 'body_too_large' });
   await expect(readJson(body(), 2 * 1024 * 1024)).resolves.toHaveProperty('padding');
-  const service = readFileSync(new URL('../../src/service.ts', import.meta.url), 'utf8');
+  const service = readFileSync(new URL('../../src/service/service.ts', import.meta.url), 'utf8');
   expect(service.match(/readJson\(req, SUBMISSION_BODY_LIMIT\)/g)).toHaveLength(1);
 });

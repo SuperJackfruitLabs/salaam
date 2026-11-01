@@ -9,8 +9,8 @@ import {
   hostCommandNetwork,
   hostAllowsFullAccessSessions,
   hostDangerClassifier,
-} from '../../src/host.js';
-import { digest } from '../../src/protocol.js';
+} from '../../src/host/host.js';
+import { digest } from '../../src/core/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const roots: string[] = [];
