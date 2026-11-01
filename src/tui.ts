@@ -104,6 +104,7 @@ import { commandTerminal } from './coding.js';
 import { rewindItems, rewindSummary } from './tui-review.js';
 import { classifierItems, classifierNotice, type ClassifierView } from './tui-classifier.js';
 import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './tui-keymap.js';
+import { imagesInPrompt, readClipboardImage, type PastedImage } from './clipboard-image.js';
 import { HerdrReporter, statusEnabled, terminalState, titleFor } from './terminal-status.js';
 import {
   ComposerHistory,
@@ -213,6 +214,9 @@ export class SalaamApp {
   private pendingAction?: () => void;
   private logBytes = Buffer.alloc(0);
   private readonly drafts = new Map<string, string>();
+  /** Images pasted with Ctrl+V, by the number in their `[image #N]` marker. */
+  private readonly pasted = new Map<number, PastedImage>();
+  private pastes = 0;
   private lastSession?: string;
   private lastRevision?: number;
   private readonly historyKeys = new Set<string>();
@@ -408,6 +412,11 @@ export class SalaamApp {
       this.startSearch();
       return { consume: true };
     }
+    // The terminal pastes only text; Ctrl+V reads an image from the system clipboard.
+    if (matchesKey(data, 'ctrl+v')) {
+      void this.execute(() => this.pasteImage());
+      return { consume: true };
+    }
     if (
       this.editor.isShowingAutocomplete() &&
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
@@ -443,9 +452,16 @@ export class SalaamApp {
       const text = this.editor.getExpandedText(),
         session = this.client.snapshot?.id;
       void this.execute(async () => {
-        if (action === 'steer') await this.client.steer(text);
-        else {
-          await this.client.submit(text);
+        const images = imagesInPrompt(text, this.pasted);
+        if (action === 'steer') {
+          if (images.length)
+            throw new Error(
+              'Steering carries text only. Press Tab to queue the message with its image.',
+            );
+          await this.client.steer(text);
+        } else {
+          await this.client.submit(text, undefined, false, images);
+          this.sentImages(images);
           const waiting = this.client.snapshot ? queuedItems(this.client.snapshot).length : 0;
           this.client.report(
             'Queued for after this turn (' + waiting + ' waiting). /queue edits or removes them.',
@@ -1488,6 +1504,24 @@ export class SalaamApp {
       ),
     );
   }
+  /** Put the clipboard's image in the message as an `[image #N]` marker. */
+  private async pasteImage(): Promise<void> {
+    const image = await readClipboardImage();
+    if (!image) {
+      this.client.report(
+        'No image on the clipboard. Paste text with your terminal (Cmd+V, or Ctrl+Shift+V).',
+      );
+      return;
+    }
+    const n = ++this.pastes;
+    this.pasted.set(n, image);
+    this.editor.insertTextAtCursor(`[image #${n}] `);
+    this.tui.requestRender();
+  }
+  /** A sent image is in the outbox now; the composer no longer holds it. */
+  private sentImages(images: { label: string }[]): void {
+    for (const i of images) this.pasted.delete(Number(i.label.slice('image #'.length)));
+  }
   private async submit(): Promise<void> {
     const text = this.editor.getExpandedText(),
       session = this.client.snapshot?.id,
@@ -1556,7 +1590,9 @@ export class SalaamApp {
     /** What was typed, when it differs from what is sent (a custom command). */
     typed = text,
   ): Promise<void> {
-    await this.client.submit(text, continuation, confirmSensitive);
+    const images = imagesInPrompt(typed, this.pasted);
+    await this.client.submit(text, continuation, confirmSensitive, images);
+    this.sentImages(images);
     this.editor.addToHistory(typed);
     this.sent.add(typed);
     if (this.client.snapshot?.id === session && this.editor.getExpandedText() === typed) {

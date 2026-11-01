@@ -724,6 +724,64 @@ test('a broker-network command with the broker socket missing still runs, with n
   }
 }, 60000);
 
+// Background commands get the same broker network as foreground ones, through a relay that lives
+// as long as the task. They used to get none while the approval said "through the broker".
+test('a real broker-network background command reaches only the allowlisted host', async () => {
+  const { chooseLocalSandbox } = await import('../../src/command-sandbox.js');
+  const { fakeBroker, helloServer } = await import('../helpers/fake-broker.js');
+  const chosen = chooseLocalSandbox('workspace-write');
+  const up = await helloServer();
+  const broker = await fakeBroker('allowed.test', up.port);
+  const f = sandboxed({ ...chosen, network: { socket: broker.socket } });
+  f.local.interactive = () => true;
+  try {
+    if (chosen.kind === 'none') {
+      expect(() =>
+        f.prepare('b1', { action: 'command', command: 'true', background: true }),
+      ).toThrow(expect.objectContaining({ code: 'sandbox_unavailable' }));
+      return;
+    }
+    const call = f.prepare('b1', {
+      action: 'command',
+      background: true,
+      command: [
+        'curl -sS --max-time 10 --proxytunnel -x "$HTTP_PROXY" http://allowed.test/; echo',
+        'curl -sS --max-time 10 --proxytunnel -x "$HTTP_PROXY" http://evil.test/ || echo refused-ok',
+        `curl -sS --max-time 3 --noproxy '*' http://127.0.0.1:${up.port}/ || echo direct-blocked`,
+      ].join('\n'),
+    });
+    expect(call.operation.value).toContain('through the broker allowlist');
+    f.approve(call);
+    f.local.run(call.call.id);
+    const launched = await until(
+      () => f.local.view(call.call.id),
+      (v) => v.call.state !== 'running',
+    );
+    expect(launched.result).toMatchObject({ network: 'through the broker allowlist' });
+    const task = (launched.result as { task_id: string }).task_id;
+    await until(
+      () => f.local.tasks(f.session.id).find((t) => t.id === task)!,
+      (t) => t.state !== 'running',
+    );
+    const out = f.local.taskOutput(f.session.id, task);
+    expect(out.output).toContain('hello');
+    expect(out.output).toContain('refused-ok');
+    expect(out.output).toContain('direct-blocked');
+    expect(out.output).toContain('[network] refused evil.test:80');
+    expect(out.network).toMatchObject({
+      broker: 'available',
+      connections: expect.arrayContaining([
+        expect.objectContaining({ target: 'allowed.test:80', allowed: 1 }),
+        expect.objectContaining({ target: 'evil.test:80', refused: 1 }),
+      ]),
+    });
+  } finally {
+    await f.close();
+    await broker.close();
+    await up.close();
+  }
+}, 60000);
+
 // Targeted edits (daily-driver Phase 1A). An interactive one-line change used to resend and
 // review the whole file: ~3,500 output tokens and a 315-line approval for one line.
 const LINES = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';

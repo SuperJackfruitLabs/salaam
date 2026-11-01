@@ -68,7 +68,14 @@ import { McpAdmission } from './mcp-admission.js';
 import { McpWork } from './mcp-work.js';
 import { ToolkitWork, type ToolkitWorkConfig } from './toolkit-work.js';
 import { permissionPolicy, configurePermissions } from './autonomy.js';
-import { expandPrompt, storeImages, type PromptImage } from './mentions.js';
+import {
+  expandPrompt,
+  pastedImages,
+  storeImages,
+  MAX_IMAGES,
+  PASTED_IMAGE_LIMIT,
+  type PromptImage,
+} from './mentions.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
@@ -80,6 +87,10 @@ import { TurnCheckpoints, type RewindMode } from './turn-rewind.js';
 import { StationWork } from './station-work.js';
 import { readToolkitConfig } from './toolkit-config.js';
 import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
+
+/** A prompt with the most pasted images it may carry, as base64, plus its text. */
+const SUBMISSION_BODY_LIMIT =
+  Math.ceil((MAX_IMAGES * PASTED_IMAGE_LIMIT * 4) / 3) + 2 * 1024 * 1024;
 
 export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'bridgeSocket'> {
   /** The user-level AGENTS.md for interactive sessions; null turns it off. Default:
@@ -3330,11 +3341,19 @@ export class SalaamService {
           return;
         }
         if (parts[3] === 'submissions' && req.method === 'POST') {
-          const body = object(await readJson(req));
+          // Room for pasted images; every other route keeps the 1 MiB limit.
+          const body = object(await readJson(req, SUBMISSION_BODY_LIMIT));
           const local = this.store.localCoding(id);
           let text = string(body.text, 'text', 256 * 1024);
           let images: PromptImage[] = [];
-          // Desk prompts attach their @mentions (Phase 3b); board work never reads the tree here.
+          if (!local && body.images !== undefined)
+            throw new ServiceError(
+              'invalid_field',
+              'Only a local session takes pasted images',
+              400,
+            );
+          // Desk prompts attach their @mentions (Phase 3b) and pasted images; board work never
+          // reads the tree here.
           if (local) {
             if (body.confirm_sensitive !== undefined && typeof body.confirm_sensitive !== 'boolean')
               throw new ServiceError('invalid_field', 'Invalid confirm_sensitive flag', 400);
@@ -3342,6 +3361,7 @@ export class SalaamService {
               this.store.session(id).cwd,
               text,
               body.confirm_sensitive === true,
+              pastedImages(body.images),
             ));
           }
           const submission = this.store.accept(

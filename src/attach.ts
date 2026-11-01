@@ -30,6 +30,8 @@ interface Pending {
   text: string;
   continues_attempt_id?: string;
   confirm_sensitive?: boolean;
+  /** Images pasted into the composer, saved with the prompt so a retry sends them too. */
+  images?: { label: string; mime: string; data: string }[];
   command?:
     | {
         kind: 'decision';
@@ -75,7 +77,13 @@ export class Outbox {
     renameSync(temporary, path);
     syncDirectory(this.dir);
   }
-  enqueue(text: string, revision: number, continues?: string, confirmSensitive = false): Pending {
+  enqueue(
+    text: string,
+    revision: number,
+    continues?: string,
+    confirmSensitive = false,
+    images: { label: string; mime: string; data: string }[] = [],
+  ): Pending {
     if (!text.trim() || text.length > 256 * 1024 || text.trimStart().startsWith('/'))
       throw new Error('Enter a plain instruction of at most 256 Ki characters');
     const created = this.records().reduce(
@@ -89,6 +97,7 @@ export class Outbox {
       text,
       ...(continues ? { continues_attempt_id: continues } : {}),
       ...(confirmSensitive ? { confirm_sensitive: true } : {}),
+      ...(images.length ? { images } : {}),
     };
     this.save(record);
     return record;

@@ -1,4 +1,8 @@
-import { BrokerRelay, COMMAND_NETWORK_PORT } from './command-network.js';
+import {
+  BrokerRelay,
+  COMMAND_NETWORK_PORT,
+  type CommandNetworkSummary,
+} from './command-network.js';
 import {
   sandboxArgv,
   seatbeltArgv,
@@ -64,7 +68,12 @@ interface BackgroundTask {
   id: string;
   session: string;
   done: Promise<void>;
-  output: () => { output: string; bytes: number; truncated: boolean };
+  output: () => {
+    output: string;
+    bytes: number;
+    truncated: boolean;
+    network?: CommandNetworkSummary;
+  };
   stop: (why: TaskState) => void;
 }
 import {
@@ -126,7 +135,7 @@ export class LocalCoding {
   /** Background tasks this controller owns; they belong to the session, not to a turn. */
   private live = new Map<string, BackgroundTask>();
   /** Output of recently ended tasks, so the model can read why one stopped. */
-  private kept = new Map<string, { output: string; bytes: number; truncated: boolean }>();
+  private kept = new Map<string, ReturnType<BackgroundTask['output']>>();
   /** Background commands are for a person's own desk session only (Phase 3c). */
   public interactive: (session: string) => boolean = () => false;
   private closed = false;
@@ -1120,18 +1129,44 @@ export class LocalCoding {
       settle(false, { error: (error as Error).message, background: true });
       return;
     }
+    // Broker network, as for a foreground command, through a relay that lives as long as the task.
+    const broker = this.brokerNetwork(sb);
+    if (!broker) return this.launchBackground(c, command, sb, settle, null, false);
+    BrokerRelay.start(broker.socket, sb.kind === 'seatbelt' ? 'tcp' : 'unix').then(
+      (relay) => this.launchBackground(c, command, sb, settle, relay, false),
+      () => this.launchBackground(c, command, sb, settle, null, true),
+    );
+  }
+  private launchBackground(
+    c: LocalCall,
+    command: string,
+    sb: LocalSandbox,
+    settle: (ok: boolean, result: Record<string, unknown>) => void,
+    relay: BrokerRelay | null,
+    relayFailed: boolean,
+  ): void {
+    if (this.closed) {
+      void relay?.close();
+      settle(false, { error: 'Command could not start', background: true });
+      return;
+    }
     const id = 'task_' + randomUUID().slice(0, 8);
     const tmp =
       sb.kind === 'seatbelt' && sb.level !== 'full-access'
         ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-cmd-')))
         : undefined;
-    // Network for a long-lived task needs a relay that lives as long; keep it simple and honest.
+    const network = (): CommandNetworkSummary | undefined =>
+      relay
+        ? relay.summary()
+        : relayFailed
+          ? { broker: 'unavailable', connections: [] }
+          : undefined;
     const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
     const argv = this.commandArgv(
       c.root,
       script,
       tmp,
-      null,
+      relay,
       sb,
       JSON.parse(c.args).listen === true,
     );
@@ -1144,6 +1179,7 @@ export class LocalCoding {
         LANG: 'en_US.UTF-8',
         TMPDIR: '/tmp',
         ...(this.sandboxed(sb) ? gitIdentityEnv(c.root) : {}),
+        ...(relay ? proxyEnv(relay.port ?? COMMAND_NETWORK_PORT) : {}),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1164,7 +1200,21 @@ export class LocalCoding {
       id,
       session: c.session_id,
       done,
-      output: () => ({ output: tail.toString('utf8'), bytes, truncated: bytes > tail.length }),
+      output: () => {
+        const net = network();
+        // What the broker refused, in its own words, after the output it explains.
+        const refusals = (net?.connections ?? [])
+          .filter((n) => n.refused && n.reason)
+          .map((n) => `[network] refused ${n.target}: ${n.reason}\n`)
+          .join('');
+        const text = tail.toString('utf8');
+        return {
+          output: refusals ? text + (text.endsWith('\n') || !text ? '' : '\n') + refusals : text,
+          bytes,
+          truncated: bytes > tail.length,
+          ...(net ? { network: net } : {}),
+        };
+      },
       stop: (why) => {
         ended ??= why;
         kill();
@@ -1195,6 +1245,7 @@ export class LocalCoding {
       this.live.delete(id);
       this.kept.set(id, task.output());
       if (this.kept.size > 32) this.kept.delete(this.kept.keys().next().value!);
+      void relay?.close();
       if (tmp) rmSync(tmp, { recursive: true, force: true });
       const row = this.store.db.prepare('SELECT * FROM local_tasks WHERE id=?').get(id) as
         TaskRow | undefined;
@@ -1224,6 +1275,11 @@ export class LocalCoding {
           isolation:
             'local-user-' + (this.sandboxed(sb) ? sb.kind + '-' + sb.level : 'no-os-sandbox'),
           sandbox: this.sandboxed(sb) ? sb.kind : 'none',
+          ...(relay
+            ? { network: 'through the broker allowlist' }
+            : relayFailed
+              ? { network: 'none: the broker is unavailable' }
+              : {}),
           note: 'Read its output with salaam_tasks; it keeps running after this turn.',
         });
         child.stdin.end('start\n');

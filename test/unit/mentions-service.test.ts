@@ -99,3 +99,94 @@ test('the outbox keeps the confirmation and gives up on a refused secret', () =>
     "'sensitive_attachment',",
   );
 });
+
+// Ctrl+V: an image pasted into the composer rides with its prompt, named by its marker.
+const pasted = (label = 'image #1') => ({ label, mime: 'image/png', data: PNG.toString('base64') });
+
+test('a pasted image is stored with the prompt and named in its text', async () => {
+  const s = await setup(true);
+  try {
+    const sub = await s.submit('what is wrong here [image #1]', { images: [pasted()] });
+    expect(s.images(sub.id)).toEqual([{ mime: 'image/png' }]);
+    expect(s.text(sub.id)).toMatch(
+      /<pasted-images>\n\[image #1\] \(pasted image, attached\) \[sha256 [0-9a-f]{12}\]\n<\/pasted-images>/,
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+test('pasted images come first and share the four-image limit with mentioned ones', async () => {
+  const s = await setup(true);
+  try {
+    const four = [1, 2, 3, 4].map((n) => pasted('image #' + n));
+    const sub = await s.submit('compare these with @shot.png', { images: four });
+    expect(s.images(sub.id)).toHaveLength(4);
+    expect(s.text(sub.id)).toContain('@shot.png (skipped: more than 4 images)');
+    await expect(
+      s.submit('too many', { images: [...four, pasted('image #5')] }),
+    ).rejects.toMatchObject({ code: 'invalid_field' });
+  } finally {
+    await s.close();
+  }
+});
+
+test('a pasted image must be the image it claims, within the size limit', async () => {
+  const s = await setup(true);
+  try {
+    for (const bad of [
+      { ...pasted(), mime: 'image/jpeg' },
+      { ...pasted(), data: Buffer.from('not an image').toString('base64') },
+      { ...pasted(), label: 'whatever' },
+      { ...pasted(), data: Buffer.alloc(3_750_001, 0).toString('base64') },
+    ])
+      await expect(s.submit('look [image #1]', { images: [bad] })).rejects.toMatchObject({
+        code: 'invalid_field',
+      });
+  } finally {
+    await s.close();
+  }
+});
+
+test('a board session refuses pasted images', async () => {
+  const s = await setup(false);
+  try {
+    await expect(s.submit('look', { images: [pasted()] })).rejects.toMatchObject({
+      code: 'invalid_field',
+    });
+  } finally {
+    await s.close();
+  }
+});
+
+test('the submission route takes a prompt with a pasted image past 1 MiB', async () => {
+  const s = await setup(true);
+  try {
+    const big = pasted();
+    big.data = Buffer.concat([PNG, Buffer.alloc(2_000_000)]).toString('base64');
+    const sub = await s.submit('big [image #1]', { images: [big] });
+    expect(s.images(sub.id)).toHaveLength(1);
+  } finally {
+    await s.close();
+  }
+});
+
+test('the outbox saves pasted images with the prompt, so a retry sends them', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sal-outbox-'));
+  const box = new Outbox(dir, '00000000-0000-4000-8000-000000000000');
+  const record = box.enqueue('look [image #1]', 1, undefined, false, [pasted()]);
+  const saved = JSON.parse(readFileSync(join(box.dir, record.request_id + '.json'), 'utf8'));
+  expect(saved.images).toEqual([pasted()]);
+  expect(box.enqueue('plain', 1)).not.toHaveProperty('images');
+});
+
+test('every other route keeps the 1 MiB body limit', async () => {
+  const { Readable } = await import('node:stream');
+  const { readJson } = await import('../../src/transport.js');
+  const body = () =>
+    Readable.from([Buffer.from(JSON.stringify({ padding: 'x'.repeat(1_100_000) }))]) as never;
+  await expect(readJson(body())).rejects.toMatchObject({ code: 'body_too_large' });
+  await expect(readJson(body(), 2 * 1024 * 1024)).resolves.toHaveProperty('padding');
+  const service = readFileSync(new URL('../../src/service.ts', import.meta.url), 'utf8');
+  expect(service.match(/readJson\(req, SUBMISSION_BODY_LIMIT\)/g)).toHaveLength(1);
+});

@@ -67,7 +67,9 @@ network, so servers are refused there; use full access for them.
 
 A command can reach the network only when the host routes it through a proxy that
 allows listed hosts (`command_network: "broker"` in the host config). Each approval
-then says so, and the result lists what was reached and what was refused. See
+then says so, and the result lists what was reached and what was refused. Background
+commands get the same network for as long as they run; a refused host is listed in
+their output (`/jobs`). See
 [Security](security.md#network-through-the-broker-allowlist).
 
 ## Without a sandbox
