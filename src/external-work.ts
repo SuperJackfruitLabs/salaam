@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
-import type { ChildWork } from './children.js';
 import type { TaskBudget } from './task-budget.js';
-import type { WorkTask } from './task-work.js';
+import type { WorkTask, WorkspaceTree } from './records.js';
 import type { ManagedWork } from './managed.js';
-import type { ExternalBackend, ExternalRuntime, ExternalCheckpoint } from './external-runtime.js';
-import { externalCapabilities, type WorkerBinding } from './worker-boundary.js';
-import { readTree, validateTree, type Workspaces, type WorkspaceTree } from './workspaces.js';
+import type { ExternalBackend, ExternalCheckpoint } from './external-runtime.js';
+import {
+  externalCapabilities,
+  type WorkerBinding,
+  type ExternalRuntime,
+} from './worker-binding.js';
+import { readTree, validateTree, type Workspaces } from './workspaces.js';
 import { canonical, digest, ServiceError, type ChildTask } from './protocol.js';
 import { POLICY_DIGEST } from './config.js';
 
+/** The child ledger members external work reads. Child dispatch implements it. */
+export interface ExternalChildren {
+  owned(session: string): ChildTask | undefined;
+  list(parent: string): ChildTask[];
+}
 /** External invocations extend existing child attempts and task-step claims, never a second scheduler. */
 export class ExternalWork {
   private paused = false;
@@ -20,7 +28,7 @@ export class ExternalWork {
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,
-    readonly children: ChildWork,
+    readonly children: ExternalChildren,
     readonly budget: TaskBudget,
     readonly managed: ManagedWork,
     readonly workspaces: Workspaces,

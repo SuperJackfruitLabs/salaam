@@ -1,5 +1,6 @@
 import type { Store } from './store.js';
-import type { TaskWork, WorkTask } from './task-work.js';
+import type { TaskWork } from './task-work.js';
+import type { WorkTask } from './records.js';
 import { ServiceError } from './protocol.js';
 
 export class TaskBudgetError extends ServiceError {

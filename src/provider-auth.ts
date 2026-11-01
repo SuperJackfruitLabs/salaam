@@ -29,7 +29,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { credentialPath, loadApiKey, validateApiKey } from './credentials.js';
-import { getProvider, getProviderModel, type ProviderRoute } from './provider-config.js';
+import { getProvider, getProviderModel } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
 
 export const authDirectory = () => join(homedir(), '.config', 'salaam', 'credentials');
 function providerId(id: string) {

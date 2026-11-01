@@ -42,8 +42,7 @@ import { Dispatcher } from './dispatcher.js';
 import { ManagedWork } from './managed.js';
 import { ChildWork } from './children.js';
 import type { EffectConnector } from './effect-connector.js';
-import { EXECUTION_STATUS } from './execution-boundary.js';
-import { engineRequest } from './execution-boundary.js';
+import { EXECUTION_STATUS, engineRequest } from './execution-boundary.js';
 import { DockerCodingExecutor, type ExecutionBackend } from './coding-executor.js';
 import { Workspaces } from './workspaces.js';
 import { CodingWork } from './coding.js';
@@ -60,7 +59,8 @@ import { ToolkitResources } from './toolkit-resources.js';
 import { OperatorMcp } from './operator-mcp.js';
 import { cancelToolkitCalls, recoverToolkitCalls } from './toolkit-calls.js';
 import { ToolkitOwners } from './toolkit-owners.js';
-import { ToolkitResolutions, resolvedToolkitCallSql } from './toolkit-resolutions.js';
+import { ToolkitResolutions } from './toolkit-resolutions.js';
+import { resolvedToolkitCallSql } from './toolkit-resolution-sql.js';
 import { A2ABackend, ExternalBackends } from './a2a-backend.js';
 import { VERSION } from './config.js';
 import { TurnCancellations } from './turn-cancellations.js';
@@ -2150,7 +2150,7 @@ export class SalaamService {
                     : integer(input.max_tokens, 'max_tokens'),
                   undefined,
                   undefined,
-                  input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
+                  input.reasoning as import('./provider-route.js').ReasoningLevel | undefined,
                 );
               })();
         if (body.local_workspace) {
@@ -3281,7 +3281,7 @@ export class SalaamService {
             undefined,
             undefined,
             undefined,
-            input.reasoning as import('./provider-config.js').ReasoningLevel | undefined,
+            input.reasoning as import('./provider-route.js').ReasoningLevel | undefined,
           );
           const prepared = await this.supervisor.prepareProviderRoute(requested).catch(() => {
             throw new ServiceError(

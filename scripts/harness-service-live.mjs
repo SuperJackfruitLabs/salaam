@@ -4,7 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import { SalaamService } from '../dist/src/service.js';
 import { harnessRuntimeDigest } from '../dist/src/harness-backend.js';
-import { HARNESS_TARGETS } from '../dist/src/harness-probe.js';
+import { HARNESS_TARGETS } from '../dist/src/harness-targets.js';
 import { ROOT } from '../dist/src/config.js';
 import { hostDigests } from '../dist/src/host.js';
 import { digest } from '../dist/src/protocol.js';

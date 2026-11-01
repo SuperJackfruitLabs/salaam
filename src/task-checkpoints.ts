@@ -3,7 +3,8 @@ import type { Store } from './store.js';
 import type { TaskWork } from './task-work.js';
 import type { TaskVerification } from './task-verification.js';
 import type { Artifacts } from './artifacts.js';
-import { readTree, type Workspaces, type WorkspaceTree } from './workspaces.js';
+import { readTree, type Workspaces } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
 import { canonical, digest, ServiceError } from './protocol.js';
 
 interface Checkpoint {

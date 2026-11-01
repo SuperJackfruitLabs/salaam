@@ -13,7 +13,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { digest, ServiceError, string, integer } from './protocol.js';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
-import { Workspaces, readTree, filePath, type WorkspaceTree } from './workspaces.js';
+import { Workspaces, readTree, filePath } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
 import { COMMAND_LIMITS, type ExecutionBackend } from './coding-executor.js';
 
 export interface CommandRun {

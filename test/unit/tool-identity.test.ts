@@ -17,7 +17,7 @@ import { ManagedWork } from '../../src/managed.js';
 import { LocalCoding } from '../../src/local-coding.js';
 import { localHash } from '../../src/local-edits.js';
 import { localDiff } from '../../src/local-diff.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from '../../src/tool-identity.js';
 import { fixture, fake, until } from '../helpers.js';
 import { call } from '../../src/transport.js';

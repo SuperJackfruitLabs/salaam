@@ -11,7 +11,7 @@ import {
 } from '../../src/acp-outcome.js';
 import corpus from '../fixtures/agentpod-acp-v1.json' with { type: 'json' };
 import { ServiceError } from '../../src/protocol.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 
 for (const sample of corpus.failures)
   test(`shared ACP corpus: ${sample.name}`, () => {

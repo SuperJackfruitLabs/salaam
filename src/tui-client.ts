@@ -77,9 +77,7 @@ export interface LivePreview {
 export type OperatorConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 /** An operator client only: the service owns workers, authority and durable outcomes. */
 /** "AGENTS.md" or "AGENTS.md (2 files)": which instruction files guide this session. */
-export function instructionsLabel(
-  summary: import('./project-instructions.js').InstructionsSummary,
-): string {
+export function instructionsLabel(summary: import('./records.js').InstructionsSummary): string {
   const names = [...new Set(summary.files.map((f) => f.path.split('/').at(-1)!))].join(' + ');
   return summary.files.length > 1 ? `${names} (${summary.files.length} files)` : names;
 }
@@ -421,7 +419,7 @@ export class OperatorClient extends EventEmitter {
   async create(
     cwd: string,
     coding: boolean,
-    route?: import('./provider-config.js').ProviderRoute,
+    route?: import('./provider-route.js').ProviderRoute,
     localCoding = false,
   ): Promise<string> {
     if (!coding) {
@@ -682,7 +680,7 @@ export class OperatorClient extends EventEmitter {
     await this.refresh();
   }
   /** Switch this session's model or thinking level between turns; the conversation carries on. */
-  async switchRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+  async switchRoute(route: import('./provider-route.js').ProviderRoute): Promise<void> {
     if (!this.snapshot) throw new Error('Open a session first.');
     await call(this.socket, `/v1/sessions/${this.snapshot.id}/route`, {
       ...this.actor(),

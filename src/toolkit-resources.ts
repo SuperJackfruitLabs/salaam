@@ -4,13 +4,14 @@ import { realpathSync, lstatSync } from 'node:fs';
 import type { Store } from './store.js';
 import type { AgentPodAuthority } from './agentpod-authority.js';
 import { canonical, digest, ServiceError } from './protocol.js';
-import { processIdentity } from './supervisor.js';
+import { processIdentity } from './process-identity.js';
 import { ManagedStdioTransport, type StdioLaunch, type StdioProcessLaunch } from './mcp-stdio.js';
 import { ToolkitControlProcess } from './toolkit-control-process.js';
 import type { ToolkitCleanupAdmission } from './toolkit-admission.js';
 import { agentpodBinding } from './agentpod-protocol.js';
 import { toolkitControl, type ToolkitControl } from './toolkit-protocol.js';
-import { assertToolkitAcknowledgement, resolvedToolkitCallSql } from './toolkit-resolutions.js';
+import { assertToolkitAcknowledgement } from './toolkit-resolutions.js';
+import { resolvedToolkitCallSql } from './toolkit-resolution-sql.js';
 
 export interface ToolkitResourceSpec {
   id: string;

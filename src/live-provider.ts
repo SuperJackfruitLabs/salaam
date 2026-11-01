@@ -8,12 +8,8 @@ import {
 import { zstdDecompressSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { digest, object, textDigest, canonical, ServiceError } from './protocol.js';
-import {
-  getProvider,
-  getProviderModel,
-  providerHasOutputCap,
-  type ProviderRoute,
-} from './provider-config.js';
+import { getProvider, getProviderModel, providerHasOutputCap } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
 import { ProviderUsageReceipt } from './provider-usage.js';
 import { credentialStrings, providerOutcome, providerRefusalEvent } from './acp-outcome.js';
 import { materialize, generationOptions } from './provider-model.js';

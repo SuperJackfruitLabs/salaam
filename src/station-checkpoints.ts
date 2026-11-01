@@ -1,5 +1,5 @@
 import type { Store } from './store.js';
-import type { WorkTask } from './task-work.js';
+import type { WorkTask } from './records.js';
 import { digest, ServiceError } from './protocol.js';
 
 /**

@@ -39,12 +39,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { ROOT } from './config.js';
-import {
-  PI_PROVIDERS,
-  REASONING_LEVELS,
-  providerRoute,
-  type ProviderRoute,
-} from './provider-config.js';
+import { PI_PROVIDERS, providerRoute } from './provider-config.js';
+import { REASONING_LEVELS, type ProviderRoute } from './provider-route.js';
 import {
   INIT_INSTRUCTION,
   SLASH_COMMANDS,
@@ -664,7 +660,7 @@ export class SalaamApp {
       throw new Error('Service did not become available. Inspect sal service status.');
   }
   /** Interactive sessions switch in place between turns; otherwise the choice opens a new session. */
-  private async applyRoute(route: import('./provider-config.js').ProviderRoute): Promise<void> {
+  private async applyRoute(route: import('./provider-route.js').ProviderRoute): Promise<void> {
     if (this.client.snapshot?.provider_route && this.client.controlling) {
       try {
         await this.client.switchRoute(route);
@@ -1367,7 +1363,7 @@ export class SalaamApp {
             current.max_tokens,
             current.workspace_id,
             current.connection,
-            level as import('./provider-config.js').ReasoningLevel,
+            level as import('./provider-route.js').ReasoningLevel,
           ),
         );
       if (args) await choose(args);
@@ -2608,7 +2604,7 @@ This exact request will be approved without asking in every desk session on this
   }
   private async inbox(offset = 0): Promise<void> {
     const page = await call<{
-      items: import('./operator-inbox.js').InboxEntry[];
+      items: import('./records.js').InboxEntry[];
       next_offset: number | null;
     }>(this.client.socket, '/v1/inbox?offset=' + offset);
     if (!page.items.length) {

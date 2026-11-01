@@ -15,18 +15,19 @@ import { DockerHarnessBoundary, type HarnessContainers } from './harness-contain
 import { DockerCodingExecutor } from './coding-executor.js';
 import { engineRequest, engineJson } from './execution-boundary.js';
 import { HarnessProtocol, type HarnessCheckpoint } from './harness-protocol.js';
-import { HARNESS_TARGETS, type HarnessTarget } from './harness-probe.js';
+import { HARNESS_TARGETS, type HarnessTarget } from './harness-targets.js';
 import { AnthropicHarnessGateway } from './harness-model-gateway.js';
 import { HarnessWireBridge } from './harness-wire-bridge.js';
 import { harnessToolIds, matchesCodexCommandScope } from './harness-tool-identity.js';
 import { proveHarnessReadiness } from './harness-readiness.js';
 import { ProviderCredentialStore, resolveProviderAuth } from './provider-auth.js';
 import { providerRoute } from './provider-config.js';
-import { readTree, validateTree, type WorkspaceTree } from './workspaces.js';
+import { readTree, validateTree } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
 import { repositoryPath } from './repository-snapshots.js';
 import { digest, canonical, ServiceError } from './protocol.js';
-import type { ExternalBackend, ExternalRuntime, ExternalHooks } from './external-runtime.js';
-import type { WorkerBinding } from './worker-boundary.js';
+import type { ExternalBackend, ExternalHooks } from './external-runtime.js';
+import type { ExternalRuntime, WorkerBinding } from './worker-binding.js';
 import { hostDigests } from './host.js';
 
 export async function harnessRuntimeDigest(root: string): Promise<string> {

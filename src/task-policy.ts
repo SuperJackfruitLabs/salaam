@@ -1,36 +1,7 @@
 import { integer, object, ServiceError, string } from './protocol.js';
 import { filePath } from './workspaces.js';
+import type { TaskCheck, TaskLimits, CompletionGate, TaskPolicy } from './records.js';
 
-export interface TaskCheck {
-  key: string;
-  command: string;
-  cwd: string;
-}
-export interface TaskLimits {
-  /** Explicit opt-in for opaque runtimes. Omission never grants an invocation. */
-  invocations?: number;
-  requests: number;
-  runtime_ms: number;
-  concurrency: number;
-  token_units: number | null;
-  input_token_bound: number;
-  output_token_bound: number | null;
-  verification_runs: number;
-}
-/** Item 8: checks required at completion, next to the acceptance checks. The critic is not yet
- * admitted, so it is always null. */
-export interface CompletionGate {
-  /** The built-in reviewer judges the verified deliverables against this rubric. */
-  critic: { rubric: string } | null;
-  hooks: TaskCheck[];
-}
-export interface TaskPolicy {
-  acceptance: TaskCheck[];
-  deliverables: string[];
-  limits: TaskLimits;
-  /** Present only when the plan declares one, so a plan without it keeps its exact shape. */
-  completion_gate?: CompletionGate;
-}
 /** Every check completion requires: the acceptance checks, then each hook as hook-<key>. */
 export function requiredChecks(
   policy: Pick<TaskPolicy, 'acceptance' | 'completion_gate'>,

@@ -1,41 +1,8 @@
 import { isAbsolute, resolve, sep } from 'node:path';
 import { ServiceError } from './protocol.js';
-import type { ProviderRoute } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
+import type { FailureKind, AcpFailure, AttemptOutcome } from './records.js';
 
-export type FailureKind =
-  | 'quota'
-  | 'rate_limit'
-  | 'auth'
-  | 'bad_request'
-  | 'context_exhausted'
-  | 'timeout'
-  | 'provider_unavailable'
-  | 'refusal'
-  | 'max_tokens'
-  | 'cancelled'
-  | 'node_offline'
-  | 'harness_exited'
-  | 'harness_disconnected'
-  | 'unknown';
-export interface AcpFailure {
-  version: 1;
-  kind: FailureKind;
-  code: string;
-  message: string;
-  sessionId?: string;
-  requestId?: string;
-  attemptId?: string;
-  provider?: string;
-  model?: string;
-  httpStatus?: number;
-  retryable?: boolean;
-  truncated?: boolean;
-}
-export interface AttemptOutcome {
-  version: 1;
-  stopReason: 'end_turn' | 'max_tokens' | 'refusal' | 'cancelled' | 'error' | 'interrupted';
-  failure?: AcpFailure;
-}
 export class AcpFailureError extends Error {
   constructor(readonly failure: AcpFailure) {
     super(failure.message);

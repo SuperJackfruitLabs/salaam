@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { ProviderRoute } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
+import type {
+  AttemptOutcome,
+  InboxEntry,
+  InstructionsSummary,
+  Job,
+  JobOccurrence,
+  McpServerProvenance,
+  RecurringOccurrence,
+  WorkTask,
+} from './records.js';
+import type { AgentGrantSnapshot, WorkerBoundaryView } from './worker-binding.js';
 
 export const PROTOCOL_VERSION = 1;
 export const CAPABILITIES = [
@@ -79,7 +90,7 @@ export function workerTools(
       ].sort();
 }
 export interface ChildTask {
-  worker?: import('./worker-boundary.js').WorkerBoundaryView;
+  worker?: WorkerBoundaryView;
   id: string;
   parent_session: string;
   parent_attempt: string;
@@ -96,7 +107,7 @@ export interface ChildTask {
 }
 export type WorkerState = 'stopped' | 'starting' | 'ready' | 'unhealthy' | 'exited';
 export interface Session {
-  mcp_servers?: import('./operator-mcp.js').McpServerProvenance[];
+  mcp_servers?: McpServerProvenance[];
   id: string;
   cwd: string;
   revision: number;
@@ -111,7 +122,7 @@ export interface Session {
   seq: number;
   provider_route?: ProviderRoute;
   /** Interactive sessions: the AGENTS.md set loaded automatically (project-instructions.ts). */
-  project_instructions?: import('./project-instructions.js').InstructionsSummary;
+  project_instructions?: InstructionsSummary;
   /** Desk sessions in the session list: the newest prompt and when the transcript last changed. */
   last_prompt?: string;
   last_active_at?: string;
@@ -140,7 +151,7 @@ export type AttemptState =
   | 'cancelled'
   | 'delegated';
 export interface Attempt {
-  outcome?: import('./acp-outcome.js').AttemptOutcome | null;
+  outcome?: AttemptOutcome | null;
   id: string;
   session_id: string;
   submission_id: string;
@@ -173,13 +184,13 @@ export interface Controller {
 export interface SessionSnapshot extends Session {
   agentpod_admission_id?: string;
   team?: unknown;
-  agents?: ReturnType<import('./agent-profiles.js').AgentProfiles['snapshot']>;
-  inbox?: import('./operator-inbox.js').InboxEntry[];
-  recurring_occurrence?: import('./recurring-work.js').RecurringOccurrence | null;
-  work_task?: import('./task-work.js').WorkTask | null;
+  agents?: AgentGrantSnapshot[];
+  inbox?: InboxEntry[];
+  recurring_occurrence?: RecurringOccurrence | null;
+  work_task?: WorkTask | null;
   job?:
-    | (import('./job-work.js').Job & {
-        occurrence: import('./job-work.js').JobOccurrence | null;
+    | (Job & {
+        occurrence: JobOccurrence | null;
         task_state: string;
         task_reason: string;
       })
@@ -248,7 +259,7 @@ export interface Approval {
   decided_by: string | null;
 }
 export interface Manifest {
-  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
+  worker_binding?: WorkerBoundaryView;
   protocol_version: number;
   bundle_digest: string;
   policy_digest: string;

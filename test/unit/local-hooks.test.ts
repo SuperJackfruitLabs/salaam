@@ -5,7 +5,7 @@ import { Store } from '../../src/store.js';
 import { ManagedWork } from '../../src/managed.js';
 import { LocalCoding, type LocalSandbox } from '../../src/local-coding.js';
 import { chooseLocalSandbox } from '../../src/command-sandbox.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 
 // Phase 4b: a hook runs as one of the session's own sandboxed commands would, with its JSON on
 // stdin, bounded output and a timeout, and never as the tools user.

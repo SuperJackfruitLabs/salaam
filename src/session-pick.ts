@@ -1,6 +1,6 @@
 import { typedText } from './shell-passthrough.js';
 import { statSync } from 'node:fs';
-import { OFFLINE_ROUTE } from './provider-config.js';
+import { OFFLINE_ROUTE } from './provider-route.js';
 
 /** How `salaam code` opens a folder: continue its latest session (the default), start a new
  * coding session, or pick one from the list. */

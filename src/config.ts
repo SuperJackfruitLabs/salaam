@@ -110,8 +110,10 @@ export function bundleDigest(): string {
     provider_auth: textDigest(readFileSync(join(ROOT, 'dist/src/provider-auth.js'), 'utf8')),
     claude: textDigest(readFileSync(join(ROOT, 'dist/src/claude-provider.js'), 'utf8')),
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/provider-config.js'), 'utf8')),
+    provider_route: textDigest(readFileSync(join(ROOT, 'dist/src/provider-route.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/protocol.js'), 'utf8')),
     worker_boundary: textDigest(readFileSync(join(ROOT, 'dist/src/worker-boundary.js'), 'utf8')),
+    worker_binding: textDigest(readFileSync(join(ROOT, 'dist/src/worker-binding.js'), 'utf8')),
     agent_profiles: textDigest(readFileSync(join(ROOT, 'dist/src/agent-profiles.js'), 'utf8')),
     team_work: textDigest(readFileSync(join(ROOT, 'dist/src/team-work.js'), 'utf8')),
     worker_workspaces: textDigest(

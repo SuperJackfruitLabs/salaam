@@ -8,7 +8,7 @@ import { SalaamService } from '../../src/service.js';
 import { ROOT } from '../../src/config.js';
 import { until } from '../helpers.js';
 import type { ToolkitResource } from '../../src/toolkit-resources.js';
-import { processIdentity } from '../../src/supervisor.js';
+import { processIdentity } from '../../src/process-identity.js';
 import { acquireStateLock } from '../../src/state-lock.js';
 
 for (const role of ['execution', 'cleanup'] as const)

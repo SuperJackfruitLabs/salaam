@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
-import type { Supervisor } from './supervisor.js';
 import { digest, ServiceError, type Attempt, type ChildTask } from './protocol.js';
 import type { RepositorySnapshots } from './repository-snapshots.js';
 import type { WorkerWorkspaces } from './worker-workspaces.js';
-import type { ExternalRuntime } from './external-runtime.js';
+import type { ExternalRuntime, AgentGrant } from './worker-binding.js';
 import type { ExternalWork } from './external-work.js';
-import type { AgentGrant } from './agent-profiles.js';
-import type { WorkspaceTree } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
+import type { CodingWork } from './coding.js';
+
+/** The supervisor members child dispatch uses. The supervisor implements it. */
+export interface ChildSupervisor {
+  coding?: Pick<CodingWork, 'list' | 'cancel'>;
+  assertActive(id: string, epoch: number, attempt: string): void;
+  assertSessionProviderSupported(id: string, outputCap?: boolean): void;
+  start(id: string): Promise<void>;
+  failControl(id: string, error: Error): void;
+  cancelAttempt(attempt: string): Promise<void>;
+}
 
 export class ChildWork {
   external?: ExternalWork;
@@ -18,7 +27,7 @@ export class ChildWork {
   constructor(
     readonly store: Store,
     private artifacts: Artifacts,
-    private supervisor: Supervisor,
+    private supervisor: ChildSupervisor,
     private repositories?: RepositorySnapshots,
   ) {
     store.finishChild = (attempt) => this.finish(attempt);

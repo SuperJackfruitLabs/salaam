@@ -18,7 +18,7 @@ import {
   applyLocalEdits,
   reviewLocalEdits,
 } from '../../src/local-edits.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { until } from '../helpers.js';
 function setup() {
   const root = realpathSync(mkdtempSync('/tmp/sal-local-code-'));

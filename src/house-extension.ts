@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { personaSection } from './persona.js';
 import { registerClaude } from './claude-provider.js';
-import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
+import { OFFLINE_ROUTE, type ProviderRoute } from './provider-route.js';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
   createAssistantMessageEventStream,
@@ -37,10 +37,10 @@ interface WorkerConfig {
   coding?: CodingBinding;
   local?: boolean;
   localCoding?: boolean;
-  worker_binding?: import('./worker-boundary.js').WorkerBoundaryView;
+  worker_binding?: import('./worker-binding.js').WorkerBoundaryView;
   mcp?: import('./mcp-work.js').McpWorkerBinding;
-  operator_mcp?: import('./operator-mcp.js').McpServerProvenance[];
-  mcp_servers?: import('./operator-mcp.js').McpServerProvenance[];
+  operator_mcp?: import('./records.js').McpServerProvenance[];
+  mcp_servers?: import('./records.js').McpServerProvenance[];
   toolkit?: import('./toolkit-work.js').ToolkitWorkerBinding;
   station?: import('./station-work.js').StationBinding;
   persona?: import('./persona.js').Persona;

@@ -11,7 +11,7 @@ import {
   chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { processIdentity } from './supervisor.js';
+import { processIdentity } from './process-identity.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';

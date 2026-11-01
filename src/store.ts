@@ -1,14 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { resolvedToolkitCallSql } from './toolkit-resolutions.js';
+import { resolvedToolkitCallSql } from './toolkit-resolution-sql.js';
 import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
 import { WorkerBoundary } from './worker-boundary.js';
 import { ExecutionAuthority } from './execution-authority.js';
-import { OFFLINE_ROUTE, type ProviderRoute } from './provider-config.js';
+import { OFFLINE_ROUTE, type ProviderRoute } from './provider-route.js';
 import { canonical } from './protocol.js';
-import { acpFailure, type AttemptOutcome } from './acp-outcome.js';
+import { acpFailure } from './acp-outcome.js';
+import type { AttemptOutcome } from './records.js';
 import { verifyReadinessFingerprint, type ReadinessFingerprint } from './readiness-fingerprint.js';
 import {
   digest,
@@ -45,8 +46,8 @@ export class Store {
   recordTaskMutation?: (
     session: string,
     mutation: string,
-    before: import('./workspaces.js').WorkspaceTree,
-    after: import('./workspaces.js').WorkspaceTree,
+    before: import('./records.js').WorkspaceTree,
+    after: import('./records.js').WorkspaceTree,
   ) => void;
   taskGrantCheck?: (session: string) => void;
   /** Provenance: the OS identity that local tool effects run as. */

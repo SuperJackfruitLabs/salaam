@@ -17,7 +17,7 @@ import { Workspaces } from '../../src/workspaces.js';
 import { CodingWork } from '../../src/coding.js';
 import { TaskFixtureBackend } from '../fixtures/task-backend.mjs';
 import { canonical, digest, textDigest } from '../../src/protocol.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { configurePermissions } from '../../src/autonomy.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';

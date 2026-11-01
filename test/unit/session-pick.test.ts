@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import {
   continueArgs,
   deskUsesAnthropic,

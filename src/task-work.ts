@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { taskPolicy, type TaskPolicy } from './task-policy.js';
+import { taskPolicy } from './task-policy.js';
+import type { TaskPolicy, StepPlan, WorkStep, WorkTask } from './records.js';
 import type { Store } from './store.js';
 import type { TaskContext } from './task-context.js';
 import {
@@ -11,56 +12,10 @@ import {
   type Controller,
 } from './protocol.js';
 
-export interface StepPlan {
-  key: string;
-  title: string;
-  instruction: string;
-  depends_on: string[];
-  checks?: string[];
-}
 export interface TaskPlan extends TaskPolicy {
   objective: string;
   constraints: string[];
   steps: StepPlan[];
-}
-export interface WorkStep extends StepPlan {
-  id: string;
-  state:
-    | 'pending'
-    | 'queued'
-    | 'running'
-    | 'awaiting_review'
-    | 'interrupted'
-    | 'failed'
-    | 'cancelled'
-    | 'completed';
-  attempt_id: string | null;
-  review: string | null;
-}
-export interface WorkTask extends TaskPolicy {
-  id: string;
-  session_id: string;
-  revision: number;
-  plan_revision: number;
-  state:
-    | 'accepted'
-    | 'running'
-    | 'blocked'
-    | 'verifying'
-    | 'waiting_for_person'
-    | 'waiting_for_child'
-    | 'waiting_for_infrastructure'
-    | 'succeeded'
-    | 'succeeded_with_exception'
-    | 'failed'
-    | 'partially_completed'
-    | 'cancelled';
-  objective: string;
-  constraints: string[];
-  reason: string;
-  steps: WorkStep[];
-  runtime?: Record<string, unknown>;
-  verification?: Record<string, unknown>;
 }
 
 /** Operator-driven task ledger. An attempt outcome never constitutes task success. */

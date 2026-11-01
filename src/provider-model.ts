@@ -1,7 +1,8 @@
 import { clampMaxTokensToContext } from '@earendil-works/pi-ai/api/simple-options';
 import type { Api, Model, AuthResult, TranscriptContext } from '@earendil-works/pi-ai';
 import { canonical } from './protocol.js';
-import { getProviderModel, ROUTING_FIELDS, type ProviderRoute } from './provider-config.js';
+import { getProviderModel, ROUTING_FIELDS } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
 export function materialize(model: Model<Api>, auth: AuthResult): Model<Api> {
   let baseUrl = auth.auth.baseUrl ?? model.baseUrl;
   for (const [key, value] of Object.entries(auth.env ?? {}))
@@ -84,7 +85,7 @@ export function generationOptions(
   model: Model<Api>,
   context: TranscriptContext,
   cap: number,
-  reasoning?: import('./provider-config.js').ReasoningLevel,
+  reasoning?: import('./provider-route.js').ReasoningLevel,
 ) {
   const maxTokens = clampMaxTokensToContext(model, context, cap);
   return {

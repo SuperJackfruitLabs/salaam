@@ -8,6 +8,7 @@ import { join, resolve, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { digest, object } from './protocol.js';
+import type { SessionSnapshot, Approval, Operation } from './protocol.js';
 import { fileURLToPath } from 'node:url';
 import {
   mkdirSync,
@@ -27,7 +28,6 @@ import { defaultAgentPodConfig } from './agentpod-default-config.js';
 import { SalaamService } from './service.js';
 import { call } from './transport.js';
 import { attach, acquireControl, Outbox } from './attach.js';
-import type { SessionSnapshot, Approval, Operation } from './protocol.js';
 import {
   providerRoute,
   PI_PROVIDERS,
@@ -50,12 +50,8 @@ import { SocketEffectConnector } from './effect-connector.js';
 import { proveExecutionBoundary } from './execution-proof.js';
 import { BoundaryBroker, engineRequest } from './execution-boundary.js';
 import { workspaceDiff, type WorkspaceChange } from './workspace-diff.js';
-import {
-  probeHarness,
-  HARNESS_TARGETS,
-  type HarnessPin,
-  type HarnessTarget,
-} from './harness-probe.js';
+import { probeHarness, type HarnessPin } from './harness-probe.js';
+import { HARNESS_TARGETS, type HarnessTarget } from './harness-targets.js';
 interface WorkspaceDiffPage {
   revision: number;
   digest: string;

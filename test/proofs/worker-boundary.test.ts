@@ -13,7 +13,8 @@ import { PiProcess } from '../../src/pi.js';
 import { SalaamService } from '../../src/service.js';
 import { call } from '../../src/transport.js';
 import { digest, type Session } from '../../src/protocol.js';
-import { assertModelRequestBoundary, NATIVE_CAPABILITIES } from '../../src/worker-boundary.js';
+import { assertModelRequestBoundary } from '../../src/worker-boundary.js';
+import { NATIVE_CAPABILITIES } from '../../src/worker-binding.js';
 import { PtyClient } from '../terminal-helpers.js';
 
 const extensionPath = join(ROOT, 'test/fixtures/child-extension.mjs');

@@ -1,9 +1,10 @@
 import { digest, integer, ServiceError, string } from './protocol.js';
-import { readTree, filePath, type Workspaces, type WorkspaceTree } from './workspaces.js';
+import { readTree, filePath, type Workspaces } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
 import type { Artifacts } from './artifacts.js';
 import type { Store } from './store.js';
 import { workspaceDiff } from './workspace-diff.js';
-import type { WorkerBinding } from './worker-boundary.js';
+import type { WorkerBinding } from './worker-binding.js';
 
 export function repositoryPath(value: unknown): string {
   const path = filePath(value);

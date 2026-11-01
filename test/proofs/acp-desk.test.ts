@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { call } from '../../src/transport.js';
 import { ROOT } from '../../src/config.js';
 import { deskRoute } from '../../src/acp-desk.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
 import { client } from '../acp-helpers.js';

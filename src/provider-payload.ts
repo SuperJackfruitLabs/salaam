@@ -1,6 +1,7 @@
 import { getCurrentTools, type TranscriptContext } from '@earendil-works/pi-ai';
 import { canonical, object } from './protocol.js';
-import { getProviderModel, validateClaudePayload, type ProviderRoute } from './provider-config.js';
+import { getProviderModel, validateClaudePayload } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
 
 const common = ['model', 'stream', 'tools', 'tool_choice', 'temperature', 'top_p', 'metadata'];
 const allowedFields: Record<string, string[]> = {

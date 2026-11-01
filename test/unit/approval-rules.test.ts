@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Store } from '../../src/store.js';
 import { ManagedWork } from '../../src/managed.js';
 import { LocalCoding } from '../../src/local-coding.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { localHash } from '../../src/local-edits.js';
 import {
   ApprovalRules,

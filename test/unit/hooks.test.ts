@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
 import { describeHooks, Hooks, matchesTool, parseHooks, type HookRunner } from '../../src/hooks.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 
 // Phase 4b (operator, 2026-10-31): hooks in the Claude Code format. A repository's hooks never run
 // until the person trusts that exact file; a hook can block, never approve; every run is recorded.

@@ -12,7 +12,7 @@ import { acquireControl } from '../../src/attach.js';
 import { until } from '../helpers.js';
 import { checkedPlan } from '../task-helpers.js';
 import type { Session, Controller } from '../../src/protocol.js';
-import type { WorkTask } from '../../src/task-work.js';
+import type { WorkTask } from '../../src/records.js';
 import { PtyClient } from '../terminal-helpers.js';
 import { readTree } from '../../src/workspaces.js';
 import { digest } from '../../src/protocol.js';

@@ -1,7 +1,7 @@
 import { requiredChecks } from './task-policy.js';
 import type { Store } from './store.js';
-import type { TaskWork, WorkTask } from './task-work.js';
-import type { TaskVerification, CheckReceipt } from './task-verification.js';
+import type { TaskWork } from './task-work.js';
+import type { CheckReceipt, WorkTask } from './records.js';
 import type { StationWork, StationBinding, StationCall } from './station-work.js';
 import type { Artifacts } from './artifacts.js';
 import { canonical, digest, ServiceError } from './protocol.js';
@@ -29,6 +29,12 @@ export interface StationCheckEvidence {
   configuration_digest: string;
   tree_digest: string;
   result_digest: string;
+}
+/** The task verification members a station check uses. Task verification implements it. */
+export interface StationCheckLedger {
+  get(id: string): CheckReceipt;
+  assertIdle(task: WorkTask, stationInspection?: string): void;
+  budget: { check(session: string): void };
 }
 /** Protected station backend for the existing task_checks/completion controller.
  * It never changes task success. The controller must await withFresh and commit
@@ -92,7 +98,7 @@ export class StationTaskVerification {
   constructor(
     readonly store: Store,
     readonly tasks: TaskWork,
-    readonly verification: TaskVerification,
+    readonly verification: StationCheckLedger,
     readonly station: StationWork,
     readonly artifacts: Artifacts,
   ) {

@@ -19,7 +19,7 @@ import { digest } from '../../src/protocol.js';
 import { call } from '../../src/transport.js';
 import { until } from '../helpers.js';
 import { toolkitServiceFixture } from '../toolkit-service-helpers.js';
-import { processIdentity } from '../../src/supervisor.js';
+import { processIdentity } from '../../src/process-identity.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const exec = promisify(execFile);

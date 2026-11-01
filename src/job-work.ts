@@ -6,31 +6,8 @@ import type { TaskVerification } from './task-verification.js';
 import type { ManagedWork } from './managed.js';
 import { POLICY_DIGEST } from './config.js';
 import { canonical, digest, integer, ServiceError, string, type Controller } from './protocol.js';
+import type { Job, JobOccurrence } from './records.js';
 
-export interface Job {
-  id: string;
-  task_id: string;
-  session_id: string;
-  name: string;
-  revision: number;
-  binding: Record<string, unknown>;
-  binding_digest: string;
-  max_steps: number;
-  compact: boolean;
-  state: string;
-  reason: string;
-  created_at: number;
-}
-export interface JobOccurrence {
-  id: string;
-  job_id: string;
-  occurrence_key: string;
-  binding_digest: string;
-  state: string;
-  reason: string;
-  created_at: number;
-  updated_at: number;
-}
 export interface JobAcceptance {
   occurrence_id: string;
   job_id: string;

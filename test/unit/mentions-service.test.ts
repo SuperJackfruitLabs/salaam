@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { call } from '../../src/transport.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { Outbox } from '../../src/attach.js';
 import { fixture } from '../helpers.js';
 

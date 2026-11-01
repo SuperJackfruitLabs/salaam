@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
-import type { AgentGrant } from './agent-profiles.js';
-import type { WorkTask } from './task-work.js';
-import type { WorkspaceTree } from './workspaces.js';
+import type { AgentGrant } from './worker-binding.js';
+import type { WorkTask, WorkspaceTree } from './records.js';
 import type { ChildTask } from './protocol.js';
 
 /**

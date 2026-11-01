@@ -7,13 +7,8 @@ import { createHash } from 'node:crypto';
 import { HarnessRpc, type HarnessLaunch, type RpcObject } from './harness-rpc.js';
 import { digest, ServiceError } from './protocol.js';
 import { VERSION } from './config.js';
+import { HARNESS_TARGETS, type HarnessTarget } from './harness-targets.js';
 
-export const HARNESS_TARGETS = {
-  'gemini-acp': { dialect: 'acp', args: ['--acp'], version: '0.64.0' },
-  'claude-acp': { dialect: 'acp', args: [], version: '0.23.1' },
-  'codex-app-server': { dialect: 'codex', args: ['app-server'], version: '0.163.0' },
-} as const;
-export type HarnessTarget = keyof typeof HARNESS_TARGETS;
 export interface HarnessPin {
   target: HarnessTarget;
   executable: string;

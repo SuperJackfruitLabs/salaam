@@ -9,9 +9,9 @@ import {
   type A2APeer,
 } from './a2a-peer.js';
 import { A2AInvocation, type A2ACheckpoint } from './a2a-protocol.js';
-import type { ExternalBackend, ExternalHooks, ExternalRuntime } from './external-runtime.js';
-import type { WorkerBinding } from './worker-boundary.js';
-import type { WorkspaceTree } from './workspaces.js';
+import type { ExternalBackend, ExternalHooks } from './external-runtime.js';
+import type { ExternalRuntime, WorkerBinding } from './worker-binding.js';
+import type { WorkspaceTree } from './records.js';
 
 /** Bounded outbound analysis. A peer has no local file/command/controller authority. */
 export class A2ABackend implements ExternalBackend {

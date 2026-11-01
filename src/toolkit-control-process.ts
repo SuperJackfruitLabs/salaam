@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { canonical, digest, object, ServiceError } from './protocol.js';
-import { processIdentity } from './supervisor.js';
+import { processIdentity } from './process-identity.js';
 import {
   verifyStdioProcessLaunch,
   type StdioLifecycle,

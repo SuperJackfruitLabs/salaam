@@ -2,9 +2,8 @@ import { BoardReads } from './board-reads.js';
 import { takeImages } from './mentions.js';
 import { HostBreaker, callThroughBreaker } from './host-breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, existsSync, writeFileSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   CAPABILITIES,
@@ -35,14 +34,11 @@ import type { ManagedWork } from './managed.js';
 import type { McpWork, McpWorkerBinding } from './mcp-work.js';
 import type { StationWork, StationBinding } from './station-work.js';
 import type { ToolkitWork, ToolkitWorkerBinding } from './toolkit-work.js';
-import { mergeMcpProvenance, type McpServerProvenance, type OperatorMcp } from './operator-mcp.js';
+import { mergeMcpProvenance, type OperatorMcp } from './operator-mcp.js';
+import type { McpServerProvenance, AttemptOutcome, TaskLimits } from './records.js';
 import type { ChildWork } from './children.js';
-import {
-  OFFLINE_ROUTE,
-  providerRoute,
-  providerHasOutputCap,
-  type ProviderRoute,
-} from './provider-config.js';
+import { providerRoute, providerHasOutputCap } from './provider-config.js';
+import { OFFLINE_ROUTE, type ProviderRoute } from './provider-route.js';
 import type { TaskContext, Compaction } from './task-context.js';
 import { validateApiKey } from './credentials.js';
 import { resolveProviderAuth } from './provider-auth.js';
@@ -51,7 +47,6 @@ import { validateProviderPayload } from './provider-payload.js';
 import { digest } from './protocol.js';
 import { readLocalWorkspace } from './local-workspace.js';
 import type { CodingWork } from './coding.js';
-import type { TaskLimits } from './task-policy.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
 import type { TeamWork } from './team-work.js';
 import {
@@ -61,8 +56,8 @@ import {
   providerOutcome,
   redactFailureText,
   toolMetadata,
-  type AttemptOutcome,
 } from './acp-outcome.js';
+import { groupExists, processIdentity } from './process-identity.js';
 
 export interface Launch {
   command: string;
@@ -133,98 +128,6 @@ export const LOCAL_TOOL_ERRORS = [
   'shell_binding',
   'listen_unreachable',
 ];
-export function processIdentity(pid: number): string | null {
-  if (!Number.isSafeInteger(pid) || pid < 1) return null;
-  try {
-    if (process.platform === 'linux') {
-      // /proc stat field 22 is the boot-relative start tick. Pair it with boot,
-      // process group, executable and argv, and re-read to reject PID reuse mid-snapshot.
-      const path = `/proc/${pid}`;
-      const stat = () => {
-        const value = readFileSync(path + '/stat', 'utf8');
-        const end = value.lastIndexOf(') ');
-        if (end < 0 || !value.startsWith(pid + ' (')) throw Error('Invalid process stat');
-        const fields = value
-          .slice(end + 2)
-          .trim()
-          .split(/\s+/);
-        if (!/^\d+$/.test(fields[19] ?? '') || !/^\d+$/.test(fields[2] ?? ''))
-          throw Error('Invalid process start identity');
-        return { start: fields[19], group: fields[2], session: fields[3] };
-      };
-      const before = stat(),
-        boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim(),
-        // A tools-user launcher (sudo) is root-owned; its exe link is unreadable to the service.
-        executable = (() => {
-          try {
-            return readlinkSync(path + '/exe');
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'EACCES') return 'unreadable';
-            throw error;
-          }
-        })(),
-        argv = readFileSync(path + '/cmdline');
-      if (
-        !/^[a-f0-9-]{36}$/.test(boot) ||
-        !argv.length ||
-        argv.length > 16384 ||
-        canonical(before) !== canonical(stat())
-      )
-        return null;
-      return (
-        'linux-proc-v1:' +
-        textDigest(canonical({ pid, boot, ...before, executable, argv: argv.toString('base64') }))
-      );
-    }
-    return (
-      execFileSync('/bin/ps', ['-ww', '-p', String(pid), '-o', 'lstart=', '-o', 'command='], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 2000,
-        killSignal: 'SIGKILL',
-        maxBuffer: 16384,
-      }).trim() || null
-    );
-  } catch {
-    return null;
-  }
-}
-/**
- * When a process started, keyed to this boot. Unlike processIdentity it survives exec, so it
- * names a background task whose gated shell has since become the user's command.
- */
-export function processStart(pid: number): string | null {
-  if (!Number.isSafeInteger(pid) || pid < 1) return null;
-  try {
-    if (process.platform === 'linux') {
-      const value = readFileSync(`/proc/${pid}/stat`, 'utf8');
-      const fields = value
-        .slice(value.lastIndexOf(') ') + 2)
-        .trim()
-        .split(/\s+/);
-      const boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
-      return /^\d+$/.test(fields[19] ?? '') ? `linux-start-v1:${pid}:${boot}:${fields[19]}` : null;
-    }
-    const started = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 2000,
-      killSignal: 'SIGKILL',
-    }).trim();
-    return started ? `ps-start-v1:${pid}:${started}` : null;
-  } catch {
-    return null;
-  }
-}
-function groupExists(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
-    return true;
-  }
-}
 export class Supervisor extends EventEmitter {
   localCoding?: import('./local-coding.js').LocalCoding;
   /** Built-in web search and fetch for interactive coding (operator ruling 2026-10-31). */

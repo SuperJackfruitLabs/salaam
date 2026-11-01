@@ -1,4 +1,4 @@
-import { HARNESS_TARGETS, type HarnessTarget } from './harness-probe.js';
+import { HARNESS_TARGETS, type HarnessTarget } from './harness-targets.js';
 import { ServiceError } from './protocol.js';
 /** Correlation only: these IDs never authenticate a worker or grant operator authority. */
 export function harnessToolIds(

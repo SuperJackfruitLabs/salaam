@@ -11,7 +11,7 @@ import { call } from '../../src/transport.js';
 import { acquireControl } from '../../src/attach.js';
 import { until } from '../helpers.js';
 import type { Controller, Session, SessionSnapshot } from '../../src/protocol.js';
-import type { WorkTask } from '../../src/task-work.js';
+import type { WorkTask } from '../../src/records.js';
 import { OperatorClient } from '../../src/tui-client.js';
 import { DocumentView } from '../../src/tui-view.js';
 import { SalaamTheme } from '../../src/tui-theme.js';

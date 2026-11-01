@@ -20,34 +20,16 @@ import {
   textDigest,
   type Controller,
 } from './protocol.js';
-import { providerRoute, type ProviderRoute } from './provider-config.js';
+import { providerRoute } from './provider-config.js';
+import type { ProviderRoute } from './provider-route.js';
 import type { Store } from './store.js';
-import { DIAGNOSTIC_PROFILE } from './worker-boundary.js';
+import {
+  DIAGNOSTIC_PROFILE,
+  type AgentGrant,
+  type AgentGrantSnapshot,
+  type AgentProfile,
+} from './worker-binding.js';
 
-export interface AgentProfile {
-  schema_version: 1;
-  id: string;
-  revision: number;
-  tools: readonly string[];
-  max_depth: number;
-  role?: 'explorer' | 'reviewer' | 'builder' | 'tester' | 'integrator';
-  description?: string;
-  prompt?: string;
-  max_requests?: number;
-  provider?: string;
-  model?: string;
-  source_digest?: string;
-}
-export interface AgentGrant {
-  schema_version: 1;
-  id: string;
-  owner_session: string;
-  profile: AgentProfile;
-  profile_digest: string;
-  route: ProviderRoute;
-  output_cap: boolean;
-  facts: { id: string; kind: string; text: string }[];
-}
 const ROLE_TOOLS = {
   explorer: ['salaam_probe', 'salaam_repository'],
   reviewer: ['salaam_probe', 'salaam_repository', 'salaam_findings'],
@@ -393,7 +375,7 @@ export class AgentProfiles {
       },
     );
   }
-  snapshot(session: string) {
+  snapshot(session: string): AgentGrantSnapshot[] {
     return this.store.db
       .prepare(
         'SELECT document,state FROM agent_grants WHERE owner_session=? ORDER BY rowid DESC LIMIT 64',

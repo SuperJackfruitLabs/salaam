@@ -4,7 +4,7 @@ import type { TaskWork } from './task-work.js';
 import type { TaskBudget } from './task-budget.js';
 import type { ChildWork } from './children.js';
 import type { AgentProfiles } from './agent-profiles.js';
-import type { WorkerBinding } from './worker-boundary.js';
+import type { WorkerBinding } from './worker-binding.js';
 import { digest, ServiceError, type Controller, type ChildTask } from './protocol.js';
 
 export interface TeamAssignment {

@@ -1,6 +1,12 @@
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all';
 import type { Api, Model, AuthResult } from '@earendil-works/pi-ai';
 import { ServiceError, object, canonical } from './protocol.js';
+import {
+  OFFLINE_ROUTE,
+  REASONING_LEVELS,
+  type ProviderRoute,
+  type ReasoningLevel,
+} from './provider-route.js';
 // Constructing the pinned catalog is offline; never refresh it implicitly during a turn.
 export const PI_PROVIDERS = builtinProviders();
 export function getProvider(id: string) {
@@ -30,21 +36,6 @@ export const ROUTING_FIELDS = [
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_GATEWAY_ID',
 ] as const;
-export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high'] as const;
-export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
-export interface ProviderRoute {
-  reasoning?: ReasoningLevel;
-  provider: string;
-  model: string;
-  max_tokens: number;
-  workspace_id?: string;
-  connection?: { endpoint: string; configuration: Record<string, string> };
-}
-export const OFFLINE_ROUTE: ProviderRoute = {
-  provider: 'salaam-proof',
-  model: 'scripted',
-  max_tokens: 1024,
-};
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5-5';
 export function providerRoute(
   provider = 'offline',

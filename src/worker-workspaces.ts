@@ -1,14 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
-import type { ChildWork } from './children.js';
 import type { Artifacts } from './artifacts.js';
-import { readTree, type Workspaces, type WorkspaceTree } from './workspaces.js';
+import { readTree, type Workspaces } from './workspaces.js';
+import type { WorkspaceTree } from './records.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
-import { canonical, digest, ServiceError } from './protocol.js';
-import type { WorkerBinding } from './worker-boundary.js';
+import { canonical, digest, ServiceError, type ChildTask } from './protocol.js';
+import type { WorkerBinding } from './worker-binding.js';
 import type { CodingWork } from './coding.js';
 import { workspaceDiff } from './workspace-diff.js';
 
+/** The child ledger members a draft workspace checks. Child dispatch implements it. */
+export interface DraftChildren {
+  inspect(parent: string, id: string): ChildTask;
+  external?: { stopped(child: string): boolean };
+}
 /** Drafts are private owned copies. Integration reuses the hash-bound workspace journal. */
 export class WorkerWorkspaces {
   constructor(
@@ -17,7 +22,7 @@ export class WorkerWorkspaces {
     readonly repositories: RepositorySnapshots,
     readonly artifacts: Artifacts,
     readonly coding: CodingWork,
-    readonly children: ChildWork,
+    readonly children: DraftChildren,
   ) {}
   execution(): { profile_digest: string; engine_id: string; evidence: 'proven' | 'fixture' } {
     const executor = this.coding.executor;

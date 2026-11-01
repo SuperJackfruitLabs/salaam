@@ -5,7 +5,7 @@ import { Store } from '../../src/store.js';
 import { ChildWork } from '../../src/children.js';
 import { Artifacts } from '../../src/artifacts.js';
 import type { Supervisor } from '../../src/supervisor.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 
 test('v11 child migration preserves ownership, results, acknowledgements, usage and cached responses byte for byte', async () => {
   const dir = mkdtempSync('/tmp/sal-wm-'),

@@ -13,7 +13,7 @@
   "promise(always-return)": 10,
   "promise(no-multiple-resolved)": 2,
   "typescript(consistent-return)": 45,
-  "typescript(consistent-type-imports)": 113,
+  "typescript(consistent-type-imports)": 102,
   "typescript(no-base-to-string)": 39,
   "typescript(no-explicit-any)": 325,
   "typescript(no-floating-promises)": 11,

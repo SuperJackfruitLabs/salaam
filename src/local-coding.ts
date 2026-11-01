@@ -46,7 +46,7 @@ import {
 } from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
 import type { HookRun } from './hooks.js';
-import { processIdentity, processStart } from './supervisor.js';
+import { processIdentity, processStart } from './process-identity.js';
 
 const TASK_TAIL = 65536;
 const TASK_LIMIT = 4;

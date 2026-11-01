@@ -2,7 +2,8 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync, chmodSync, symlinkSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
-import { providerRoute, validateClaudePayload, OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { providerRoute, validateClaudePayload } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { loadApiKey, saveApiKey, validateApiKey } from '../../src/credentials.js';
 
 test('Claude credentials persist privately and environment values override the local file', () => {

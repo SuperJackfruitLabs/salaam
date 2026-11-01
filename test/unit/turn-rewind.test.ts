@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { TurnCheckpoints } from '../../src/turn-rewind.js';
 
 function setup(coding = true, restorable = true) {

@@ -11,7 +11,8 @@ import { acquireControl } from '../../src/attach.js';
 import { until } from '../helpers.js';
 import { checkedPlan } from '../task-helpers.js';
 import type { Controller, Session } from '../../src/protocol.js';
-import type { Job, JobAcceptance } from '../../src/job-work.js';
+import type { JobAcceptance } from '../../src/job-work.js';
+import type { Job } from '../../src/records.js';
 async function fixture(mode: string) {
   const dir = mkdtempSync('/tmp/sal-job-proof-'),
     source = join(dir, 'source'),

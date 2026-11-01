@@ -16,7 +16,7 @@ import {
   autoApprovesEdits,
   type PermissionMode,
 } from '../../src/autonomy.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { OFFLINE_ROUTE } from '../../src/provider-route.js';
 import { localHash } from '../../src/local-edits.js';
 import { ApprovalRules } from '../../src/approval-rules.js';
 import { shellPassthrough } from '../../src/shell-passthrough.js';

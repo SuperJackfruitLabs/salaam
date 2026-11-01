@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { digest, ServiceError } from './protocol.js';
+import type { McpServerProvenance } from './records.js';
 
 /**
  * Operator-declared MCP servers: the operator's own grant, read only from Salaam's
@@ -30,17 +31,6 @@ export type McpDeclaration = StdioDeclaration | HttpDeclaration;
 export interface OperatorMcpFile {
   version: 1;
   servers: McpDeclaration[];
-}
-/** Public provenance for one server a session got. Never carries resolved secrets. */
-export interface McpServerProvenance {
-  name: string;
-  source: 'operator' | 'agentpod';
-  transport: 'stdio' | 'http';
-  command?: string;
-  args?: string[];
-  url?: string;
-  endpoint_digest?: string;
-  declaration_digest: string;
 }
 
 const NAME = /^[a-z][a-z0-9_-]{0,63}$/;

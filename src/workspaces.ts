@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { digest, ServiceError, string, integer } from './protocol.js';
 import type { Store } from './store.js';
 import type { Artifacts } from './artifacts.js';
+import type { WorkspaceTree } from './records.js';
 
 export const WORKSPACE_LIMITS = {
   entries: 2048,
@@ -32,11 +33,6 @@ export const WORKSPACE_LIMITS = {
   fileBytes: 256 * 1024,
   outputBytes: 16 * 1024,
 } as const;
-export interface WorkspaceFile {
-  content: string;
-  executable: boolean;
-}
-export type WorkspaceTree = Record<string, WorkspaceFile>;
 export interface Workspace {
   id: string;
   session_id: string;

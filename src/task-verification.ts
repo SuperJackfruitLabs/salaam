@@ -4,7 +4,8 @@ import { StationTaskVerification, type StationCheckEvidence } from './station-ta
 import type { StationWork } from './station-work.js';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
-import type { TaskWork, WorkTask } from './task-work.js';
+import type { TaskWork } from './task-work.js';
+import type { WorkTask, CheckReceipt } from './records.js';
 import type { TaskBudget } from './task-budget.js';
 import type { CodingWork } from './coding.js';
 import { commandTerminal } from './coding.js';
@@ -12,21 +13,6 @@ import { readTree, type Workspaces } from './workspaces.js';
 import type { Artifacts } from './artifacts.js';
 import { canonical, digest, ServiceError, type Controller } from './protocol.js';
 
-export interface CheckReceipt {
-  id: string;
-  task_id: string;
-  step_id: string | null;
-  check_key: string;
-  plan_revision: number;
-  workspace_id: string;
-  workspace_revision: number;
-  workspace_digest: string;
-  profile_digest: string;
-  engine_id: string;
-  command_run_id: string | null;
-  state: string;
-  artifact_id: string | null;
-}
 export class TaskVerification {
   station?: StationTaskVerification;
   installStation(station: StationWork): void {

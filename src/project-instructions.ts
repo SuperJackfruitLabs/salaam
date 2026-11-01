@@ -4,6 +4,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { canonical, digest, textDigest } from './protocol.js';
 import type { Artifacts } from './artifacts.js';
 import type { Store } from './store.js';
+import type { InstructionFile, InstructionSkip, InstructionsSummary } from './records.js';
 
 /** One file's bound, and the bound on everything loaded together. */
 export const INSTRUCTION_FILE_BYTES = 32 * 1024;
@@ -11,24 +12,6 @@ export const INSTRUCTION_TOTAL_BYTES = 64 * 1024;
 /** AGENTS.md is the shared convention; CLAUDE.md is read only where a directory has no AGENTS.md. */
 const NAMES = ['AGENTS.md', 'CLAUDE.md'];
 
-export interface InstructionFile {
-  scope: 'user' | 'project';
-  /** Shown to people: relative to the session folder, or ~/… for the user file. */
-  path: string;
-  sha256: string;
-  bytes: number;
-  text: string;
-}
-export interface InstructionSkip {
-  path: string;
-  reason: string;
-}
-export interface InstructionsSummary {
-  digest: string;
-  revision: number;
-  files: Omit<InstructionFile, 'text'>[];
-  skipped: InstructionSkip[];
-}
 interface InstructionsDocument {
   version: 1;
   files: InstructionFile[];

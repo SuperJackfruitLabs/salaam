@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { readTree, type WorkspaceTree } from './workspaces.js';
+import { readTree } from './workspaces.js';
+import type { WorkspaceTree, RecurringOccurrence } from './records.js';
 import {
   canonical,
   digest,
@@ -23,18 +24,6 @@ export interface RecurringJob {
   template_digest: string;
   state: string;
   next_due: number | null;
-  created_at: number;
-}
-export interface RecurringOccurrence {
-  id: string;
-  job_id: string;
-  occurrence_key: string;
-  session_id: string;
-  job_run_id: string | null;
-  schedule_revision: number;
-  due_at: number | null;
-  state: string;
-  error: string | null;
   created_at: number;
 }
 /** A reservation is durable before filesystem provisioning. Only its final transaction grants work. */

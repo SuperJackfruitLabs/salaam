@@ -307,7 +307,7 @@ test.each(['openai', 'openai-codex'])(
           plan: { ...plan, limits: { token_units: null, output_token_bound: 512 } },
         }),
       ).rejects.toThrow('no output cap');
-      const task = await call<import('../../src/task-work.js').WorkTask>(
+      const task = await call<import('../../src/records.js').WorkTask>(
         f.service.socket,
         '/v1/tasks',
         {

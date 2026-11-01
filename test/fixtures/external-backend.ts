@@ -1,11 +1,7 @@
-import type {
-  ExternalBackend,
-  ExternalHooks,
-  ExternalRuntime,
-} from '../../src/external-runtime.js';
-import type { WorkerBinding } from '../../src/worker-boundary.js';
+import type { ExternalBackend, ExternalHooks } from '../../src/external-runtime.js';
+import type { ExternalRuntime, WorkerBinding } from '../../src/worker-binding.js';
 import type { HarnessCheckpoint } from '../../src/harness-protocol.js';
-import type { WorkspaceTree } from '../../src/workspaces.js';
+import type { WorkspaceTree } from '../../src/records.js';
 import { digest, ServiceError } from '../../src/protocol.js';
 
 /** Deterministic transport only; never execution, live-model or interoperability evidence. */
