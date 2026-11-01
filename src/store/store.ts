@@ -6,15 +6,13 @@ import { EventEmitter } from 'node:events';
 import { UsageLedger } from './usage.js';
 import { WorkerBoundary } from './worker-boundary.js';
 import { ExecutionAuthority } from './execution-authority.js';
-import { OFFLINE_ROUTE, type ProviderRoute } from '../core/provider-route.js';
-import { canonical } from '../core/protocol.js';
-import { acpFailure } from '../acp/outcome.js';
-import type { AttemptOutcome } from '../core/records.js';
 import {
+  OFFLINE_ROUTE,
+  type ProviderRoute,
+  canonical,
+  acpFailure,
   verifyReadinessFingerprint,
   type ReadinessFingerprint,
-} from '../core/readiness-fingerprint.js';
-import {
   digest,
   ServiceError,
   type Session,
@@ -29,7 +27,8 @@ import {
   textDigest,
   type Operation,
   type Approval,
-} from '../core/protocol.js';
+} from '../core/index.js';
+import type { AttemptOutcome } from '../core/index.js';
 
 export class Store {
   readonly db: DatabaseSync;
@@ -49,8 +48,8 @@ export class Store {
   recordTaskMutation?: (
     session: string,
     mutation: string,
-    before: import('../core/records.js').WorkspaceTree,
-    after: import('../core/records.js').WorkspaceTree,
+    before: import('../core/index.js').WorkspaceTree,
+    after: import('../core/index.js').WorkspaceTree,
   ) => void;
   taskGrantCheck?: (session: string) => void;
   /** Provenance: the OS identity that local tool effects run as. */

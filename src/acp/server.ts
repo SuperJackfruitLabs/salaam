@@ -2,20 +2,28 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { once } from 'node:events';
-import { call } from '../core/transport.js';
-import { acquireControl, Outbox, subscribe, type Feed } from '../tui/attach.js';
-import { AcpJournal } from './journal.js';
-import { VERSION } from '../core/config.js';
 import {
+  call,
+  VERSION,
   acpFailure,
   AcpFailureError,
   permissionKind,
   toolMetadata,
   toolTitle,
   planUpdate,
-} from './outcome.js';
-import type { CancellationReceipt } from '../runtime/turn-cancellations.js';
-import { validateManagedMcpDeclarations } from '../mcp/acp.js';
+  object,
+  string,
+  ServiceError,
+  type SessionSnapshot,
+  type ControlLease,
+  type Approval,
+  type Operation,
+  type Attempt,
+} from '../core/index.js';
+import { acquireControl, Outbox, subscribe, type Feed, rewindSummary } from '../tui/index.js';
+import { AcpJournal } from './journal.js';
+import type { CancellationReceipt, RewindReview, TurnCheckpoint } from '../runtime/index.js';
+import { validateManagedMcpDeclarations } from '../mcp/index.js';
 import {
   askReason,
   checkpointList,
@@ -31,21 +39,8 @@ import {
   REWIND_CHOICES,
   type DeskPermissions,
 } from './desk.js';
-import { onceOnlyReason } from '../runtime/approval-rules.js';
-import { rewindSummary } from '../tui/review.js';
-import type { PermissionMode } from '../runtime/autonomy.js';
-import type { LocalEdit } from '../local/edits.js';
-import type { RewindReview, TurnCheckpoint } from '../runtime/turn-rewind.js';
-import {
-  object,
-  string,
-  ServiceError,
-  type SessionSnapshot,
-  type ControlLease,
-  type Approval,
-  type Operation,
-  type Attempt,
-} from '../core/protocol.js';
+import { onceOnlyReason } from '../local/index.js';
+import type { PermissionMode, LocalEdit } from '../local/index.js';
 
 type Json = Record<string, unknown>;
 interface Connection {
@@ -90,8 +85,8 @@ export async function acp(
   const bound = admission
     ? await call<{
         session_id: string;
-        binding: import('../agentpod/protocol.js').AgentPodBinding;
-        managed_mcp?: import('../mcp/work.js').McpWorkerBinding | null;
+        binding: import('../core/index.js').AgentPodBinding;
+        managed_mcp?: import('../mcp/index.js').McpWorkerBinding | null;
         work_control?: { version: 1; owner: 'superpipeline' };
       }>(socket, '/v1/agentpod/attach', { admission_id: admission, token: admissionToken })
     : undefined;

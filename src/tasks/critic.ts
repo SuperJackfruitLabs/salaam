@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import type { AgentGrant } from '../core/worker-binding.js';
-import type { WorkTask, WorkspaceTree } from '../core/records.js';
-import type { ChildTask } from '../core/protocol.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { AgentGrant, WorkTask, WorkspaceTree, ChildTask } from '../core/index.js';
 
 /**
  * The completion critic (item 8). When the admitted plan declares a critic, the built-in reviewer

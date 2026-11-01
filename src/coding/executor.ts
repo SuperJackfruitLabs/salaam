@@ -8,8 +8,8 @@ import {
   engineJson,
   decodeLogs,
   type EngineRequest,
-} from '../execution/boundary.js';
-import { digest, ServiceError } from '../core/protocol.js';
+} from '../execution/index.js';
+import { digest, ServiceError } from '../core/index.js';
 
 export const CODING_IMAGE =
   'docker.io/library/node@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019';

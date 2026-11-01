@@ -11,13 +11,8 @@ import {
   chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { processIdentity } from '../core/process-identity.js';
-import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import type { ManagedWork } from '../execution/managed.js';
-import type { AgentPodAuthority } from './authority.js';
 import {
+  processIdentity,
   canonical,
   digest,
   object,
@@ -25,7 +20,11 @@ import {
   integer,
   ServiceError,
   type Operation,
-} from '../core/protocol.js';
+} from '../core/index.js';
+import { randomUUID } from 'node:crypto';
+import type { Store, Artifacts } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
+import type { AgentPodAuthority } from './authority.js';
 import {
   readStationConfig,
   stationUnavailable,
@@ -35,38 +34,10 @@ import {
   type StationConfig,
 } from './station-config.js';
 import { stationFileResult } from './station-files.js';
-import { type RunGrants, runGrantCovers, runGrantPrefix } from '../tasks/run-grants.js';
+import { type RunGrants, runGrantCovers, runGrantPrefix } from '../tasks/index.js';
 import { StationSystemd, type StationUnit } from './station-systemd.js';
+import type { StationBinding, StationCall } from '../runtime/index.js';
 
-export interface StationBinding {
-  version: 1;
-  root_digest: string;
-  configuration_digest: string;
-  runner: 'linux-systemd-station-v1';
-  network: 'none';
-  command_workspace: 'read-only-reviewed-snapshot';
-}
-export interface StationCall {
-  id: string;
-  session_id: string;
-  worker_epoch: number;
-  attempt_id: string | null;
-  task_check_id?: string | null;
-  tool_call_id: string;
-  kind: 'patch' | 'check' | 'read';
-  input_digest: string;
-  root_digest: string;
-  configuration_digest: string;
-  args_json: string;
-  operation_id: string | null;
-  state: 'prepared' | 'dispatching' | 'returned' | 'failed' | 'outcome_unknown' | 'cancelled';
-  revision: number;
-  result_json: string | null;
-  helper_pid?: number | null;
-  helper_identity?: string | null;
-  helper_state?: string;
-  helper_stop_json?: string | null;
-}
 interface UnitRow {
   id: string;
   session_id: string | null;

@@ -1,23 +1,29 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import type { TaskBudget } from '../tasks/budget.js';
-import type { WorkTask, WorkspaceTree } from '../core/records.js';
-import type { ManagedWork } from '../execution/managed.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { WorkTask, WorkspaceTree } from '../core/index.js';
+import type { ManagedWork } from '../execution/index.js';
 import type { ExternalBackend, ExternalCheckpoint } from './external-runtime.js';
 import {
   externalCapabilities,
   type WorkerBinding,
   type ExternalRuntime,
-} from '../core/worker-binding.js';
-import { readTree, validateTree, type Workspaces } from './workspaces.js';
-import { canonical, digest, ServiceError, type ChildTask } from '../core/protocol.js';
-import { POLICY_DIGEST } from '../core/config.js';
+  canonical,
+  digest,
+  ServiceError,
+  type ChildTask,
+  POLICY_DIGEST,
+} from '../core/index.js';
+import { readTree, validateTree, type Workspaces } from '../coding/index.js';
 
 /** The child ledger members external work reads. Child dispatch implements it. */
 export interface ExternalChildren {
   owned(session: string): ChildTask | undefined;
   list(parent: string): ChildTask[];
+}
+/** The task budget members external work charges. Task budgets implement it. */
+export interface ExternalBudget {
+  task(session: string): WorkTask | null;
+  check(session: string): void;
 }
 /** External invocations extend existing child attempts and task-step claims, never a second scheduler. */
 export class ExternalWork {
@@ -29,7 +35,7 @@ export class ExternalWork {
     readonly store: Store,
     readonly artifacts: Artifacts,
     readonly children: ExternalChildren,
-    readonly budget: TaskBudget,
+    readonly budget: ExternalBudget,
     readonly managed: ManagedWork,
     readonly workspaces: Workspaces,
     readonly backend?: ExternalBackend,
@@ -559,8 +565,7 @@ export class ExternalWork {
     if (bytes && bytes.length > 1048576) throw Error('Stop receipt exceeds bound');
     const cp =
       runtime.kind === 'a2a'
-        ? (evidence as { checkpoint?: import('../a2a/protocol.js').A2ACheckpoint } | undefined)
-            ?.checkpoint
+        ? (evidence as { checkpoint?: ExternalCheckpoint } | undefined)?.checkpoint
         : undefined;
     if (cp) {
       const b = this.store.workerBoundary.view(child.id).binding;

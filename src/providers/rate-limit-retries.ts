@@ -1,4 +1,4 @@
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 
 /**
  * A provider 429 on a step is retried as a fresh admitted attempt of that step, after a backoff,

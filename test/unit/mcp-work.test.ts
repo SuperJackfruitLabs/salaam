@@ -9,7 +9,7 @@ import { McpWork } from '../../src/mcp/work.js';
 import { McpAdmission } from '../../src/mcp/admission.js';
 import { McpHttpFailure, McpInputFailure } from '../../src/mcp/http.js';
 import { mcpProfile } from '../../src/mcp/protocol.js';
-import { agentpodBinding } from '../../src/agentpod/protocol.js';
+import { agentpodBinding } from '../../src/core/agentpod-protocol.js';
 import { digest, ServiceError } from '../../src/core/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 import { until } from '../helpers.js';

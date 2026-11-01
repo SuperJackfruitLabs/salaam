@@ -3,7 +3,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import type { JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 /** Compile only a definition whose complete catalog/tool pins have already matched. */
 export function admittedMcpSchema(schema: JsonSchemaType): JsonSchemaValidator<unknown> {

@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import { object, ServiceError } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import { object, ServiceError } from '../core/index.js';
 
 /**
  * Approval rules for desk sessions (operator plan 2026-10-31, phase 2a), in the manner of OpenCode:

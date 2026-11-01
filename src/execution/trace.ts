@@ -1,5 +1,5 @@
-import type { Store } from '../store/store.js';
-import { digest, ServiceError } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import { digest, ServiceError } from '../core/index.js';
 
 /** W3C version 00 only. This module carries correlation, never an authority,
  * model budget, usage observation, or proof of successful product work. */

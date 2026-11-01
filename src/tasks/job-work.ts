@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
 import type { TaskDriver } from './driver.js';
 import type { TaskVerification } from './verification.js';
-import type { ManagedWork } from '../execution/managed.js';
-import { POLICY_DIGEST } from '../core/config.js';
+import type { ManagedWork } from '../execution/index.js';
 import {
+  POLICY_DIGEST,
   canonical,
   digest,
   integer,
   ServiceError,
   string,
   type Controller,
-} from '../core/protocol.js';
-import type { Job, JobOccurrence } from '../core/records.js';
+} from '../core/index.js';
+import type { Job, JobOccurrence } from '../core/index.js';
 
 export interface JobAcceptance {
   occurrence_id: string;

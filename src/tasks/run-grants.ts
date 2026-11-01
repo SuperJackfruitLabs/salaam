@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 
 /**
  * "Approve for this run" (approval scopes, item B). A person answering one workspace-write approval

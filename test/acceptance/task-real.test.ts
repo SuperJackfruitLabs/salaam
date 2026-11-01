@@ -20,7 +20,7 @@ import { engineRequest, engineJson } from '../../src/execution/boundary.js';
 import { DockerCodingExecutor } from '../../src/coding/executor.js';
 import { until } from '../helpers.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 
 test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bound human approval and fresh completion', async () => {
   const engineSocket = process.env.SALAAM_TASK_REAL_SOCKET,

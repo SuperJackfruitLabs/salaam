@@ -8,7 +8,7 @@ import {
   parseAcpFailure,
   providerRefusalEvent,
   planUpdate,
-} from '../../src/acp/outcome.js';
+} from '../../src/core/outcome.js';
 import corpus from '../fixtures/agentpod-acp-v1.json' with { type: 'json' };
 import { ServiceError } from '../../src/core/protocol.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';

@@ -2,8 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync, lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { engineJson, type EngineRequest } from '../execution/boundary.js';
-import { digest, ServiceError } from '../core/protocol.js';
+import { engineJson, type EngineRequest } from '../execution/index.js';
+import { digest, ServiceError } from '../core/index.js';
 import type { HarnessLaunch } from './rpc.js';
 
 const OWNER = 'salaam.harness.run',

@@ -1,17 +1,17 @@
 import { CRITIC_REOPENS } from './critic.js';
 import { requiredChecks } from './policy.js';
-import { RATE_LIMIT_STOP, RateLimitRetries } from '../providers/rate-limit-retries.js';
+import { RATE_LIMIT_STOP, RateLimitRetries } from '../providers/index.js';
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
-import type { WorkTask } from '../core/records.js';
+import type { WorkTask } from '../core/index.js';
 import type { TaskBudget } from './budget.js';
 import type { TaskVerification } from './verification.js';
-import type { Supervisor } from '../runtime/supervisor.js';
-import type { ChildWork } from '../workers/children.js';
-import type { CodingWork } from '../coding/coding.js';
-import { commandTerminal } from '../coding/coding.js';
-import { canonical, ServiceError, type Controller } from '../core/protocol.js';
+import type { Supervisor } from '../runtime/index.js';
+import type { ChildWork } from '../workers/index.js';
+import type { CodingWork } from '../coding/index.js';
+import { commandTerminal } from '../coding/index.js';
+import { canonical, ServiceError, type Controller } from '../core/index.js';
 
 /** Persisted, operator-bounded progression. Unknown attempts/commands never become retries. */
 export class TaskDriver {

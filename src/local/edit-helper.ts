@@ -2,7 +2,7 @@
 import { closeSync, constants, fsyncSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { applyLocalEdits, localPath, verifyLocalEdits } from './edits.js';
-import type { ToolEdit } from '../runtime/tool-identity.js';
+import type { ToolEdit } from './tool-identity.js';
 
 const root = process.argv[2];
 if (!root) throw new Error('usage: local-edit-helper <root>');

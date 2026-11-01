@@ -3,7 +3,7 @@ import { SalaamApp } from '../../src/tui/app.js';
 import { status, compactTokens } from '../../src/tui/view.js';
 import { SalaamTheme } from '../../src/tui/theme.js';
 import { instructionsLabel } from '../../src/tui/client.js';
-import { SLASH_COMMANDS, INIT_INSTRUCTION } from '../../src/tui/commands.js';
+import { SLASH_COMMANDS, INIT_INSTRUCTION } from '../../src/core/slash-commands.js';
 import type { SessionSnapshot } from '../../src/core/protocol.js';
 
 const files = [

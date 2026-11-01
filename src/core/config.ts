@@ -1,8 +1,8 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { digest, textDigest } from './protocol.js';
-import { PI_PROVIDERS } from '../providers/config.js';
+import { PI_PROVIDERS } from './provider-catalog.js';
 import { packageDigest } from './package-digest.js';
 
 let root = dirname(fileURLToPath(import.meta.url));
@@ -104,7 +104,7 @@ export function bundleDigest(): string {
     live_provider: textDigest(
       readFileSync(join(ROOT, 'dist/src/providers/live-provider.js'), 'utf8'),
     ),
-    acp_outcome: textDigest(readFileSync(join(ROOT, 'dist/src/acp/outcome.js'), 'utf8')),
+    acp_outcome: textDigest(readFileSync(join(ROOT, 'dist/src/core/outcome.js'), 'utf8')),
     provider_payload: textDigest(readFileSync(join(ROOT, 'dist/src/providers/payload.js'), 'utf8')),
     provider_transport: textDigest(
       readFileSync(join(ROOT, 'dist/src/providers/transport.js'), 'utf8'),
@@ -112,6 +112,9 @@ export function bundleDigest(): string {
     provider_auth: textDigest(readFileSync(join(ROOT, 'dist/src/providers/auth.js'), 'utf8')),
     claude: textDigest(readFileSync(join(ROOT, 'dist/src/providers/claude-provider.js'), 'utf8')),
     provider_config: textDigest(readFileSync(join(ROOT, 'dist/src/providers/config.js'), 'utf8')),
+    provider_catalog: textDigest(
+      readFileSync(join(ROOT, 'dist/src/core/provider-catalog.js'), 'utf8'),
+    ),
     provider_route: textDigest(readFileSync(join(ROOT, 'dist/src/core/provider-route.js'), 'utf8')),
     protocol: textDigest(readFileSync(join(ROOT, 'dist/src/core/protocol.js'), 'utf8')),
     worker_boundary: textDigest(
@@ -130,4 +133,18 @@ export function bundleDigest(): string {
     ),
     transport: textDigest(readFileSync(join(ROOT, 'dist/src/core/transport.js'), 'utf8')),
   });
+}
+const hashDir = (path: string) =>
+  digest(
+    readdirSync(path)
+      .filter((f) => /\.(ts|js)$/.test(f))
+      .sort()
+      .map((file) => ({ file, content: readFileSync(join(path, file), 'utf8') })),
+  );
+export function hostDigests() {
+  return {
+    source_digest: hashDir(join(ROOT, 'src')),
+    build_digest: hashDir(join(ROOT, 'dist/src')),
+    pi_bundle_digest: bundleDigest(),
+  };
 }

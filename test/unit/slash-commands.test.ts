@@ -6,7 +6,7 @@ import {
   SLASH_COMMANDS,
   SLASH_COMPLETIONS,
   slashHelp,
-} from '../../src/tui/commands.js';
+} from '../../src/core/slash-commands.js';
 import { writeConversationExport } from '../../src/tui/export.js';
 import { providerRoute } from '../../src/providers/config.js';
 

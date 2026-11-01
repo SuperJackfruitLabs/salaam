@@ -12,23 +12,25 @@ import {
 } from 'node:fs';
 import { join, relative, dirname, isAbsolute } from 'node:path';
 import { DockerHarnessBoundary, type HarnessContainers } from './container.js';
-import { DockerCodingExecutor } from '../coding/executor.js';
-import { engineRequest, engineJson } from '../execution/boundary.js';
+import { DockerCodingExecutor, readTree, validateTree } from '../coding/index.js';
+import { engineRequest, engineJson } from '../execution/index.js';
 import { HarnessProtocol, type HarnessCheckpoint } from './protocol.js';
-import { HARNESS_TARGETS, type HarnessTarget } from '../core/harness-targets.js';
+import {
+  HARNESS_TARGETS,
+  type HarnessTarget,
+  digest,
+  canonical,
+  ServiceError,
+  hostDigests,
+} from '../core/index.js';
 import { AnthropicHarnessGateway } from './model-gateway.js';
 import { HarnessWireBridge } from './wire-bridge.js';
 import { harnessToolIds, matchesCodexCommandScope } from './tool-identity.js';
 import { proveHarnessReadiness } from './readiness.js';
-import { ProviderCredentialStore, resolveProviderAuth } from '../providers/auth.js';
-import { providerRoute } from '../providers/config.js';
-import { readTree, validateTree } from '../workers/workspaces.js';
-import type { WorkspaceTree } from '../core/records.js';
-import { repositoryPath } from '../workers/repository-snapshots.js';
-import { digest, canonical, ServiceError } from '../core/protocol.js';
-import type { ExternalBackend, ExternalHooks } from '../workers/external-runtime.js';
-import type { ExternalRuntime, WorkerBinding } from '../core/worker-binding.js';
-import { hostDigests } from '../host/host.js';
+import { ProviderCredentialStore, resolveProviderAuth, providerRoute } from '../providers/index.js';
+import type { WorkspaceTree, ExternalRuntime, WorkerBinding } from '../core/index.js';
+import { repositoryPath } from '../workers/index.js';
+import type { ExternalBackend, ExternalHooks } from '../workers/index.js';
 
 export async function harnessRuntimeDigest(root: string): Promise<string> {
   const entries: unknown[] = [];

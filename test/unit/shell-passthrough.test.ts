@@ -3,7 +3,7 @@ import {
   boundShellCommand,
   shellPassthrough,
   typedText,
-} from '../../src/runtime/shell-passthrough.js';
+} from '../../src/local/shell-passthrough.js';
 
 // Live pass 2026-11-01: the conversation showed the whole fixed !command instruction as what you
 // typed. It now shows `! git status --short`; the binding reads the same prompt back.

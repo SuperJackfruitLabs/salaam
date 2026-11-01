@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Outbox, acquireControl, subscribe, type Feed } from './attach.js';
-import { call } from '../core/transport.js';
 import {
+  call,
   ServiceError,
   type Session,
   type SessionSnapshot,
@@ -11,10 +11,9 @@ import {
   type Approval,
   type Operation,
   type DurableEvent,
-} from '../core/protocol.js';
-import type { CommandRun } from '../coding/coding.js';
-import type { Workspace } from '../workers/workspaces.js';
-import type { ContextPlan, ContextSelection } from '../runtime/context-admission.js';
+} from '../core/index.js';
+import type { CommandRun, Workspace } from '../coding/index.js';
+import type { ContextPlan, ContextSelection } from '../runtime/index.js';
 
 export interface OperatorHealth {
   service: string;
@@ -77,9 +76,7 @@ export interface LivePreview {
 export type OperatorConnection = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 /** An operator client only: the service owns workers, authority and durable outcomes. */
 /** "AGENTS.md" or "AGENTS.md (2 files)": which instruction files guide this session. */
-export function instructionsLabel(
-  summary: import('../core/records.js').InstructionsSummary,
-): string {
+export function instructionsLabel(summary: import('../core/index.js').InstructionsSummary): string {
   const names = [...new Set(summary.files.map((f) => f.path.split('/').at(-1)!))].join(' + ');
   return summary.files.length > 1 ? `${names} (${summary.files.length} files)` : names;
 }
@@ -158,7 +155,7 @@ export class OperatorClient extends EventEmitter {
     this.changed();
   }
   async permissions(): Promise<{
-    policy: import('../runtime/autonomy.js').PermissionPolicy;
+    policy: import('../local/index.js').PermissionPolicy;
     configurable: boolean;
     coding: boolean;
     command_auto_approval: boolean;
@@ -176,7 +173,7 @@ export class OperatorClient extends EventEmitter {
     session: string,
     expected: number,
     policy: {
-      mode: import('../runtime/autonomy.js').PermissionMode;
+      mode: import('../local/index.js').PermissionMode;
       paths: string[];
       access?: 'full' | 'yolo';
     },
@@ -197,7 +194,7 @@ export class OperatorClient extends EventEmitter {
   /** Desk-session approval rules (phase 2a). */
   async approvalRules(): Promise<{
     applies: boolean;
-    rules: import('../runtime/approval-rules.js').StoredRule[];
+    rules: import('../local/index.js').StoredRule[];
     problems: string[];
   }> {
     if (!this.snapshot) throw new Error('Choose a session first.');
@@ -215,7 +212,7 @@ export class OperatorClient extends EventEmitter {
   }
   async addRule(
     scope: 'session' | 'repo',
-    rule: import('../runtime/approval-rules.js').ApprovalRule,
+    rule: import('../local/index.js').ApprovalRule,
   ): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     await call(this.socket, `/v1/sessions/${this.snapshot.id}/approval-rules`, {
@@ -234,7 +231,7 @@ export class OperatorClient extends EventEmitter {
     this.report('Rule removed.');
   }
   /** Your hooks and this workspace's, with their trust state (Phase 4b). */
-  async hooks(): Promise<{ sources: import('../runtime/hooks.js').HookSource[] }> {
+  async hooks(): Promise<{ sources: import('../local/index.js').HookSource[] }> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks`);
   }
@@ -279,11 +276,11 @@ export class OperatorClient extends EventEmitter {
     );
     await this.refresh();
   }
-  async undoReview(): Promise<import('../local/undo.js').UndoReview> {
+  async undoReview(): Promise<import('../local/index.js').UndoReview> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(this.socket, `/v1/sessions/${this.snapshot.id}/undo`);
   }
-  async undo(review: import('../local/undo.js').UndoReview): Promise<void> {
+  async undo(review: import('../local/index.js').UndoReview): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const result = await call<{ state: string }>(
       this.socket,
@@ -295,10 +292,10 @@ export class OperatorClient extends EventEmitter {
     await this.refresh();
     this.report('Reverted the reviewed local edit. Conversation history is preserved.');
   }
-  async checkpoints(): Promise<import('../runtime/turn-rewind.js').TurnCheckpoint[]> {
+  async checkpoints(): Promise<import('../runtime/index.js').TurnCheckpoint[]> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return (
-      await call<{ checkpoints: import('../runtime/turn-rewind.js').TurnCheckpoint[] }>(
+      await call<{ checkpoints: import('../runtime/index.js').TurnCheckpoint[] }>(
         this.socket,
         `/v1/sessions/${this.snapshot.id}/checkpoints`,
       )
@@ -306,8 +303,8 @@ export class OperatorClient extends EventEmitter {
   }
   async rewindReview(
     attempt: string,
-    mode: import('../runtime/turn-rewind.js').RewindMode,
-  ): Promise<import('../runtime/turn-rewind.js').RewindReview> {
+    mode: import('../runtime/index.js').RewindMode,
+  ): Promise<import('../runtime/index.js').RewindReview> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return call(
       this.socket,
@@ -315,7 +312,7 @@ export class OperatorClient extends EventEmitter {
     );
   }
   /** Returns the rewound turn's instruction so it can be edited and sent again. */
-  async rewind(review: import('../runtime/turn-rewind.js').RewindReview): Promise<string> {
+  async rewind(review: import('../runtime/index.js').RewindReview): Promise<string> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const id = this.snapshot.id;
     const result = await call<{ state: string; session_id: string; text: string }>(
@@ -344,37 +341,37 @@ export class OperatorClient extends EventEmitter {
     );
     return result.text;
   }
-  async changeReview(): Promise<import('../runtime/turn-rewind.js').ChangeReview | null> {
+  async changeReview(): Promise<import('../runtime/index.js').ChangeReview | null> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return (
-      await call<{ review: import('../runtime/turn-rewind.js').ChangeReview | null }>(
+      await call<{ review: import('../runtime/index.js').ChangeReview | null }>(
         this.socket,
         `/v1/sessions/${this.snapshot.id}/review`,
       )
     ).review;
   }
   async changeHunks(
-    review: import('../runtime/turn-rewind.js').ChangeReview,
+    review: import('../runtime/index.js').ChangeReview,
     path: string,
-  ): Promise<import('../runtime/turn-checkpoints.js').CheckpointHunk[]> {
+  ): Promise<import('../runtime/index.js').CheckpointHunk[]> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     const q = new URLSearchParams({ path, base: review.base, current: review.current });
     return (
-      await call<{ hunks: import('../runtime/turn-checkpoints.js').CheckpointHunk[] }>(
+      await call<{ hunks: import('../runtime/index.js').CheckpointHunk[] }>(
         this.socket,
         `/v1/sessions/${this.snapshot.id}/review/hunks?${q}`,
       )
     ).hunks;
   }
   async changeAct(
-    review: import('../runtime/turn-rewind.js').ChangeReview,
+    review: import('../runtime/index.js').ChangeReview,
     action: 'accept' | 'revert',
     path: string,
-    hunk?: import('../runtime/turn-checkpoints.js').CheckpointHunk,
-  ): Promise<import('../runtime/turn-rewind.js').ChangeReview | null> {
+    hunk?: import('../runtime/index.js').CheckpointHunk,
+  ): Promise<import('../runtime/index.js').ChangeReview | null> {
     if (!this.snapshot) throw new Error('Choose a session first.');
     return (
-      await call<{ review: import('../runtime/turn-rewind.js').ChangeReview | null }>(
+      await call<{ review: import('../runtime/index.js').ChangeReview | null }>(
         this.socket,
         `/v1/sessions/${this.snapshot.id}/review`,
         {
@@ -421,7 +418,7 @@ export class OperatorClient extends EventEmitter {
   async create(
     cwd: string,
     coding: boolean,
-    route?: import('../core/provider-route.js').ProviderRoute,
+    route?: import('../core/index.js').ProviderRoute,
     localCoding = false,
   ): Promise<string> {
     if (!coding) {
@@ -682,7 +679,7 @@ export class OperatorClient extends EventEmitter {
     await this.refresh();
   }
   /** Switch this session's model or thinking level between turns; the conversation carries on. */
-  async switchRoute(route: import('../core/provider-route.js').ProviderRoute): Promise<void> {
+  async switchRoute(route: import('../core/index.js').ProviderRoute): Promise<void> {
     if (!this.snapshot) throw new Error('Open a session first.');
     await call(this.socket, `/v1/sessions/${this.snapshot.id}/route`, {
       ...this.actor(),

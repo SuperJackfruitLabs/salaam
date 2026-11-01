@@ -12,10 +12,16 @@ import {
   fsyncSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { agentpodBinding, type AgentPodBinding } from '../agentpod/protocol.js';
-import type { StdioLaunch } from '../mcp/stdio.js';
+import {
+  agentpodBinding,
+  type AgentPodBinding,
+  canonical,
+  digest,
+  object,
+  ServiceError,
+} from '../core/index.js';
+import type { StdioLaunch } from '../mcp/index.js';
 import type { ToolkitResources } from './resources.js';
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
 
 const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');

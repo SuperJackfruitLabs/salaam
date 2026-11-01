@@ -11,7 +11,7 @@ import { digest, object, textDigest, canonical, ServiceError } from '../core/pro
 import { getProvider, getProviderModel, providerHasOutputCap } from './config.js';
 import type { ProviderRoute } from '../core/provider-route.js';
 import { ProviderUsageReceipt } from './usage.js';
-import { credentialStrings, providerOutcome, providerRefusalEvent } from '../acp/outcome.js';
+import { credentialStrings, providerOutcome, providerRefusalEvent } from '../core/outcome.js';
 import { materialize, generationOptions } from './model.js';
 import { validateProviderPayload } from './payload.js';
 import { installProviderTransport, withProviderTransport } from './transport.js';

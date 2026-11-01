@@ -1,5 +1,5 @@
 import { request } from 'node:http';
-import { canonical, object, string } from '../core/protocol.js';
+import { canonical, object, string } from '../core/index.js';
 
 export interface EffectInput {
   target: string;

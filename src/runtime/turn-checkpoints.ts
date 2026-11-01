@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 export interface CheckpointChange {
   path: string;

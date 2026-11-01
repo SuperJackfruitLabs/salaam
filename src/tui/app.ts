@@ -11,7 +11,14 @@ import {
   type OverlayHandle,
   type KeyId,
 } from '@earendil-works/pi-tui';
-import { extractMentions, isSensitivePath } from '../runtime/mentions.js';
+import {
+  extractMentions,
+  isSensitivePath,
+  expandCustomCommand,
+  loadCustomCommands,
+  matchCustomCommand,
+  type CustomCommand,
+} from '../runtime/index.js';
 import { MentionAutocompleteProvider } from './mentions.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -38,16 +45,19 @@ import {
   rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { ROOT } from '../core/config.js';
-import { PI_PROVIDERS, providerRoute } from '../providers/config.js';
-import { REASONING_LEVELS, type ProviderRoute } from '../core/provider-route.js';
 import {
+  ROOT,
+  PI_PROVIDERS,
+  REASONING_LEVELS,
+  type ProviderRoute,
   INIT_INSTRUCTION,
   SLASH_COMMANDS,
   SLASH_COMPLETIONS,
   parseSlashCommand,
   slashHelp,
-} from './commands.js';
+  call,
+} from '../core/index.js';
+import { providerRoute, credentialPath } from '../providers/index.js';
 import {
   branchInstruction,
   commitInstruction,
@@ -57,19 +67,12 @@ import {
   loadGitPrefs,
   prInstruction,
   validBranchName,
-} from '../local/git-helpers.js';
+  describeHooks,
+  nextMode,
+} from '../local/index.js';
 import { conversationExport, writeConversationExport } from './export.js';
-import { describeHooks } from '../runtime/hooks.js';
-import {
-  expandCustomCommand,
-  loadCustomCommands,
-  matchCustomCommand,
-  type CustomCommand,
-} from '../runtime/custom-commands.js';
-import { credentialPath } from '../providers/credentials.js';
-import { call } from '../core/transport.js';
 import { notificationFor, notify, notifyMode, jobsText, type JobRow } from './notify.js';
-import type { DurableEvent } from '../core/protocol.js';
+import type { DurableEvent, Approval } from '../core/index.js';
 import { OperatorClient } from './client.js';
 import { SalaamTheme, safeText, shortId, type ThemeName } from './theme.js';
 import {
@@ -85,7 +88,6 @@ import {
   type DiffPage,
   modeLabel,
 } from './view.js';
-import { nextMode } from '../runtime/autonomy.js';
 import {
   ChoiceModal,
   FormModal,
@@ -95,8 +97,7 @@ import {
   onceOnlyReason,
   TextModal,
 } from './modals.js';
-import type { Approval } from '../core/protocol.js';
-import { commandTerminal } from '../coding/coding.js';
+import { commandTerminal } from '../coding/index.js';
 import { rewindItems, rewindSummary } from './review.js';
 import { classifierItems, classifierNotice, type ClassifierView } from './classifier.js';
 import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './keymap.js';
@@ -110,7 +111,7 @@ import {
   searchPrompt,
   shellPassthrough,
 } from './composer.js';
-import type { RewindMode } from '../runtime/turn-rewind.js';
+import type { RewindMode } from '../runtime/index.js';
 
 export interface TuiOptions {
   state: string;
@@ -660,9 +661,7 @@ export class SalaamApp {
       throw new Error('Service did not become available. Inspect sal service status.');
   }
   /** Interactive sessions switch in place between turns; otherwise the choice opens a new session. */
-  private async applyRoute(
-    route: import('../core/provider-route.js').ProviderRoute,
-  ): Promise<void> {
+  private async applyRoute(route: import('../core/index.js').ProviderRoute): Promise<void> {
     if (this.client.snapshot?.provider_route && this.client.controlling) {
       try {
         await this.client.switchRoute(route);
@@ -1365,7 +1364,7 @@ export class SalaamApp {
             current.max_tokens,
             current.workspace_id,
             current.connection,
-            level as import('../core/provider-route.js').ReasoningLevel,
+            level as import('../core/index.js').ReasoningLevel,
           ),
         );
       if (args) await choose(args);
@@ -1814,7 +1813,7 @@ export class SalaamApp {
       this.client.report('Approval rules apply only to desk coding sessions.');
       return;
     }
-    const describe = (r: import('../runtime/approval-rules.js').StoredRule) =>
+    const describe = (r: import('../local/index.js').StoredRule) =>
       `${r.effect} ${r.tool} ${r.command ?? (r.paths ?? []).join(', ')}`.trim();
     this.choice(
       'Approval rules · deny beats ask beats allow · unmatched requests ask',
@@ -1875,7 +1874,7 @@ export class SalaamApp {
                   void this.execute(() =>
                     this.client.addRule(
                       scope as 'session' | 'repo',
-                      rule as import('../runtime/approval-rules.js').ApprovalRule,
+                      rule as import('../local/index.js').ApprovalRule,
                     ),
                   ),
               );
@@ -1899,7 +1898,7 @@ export class SalaamApp {
   }
   private showApproval(
     approval: Approval,
-    operation: import('../core/protocol.js').Operation,
+    operation: import('../core/index.js').Operation,
     offerRules = false,
     onceOnly?: string,
     desk = false,
@@ -2074,7 +2073,7 @@ This exact request will be approved without asking in every desk session on this
                 this.closeModal();
                 void this.execute(() =>
                   this.client.setPermissions(session, current.policy.revision, {
-                    mode: mode as import('../runtime/autonomy.js').PermissionMode,
+                    mode: mode as import('../local/index.js').PermissionMode,
                     paths,
                   }),
                 );
@@ -2489,7 +2488,7 @@ This exact request will be approved without asking in every desk session on this
   }
   private async schedules(offset = 0): Promise<void> {
     const page = await call<{
-      jobs: (import('../tasks/recurring-work.js').RecurringJob & { schedule: unknown })[];
+      jobs: (import('../tasks/index.js').RecurringJob & { schedule: unknown })[];
       next_offset: number | null;
     }>(this.client.socket, '/v1/schedules?offset=' + offset);
     this.choice(
@@ -2606,7 +2605,7 @@ This exact request will be approved without asking in every desk session on this
   }
   private async inbox(offset = 0): Promise<void> {
     const page = await call<{
-      items: import('../core/records.js').InboxEntry[];
+      items: import('../core/index.js').InboxEntry[];
       next_offset: number | null;
     }>(this.client.socket, '/v1/inbox?offset=' + offset);
     if (!page.items.length) {

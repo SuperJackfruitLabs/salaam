@@ -1,4 +1,4 @@
-import { object, ServiceError } from '../core/protocol.js';
+import { object, ServiceError } from '../core/index.js';
 export interface WorkDecision {
   version: 1;
   request_id: string;

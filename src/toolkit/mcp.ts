@@ -6,12 +6,11 @@ import {
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
-import type { ManagedStdioTransport } from '../mcp/stdio.js';
-import { admittedMcpSchema } from '../mcp/schema.js';
-import { mcpCatalogDigest, McpInputFailure } from '../mcp/http.js';
+import type { ManagedStdioTransport } from '../mcp/index.js';
+import { admittedMcpSchema, mcpCatalogDigest, McpInputFailure } from '../mcp/index.js';
 import { toolkitRequest, type ToolkitRequest } from './protocol.js';
 import type { ToolkitActionPin } from './calls.js';
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
+import { canonical, digest, object, ServiceError } from '../core/index.js';
 
 export interface ToolkitActionReview extends ToolkitActionPin {
   category: string;

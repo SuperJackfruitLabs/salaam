@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
-import { SLASH_COMMANDS } from '../tui/commands.js';
+import { SLASH_COMMANDS } from '../core/index.js';
 
 /** A saved prompt the person types as `/name args` (Phase 4b). It only ever produces a prompt:
  * it never runs a command, grants a tool or changes a mode or rule, so a repository's own commands

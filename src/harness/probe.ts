@@ -5,9 +5,13 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { HarnessRpc, type HarnessLaunch, type RpcObject } from './rpc.js';
-import { digest, ServiceError } from '../core/protocol.js';
-import { VERSION } from '../core/config.js';
-import { HARNESS_TARGETS, type HarnessTarget } from '../core/harness-targets.js';
+import {
+  digest,
+  ServiceError,
+  VERSION,
+  HARNESS_TARGETS,
+  type HarnessTarget,
+} from '../core/index.js';
 
 export interface HarnessPin {
   target: HarnessTarget;

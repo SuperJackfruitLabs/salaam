@@ -1,6 +1,10 @@
 import { relativeTime } from './session-pick.js';
-import type { CheckpointChange, CheckpointHunk } from '../runtime/turn-checkpoints.js';
-import type { ChangeReview, RewindReview } from '../runtime/turn-rewind.js';
+import type {
+  CheckpointChange,
+  CheckpointHunk,
+  ChangeReview,
+  RewindReview,
+} from '../runtime/index.js';
 
 /** The Changes tab of a local coding session: one file selected, optionally one of its hunks. */
 export interface ReviewView {

@@ -13,15 +13,15 @@ import {
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { terminalInput } from './input.js';
-import { call } from '../core/transport.js';
 import {
+  call,
   ServiceError,
   canonical,
   type ControlLease,
   type Controller,
   type DurableEvent,
   type SessionSnapshot,
-} from '../core/protocol.js';
+} from '../core/index.js';
 
 interface Pending {
   created_at: number;

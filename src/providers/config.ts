@@ -1,4 +1,3 @@
-import { builtinProviders } from '@earendil-works/pi-ai/providers/all';
 import type { Api, Model, AuthResult } from '@earendil-works/pi-ai';
 import { ServiceError, object, canonical } from '../core/protocol.js';
 import {
@@ -7,8 +6,7 @@ import {
   type ProviderRoute,
   type ReasoningLevel,
 } from '../core/provider-route.js';
-// Constructing the pinned catalog is offline; never refresh it implicitly during a turn.
-export const PI_PROVIDERS = builtinProviders();
+import { PI_PROVIDERS } from '../core/provider-catalog.js';
 export function getProvider(id: string) {
   return PI_PROVIDERS.find((provider) => provider.id === id);
 }

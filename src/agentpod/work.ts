@@ -1,27 +1,30 @@
-import { BoardReads } from '../tasks/board-reads.js';
+import { BoardReads } from '../runtime/index.js';
 import type { StationWork } from './station-work.js';
 import { StationCheckpoints } from './station-checkpoints.js';
-import { requiredChecks } from '../tasks/policy.js';
-import { RATE_LIMIT_STOP, RateLimitRetries } from '../providers/rate-limit-retries.js';
-import { planUpdate, toolMetadata, toolTitle } from '../acp/outcome.js';
-import type { Store } from '../store/store.js';
-import type { AgentPodAuthority } from './authority.js';
-import type { TaskWork } from '../tasks/work.js';
-import type { WorkTask } from '../core/records.js';
-import type { TaskDriver } from '../tasks/driver.js';
-import type { TaskVerification } from '../tasks/verification.js';
-import { canonical, digest, textDigest, ServiceError } from '../core/protocol.js';
-import { DIAGNOSTIC_PROFILE, NATIVE_CAPABILITIES } from '../core/worker-binding.js';
-import { POLICY_DIGEST } from '../core/config.js';
-import { operationBinding } from '../execution/managed.js';
-import { mcpAdmissionView } from '../mcp/protocol.js';
-import { executionEvidence } from '../execution/evidence.js';
-import { bindWorkTrace } from '../execution/trace.js';
+import { requiredChecks } from '../tasks/index.js';
+import { RATE_LIMIT_STOP, RateLimitRetries } from '../providers/index.js';
 import {
+  planUpdate,
+  toolMetadata,
+  toolTitle,
+  canonical,
+  digest,
+  textDigest,
+  ServiceError,
+  DIAGNOSTIC_PROFILE,
+  NATIVE_CAPABILITIES,
+  POLICY_DIGEST,
   agentpodWorkAdmission,
   checkAgentPodWorkAdmission,
   type AgentPodWorkIdentity,
-} from './work-protocol.js';
+} from '../core/index.js';
+import type { Store } from '../store/index.js';
+import type { AgentPodAuthority } from './authority.js';
+import type { TaskWork, TaskDriver, TaskVerification } from '../tasks/index.js';
+import type { WorkTask } from '../core/index.js';
+import { operationBinding, bindWorkTrace } from '../execution/index.js';
+import { mcpAdmissionView } from '../mcp/index.js';
+import { executionEvidence } from './evidence.js';
 
 export interface AgentPodWorkReceipt {
   version: 1;
@@ -1406,7 +1409,7 @@ export class AgentPodWork {
   /** Historical retirement of closed, policy-admitted reads. This does not
    * revalidate freshness, replay a check, or turn a protocol return into success. */
   private historicalKnownReadOnlyFailure(
-    binding: import('./protocol.js').AgentPodBinding,
+    binding: import('../core/index.js').AgentPodBinding,
     task: WorkTask,
     runtime: Record<string, any> | undefined,
     expiry?: {
@@ -1472,7 +1475,7 @@ export class AgentPodWork {
             offered.plan_revision === task.plan_revision &&
             approval.operation_digest === offered.operation_digest &&
             op.operation_digest === offered.operation_digest &&
-            operationBinding(op as unknown as import('../core/protocol.js').Operation) ===
+            operationBinding(op as unknown as import('../core/index.js').Operation) ===
               op.operation_digest &&
             approval.state === (expiry.invalidated ? 'invalidated' : 'expired') &&
             approval.revision === offered.approval_revision + 1 &&
@@ -1948,7 +1951,7 @@ export class AgentPodWork {
             op.resolution === 'workspace-content-receipt-v1' &&
             op.error === null &&
             op.policy_digest === POLICY_DIGEST &&
-            operationBinding(op as unknown as import('../core/protocol.js').Operation) ===
+            operationBinding(op as unknown as import('../core/index.js').Operation) ===
               op.operation_digest,
         );
         require(
@@ -3102,7 +3105,7 @@ export class AgentPodWork {
     };
   }
   private failureEvidence(
-    root: { session_id: string; binding: import('./protocol.js').AgentPodBinding },
+    root: { session_id: string; binding: import('../core/index.js').AgentPodBinding },
     task: WorkTask,
   ): string {
     const runtime = this.store.db
@@ -3288,7 +3291,7 @@ export class AgentPodWork {
   /** Status's read-only verdict: "known_effects_failure" when fail() would retire this run now. */
   private settlementReady(
     binding: unknown,
-    root: { session_id: string; binding: import('./protocol.js').AgentPodBinding },
+    root: { session_id: string; binding: import('../core/index.js').AgentPodBinding },
     row: Record<string, unknown>,
     task: WorkTask,
   ): 'known_effects_failure' | { refused: string } {

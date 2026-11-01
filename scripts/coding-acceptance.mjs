@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { SalaamService } from '../dist/src/service/service.js';
 import { call } from '../dist/src/core/transport.js';
 import { digest } from '../dist/src/core/protocol.js';
-import { readTree } from '../dist/src/workers/workspaces.js';
+import { readTree } from '../dist/src/coding/workspaces.js';
 import { commandTerminal } from '../dist/src/coding/coding.js';
 import { providerRoute } from '../dist/src/providers/config.js';
 

@@ -1,17 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, resolve, relative, sep } from 'node:path';
 import { realpathSync, lstatSync } from 'node:fs';
-import type { Store } from '../store/store.js';
-import type { AgentPodAuthority } from '../agentpod/authority.js';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
-import { processIdentity } from '../core/process-identity.js';
-import { ManagedStdioTransport, type StdioLaunch, type StdioProcessLaunch } from '../mcp/stdio.js';
+import type { Store } from '../store/index.js';
+import {
+  canonical,
+  digest,
+  ServiceError,
+  processIdentity,
+  agentpodBinding,
+} from '../core/index.js';
+import { ManagedStdioTransport, type StdioLaunch, type StdioProcessLaunch } from '../mcp/index.js';
 import { ToolkitControlProcess } from './control-process.js';
 import type { ToolkitCleanupAdmission } from './admission.js';
-import { agentpodBinding } from '../agentpod/protocol.js';
-import { toolkitControl, type ToolkitControl } from './protocol.js';
+import { toolkitControl, type ToolkitControl, type ToolkitAuthority } from './protocol.js';
 import { assertToolkitAcknowledgement } from './resolutions.js';
-import { resolvedToolkitCallSql } from '../store/toolkit-resolution-sql.js';
+import { resolvedToolkitCallSql } from '../store/index.js';
 
 export interface ToolkitResourceSpec {
   id: string;
@@ -89,7 +92,7 @@ export class ToolkitResources {
   private closing = false;
   constructor(
     readonly store: Store,
-    readonly authority?: AgentPodAuthority,
+    readonly authority?: ToolkitAuthority,
   ) {}
   get(id: string): ToolkitResource {
     const row = this.store.db

@@ -1,4 +1,4 @@
-import { object, ServiceError } from '../core/protocol.js';
+import { object, ServiceError } from '../core/index.js';
 
 export type Schedule = (
   | { kind: 'interval'; anchor: number; every_ms: number }

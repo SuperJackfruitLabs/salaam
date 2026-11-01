@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
 import type { TaskBudget } from './budget.js';
-import type { ChildWork } from '../workers/children.js';
-import type { AgentProfiles } from '../runtime/agent-profiles.js';
-import type { WorkerBinding } from '../core/worker-binding.js';
-import { digest, ServiceError, type Controller, type ChildTask } from '../core/protocol.js';
+import type { ChildWork } from '../workers/index.js';
+import type { AgentProfiles } from '../runtime/index.js';
+import type { WorkerBinding } from '../core/index.js';
+import { digest, ServiceError, type Controller, type ChildTask } from '../core/index.js';
 
 export interface TeamAssignment {
   id: string;

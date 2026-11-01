@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { call } from '../core/transport.js';
+import { call } from '../core/index.js';
 /** Read all immutable captured entries, including history before compaction. */
 export async function conversationExport(socket: string, id: string): Promise<string> {
   const entries: string[] = [];

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { readTree } from '../workers/workspaces.js';
-import type { WorkspaceTree, RecurringOccurrence } from '../core/records.js';
+import { readTree } from '../coding/index.js';
+import type { WorkspaceTree, RecurringOccurrence } from '../core/index.js';
 import {
   canonical,
   digest,
@@ -10,8 +10,8 @@ import {
   ServiceError,
   string,
   type Controller,
-} from '../core/protocol.js';
-import { POLICY_DIGEST } from '../core/config.js';
+  POLICY_DIGEST,
+} from '../core/index.js';
 import { adjacent, dueSlots, schedule, type Schedule } from './schedules.js';
 import type { JobWork } from './job-work.js';
 

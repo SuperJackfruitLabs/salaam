@@ -1,6 +1,6 @@
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { Supervisor } from './supervisor.js';
-import type { DurableEvent } from '../core/protocol.js';
+import type { DurableEvent } from '../core/index.js';
 
 /** The queue belongs to the service, never to a terminal or Pi's volatile queue. */
 export class Dispatcher {

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
-import type { Artifacts } from '../store/artifacts.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
 import { McpAdmission } from './admission.js';
 import { ManagedHttpMcp, McpHttpFailure, McpInputFailure, type McpReturnedResult } from './http.js';
 import {
@@ -11,16 +10,9 @@ import {
   type McpProfile,
   type McpServerPin,
 } from './protocol.js';
-import {
-  canonical,
-  digest,
-  object,
-  ServiceError,
-  string,
-  type Operation,
-} from '../core/protocol.js';
-import type { AgentPodBinding } from '../agentpod/protocol.js';
-import { workTraceHeader } from '../execution/trace.js';
+import { canonical, digest, object, ServiceError, string, type Operation } from '../core/index.js';
+import type { AgentPodBinding } from '../core/index.js';
+import { workTraceHeader } from '../execution/index.js';
 
 export interface McpConnection {
   connect(): Promise<void>;

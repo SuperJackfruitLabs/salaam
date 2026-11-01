@@ -1,6 +1,6 @@
 import { CombinedAutocompleteProvider } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
-import { listWorkspaceFiles, rankFiles } from '../runtime/mentions.js';
+import { listWorkspaceFiles, rankFiles } from '../runtime/index.js';
 
 /**
  * `@` completes workspace files from git's own listing (ignored files stay out) instead of

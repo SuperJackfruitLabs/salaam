@@ -1,6 +1,6 @@
 import { Store } from '../../dist/src/store/store.js';
 import { Artifacts } from '../../dist/src/store/artifacts.js';
-import { Workspaces, readTree } from '../../dist/src/workers/workspaces.js';
+import { Workspaces, readTree } from '../../dist/src/coding/workspaces.js';
 import { digest } from '../../dist/src/core/protocol.js';
 import { join } from 'node:path';
 const [state, root, session] = process.argv.slice(2),

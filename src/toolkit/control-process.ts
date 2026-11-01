@@ -1,11 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
-import { processIdentity } from '../core/process-identity.js';
+import { canonical, digest, object, ServiceError, processIdentity } from '../core/index.js';
 import {
   verifyStdioProcessLaunch,
   type StdioLifecycle,
   type StdioProcessLaunch,
-} from '../mcp/stdio.js';
+} from '../mcp/index.js';
 import { toolkitControl, type ToolkitControl } from './protocol.js';
 
 function failed(): never {

@@ -7,9 +7,9 @@ import { ROOT, bundleDigest } from '../../src/core/config.js';
 import { digest } from '../../src/core/protocol.js';
 import { call } from '../../src/core/transport.js';
 import { ready, control, until } from '../helpers.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import type { TeamAssignment } from '../../src/tasks/team-work.js';
-import { hostDigests } from '../../src/host/host.js';
+import { hostDigests } from '../../src/core/config.js';
 
 test('real proven executor: two private native builders, independent reviewer and fresh integrated acceptance preserve dirty bytes', async () => {
   const engineSocket = process.env.SALAAM_TASK_REAL_SOCKET,

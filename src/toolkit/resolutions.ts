@@ -1,16 +1,22 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import {
   operationBinding,
   type ManagedWork,
   type OperationResolution,
-} from '../execution/managed.js';
+} from '../execution/index.js';
 import type { ToolkitResources } from './resources.js';
 import type { ToolkitOwners } from './owners.js';
 import { toolkitCallContext, type ToolkitCall } from './calls.js';
 import { toolkitRequest, type ToolkitControl } from './protocol.js';
-import { agentpodBinding } from '../agentpod/protocol.js';
-import { canonical, digest, object, ServiceError, type Operation } from '../core/protocol.js';
+import {
+  agentpodBinding,
+  canonical,
+  digest,
+  object,
+  ServiceError,
+  type Operation,
+} from '../core/index.js';
 
 type Outcome = 'succeeded' | 'failed_definite';
 interface ReadResolution {

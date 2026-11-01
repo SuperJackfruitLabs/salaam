@@ -1,6 +1,6 @@
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
-import { canonical, ServiceError, type Controller } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
+import { canonical, ServiceError, type Controller } from '../core/index.js';
 
 export interface CancellationReceipt {
   version: 1;

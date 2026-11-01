@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { taskPolicy } from './policy.js';
-import type { TaskPolicy, StepPlan, WorkStep, WorkTask } from '../core/records.js';
-import type { Store } from '../store/store.js';
-import type { TaskContext } from './context.js';
+import type { TaskPolicy, StepPlan, WorkStep, WorkTask } from '../core/index.js';
+import type { Store } from '../store/index.js';
+import type { TaskContext } from '../runtime/index.js';
 import {
   canonical,
   object,
@@ -10,7 +10,7 @@ import {
   string,
   type Attempt,
   type Controller,
-} from '../core/protocol.js';
+} from '../core/index.js';
 
 export interface TaskPlan extends TaskPolicy {
   objective: string;

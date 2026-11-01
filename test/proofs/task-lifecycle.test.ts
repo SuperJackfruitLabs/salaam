@@ -14,7 +14,7 @@ import { checkedPlan } from '../task-helpers.js';
 import type { Session, Controller } from '../../src/core/protocol.js';
 import type { WorkTask } from '../../src/core/records.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import { digest } from '../../src/core/protocol.js';
 async function kill(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return;

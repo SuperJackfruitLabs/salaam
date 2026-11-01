@@ -1,4 +1,13 @@
-import { canonical, object, ServiceError } from '../core/protocol.js';
+import { canonical, object, ServiceError } from '../core/index.js';
+import type { AgentPodBinding } from '../core/index.js';
+
+/** The AgentPod authority members toolkit work reads. The composition point passes AgentPod's
+ * authority, which implements it. */
+export interface ToolkitAuthority {
+  bySession(session: string): { binding: string; digest: string; expires_at: number };
+  binding(session: string): AgentPodBinding;
+  leaseWindow(session: string, expectedBindingDigest: string, maximumMs: number): number;
+}
 
 export interface ToolkitRequest {
   version: 1;

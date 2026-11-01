@@ -5,7 +5,7 @@ import {
   validateDeclaration,
   writeOperatorMcpFile,
   type McpDeclaration,
-} from '../mcp/operator-mcp.js';
+} from '../mcp/index.js';
 
 export const MCP_HELP = `salaam mcp: operator-declared MCP servers
 

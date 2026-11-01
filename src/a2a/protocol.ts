@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { digest, canonical, ServiceError } from '../core/protocol.js';
+import { digest, canonical, ServiceError } from '../core/index.js';
 import { a2aIdentity, a2aObject, type A2AObject } from './peer.js';
 
 export interface A2ACheckpoint {

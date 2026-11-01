@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { Store } from '../../src/store/store.js';
-import { BoardReads } from '../../src/tasks/board-reads.js';
+import { BoardReads } from '../../src/runtime/board-reads.js';
 
 // Operator ruling 2026-10-28 (option iii): the agent reads its own card, run and the library while
 // it works, served by the hub. Salaam only records the read and hands back what the hub answered;

@@ -15,8 +15,7 @@ import {
 import { join, dirname, basename, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { planHost, readHost, type HostManifest } from './host.js';
-import { acquireStateLock } from '../core/state-lock.js';
-import { canonical, digest, object, string } from '../core/protocol.js';
+import { acquireStateLock, canonical, digest, object, string } from '../core/index.js';
 
 // This setting is the complete, already reviewed output of `host plan`. It is
 // never an arbitrary command, source transfer, permission or restart grant.

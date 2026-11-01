@@ -20,10 +20,9 @@ import {
 } from 'node:fs';
 import { join, resolve, relative, dirname, isAbsolute, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { digest, ServiceError, string, integer } from '../core/protocol.js';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import type { WorkspaceTree } from '../core/records.js';
+import { digest, ServiceError, string, integer } from '../core/index.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { WorkspaceTree } from '../core/index.js';
 
 export const WORKSPACE_LIMITS = {
   entries: 2048,

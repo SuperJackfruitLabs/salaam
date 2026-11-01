@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { TaskWork } from './work.js';
-import type { ContextAdmission } from '../runtime/context-admission.js';
-import type { ProjectInstructions } from '../runtime/project-instructions.js';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { canonical, ServiceError, string, integer, object } from '../core/protocol.js';
+import type { ContextAdmission } from './context-admission.js';
+import type { ProjectInstructions } from './project-instructions.js';
+import type { Store, Artifacts } from '../store/index.js';
+import { canonical, ServiceError, string, integer, object } from '../core/index.js';
+import type { WorkTask } from '../core/index.js';
 
 export const TASK_FRAME_BYTES = 16384;
 export const FACT_KINDS = [
@@ -38,14 +37,19 @@ export interface Compaction {
   cursor: string | null;
   error: string | null;
 }
+/** The task work members the context frame reads; task work installs itself here. */
+export interface SessionTaskWork {
+  forSession(session: string): WorkTask | null;
+  frame(session: string): unknown;
+}
 /** Explicit operator facts are append-only; summaries have no write authority. */
 export class TaskContext {
-  work?: TaskWork;
+  work?: SessionTaskWork;
   admitted?: ContextAdmission;
   /** Interactive sessions only: AGENTS.md guidance loaded automatically (project-instructions.ts). */
   instructions?: ProjectInstructions;
   /** Interactive sessions only: a folder checkpoint before every turn (turn-rewind.ts). */
-  checkpoints?: import('../runtime/turn-rewind.js').TurnCheckpoints;
+  checkpoints?: import('./turn-rewind.js').TurnCheckpoints;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,

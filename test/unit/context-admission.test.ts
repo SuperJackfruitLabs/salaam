@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { Store } from '../../src/store/store.js';
 import { ContextAdmission } from '../../src/runtime/context-admission.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 
 const roots: string[] = [];
 afterEach(() => {

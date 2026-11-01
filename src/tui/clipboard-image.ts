@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getNativeClipboard } from '@earendil-works/pi-tui';
-import { imageMime, MAX_IMAGES, PASTED_IMAGE_LIMIT } from '../runtime/mentions.js';
+import { imageMime, MAX_IMAGES, PASTED_IMAGE_LIMIT } from '../runtime/index.js';
 
 /**
  * An image pasted into the composer with Ctrl+V. The terminal only pastes text, so the TUI reads

@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { GatewayRequest, GatewayResponse } from './container.js';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 export interface AnthropicHarnessPolicy {
   model: string;

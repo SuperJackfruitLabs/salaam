@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { DurableEvent } from '../core/protocol.js';
+import type { DurableEvent } from '../core/index.js';
 
 /** How the desk TUI gets a person's attention: off, a terminal bell, or a desktop notification
  * (which also rings the bell). Set with SALAAM_NOTIFY; the bell is the default. */

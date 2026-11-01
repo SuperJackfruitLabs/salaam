@@ -1,4 +1,4 @@
-import type { WorkspaceFile } from '../core/records.js';
+import type { WorkspaceFile } from '../core/index.js';
 export interface WorkspaceChange {
   path: string;
   before: WorkspaceFile | null;

@@ -98,7 +98,7 @@ test('any other failure, more than one failed step, or no failed step is not a r
 });
 
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 import { TaskWork } from '../../src/tasks/work.js';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';

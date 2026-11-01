@@ -1,6 +1,6 @@
-import { BoardReads } from '../tasks/board-reads.js';
+import { BoardReads } from './board-reads.js';
 import { takeImages } from './mentions.js';
-import { HostBreaker, callThroughBreaker } from '../host/breaker.js';
+import { HostBreaker, callThroughBreaker } from './breaker.js';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
@@ -18,46 +18,47 @@ import {
   string,
   type Manifest,
   type Session,
-} from '../core/protocol.js';
-import {
   PI_CLI,
   HOUSE_EXTENSION,
   POLICY_DIGEST,
   bundleDigest,
   VERSION,
   PI_VERSION,
-} from '../core/config.js';
-import { readinessFingerprint } from '../core/readiness-fingerprint.js';
-import { PiProcess, PiCommandError } from './pi.js';
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
-import type { McpWork, McpWorkerBinding } from '../mcp/work.js';
-import type { StationWork, StationBinding } from '../agentpod/station-work.js';
-import type { ToolkitWork, ToolkitWorkerBinding } from '../toolkit/work.js';
-import { mergeMcpProvenance, type OperatorMcp } from '../mcp/operator-mcp.js';
-import type { McpServerProvenance, AttemptOutcome, TaskLimits } from '../core/records.js';
-import type { ChildWork } from '../workers/children.js';
-import { providerRoute, providerHasOutputCap } from '../providers/config.js';
-import { OFFLINE_ROUTE, type ProviderRoute } from '../core/provider-route.js';
-import type { TaskContext, Compaction } from '../tasks/context.js';
-import { validateApiKey } from '../providers/credentials.js';
-import { resolveProviderAuth } from '../providers/auth.js';
-import { bindProviderConfiguration } from '../providers/model.js';
-import { validateProviderPayload } from '../providers/payload.js';
-import { digest } from '../core/protocol.js';
-import { readLocalWorkspace } from '../local/workspace.js';
-import type { CodingWork } from '../coding/coding.js';
-import { repositoryPath, type RepositorySnapshots } from '../workers/repository-snapshots.js';
-import type { TeamWork } from '../tasks/team-work.js';
-import {
+  readinessFingerprint,
+  OFFLINE_ROUTE,
+  type ProviderRoute,
+  digest,
   acpFailure,
   credentialStrings,
   parseAcpFailure,
   providerOutcome,
   redactFailureText,
   toolMetadata,
-} from '../acp/outcome.js';
-import { groupExists, processIdentity } from '../core/process-identity.js';
+  groupExists,
+  processIdentity,
+} from '../core/index.js';
+import { PiProcess, PiCommandError } from './pi.js';
+import type { Store } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
+import type { McpWork, McpWorkerBinding } from '../mcp/index.js';
+import type { StationBridge, StationBinding } from './station.js';
+import type { ToolkitWork, ToolkitWorkerBinding } from '../toolkit/index.js';
+import { mergeMcpProvenance, type OperatorMcp } from '../mcp/index.js';
+import type { McpServerProvenance, AttemptOutcome, TaskLimits } from '../core/index.js';
+import type { ChildWork } from '../workers/index.js';
+import {
+  providerRoute,
+  providerHasOutputCap,
+  validateApiKey,
+  resolveProviderAuth,
+  bindProviderConfiguration,
+  validateProviderPayload,
+} from '../providers/index.js';
+import type { TaskContext, Compaction } from './task-context.js';
+import { readLocalWorkspace } from '../local/index.js';
+import type { CodingWork } from '../coding/index.js';
+import { repositoryPath, type RepositorySnapshots } from '../workers/index.js';
+import type { TeamBridge } from './team.js';
 
 export interface Launch {
   command: string;
@@ -129,11 +130,11 @@ export const LOCAL_TOOL_ERRORS = [
   'listen_unreachable',
 ];
 export class Supervisor extends EventEmitter {
-  localCoding?: import('../local/coding.js').LocalCoding;
+  localCoding?: import('../local/index.js').LocalCoding;
   /** Built-in web search and fetch for interactive coding (operator ruling 2026-10-31). */
-  web?: import('../web/search.js').WebSearch;
+  web?: import('../web/index.js').WebSearch;
   /** Desk-session hooks (Phase 4b); absent means none run. */
-  hooks?: import('./hooks.js').Hooks;
+  hooks?: import('../local/index.js').Hooks;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   private readonly fetchBreaker = new HostBreaker();
@@ -143,11 +144,11 @@ export class Supervisor extends EventEmitter {
   /** Item 9: the host's pinned persona, given to every worker on this host. */
   persona?: import('./persona.js').Persona;
   toolkit?: ToolkitWork;
-  station?: StationWork;
+  station?: StationBridge;
   children?: ChildWork;
   coding?: CodingWork;
   repositories?: RepositorySnapshots;
-  team?: TeamWork;
+  team?: TeamBridge;
   routeFor(id: string): ProviderRoute {
     const child = this.children?.owned(id);
     return child
@@ -730,10 +731,10 @@ export class Supervisor extends EventEmitter {
   /** Run this desk session's hooks for `event`; other sessions (board, station, children) run none. */
   private async hook(
     id: string,
-    event: import('./hooks.js').HookEvent,
+    event: import('../local/index.js').HookEvent,
     payload: Record<string, unknown>,
     names: readonly string[] = [],
-  ): Promise<import('./hooks.js').HookOutcome | null> {
+  ): Promise<import('../local/index.js').HookOutcome | null> {
     if (!this.hooks || !this.interactiveCoding(id)) return null;
     return this.hooks.fire(id, event, payload, names);
   }
@@ -1149,7 +1150,7 @@ export class Supervisor extends EventEmitter {
           const out = await this.web.search({
             query: string(args.query, 'query', 300),
             ...(typeof args.kind === 'string'
-              ? { kind: args.kind as import('../web/search.js').SearchKind }
+              ? { kind: args.kind as import('../web/index.js').SearchKind }
               : {}),
             ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
           });
@@ -1662,7 +1663,7 @@ export class Supervisor extends EventEmitter {
     id: string,
     request: string,
     text: string,
-    controller: import('../core/protocol.js').Controller,
+    controller: import('../core/index.js').Controller,
   ) {
     const input = { kind: 'steer', id, text };
     const saved = this.store.cachedRequest<{ state: string }>('local-operator', request, input);

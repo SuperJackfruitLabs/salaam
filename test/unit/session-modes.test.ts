@@ -15,11 +15,11 @@ import {
   nextMode,
   autoApprovesEdits,
   type PermissionMode,
-} from '../../src/runtime/autonomy.js';
+} from '../../src/local/autonomy.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { localHash } from '../../src/local/edits.js';
-import { ApprovalRules } from '../../src/runtime/approval-rules.js';
-import { shellPassthrough } from '../../src/runtime/shell-passthrough.js';
+import { ApprovalRules } from '../../src/local/approval-rules.js';
+import { shellPassthrough } from '../../src/local/shell-passthrough.js';
 
 // Phase 2b (operator rulings 2026-10-31): one-key modes for interactive coding sessions — review,
 // accept edits, auto — plus full access (no sandbox; dangerous commands ask) and YOLO (no approvals).

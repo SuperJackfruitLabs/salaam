@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { Store } from '../../src/store/store.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 
 test('explicit corrections preserve provenance; capacity, conflicts and foreign evidence roll back atomically', () => {

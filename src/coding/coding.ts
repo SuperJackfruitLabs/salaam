@@ -10,11 +10,10 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { digest, ServiceError, string, integer } from '../core/protocol.js';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { Workspaces, readTree, filePath } from '../workers/workspaces.js';
-import type { WorkspaceTree } from '../core/records.js';
+import { digest, ServiceError, string, integer } from '../core/index.js';
+import type { Store, Artifacts } from '../store/index.js';
+import { Workspaces, readTree, filePath } from './workspaces.js';
+import type { WorkspaceTree } from '../core/index.js';
 import { COMMAND_LIMITS, type ExecutionBackend } from './executor.js';
 
 export interface CommandRun {

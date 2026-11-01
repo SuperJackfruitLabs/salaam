@@ -3,8 +3,8 @@ import { userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { ServiceError } from '../core/protocol.js';
-import type { LocalEdit } from '../local/edits.js';
+import { ServiceError } from '../core/index.js';
+import type { LocalEdit } from './edits.js';
 
 /**
  * The OS identity that agent-initiated local commands and file effects run as.

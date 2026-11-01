@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 /** `@path` mentions attach workspace files to a desk prompt (Phase 3b). */
 export const MENTION_LIMITS = {

@@ -1,5 +1,5 @@
-import { agentpodBinding, type AgentPodBinding } from './protocol.js';
-import { canonical, object, ServiceError, string } from '../core/protocol.js';
+import { agentpodBinding, type AgentPodBinding } from './agentpod-protocol.js';
+import { canonical, object, ServiceError, string } from './protocol.js';
 
 export interface AgentPodWorkIdentity {
   board_id: string;

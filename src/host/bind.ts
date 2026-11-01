@@ -14,12 +14,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { isAbsolute, join, resolve } from 'node:path';
 import { planHost } from './host.js';
-import { canonical, digest } from '../core/protocol.js';
+import { canonical, digest } from '../core/index.js';
 import {
   stationHash,
   stationRuntimeFingerprint,
   stationWorkspaceIdentity,
-} from '../agentpod/station-config.js';
+} from '../agentpod/index.js';
 
 export interface BindInput {
   organization_id: string;

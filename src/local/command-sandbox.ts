@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, sep } from 'node:path';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 /**
  * Item 10: the sandbox a local command runs in. `workspace-write` (the default) and `read-only` run

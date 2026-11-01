@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { normalizeContext } from '@earendil-works/pi-ai';
-import { PI_PROVIDERS, providerRoute } from '../../src/providers/config.js';
+import { providerRoute } from '../../src/providers/config.js';
+import { PI_PROVIDERS } from '../../src/core/provider-catalog.js';
 import { materialize, generationOptions } from '../../src/providers/model.js';
 import { validateProviderPayload } from '../../src/providers/payload.js';
 

@@ -7,7 +7,7 @@ import { submit, decide } from '../managed-helpers.js';
 import { ROOT } from '../../src/core/config.js';
 import { call } from '../../src/core/transport.js';
 import { PiProcess } from '../../src/runtime/pi.js';
-import type { Compaction, TaskState } from '../../src/tasks/context.js';
+import type { Compaction, TaskState } from '../../src/runtime/task-context.js';
 
 async function turn(f: Awaited<ReturnType<typeof fixture>>, id: string, text: string) {
   const accepted = await submit(f.service, id, text);

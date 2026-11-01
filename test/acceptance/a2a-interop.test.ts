@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { A2AHttp, type A2APeer } from '../../src/a2a/peer.js';
 import { A2AInvocation, type A2ACheckpoint } from '../../src/a2a/protocol.js';
-import { hostDigests } from '../../src/host/host.js';
+import { hostDigests } from '../../src/core/config.js';
 import { ROOT } from '../../src/core/config.js';
 import { digest } from '../../src/core/protocol.js';
 import { until } from '../helpers.js';

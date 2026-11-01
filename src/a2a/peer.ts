@@ -11,8 +11,8 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP, BlockList } from 'node:net';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
-import { digest, ServiceError } from '../core/protocol.js';
-import { repositoryPath } from '../workers/repository-snapshots.js';
+import { digest, ServiceError } from '../core/index.js';
+import { repositoryPath } from '../workers/index.js';
 
 export const A2A_PIN = {
   specification: '1.0.0',

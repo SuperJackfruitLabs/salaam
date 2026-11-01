@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { autoApprovesCommands } from '../../src/runtime/autonomy.js';
+import { autoApprovesCommands } from '../../src/local/autonomy.js';
 import {
   branchInstruction,
   commitInstruction,

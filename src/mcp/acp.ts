@@ -1,4 +1,4 @@
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
+import { canonical, digest, object, ServiceError } from '../core/index.js';
 import type { McpWorkerBinding } from './work.js';
 
 /** ACP declares node-assigned endpoints; only daemon control carries their credentials. */

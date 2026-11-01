@@ -1,7 +1,7 @@
 import { isAbsolute, resolve, sep } from 'node:path';
-import { ServiceError } from '../core/protocol.js';
-import type { ProviderRoute } from '../core/provider-route.js';
-import type { FailureKind, AcpFailure, AttemptOutcome } from '../core/records.js';
+import { ServiceError } from './protocol.js';
+import type { ProviderRoute } from './provider-route.js';
+import type { FailureKind, AcpFailure, AttemptOutcome } from './records.js';
 
 export class AcpFailureError extends Error {
   constructor(readonly failure: AcpFailure) {

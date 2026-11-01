@@ -1,10 +1,8 @@
-import { canonical, digest, ServiceError } from '../core/protocol.js';
-import { hostDigests } from '../host/host.js';
+import { canonical, digest, ServiceError, hostDigests } from '../core/index.js';
 import { A2AHttp, A2A_PIN, a2aObject, privateJSON, validatePeer, type A2APeer } from './peer.js';
 import { A2AInvocation, type A2ACheckpoint } from './protocol.js';
-import type { ExternalBackend, ExternalHooks } from '../workers/external-runtime.js';
-import type { ExternalRuntime, WorkerBinding } from '../core/worker-binding.js';
-import type { WorkspaceTree } from '../core/records.js';
+import type { ExternalBackend, ExternalHooks } from '../workers/index.js';
+import type { ExternalRuntime, WorkerBinding, WorkspaceTree } from '../core/index.js';
 
 /** Bounded outbound analysis. A peer has no local file/command/controller authority. */
 export class A2ABackend implements ExternalBackend {

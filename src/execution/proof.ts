@@ -26,7 +26,7 @@ import {
   BoundaryError,
   engineRequest,
 } from './boundary.js';
-import { digest } from '../core/protocol.js';
+import { digest } from '../core/index.js';
 
 export interface BoundaryProofOptions {
   socket: string;

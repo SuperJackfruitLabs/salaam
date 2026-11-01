@@ -42,7 +42,7 @@ interface WorkerConfig {
   operator_mcp?: import('../core/records.js').McpServerProvenance[];
   mcp_servers?: import('../core/records.js').McpServerProvenance[];
   toolkit?: import('../toolkit/work.js').ToolkitWorkerBinding;
-  station?: import('../agentpod/station-work.js').StationBinding;
+  station?: import('./station.js').StationBinding;
   persona?: import('./persona.js').Persona;
 }
 /** Phase 1 (2026-10-31): the model is told where its commands run, so it uses this host's tools
@@ -222,7 +222,7 @@ export default function house(pi: ExtensionAPI): void {
         item_id: Type.Optional(Type.String({ pattern: '^itm_[0-9a-f]{16}$' })),
       }),
       async execute(toolCallId, params, signal) {
-        type Read = import('../tasks/board-reads.js').BoardRead;
+        type Read = import('./board-reads.js').BoardRead;
         let read = await bridge<Read>('board.read', { tool_call_id: toolCallId, args: params });
         const deadline = Date.now() + 90_000;
         while (read.state === 'pending') {
@@ -275,7 +275,7 @@ export default function house(pi: ExtensionAPI): void {
           return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { result } };
         }
         type Result = {
-          call: import('../agentpod/station-work.js').StationCall;
+          call: import('./station.js').StationCall;
           operation?: Operation;
           approval?: Approval;
           result: unknown;

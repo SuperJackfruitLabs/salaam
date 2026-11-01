@@ -1,6 +1,6 @@
-import { integer, object, ServiceError, string } from '../core/protocol.js';
-import { filePath } from '../workers/workspaces.js';
-import type { TaskCheck, TaskLimits, CompletionGate, TaskPolicy } from '../core/records.js';
+import { integer, object, ServiceError, string } from '../core/index.js';
+import { filePath } from '../coding/index.js';
+import type { TaskCheck, TaskLimits, CompletionGate, TaskPolicy } from '../core/index.js';
 
 /** Every check completion requires: the acceptance checks, then each hook as hook-<key>. */
 export function requiredChecks(

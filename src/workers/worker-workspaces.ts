@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { readTree, type Workspaces } from './workspaces.js';
-import type { WorkspaceTree } from '../core/records.js';
+import type { Store, Artifacts } from '../store/index.js';
+import { readTree, type Workspaces } from '../coding/index.js';
+import type { WorkspaceTree, WorkerBinding } from '../core/index.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
-import { canonical, digest, ServiceError, type ChildTask } from '../core/protocol.js';
-import type { WorkerBinding } from '../core/worker-binding.js';
-import type { CodingWork } from '../coding/coding.js';
+import { canonical, digest, ServiceError, type ChildTask } from '../core/index.js';
+import type { CodingWork } from '../coding/index.js';
 import { workspaceDiff } from './workspace-diff.js';
 
 /** The child ledger members a draft workspace checks. Child dispatch implements it. */

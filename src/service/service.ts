@@ -1,8 +1,47 @@
 import { readFileSync } from 'node:fs';
-import { DangerClassifier, loadDangerClassifierOptions } from '../local/danger-classifier.js';
-import { WebSearch, loadWebSearchConfig } from '../web/search.js';
+import {
+  DangerClassifier,
+  loadDangerClassifierOptions,
+  permissionPolicy,
+  configurePermissions,
+  ApprovalRules,
+  chooseLocalSandbox,
+  type SandboxLevel,
+  resolveReadPaths,
+  LocalCoding,
+  type LocalSandbox,
+  Hooks,
+  localDiff,
+  reviewUndo,
+  applyUndo,
+  reconcileUndo,
+  probeToolsUser,
+  serviceToolIdentity,
+  type ToolIdentity,
+} from '../local/index.js';
+import { WebSearch, loadWebSearchConfig } from '../web/index.js';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
-import { loadPersona } from '../runtime/persona.js';
+import {
+  loadPersona,
+  TaskContext,
+  ContextAdmission,
+  ProjectInstructions,
+  userInstructionsPath,
+  Supervisor,
+  type SupervisorOptions,
+  Dispatcher,
+  AgentProfiles,
+  TurnCancellations,
+  expandPrompt,
+  pastedImages,
+  storeImages,
+  MAX_IMAGES,
+  PASTED_IMAGE_LIMIT,
+  type PromptImage,
+  forkPiSession,
+  TurnCheckpoints,
+  type RewindMode,
+} from '../runtime/index.js';
 import {
   mkdirSync,
   chmodSync,
@@ -13,88 +52,71 @@ import {
   statSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { providerRoute } from '../providers/config.js';
-import { TaskContext } from '../tasks/context.js';
-import { ContextAdmission } from '../runtime/context-admission.js';
-import { ProjectInstructions, userInstructionsPath } from '../runtime/project-instructions.js';
-import { SLASH_COMMANDS } from '../tui/commands.js';
-import { TaskWork } from '../tasks/work.js';
-import { TaskBudget } from '../tasks/budget.js';
-import { AgentPodWorkDecisions } from '../agentpod/work-decisions.js';
-import { RunGrants } from '../tasks/run-grants.js';
-import { TaskCritic } from '../tasks/critic.js';
-import { AgentPodWork } from '../agentpod/work.js';
-import { agentpodWorkAdmission } from '../agentpod/work-protocol.js';
-import { TaskVerification } from '../tasks/verification.js';
-import { TaskCheckpoints } from '../tasks/checkpoints.js';
-import { TaskDriver } from '../tasks/driver.js';
-import { OperatorInbox } from '../tasks/operator-inbox.js';
-import { RecurringWork } from '../tasks/recurring-work.js';
-import { JobWork } from '../tasks/job-work.js';
-import { Store } from '../store/store.js';
-import { pickerSummary } from '../tui/session-pick.js';
-import { acquireStateLock } from '../core/state-lock.js';
-import { Artifacts } from '../store/artifacts.js';
-import { Supervisor, type SupervisorOptions } from '../runtime/supervisor.js';
-import { canonical, digest, integer, object, ServiceError, string } from '../core/protocol.js';
-import { readJson } from '../core/transport.js';
-import { Dispatcher } from '../runtime/dispatcher.js';
-import { ManagedWork } from '../execution/managed.js';
-import { ChildWork } from '../workers/children.js';
-import type { EffectConnector } from '../execution/effect-connector.js';
-import { EXECUTION_STATUS, engineRequest } from '../execution/boundary.js';
-import { DockerCodingExecutor, type ExecutionBackend } from '../coding/executor.js';
-import { Workspaces } from '../workers/workspaces.js';
-import { CodingWork } from '../coding/coding.js';
-import { AgentProfiles } from '../runtime/agent-profiles.js';
-import { RepositorySnapshots } from '../workers/repository-snapshots.js';
-import { TeamWork } from '../tasks/team-work.js';
-import { WorkerWorkspaces } from '../workers/worker-workspaces.js';
-import { ExternalWork } from '../workers/external-work.js';
-import type { ExternalBackend } from '../workers/external-runtime.js';
-import { DockerHarnessBackend } from '../harness/backend.js';
-import { A2AInbound } from '../a2a/inbound.js';
-import { AgentPodAuthority, readAgentPodPins } from '../agentpod/authority.js';
-import { ToolkitResources } from '../toolkit/resources.js';
-import { OperatorMcp } from '../mcp/operator-mcp.js';
-import { cancelToolkitCalls, recoverToolkitCalls } from '../toolkit/calls.js';
-import { ToolkitOwners } from '../toolkit/owners.js';
-import { ToolkitResolutions } from '../toolkit/resolutions.js';
-import { resolvedToolkitCallSql } from '../store/toolkit-resolution-sql.js';
-import { A2ABackend, ExternalBackends } from '../a2a/backend.js';
-import { VERSION } from '../core/config.js';
-import { TurnCancellations } from '../runtime/turn-cancellations.js';
-import { McpAdmission } from '../mcp/admission.js';
-import { McpWork } from '../mcp/work.js';
-import { ToolkitWork, type ToolkitWorkConfig } from '../toolkit/work.js';
-import { permissionPolicy, configurePermissions } from '../runtime/autonomy.js';
+import { providerRoute } from '../providers/index.js';
 import {
-  expandPrompt,
-  pastedImages,
-  storeImages,
-  MAX_IMAGES,
-  PASTED_IMAGE_LIMIT,
-  type PromptImage,
-} from '../runtime/mentions.js';
-import { ApprovalRules } from '../runtime/approval-rules.js';
+  SLASH_COMMANDS,
+  agentpodWorkAdmission,
+  acquireStateLock,
+  canonical,
+  digest,
+  integer,
+  object,
+  ServiceError,
+  string,
+  readJson,
+  VERSION,
+} from '../core/index.js';
 import {
-  chooseLocalSandbox,
-  type SandboxLevel,
-  resolveReadPaths,
-} from '../local/command-sandbox.js';
-import { LocalCoding, type LocalSandbox } from '../local/coding.js';
-import { Hooks } from '../runtime/hooks.js';
-import { localDiff } from '../local/diff.js';
-import { reviewUndo, applyUndo, reconcileUndo } from '../local/undo.js';
-import { forkPiSession } from '../runtime/pi-sessions.js';
-import { TurnCheckpoints, type RewindMode } from '../runtime/turn-rewind.js';
-import { StationWork } from '../agentpod/station-work.js';
-import { readToolkitConfig } from '../toolkit/config.js';
+  TaskWork,
+  TaskBudget,
+  RunGrants,
+  TaskCritic,
+  TaskVerification,
+  TaskCheckpoints,
+  TaskDriver,
+  OperatorInbox,
+  RecurringWork,
+  JobWork,
+  TeamWork,
+} from '../tasks/index.js';
 import {
-  probeToolsUser,
-  serviceToolIdentity,
-  type ToolIdentity,
-} from '../runtime/tool-identity.js';
+  AgentPodWorkDecisions,
+  AgentPodWork,
+  AgentPodAuthority,
+  readAgentPodPins,
+  StationWork,
+  StationTaskVerification,
+} from '../agentpod/index.js';
+import { Store, Artifacts, resolvedToolkitCallSql } from '../store/index.js';
+import { pickerSummary } from './picker-summary.js';
+import { ManagedWork, EXECUTION_STATUS, engineRequest } from '../execution/index.js';
+import {
+  ChildWork,
+  RepositorySnapshots,
+  WorkerWorkspaces,
+  ExternalWork,
+} from '../workers/index.js';
+import type { EffectConnector } from '../execution/index.js';
+import {
+  DockerCodingExecutor,
+  type ExecutionBackend,
+  Workspaces,
+  CodingWork,
+} from '../coding/index.js';
+import type { ExternalBackend } from '../workers/index.js';
+import { DockerHarnessBackend } from '../harness/index.js';
+import { A2AInbound, A2ABackend, ExternalBackends } from '../a2a/index.js';
+import {
+  ToolkitResources,
+  cancelToolkitCalls,
+  recoverToolkitCalls,
+  ToolkitOwners,
+  ToolkitResolutions,
+  ToolkitWork,
+  type ToolkitWorkConfig,
+  readToolkitConfig,
+} from '../toolkit/index.js';
+import { OperatorMcp, McpAdmission, McpWork } from '../mcp/index.js';
 
 /** A prompt with the most pasted images it may carry, as base64, plus its text. */
 const SUBMISSION_BODY_LIMIT =
@@ -693,7 +715,10 @@ export class SalaamService {
             const task = this.taskWork.get(row.task_id);
             return { task_id: task.id, plan_revision: task.plan_revision, task_state: task.state };
           };
-          this.taskVerification.installStation(this.station);
+          const station = this.station;
+          this.taskVerification.installStation(
+            (v) => new StationTaskVerification(v.store, v.tasks, v, station, v.artifacts),
+          );
           this.agentpodWork = new AgentPodWork(
             this.store,
             this.agentpod,
@@ -879,15 +904,11 @@ export class SalaamService {
       throw error;
     }
   }
-  private scheduleRevocationStop(
-    receipt: import('../store/execution-authority.js').SessionRevocation,
-  ): void {
+  private scheduleRevocationStop(receipt: import('../store/index.js').SessionRevocation): void {
     const cleanup = this.stopRevoked(receipt).finally(() => this.revocationStops.delete(cleanup));
     this.revocationStops.add(cleanup);
   }
-  private async stopRevoked(
-    receipt: import('../store/execution-authority.js').SessionRevocation,
-  ): Promise<void> {
+  private async stopRevoked(receipt: import('../store/index.js').SessionRevocation): Promise<void> {
     const jobs: Promise<unknown>[] = receipt.attempt_ids.map(async (attempt) => {
       this.managed.abortCancelled(attempt);
       this.mcp?.abortAttempt(attempt);
@@ -984,7 +1005,7 @@ export class SalaamService {
         if (parts[2]) {
           const raw = this.store.db
             .prepare('SELECT * FROM child_tasks WHERE id=?')
-            .get(parts[2]) as unknown as import('../core/protocol.js').ChildTask | undefined;
+            .get(parts[2]) as unknown as import('../core/index.js').ChildTask | undefined;
           if (!raw || !this.store.workerBoundary.view(raw.id).binding.external)
             throw new ServiceError('not_found', 'External worker not found', 404);
           if (req.method === 'GET' && parts.length === 3) {
@@ -2158,11 +2179,11 @@ export class SalaamService {
                     : integer(input.max_tokens, 'max_tokens'),
                   undefined,
                   undefined,
-                  input.reasoning as import('../core/provider-route.js').ReasoningLevel | undefined,
+                  input.reasoning as import('../core/index.js').ReasoningLevel | undefined,
                 );
               })();
         if (body.local_workspace) {
-          const saved = this.store.cachedRequest<import('../core/protocol.js').Session>(
+          const saved = this.store.cachedRequest<import('../core/index.js').Session>(
             'local-operator',
             string(body.request_id, 'request_id', 128),
             {
@@ -3289,7 +3310,7 @@ export class SalaamService {
             undefined,
             undefined,
             undefined,
-            input.reasoning as import('../core/provider-route.js').ReasoningLevel | undefined,
+            input.reasoning as import('../core/index.js').ReasoningLevel | undefined,
           );
           const prepared = await this.supervisor.prepareProviderRoute(requested).catch(() => {
             throw new ServiceError(

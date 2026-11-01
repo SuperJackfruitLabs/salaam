@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, ready, until } from '../helpers.js';
 import { OperatorClient } from '../../src/tui/client.js';
-import { permissionPolicy } from '../../src/runtime/autonomy.js';
+import { permissionPolicy } from '../../src/local/autonomy.js';
 
 // Phase 2b in a real terminal (operator rulings 2026-10-31): Shift+Tab cycles review → accept edits →
 // auto, full access is its own command with a warning, and YOLO needs the word typed.

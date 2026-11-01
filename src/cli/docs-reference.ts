@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cliHelp } from './help.js';
 import { MCP_HELP } from './mcp-commands.js';
-import { SLASH_COMMANDS } from '../tui/commands.js';
-import { keySheet } from '../tui/keymap.js';
+import { SLASH_COMMANDS } from '../core/index.js';
+import { keySheet } from '../tui/index.js';
 
 /**
  * The docs' reference tables, rendered from the registries the program itself uses, and a lint

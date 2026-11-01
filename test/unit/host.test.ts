@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { hostDigests, readHost, hostUnit, type HostManifest } from '../../src/host/host.js';
+import { hostDigests } from '../../src/core/config.js';
+import { readHost, hostUnit, type HostManifest } from '../../src/host/host.js';
 import { ROOT } from '../../src/core/config.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 test('host manifests bind runtime/source/build, require private files and generate native supervision without embedding keys', () => {

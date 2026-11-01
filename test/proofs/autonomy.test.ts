@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fixture, ready, sandboxFallback, until } from '../helpers.js';
 import { OperatorClient } from '../../src/tui/client.js';
 import { SalaamService } from '../../src/service/service.js';
-import { permissionPolicy } from '../../src/runtime/autonomy.js';
+import { permissionPolicy } from '../../src/local/autonomy.js';
 test('real Pi executes only scoped edits automatically and permission policy survives daemon recovery', async () => {
   const f = await fixture(),
     client = new OperatorClient(f.dir);

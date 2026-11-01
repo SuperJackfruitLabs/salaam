@@ -3,7 +3,7 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until, ready } from '../helpers.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import { digest } from '../../src/core/protocol.js';
 import { call } from '../../src/core/transport.js';
 

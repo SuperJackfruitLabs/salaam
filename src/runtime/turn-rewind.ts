@@ -1,5 +1,5 @@
-import { ServiceError, digest, type Controller, type Session } from '../core/protocol.js';
-import type { Store } from '../store/store.js';
+import { ServiceError, digest, type Controller, type Session } from '../core/index.js';
+import type { Store } from '../store/index.js';
 import {
   ShadowCheckpoints,
   type CheckpointChange,

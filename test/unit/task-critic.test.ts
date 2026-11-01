@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../../src/store/store.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 import { TaskWork } from '../../src/tasks/work.js';
 import { TaskCritic, CRITIC_BUDGET } from '../../src/tasks/critic.js';
 

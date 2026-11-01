@@ -1,6 +1,6 @@
-import type { Store } from '../store/store.js';
-import type { WorkTask } from '../core/records.js';
-import { digest, ServiceError } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import type { WorkTask } from '../core/index.js';
+import { digest, ServiceError } from '../core/index.js';
 
 /**
  * Checkpoints of a station task, derived from its own recorded writes (item 11). Each completed

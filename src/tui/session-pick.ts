@@ -1,6 +1,4 @@
-import { typedText } from '../runtime/shell-passthrough.js';
-import { statSync } from 'node:fs';
-import { OFFLINE_ROUTE } from '../core/provider-route.js';
+import { OFFLINE_ROUTE } from '../core/index.js';
 
 /** How `salaam code` opens a folder: continue its latest session (the default), start a new
  * coding session, or pick one from the list. */
@@ -79,24 +77,4 @@ export function sessionDescription(
   return [quoted || s.state, relativeTime(s.last_active_at, now), s.cwd]
     .filter(Boolean)
     .join(' · ');
-}
-
-/** What the picker shows for a desk session: its newest prompt (at most 200 characters) and when
- * its transcript last changed. Board and station sessions get nothing extra. */
-export function pickerSummary(
-  session: { id: string; capabilities: string[]; pi_session_file: string | null },
-  store: { lastPrompt(id: string): string | null },
-): { last_prompt?: string; last_active_at?: string } {
-  if (!session.capabilities.includes('local-coding-reviewed')) return {};
-  const prompt = store.lastPrompt(session.id);
-  let at: string | undefined;
-  try {
-    if (session.pi_session_file) at = statSync(session.pi_session_file).mtime.toISOString();
-  } catch {
-    /* no transcript yet */
-  }
-  return {
-    ...(prompt ? { last_prompt: typedText(prompt).slice(0, 200) } : {}),
-    ...(at ? { last_active_at: at } : {}),
-  };
 }

@@ -16,7 +16,7 @@ import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 import { mcpProfile, mcpAssignment, mcpAdmissionView } from '../../src/mcp/protocol.js';
 import { McpAdmission } from '../../src/mcp/admission.js';
 import { digest } from '../../src/core/protocol.js';
-import { agentpodBinding } from '../../src/agentpod/protocol.js';
+import { agentpodBinding } from '../../src/core/agentpod-protocol.js';
 
 for (const [cases, parse] of [
   [corpus.profiles, mcpProfile],

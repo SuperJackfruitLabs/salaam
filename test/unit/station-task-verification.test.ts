@@ -11,13 +11,14 @@ import { AgentPodWork } from '../../src/agentpod/work.js';
 import type { AgentPodAuthority } from '../../src/agentpod/authority.js';
 import { Store } from '../../src/store/store.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 import { TaskWork } from '../../src/tasks/work.js';
 import { TaskBudget } from '../../src/tasks/budget.js';
 import { TaskVerification } from '../../src/tasks/verification.js';
 import { CodingWork } from '../../src/coding/coding.js';
-import { Workspaces } from '../../src/workers/workspaces.js';
-import { StationWork, type StationCall } from '../../src/agentpod/station-work.js';
+import { Workspaces } from '../../src/coding/workspaces.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import type { StationCall } from '../../src/runtime/station.js';
 import { StationTaskVerification } from '../../src/agentpod/station-task-verification.js';
 import { ServiceError, canonical, digest } from '../../src/core/protocol.js';
 

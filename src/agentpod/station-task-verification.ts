@@ -1,10 +1,10 @@
-import { requiredChecks } from '../tasks/policy.js';
-import type { Store } from '../store/store.js';
-import type { TaskWork } from '../tasks/work.js';
-import type { CheckReceipt, WorkTask } from '../core/records.js';
-import type { StationWork, StationBinding, StationCall } from './station-work.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
+import { requiredChecks } from '../tasks/index.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { TaskWork, StationCheckEvidence } from '../tasks/index.js';
+import type { CheckReceipt, WorkTask } from '../core/index.js';
+import type { StationWork } from './station-work.js';
+import type { StationBinding, StationCall } from '../runtime/index.js';
+import { canonical, digest, ServiceError } from '../core/index.js';
 
 interface BoundCheck {
   version: 1;
@@ -17,18 +17,6 @@ interface BoundCheck {
   call_id: string;
   call_digest: string;
   tree_digest: string;
-}
-export interface StationCheckEvidence {
-  version: 1;
-  backend: 'linux-systemd-station-v1';
-  binding_artifact: string;
-  check_id: string;
-  call_id: string;
-  plan_revision: number;
-  root_digest: string;
-  configuration_digest: string;
-  tree_digest: string;
-  result_digest: string;
 }
 /** The task verification members a station check uses. Task verification implements it. */
 export interface StationCheckLedger {

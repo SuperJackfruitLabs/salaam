@@ -9,7 +9,7 @@ import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
 import { client } from '../acp-helpers.js';
-import { permissionPolicy } from '../../src/runtime/autonomy.js';
+import { permissionPolicy } from '../../src/local/autonomy.js';
 import { localHash } from '../../src/local/edits.js';
 
 type Message = Record<string, any>;

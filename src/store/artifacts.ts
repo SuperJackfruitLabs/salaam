@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { textDigest, ServiceError } from '../core/protocol.js';
+import { textDigest, ServiceError } from '../core/index.js';
 import type { Store } from './store.js';
 
 export class Artifacts {

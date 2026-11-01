@@ -16,7 +16,7 @@ import {
   configurePermissions,
   permissionPolicy,
   validatePermissions,
-} from '../../src/runtime/autonomy.js';
+} from '../../src/local/autonomy.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 import { localHash } from '../../src/local/edits.js';
 function setup() {

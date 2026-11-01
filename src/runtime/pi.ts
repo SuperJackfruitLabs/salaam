@@ -1,8 +1,7 @@
-import { redactFailureText } from '../acp/outcome.js';
+import { redactFailureText, ServiceError, object, textDigest } from '../core/index.js';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { ServiceError, object, textDigest } from '../core/protocol.js';
 
 export interface ToolObservation {
   phase: 'started' | 'finished';

@@ -1,5 +1,12 @@
-import { agentpodBinding, type AgentPodBinding } from '../agentpod/protocol.js';
-import { canonical, integer, object, ServiceError, string } from '../core/protocol.js';
+import {
+  agentpodBinding,
+  type AgentPodBinding,
+  canonical,
+  integer,
+  object,
+  ServiceError,
+  string,
+} from '../core/index.js';
 
 export interface McpToolPin {
   name: string;

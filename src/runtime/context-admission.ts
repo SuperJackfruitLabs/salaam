@@ -9,8 +9,8 @@ import {
   realpathSync,
 } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { canonical, digest, object, ServiceError, textDigest } from '../core/protocol.js';
-import type { Store } from '../store/store.js';
+import { canonical, digest, object, ServiceError, textDigest } from '../core/index.js';
+import type { Store } from '../store/index.js';
 
 export const ADMITTED_CONTEXT_BYTES = 128 * 1024;
 const MAX_RESOURCE_BYTES = 1024 * 1024;

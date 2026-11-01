@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentPodWork } from './work.js';
-import type { ManagedWork } from '../execution/managed.js';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
-import { type RunGrants, runGrantCovers, runGrantPrefix } from '../tasks/run-grants.js';
+import type { ManagedWork } from '../execution/index.js';
+import { canonical, digest, ServiceError } from '../core/index.js';
+import { type RunGrants, runGrantCovers, runGrantPrefix } from '../tasks/index.js';
 import {
   workDecisionAnswer,
   type WorkDecision,

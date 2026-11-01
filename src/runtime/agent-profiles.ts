@@ -19,16 +19,14 @@ import {
   string,
   textDigest,
   type Controller,
-} from '../core/protocol.js';
-import { providerRoute } from '../providers/config.js';
-import type { ProviderRoute } from '../core/provider-route.js';
-import type { Store } from '../store/store.js';
-import {
   DIAGNOSTIC_PROFILE,
   type AgentGrant,
   type AgentGrantSnapshot,
   type AgentProfile,
-} from '../core/worker-binding.js';
+} from '../core/index.js';
+import { providerRoute } from '../providers/index.js';
+import type { ProviderRoute } from '../core/index.js';
+import type { Store } from '../store/index.js';
 
 const ROLE_TOOLS = {
   explorer: ['salaam_probe', 'salaam_repository'],

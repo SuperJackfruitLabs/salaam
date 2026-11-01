@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Store } from './store.js';
-import { canonical, digest, textDigest, ServiceError, type ChildTask } from '../core/protocol.js';
-import { POLICY_DIGEST } from '../core/config.js';
-import type { ProviderRoute } from '../core/provider-route.js';
 import {
+  canonical,
+  digest,
+  textDigest,
+  ServiceError,
+  type ChildTask,
+  POLICY_DIGEST,
   DIAGNOSTIC_PROFILE,
   nativeCapabilities,
   externalCapabilities,
@@ -12,7 +15,8 @@ import {
   type ExternalRuntime,
   type WorkerBinding,
   type WorkerBoundaryView,
-} from '../core/worker-binding.js';
+} from '../core/index.js';
+import type { ProviderRoute } from '../core/index.js';
 
 /** The agent admissions a boundary checks grants against; the agent profiles implement it. */
 export interface AgentGrants {

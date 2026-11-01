@@ -5,8 +5,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { digest, ServiceError } from '../core/protocol.js';
-import type { McpServerProvenance } from '../core/records.js';
+import { digest, ServiceError } from '../core/index.js';
+import type { McpServerProvenance } from '../core/index.js';
 
 /**
  * Operator-declared MCP servers: the operator's own grant, read only from Salaam's

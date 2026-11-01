@@ -1,5 +1,5 @@
 import type { Store } from './store.js';
-import { digest, ServiceError } from '../core/protocol.js';
+import { digest, ServiceError } from '../core/index.js';
 
 type UsageRow = {
   source_key: string;

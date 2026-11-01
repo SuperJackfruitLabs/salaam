@@ -16,8 +16,8 @@ import {
   ServiceError,
   type Controller,
   type SessionSnapshot,
-} from '../core/protocol.js';
-import { call } from '../core/transport.js';
+  call,
+} from '../core/index.js';
 interface Record {
   request_id: string;
   session: string;

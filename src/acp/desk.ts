@@ -2,15 +2,11 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
-import { ROOT } from '../core/config.js';
-import { credentialPath } from '../providers/credentials.js';
-import { providerRoute } from '../providers/config.js';
-import { deskUsesAnthropic } from '../tui/session-pick.js';
-import { call } from '../core/transport.js';
-import type { PermissionMode, PermissionPolicy, SessionAccess } from '../runtime/autonomy.js';
-import type { LocalEdit } from '../local/edits.js';
-import type { TurnCheckpoint } from '../runtime/turn-rewind.js';
-import { relativeTime } from '../tui/session-pick.js';
+import { ROOT, call } from '../core/index.js';
+import { credentialPath, providerRoute } from '../providers/index.js';
+import { deskUsesAnthropic, relativeTime } from '../tui/index.js';
+import type { PermissionMode, PermissionPolicy, SessionAccess, LocalEdit } from '../local/index.js';
+import type { TurnCheckpoint } from '../runtime/index.js';
 
 /** What an editor shows for a desk session: the same choices as Shift+Tab, plus full access.
  * YOLO is listed only while it is on, because turning it on needs "yolo" typed in the terminal. */

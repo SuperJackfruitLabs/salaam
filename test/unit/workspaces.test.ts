@@ -11,7 +11,7 @@ import {
 import { join } from 'node:path';
 import { Store } from '../../src/store/store.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { Workspaces, filePath, readTree } from '../../src/workers/workspaces.js';
+import { Workspaces, filePath, readTree } from '../../src/coding/workspaces.js';
 import { digest } from '../../src/core/protocol.js';
 
 function fixture() {

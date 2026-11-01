@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store, Artifacts } from '../store/index.js';
 import type { TaskWork } from './work.js';
 import type { TaskVerification } from './verification.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { readTree, type Workspaces } from '../workers/workspaces.js';
-import type { WorkspaceTree } from '../core/records.js';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
+import { readTree, type Workspaces } from '../coding/index.js';
+import type { WorkspaceTree } from '../core/index.js';
+import { canonical, digest, ServiceError } from '../core/index.js';
 
 interface Checkpoint {
   id: string;

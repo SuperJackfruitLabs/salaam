@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
-import type { Store } from '../store/store.js';
-import { canonical, digest, object, ServiceError, type Controller } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import { canonical, digest, object, ServiceError, type Controller } from '../core/index.js';
 export type PermissionMode =
   | 'inspect'
   | 'review'

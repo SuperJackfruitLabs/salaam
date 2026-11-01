@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { isAbsolute, resolve, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
-import { digest, object, ServiceError } from '../core/protocol.js';
+import { digest, object, ServiceError } from '../core/index.js';
 
 export interface StationExecutable {
   path: string;

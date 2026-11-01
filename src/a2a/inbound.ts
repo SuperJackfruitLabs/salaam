@@ -1,8 +1,13 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { canonical, digest, ServiceError, type ChildTask } from '../core/protocol.js';
-import { POLICY_DIGEST } from '../core/config.js';
-import { hostDigests } from '../host/host.js';
+import {
+  canonical,
+  digest,
+  ServiceError,
+  type ChildTask,
+  POLICY_DIGEST,
+  hostDigests,
+} from '../core/index.js';
 import {
   A2A_PIN,
   a2aIdentity,
@@ -12,7 +17,24 @@ import {
   type A2AObject,
 } from './peer.js';
 import { A2A_TERMINAL, validateParts } from './protocol.js';
-import type { SalaamService } from '../service/service.js';
+import type { Store, Artifacts } from '../store/index.js';
+import type { Workspaces } from '../coding/index.js';
+import type { ChildWork, ExternalWork } from '../workers/index.js';
+import type { AgentProfiles } from '../runtime/index.js';
+import type { TaskWork, TaskDriver, TeamWork } from '../tasks/index.js';
+
+/** The service members an inbound peer turn uses. The service passes itself. */
+export interface A2AInboundService {
+  readonly store: Store;
+  readonly artifacts: Pick<Artifacts, 'read'>;
+  readonly agents: Pick<AgentProfiles, 'resolve' | 'validate'>;
+  readonly children: Pick<ChildWork, 'consume'>;
+  readonly external: Pick<ExternalWork, 'assignment'>;
+  readonly taskDriver: Pick<TaskDriver, 'cancelInTransaction' | 'stopCancelled'>;
+  readonly taskWork: Pick<TaskWork, 'get'>;
+  readonly team: Pick<TeamWork, 'get' | 'run'>;
+  readonly workspaces: Pick<Workspaces, 'verify'>;
+}
 
 export interface A2AInboundGrant {
   peer: string;
@@ -38,7 +60,7 @@ export class A2AInbound {
   private rate = new Map<string, number[]>();
   private config: InboundConfig;
   constructor(
-    readonly service: SalaamService,
+    readonly service: A2AInboundService,
     readonly path: string,
   ) {
     this.config = this.read();
@@ -127,7 +149,7 @@ export class A2AInbound {
   binding(assignment: string): A2AObject {
     return A2AInbound.binding(this.service, assignment);
   }
-  static binding(s: SalaamService, assignment: string): A2AObject {
+  static binding(s: A2AInboundService, assignment: string): A2AObject {
     const a = s.team.get(assignment),
       t = s.taskWork.get(a.task_id),
       grant = s.agents.resolve(t.session_id, a.profile_id);

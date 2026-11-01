@@ -18,12 +18,20 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
-import { boundShellCommand } from '../runtime/shell-passthrough.js';
+import { boundShellCommand } from './shell-passthrough.js';
 import type { ClassifierReview } from './danger-classifier.js';
 import { join } from 'node:path';
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
-import { digest, object, string, ServiceError, type Operation } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
+import {
+  digest,
+  object,
+  string,
+  ServiceError,
+  type Operation,
+  processIdentity,
+  processStart,
+} from '../core/index.js';
 import {
   prepareLocalEdits,
   verifyLocalEdits,
@@ -37,16 +45,15 @@ import {
   autoApprovesCommands,
   permissionDigest,
   assertPermissionBinding,
-} from '../runtime/autonomy.js';
+} from './autonomy.js';
 import {
   commandArgv,
   evaluateRules,
   type ApprovalRules,
   type RuleRequest,
-} from '../runtime/approval-rules.js';
+} from './approval-rules.js';
 import { assertUndoSettled } from './undo.js';
-import type { HookRun } from '../runtime/hooks.js';
-import { processIdentity, processStart } from '../core/process-identity.js';
+import type { HookRun } from './hooks.js';
 
 const TASK_TAIL = 65536;
 const TASK_LIMIT = 4;
@@ -82,7 +89,7 @@ import {
   serviceToolIdentity,
   toolArgv,
   type ToolIdentity,
-} from '../runtime/tool-identity.js';
+} from './tool-identity.js';
 
 interface LocalCall {
   id: string;

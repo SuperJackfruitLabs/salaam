@@ -8,9 +8,9 @@ import {
   type Controller,
   type DurableEvent,
   type OperationState,
-} from '../core/protocol.js';
-import type { Store } from '../store/store.js';
-import { POLICY_DIGEST } from '../core/config.js';
+  POLICY_DIGEST,
+} from '../core/index.js';
+import type { Store } from '../store/index.js';
 import {
   DefiniteFailure,
   type EffectConnector,

@@ -10,8 +10,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { McpAssignment, McpProfile, McpServerPin } from './protocol.js';
 import { redactMcpData } from './protocol.js';
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
-import { traceParent } from '../execution/trace.js';
+import { canonical, digest, object, ServiceError } from '../core/index.js';
+import { traceParent } from '../execution/index.js';
 
 /** Pin the complete definition: descriptions/annotations can affect context too. */
 export const mcpToolDigest = (tool: unknown): string => digest(object(tool));

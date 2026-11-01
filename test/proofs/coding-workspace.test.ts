@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { SalaamService } from '../../src/service/service.js';
 import { call } from '../../src/core/transport.js';
 import { ready, control, until, fake } from '../helpers.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import { digest, type Session, type SessionSnapshot } from '../../src/core/protocol.js';
 
 test('real Pi earns file readiness, reads and patches the owned copy through the bridge', async () => {

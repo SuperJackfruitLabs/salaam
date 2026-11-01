@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { localHash } from './edits.js';
-import { ServiceError, integer, string } from '../core/protocol.js';
+import { ServiceError, integer, string } from '../core/index.js';
 
 const excluded = new Set([
   'node_modules',

@@ -1,5 +1,5 @@
 import type { Store } from './store.js';
-import { ServiceError, type Controller } from '../core/protocol.js';
+import { ServiceError, type Controller } from '../core/index.js';
 
 /** Revocation acknowledges the durable fence, never an unobserved process/effect outcome. */
 export interface SessionRevocation {

@@ -1,7 +1,7 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './theme.js';
-import { typedText } from '../runtime/shell-passthrough.js';
+import { typedText } from '../local/index.js';
 import {
   instructionsLabel,
   sessionFailure,
@@ -9,9 +9,9 @@ import {
   usageInput,
   type OperatorClient,
 } from './client.js';
-import type { WorkspaceChange } from '../workers/workspace-diff.js';
-import { workspaceDiff } from '../workers/workspace-diff.js';
-import { commandTerminal } from '../coding/coding.js';
+import type { WorkspaceChange } from '../workers/index.js';
+import { workspaceDiff } from '../workers/index.js';
+import { commandTerminal } from '../coding/index.js';
 import { interactiveCoding, runningAttempt } from './turn-keys.js';
 import { backgroundNote, changeCounts } from './review.js';
 import { activityVerb, progressLine, toolLine, type ToolLine } from './activity.js';

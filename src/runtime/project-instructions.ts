@@ -1,10 +1,9 @@
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
-import { canonical, digest, textDigest } from '../core/protocol.js';
-import type { Artifacts } from '../store/artifacts.js';
-import type { Store } from '../store/store.js';
-import type { InstructionFile, InstructionSkip, InstructionsSummary } from '../core/records.js';
+import { canonical, digest, textDigest } from '../core/index.js';
+import type { Artifacts, Store } from '../store/index.js';
+import type { InstructionFile, InstructionSkip, InstructionsSummary } from '../core/index.js';
 
 /** One file's bound, and the bound on everything loaded together. */
 export const INSTRUCTION_FILE_BYTES = 32 * 1024;

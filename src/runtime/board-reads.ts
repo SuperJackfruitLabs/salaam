@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import { ServiceError } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import { ServiceError } from '../core/index.js';
 
 /**
  * Board reads (operator ruling 2026-10-28, option iii). While it works, the agent may read its own

@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, sep } from 'node:path';
-import type { Store } from '../store/store.js';
-import { ServiceError } from '../core/protocol.js';
+import type { Store } from '../store/index.js';
+import { ServiceError } from '../core/index.js';
 
 /** Hooks for a person's own desk sessions (Phase 4b, operator 2026-10-31), in the Claude Code
  * format: `{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",

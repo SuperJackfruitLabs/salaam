@@ -1,32 +1,52 @@
 import type { TaskCritic, CriticVerdict } from './critic.js';
 import { requiredChecks } from './policy.js';
-import {
-  StationTaskVerification,
-  type StationCheckEvidence,
-} from '../agentpod/station-task-verification.js';
-import type { StationWork } from '../agentpod/station-work.js';
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store, Artifacts } from '../store/index.js';
 import type { TaskWork } from './work.js';
-import type { WorkTask, CheckReceipt } from '../core/records.js';
+import type { WorkTask, CheckReceipt } from '../core/index.js';
+import type { StationBinding } from '../runtime/index.js';
 import type { TaskBudget } from './budget.js';
-import type { CodingWork } from '../coding/coding.js';
-import { commandTerminal } from '../coding/coding.js';
-import { readTree, type Workspaces } from '../workers/workspaces.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { canonical, digest, ServiceError, type Controller } from '../core/protocol.js';
+import type { CodingWork } from '../coding/index.js';
+import { commandTerminal, readTree, type Workspaces } from '../coding/index.js';
+import { canonical, digest, ServiceError, type Controller } from '../core/index.js';
 
+export interface StationCheckEvidence {
+  version: 1;
+  backend: 'linux-systemd-station-v1';
+  binding_artifact: string;
+  check_id: string;
+  call_id: string;
+  plan_revision: number;
+  root_digest: string;
+  configuration_digest: string;
+  tree_digest: string;
+  result_digest: string;
+}
+/** The protected station backend task verification consults. AgentPod's station task
+ * verification implements it; the service builds one through installStation. */
+export interface StationVerification {
+  readonly station: {
+    authority: { bySession(session: string): unknown };
+    stopSession(session: string): Promise<void>;
+  };
+  observing(id: string, session: string): boolean;
+  binding(task: WorkTask): StationBinding;
+  dispatch(id: string): void;
+  reconcile(): Promise<void>;
+  stop(): void;
+  drain(): Promise<void>;
+  withFresh<T>(checkID: string, consume: (evidence: StationCheckEvidence) => T): Promise<T>;
+  withFreshMany<T>(
+    ids: string[],
+    paths: string[],
+    consume: (evidence: StationCheckEvidence[], deliverables: unknown[]) => T,
+  ): Promise<T>;
+}
 export class TaskVerification {
-  station?: StationTaskVerification;
-  installStation(station: StationWork): void {
+  station?: StationVerification;
+  installStation(create: (verification: TaskVerification) => StationVerification): void {
     if (this.station) throw Error('Station verification backend already installed');
-    this.station = new StationTaskVerification(
-      this.store,
-      this.tasks,
-      this,
-      station,
-      this.artifacts,
-    );
+    this.station = create(this);
   }
   constructor(
     readonly store: Store,

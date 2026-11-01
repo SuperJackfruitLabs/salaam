@@ -1,5 +1,5 @@
 import type { Store } from './store.js';
-import { digest, object, ServiceError } from '../core/protocol.js';
+import { digest, object, ServiceError } from '../core/index.js';
 import { usageEvidence } from './usage-evidence.js';
 
 /** Counts provider requests only; tool results' nested totals are never added. */

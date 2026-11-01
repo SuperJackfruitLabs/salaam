@@ -2,10 +2,8 @@ import { spawn, execFile } from 'node:child_process';
 import { constants, openSync, closeSync, fstatSync, mkdirSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { readHost, hostMcp, hostToolkit } from './host.js';
-import { readAgentPodPins } from '../agentpod/authority.js';
-import { acquireStateLock } from '../core/state-lock.js';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
-import { call } from '../core/transport.js';
+import { readAgentPodPins } from '../agentpod/index.js';
+import { acquireStateLock, canonical, digest, ServiceError, call } from '../core/index.js';
 
 /** This is node-owned startup, not a station lifecycle grant or a work admission. */
 export async function startHost(path: string) {

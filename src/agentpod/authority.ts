@@ -11,7 +11,7 @@ import {
   mkdirSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import {
   canonical,
   digest,
@@ -19,14 +19,12 @@ import {
   object,
   integer,
   type Session,
-} from '../core/protocol.js';
-import { forkPiSession } from '../runtime/pi-sessions.js';
-import {
   agentpodBinding,
   AGENTPOD_LEASE_MS,
   type AgentPodBinding,
   type AgentPodPins,
-} from './protocol.js';
+} from '../core/index.js';
+import { forkPiSession } from '../runtime/index.js';
 
 interface Admission {
   id: string;

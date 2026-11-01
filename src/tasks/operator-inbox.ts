@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { canonical, ServiceError, type Controller } from '../core/protocol.js';
-import type { Store } from '../store/store.js';
-import type { InboxEntry } from '../core/records.js';
+import { canonical, ServiceError, type Controller } from '../core/index.js';
+import type { Store } from '../store/index.js';
+import type { InboxEntry } from '../core/index.js';
 /** Attention is a durable projection; acknowledging it never decides or retries its source. */
 export class OperatorInbox {
   private timer?: NodeJS.Timeout;

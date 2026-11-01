@@ -5,7 +5,7 @@ import {
   HostBreaker,
   callThroughBreaker,
   fetchHost,
-} from '../../src/host/breaker.js';
+} from '../../src/runtime/breaker.js';
 
 test('the host comes from the call url; anything else has none', () => {
   expect(fetchHost({ url: 'https://Example.com/a?b' })).toBe('example.com');

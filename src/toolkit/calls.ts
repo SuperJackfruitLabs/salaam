@@ -1,10 +1,16 @@
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
+import type { Store } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
 import type { ToolkitResources } from './resources.js';
-import type { AgentPodAuthority } from '../agentpod/authority.js';
-import { agentpodBinding, type AgentPodBinding } from '../agentpod/protocol.js';
-import { canonical, digest, object, ServiceError, type Operation } from '../core/protocol.js';
-import { toolkitRequest, type ToolkitRequest } from './protocol.js';
+import {
+  agentpodBinding,
+  type AgentPodBinding,
+  canonical,
+  digest,
+  object,
+  ServiceError,
+  type Operation,
+} from '../core/index.js';
+import { toolkitRequest, type ToolkitRequest, type ToolkitAuthority } from './protocol.js';
 
 export interface ToolkitActionPin {
   kind: 'read' | 'write' | 'destructive';
@@ -37,7 +43,7 @@ export interface ToolkitCall {
   cancel_requested: number;
 }
 export interface ToolkitCallOptions {
-  authority: AgentPodAuthority;
+  authority: ToolkitAuthority;
   resources: ToolkitResources;
   assertActive(session: string, epoch: number, attempt: string): void;
   /** Trusted controller must derive this from the actual admitted binary/catalog,

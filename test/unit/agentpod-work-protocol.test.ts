@@ -4,7 +4,7 @@ import {
   agentpodWorkAdmission,
   checkAgentPodWorkAdmission,
   checkAgentPodWorkReplay,
-} from '../../src/agentpod/work-protocol.js';
+} from '../../src/core/agentpod-work-protocol.js';
 const corpus = JSON.parse(
   readFileSync(new URL('../fixtures/agentpod-work-v1.json', import.meta.url), 'utf8'),
 );

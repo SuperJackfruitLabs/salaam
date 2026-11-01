@@ -1,14 +1,23 @@
 #!/usr/bin/env node
-import { loadDangerClassifierOptions } from '../local/danger-classifier.js';
-import { loadWebSearchConfig } from '../web/search.js';
-import { SANDBOX_LEVELS, type SandboxLevel } from '../local/command-sandbox.js';
-import { acp } from '../acp/server.js';
+import { loadDangerClassifierOptions, SANDBOX_LEVELS, type SandboxLevel } from '../local/index.js';
+import { loadWebSearchConfig } from '../web/index.js';
+import { acp } from '../acp/index.js';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { digest, object } from '../core/protocol.js';
-import type { SessionSnapshot, Approval, Operation } from '../core/protocol.js';
+import {
+  digest,
+  object,
+  ROOT,
+  VERSION,
+  call,
+  PI_PROVIDERS,
+  canonical,
+  HARNESS_TARGETS,
+  type HarnessTarget,
+} from '../core/index.js';
+import type { SessionSnapshot, Approval, Operation } from '../core/index.js';
 import { fileURLToPath } from 'node:url';
 import {
   mkdirSync,
@@ -20,38 +29,35 @@ import {
   fsyncSync,
   existsSync,
 } from 'node:fs';
-import { ROOT, VERSION } from '../core/config.js';
 import { cliHelp, hasHelpFlag } from './help.js';
 import { mcpCli, MCP_HELP } from './mcp-commands.js';
-import { operatorMcpPath, readOperatorMcpFile } from '../mcp/operator-mcp.js';
-import { defaultAgentPodConfig } from '../agentpod/default-config.js';
-import { SalaamService } from '../service/service.js';
-import { call } from '../core/transport.js';
-import { attach, acquireControl, Outbox } from '../tui/attach.js';
+import { operatorMcpPath, readOperatorMcpFile } from '../mcp/index.js';
+import { defaultAgentPodConfig } from '../agentpod/index.js';
+import { SalaamService } from '../service/index.js';
+import { attach, acquireControl, Outbox } from '../tui/index.js';
 import {
   providerRoute,
-  PI_PROVIDERS,
   getProvider,
   providerHasOutputCap,
-} from '../providers/config.js';
-import { readSecret, validateApiKey } from '../providers/credentials.js';
-import {
+  readSecret,
+  validateApiKey,
   authDirectory,
   ProviderCredentialStore,
   providerModels,
   loginProvider,
   resolveProviderAuth,
-} from '../providers/auth.js';
-import { bindProviderConfiguration } from '../providers/model.js';
+  bindProviderConfiguration,
+} from '../providers/index.js';
 import { createInterface } from 'node:readline/promises';
 import type { AuthInteraction } from '@earendil-works/pi-ai';
-import { canonical } from '../core/protocol.js';
-import { SocketEffectConnector } from '../execution/effect-connector.js';
-import { proveExecutionBoundary } from '../execution/proof.js';
-import { BoundaryBroker, engineRequest } from '../execution/boundary.js';
-import { workspaceDiff, type WorkspaceChange } from '../workers/workspace-diff.js';
-import { probeHarness, type HarnessPin } from '../harness/probe.js';
-import { HARNESS_TARGETS, type HarnessTarget } from '../core/harness-targets.js';
+import {
+  SocketEffectConnector,
+  proveExecutionBoundary,
+  BoundaryBroker,
+  engineRequest,
+} from '../execution/index.js';
+import { workspaceDiff, type WorkspaceChange } from '../workers/index.js';
+import { probeHarness, type HarnessPin } from '../harness/index.js';
 interface WorkspaceDiffPage {
   revision: number;
   digest: string;
@@ -1522,7 +1528,7 @@ async function main(): Promise<void> {
     const reason = option('--reason');
     if (!reason) throw new Error('Supply --reason');
     const request_id = option('--request-id') ?? randomUUID();
-    const saved = await call<import('../store/execution-authority.js').SessionRevocation | null>(
+    const saved = await call<import('../store/index.js').SessionRevocation | null>(
       socket,
       `/v1/sessions/${id}/revocation`,
     );

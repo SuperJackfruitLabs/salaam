@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AnthropicHarnessGateway } from './model-gateway.js';
 import type { GatewayRequest, GatewayResponse } from './container.js';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 type Json = Record<string, any>;
 function invalid(): never {

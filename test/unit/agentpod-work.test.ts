@@ -8,21 +8,21 @@ import { ManagedWork } from '../../src/execution/managed.js';
 import { AgentPodWorkDecisions } from '../../src/agentpod/work-decisions.js';
 import { AgentPodWork } from '../../src/agentpod/work.js';
 import { Artifacts } from '../../src/store/artifacts.js';
-import { TaskContext } from '../../src/tasks/context.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
 import { TaskWork } from '../../src/tasks/work.js';
 import { TaskDriver } from '../../src/tasks/driver.js';
 import { TaskBudget } from '../../src/tasks/budget.js';
 import { TaskVerification } from '../../src/tasks/verification.js';
-import { Workspaces } from '../../src/workers/workspaces.js';
+import { Workspaces } from '../../src/coding/workspaces.js';
 import { CodingWork } from '../../src/coding/coding.js';
 import { TaskFixtureBackend } from '../fixtures/task-backend.mjs';
 import { canonical, digest, textDigest } from '../../src/core/protocol.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
-import { configurePermissions } from '../../src/runtime/autonomy.js';
+import { configurePermissions } from '../../src/local/autonomy.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { workTraceHeader } from '../../src/execution/trace.js';
-import { planUpdate } from '../../src/acp/outcome.js';
+import { planUpdate } from '../../src/core/outcome.js';
 import { readinessFingerprint } from '../../src/core/readiness-fingerprint.js';
 import { ChildWork } from '../../src/workers/children.js';
 import { StationWork } from '../../src/agentpod/station-work.js';
@@ -5048,7 +5048,7 @@ test('work status lists pending board reads, and only the owner of this run answ
   const f = fixture();
   try {
     f.run();
-    const { BoardReads } = await import('../../src/tasks/board-reads.js');
+    const { BoardReads } = await import('../../src/runtime/board-reads.js');
     const read = new BoardReads(f.store).request(f.session, 'call-br', { action: 'card' });
     const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
       board_reads?: unknown[];
@@ -5083,7 +5083,7 @@ test('work status lists pending board reads, and only the owner of this run answ
 // SALAAM_WRITE_FIXTURES=1.
 test('the board-read fixture is what Salaam emits in work status and accepts in work-read', async () => {
   const { readFileSync, writeFileSync } = await import('node:fs');
-  const { BoardReads, BOARD_READ_MAX_BYTES } = await import('../../src/tasks/board-reads.js');
+  const { BoardReads, BOARD_READ_MAX_BYTES } = await import('../../src/runtime/board-reads.js');
   const f = fixture();
   try {
     f.run();

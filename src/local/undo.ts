@@ -1,9 +1,9 @@
 import { dirname } from 'node:path';
 import { rmSync, openSync, closeSync, fsyncSync, constants } from 'node:fs';
-import { assertPermissionBinding } from '../runtime/autonomy.js';
-import type { Store } from '../store/store.js';
-import { digest, ServiceError, type Controller } from '../core/protocol.js';
-import { applyEditsAsTools, type ToolIdentity } from '../runtime/tool-identity.js';
+import { assertPermissionBinding } from './autonomy.js';
+import type { Store } from '../store/index.js';
+import { digest, ServiceError, type Controller } from '../core/index.js';
+import { applyEditsAsTools, type ToolIdentity } from './tool-identity.js';
 import { applyLocalEdits, localPath, verifyLocalEdits, type LocalEdit } from './edits.js';
 
 export interface UndoReview {

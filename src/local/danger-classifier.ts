@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { commandArgv } from '../runtime/approval-rules.js';
+import { commandArgv } from './approval-rules.js';
 // Operator rulings 2026-10-31: an optional small model reviews commands the rules call ordinary but
 // cannot see into (inline code, repo scripts, unknown programs). It can only make a command ask,
 // never let one run that the rules or the mode would ask for. Off unless configured. Claude Code's

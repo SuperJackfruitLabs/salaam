@@ -1,8 +1,8 @@
 import { constants, openSync, closeSync, fstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
-import { canonical, digest, ServiceError } from '../core/protocol.js';
+import { canonical, digest, ServiceError } from '../core/index.js';
 import { mcpProfile, mcpAssignment, mcpAdmissionView, type McpProfile } from './protocol.js';
-import type { AgentPodBinding, AgentPodPins } from '../agentpod/protocol.js';
+import type { AgentPodBinding, AgentPodPins } from '../core/index.js';
 
 export function readMcpProfile(path: string, pins: AgentPodPins): McpProfile {
   try {

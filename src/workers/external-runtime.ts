@@ -1,9 +1,14 @@
-import type { HarnessCheckpoint } from '../harness/protocol.js';
-import type { ExternalRuntime, WorkerBinding } from '../core/worker-binding.js';
-import type { WorkspaceTree } from '../core/records.js';
-import type { A2ACheckpoint } from '../a2a/protocol.js';
+import type { ExternalRuntime, WorkerBinding, WorkspaceTree } from '../core/index.js';
 
-export type ExternalCheckpoint = HarnessCheckpoint | A2ACheckpoint;
+/** What external work reads from a backend's checkpoint. Each backend's own checkpoint (the
+ * harness's, the A2A peer's) carries these fields; only an A2A peer's has a run. */
+export interface ExternalCheckpoint {
+  dialect: string;
+  worker_id: string;
+  attempt_id: string;
+  run_id?: string;
+  state: string;
+}
 
 export interface ExternalHooks {
   failed(error: Error): void;

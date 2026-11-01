@@ -1,4 +1,4 @@
-import { object, ServiceError } from '../core/protocol.js';
+import { object, ServiceError } from '../core/index.js';
 import { stationHash } from './station-config.js';
 
 /** Consumer of AgentPod's private salaam-station-files-v1 primitive. A process

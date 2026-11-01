@@ -11,7 +11,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { toolkitCatalogReview } from './mcp.js';
 import type { ToolkitWorkConfig } from './work.js';
-import { digest, object, ServiceError } from '../core/protocol.js';
+import { digest, object, ServiceError } from '../core/index.js';
 
 function refused(): never {
   throw new ServiceError(

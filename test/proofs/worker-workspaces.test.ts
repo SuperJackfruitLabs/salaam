@@ -6,7 +6,7 @@ import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
 import { ROOT } from '../../src/core/config.js';
 import { digest } from '../../src/core/protocol.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import type { TeamAssignment } from '../../src/tasks/team-work.js';
 
 async function setup(conflict = false) {

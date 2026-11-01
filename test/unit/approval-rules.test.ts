@@ -12,7 +12,7 @@ import {
   evaluateRules,
   validateRule,
   type StoredRule,
-} from '../../src/runtime/approval-rules.js';
+} from '../../src/local/approval-rules.js';
 
 // Operator plan 2026-10-31, phase 2a: desk sessions get OpenCode-style allow/ask/deny rules. Commands are
 // matched on their parsed words, never on a substring, so `npm test; rm -rf /` can never ride on an

@@ -1,5 +1,5 @@
 import { HarnessRpc, type HarnessLaunch, type RpcObject } from './rpc.js';
-import { digest, ServiceError } from '../core/protocol.js';
+import { digest, ServiceError } from '../core/index.js';
 
 export interface HarnessCheckpoint {
   schema_version: 1;

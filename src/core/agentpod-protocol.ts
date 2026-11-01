@@ -1,4 +1,4 @@
-import { object, string, integer, ServiceError, canonical } from '../core/protocol.js';
+import { object, string, integer, ServiceError, canonical } from './protocol.js';
 
 export const AGENTPOD_LEASE_MS = 90_000;
 export interface AgentPodBinding {

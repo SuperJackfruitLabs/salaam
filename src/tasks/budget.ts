@@ -1,7 +1,7 @@
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
-import type { WorkTask } from '../core/records.js';
-import { ServiceError } from '../core/protocol.js';
+import type { WorkTask } from '../core/index.js';
+import { ServiceError } from '../core/index.js';
 
 export class TaskBudgetError extends ServiceError {
   constructor(

@@ -1,10 +1,15 @@
-import { DEFAULT_COMMAND_NETWORK_SOCKET } from '../local/command-network.js';
-import { loadDangerClassifierOptions } from '../local/danger-classifier.js';
+import {
+  DEFAULT_COMMAND_NETWORK_SOCKET,
+  loadDangerClassifierOptions,
+  chooseLocalSandbox,
+  resolveReadPaths,
+  sandboxLabel,
+  type SandboxKind,
+} from '../local/index.js';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import {
   readFileSync,
-  readdirSync,
   mkdirSync,
   openSync,
   writeFileSync,
@@ -19,28 +24,29 @@ import {
   lstatSync,
 } from 'node:fs';
 import { join, resolve, isAbsolute, sep } from 'node:path';
-import { ROOT, bundleDigest } from '../core/config.js';
-import { canonical, digest, object, string, ServiceError } from '../core/protocol.js';
-import { readAgentPodPins } from '../agentpod/authority.js';
-import { McpAdmission, readMcpProfile } from '../mcp/admission.js';
-import { bindProviderConfiguration } from '../providers/model.js';
-import { resolveProviderAuth } from '../providers/auth.js';
-import { providerRoute } from '../providers/config.js';
-import type { ProviderRoute } from '../core/provider-route.js';
-import { engineRequest } from '../execution/boundary.js';
-import { DockerCodingExecutor } from '../coding/executor.js';
-import { acquireStateLock } from '../core/state-lock.js';
-import { call } from '../core/transport.js';
-import { readStationConfig } from '../agentpod/station-config.js';
-import { readToolkitConfig } from '../toolkit/config.js';
-import { OperatorMcp } from '../mcp/operator-mcp.js';
 import {
-  chooseLocalSandbox,
-  resolveReadPaths,
-  sandboxLabel,
-  type SandboxKind,
-} from '../local/command-sandbox.js';
-import { loadPersona } from '../runtime/persona.js';
+  ROOT,
+  hostDigests,
+  canonical,
+  digest,
+  object,
+  string,
+  ServiceError,
+  acquireStateLock,
+  call,
+} from '../core/index.js';
+import { readAgentPodPins, readStationConfig } from '../agentpod/index.js';
+import { McpAdmission, readMcpProfile, OperatorMcp } from '../mcp/index.js';
+import {
+  bindProviderConfiguration,
+  resolveProviderAuth,
+  providerRoute,
+} from '../providers/index.js';
+import type { ProviderRoute } from '../core/index.js';
+import { engineRequest } from '../execution/index.js';
+import { DockerCodingExecutor } from '../coding/index.js';
+import { readToolkitConfig } from '../toolkit/index.js';
+import { loadPersona } from '../runtime/index.js';
 interface HostIdentity {
   node: string;
   node_version: string;
@@ -504,20 +510,6 @@ function parseHostDangerClassifier(raw: unknown): HostLocalSandbox['danger_class
     config: c.config,
     digest: reviewerDigest(c.config)!,
     ...(typeof c.pin === 'string' ? { pin: c.pin } : {}),
-  };
-}
-export function hostDigests() {
-  const hashDir = (path: string) =>
-    digest(
-      readdirSync(path)
-        .filter((f) => /\.(ts|js)$/.test(f))
-        .sort()
-        .map((file) => ({ file, content: readFileSync(join(path, file), 'utf8') })),
-    );
-  return {
-    source_digest: hashDir(join(ROOT, 'src')),
-    build_digest: hashDir(join(ROOT, 'dist/src')),
-    pi_bundle_digest: bundleDigest(),
   };
 }
 export async function planHost(input: unknown): Promise<HostManifest> {

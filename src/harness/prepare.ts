@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { ROOT } from '../core/config.js';
+import { ROOT } from '../core/index.js';
 import { harnessRuntimeDigest, assertHarnessArtifactRoot } from './backend.js';
 
 /** Explicit operator setup, outside all worker turns. Fixed lock, no lifecycle scripts or inherited credentials. */

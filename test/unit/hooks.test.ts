@@ -9,7 +9,7 @@ import {
   matchesTool,
   parseHooks,
   type HookRunner,
-} from '../../src/runtime/hooks.js';
+} from '../../src/local/hooks.js';
 import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 
 // Phase 4b (operator, 2026-10-31): hooks in the Claude Code format. A repository's hooks never run

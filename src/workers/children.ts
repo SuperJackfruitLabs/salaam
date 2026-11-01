@@ -1,13 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { Artifacts } from '../store/artifacts.js';
-import { digest, ServiceError, type Attempt, type ChildTask } from '../core/protocol.js';
+import type { Store, Artifacts } from '../store/index.js';
+import { digest, ServiceError, type Attempt, type ChildTask } from '../core/index.js';
 import type { RepositorySnapshots } from './repository-snapshots.js';
 import type { WorkerWorkspaces } from './worker-workspaces.js';
-import type { ExternalRuntime, AgentGrant } from '../core/worker-binding.js';
+import type { ExternalRuntime, AgentGrant, WorkspaceTree } from '../core/index.js';
 import type { ExternalWork } from './external-work.js';
-import type { WorkspaceTree } from '../core/records.js';
-import type { CodingWork } from '../coding/coding.js';
+import type { CodingWork } from '../coding/index.js';
 
 /** The supervisor members child dispatch uses. The supervisor implements it. */
 export interface ChildSupervisor {

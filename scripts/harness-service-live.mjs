@@ -9,7 +9,7 @@ import { ROOT } from '../dist/src/core/config.js';
 import { hostDigests } from '../dist/src/host/host.js';
 import { digest } from '../dist/src/core/protocol.js';
 import { call } from '../dist/src/core/transport.js';
-import { readTree } from '../dist/src/workers/workspaces.js';
+import { readTree } from '../dist/src/coding/workspaces.js';
 import { LiveAcceptanceBudget } from './live-acceptance-budget.mjs';
 if (!process.argv.includes('--run'))
   throw Error('Use --run for the authorized live daemon acceptance');

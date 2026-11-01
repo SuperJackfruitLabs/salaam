@@ -1,7 +1,7 @@
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { ToolkitCall } from './calls.js';
 import { toolkitRequest } from './protocol.js';
-import { canonical, digest, object, ServiceError, textDigest } from '../core/protocol.js';
+import { canonical, digest, object, ServiceError, textDigest } from '../core/index.js';
 
 const hash = /^[a-f0-9]{64}$/;
 const name = /^[A-Za-z0-9_.:-]{1,128}$/;

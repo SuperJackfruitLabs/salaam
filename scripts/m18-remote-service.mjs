@@ -95,7 +95,7 @@ HarnessProtocol.prototype.permission = async function (method, params) {
   return originalPermission.call(this, method, params);
 };
 const credentials = new ProviderCredentialStore();
-const { readTree } = await import(pathToFileURL(join(pkg, 'dist/src/workers/workspaces.js')));
+const { readTree } = await import(pathToFileURL(join(pkg, 'dist/src/coding/workspaces.js')));
 await credentials.modify('anthropic', async () => ({ type: 'api_key', key: config.proxy_token }));
 const input = createInterface({ input: process.stdin });
 async function close() {

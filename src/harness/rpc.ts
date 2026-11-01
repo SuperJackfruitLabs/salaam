@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { TextDecoder } from 'node:util';
-import { ServiceError } from '../core/protocol.js';
+import { ServiceError } from '../core/index.js';
 
 export type RpcObject = Record<string, unknown>;
 export interface HarnessLaunch {

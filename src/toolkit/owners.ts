@@ -1,10 +1,10 @@
 import type { IncomingMessage } from 'node:http';
 import { createHash } from 'node:crypto';
-import type { Store } from '../store/store.js';
+import type { Store } from '../store/index.js';
 import type { ToolkitResources } from './resources.js';
 import type { ToolkitCalls } from './calls.js';
 import { ToolkitCleanupAdmission, type ToolkitAdmission } from './admission.js';
-import { canonical, digest, object, ServiceError } from '../core/protocol.js';
+import { canonical, digest, object, ServiceError } from '../core/index.js';
 import { toolkitRequest, toolkitControl } from './protocol.js';
 
 function denied(): never {

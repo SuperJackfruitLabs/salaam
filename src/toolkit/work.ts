@@ -1,15 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../store/store.js';
-import type { ManagedWork } from '../execution/managed.js';
-import type { AgentPodAuthority } from '../agentpod/authority.js';
+import type { Store } from '../store/index.js';
+import type { ManagedWork } from '../execution/index.js';
 import type { ToolkitResources } from './resources.js';
 import type { ToolkitOwners } from './owners.js';
 import { ToolkitAdmission } from './admission.js';
 import { ToolkitCalls, cancelToolkitCalls, type ToolkitCall } from './calls.js';
 import { ToolkitMcp, type ToolkitCatalogReview } from './mcp.js';
-import { toolkitRequest } from './protocol.js';
-import { AGENTPOD_LEASE_MS } from '../agentpod/protocol.js';
-import { canonical, digest, object, string, ServiceError } from '../core/protocol.js';
+import { toolkitRequest, type ToolkitAuthority } from './protocol.js';
+import {
+  AGENTPOD_LEASE_MS,
+  canonical,
+  digest,
+  object,
+  string,
+  ServiceError,
+} from '../core/index.js';
 
 export interface ToolkitWorkConfig {
   profile_path: string;
@@ -62,7 +67,7 @@ export class ToolkitWork {
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
-    readonly authority: AgentPodAuthority,
+    readonly authority: ToolkitAuthority,
     readonly resources: ToolkitResources,
     readonly owners: ToolkitOwners,
     config: ToolkitWorkConfig,

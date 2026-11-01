@@ -5,7 +5,7 @@ import { SalaamService } from '../../src/service/service.js';
 import { call } from '../../src/core/transport.js';
 import { digest, type Session } from '../../src/core/protocol.js';
 import { ROOT } from '../../src/core/config.js';
-import { readTree } from '../../src/workers/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import { PtyClient } from '../terminal-helpers.js';
 import { client } from '../acp-helpers.js';
 import { ready, until } from '../helpers.js';

@@ -22,7 +22,7 @@ import {
   probeToolsUser,
   serviceToolIdentity,
   type ToolIdentity,
-} from '../../src/runtime/tool-identity.js';
+} from '../../src/local/tool-identity.js';
 import { fixture, fake, until } from '../helpers.js';
 import { call } from '../../src/core/transport.js';
 
