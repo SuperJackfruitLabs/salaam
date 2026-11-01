@@ -268,6 +268,9 @@ export function seatbeltProfile(
     brokerPort?: number;
     readPaths?: readonly string[];
     developerDir?: string;
+    /** A command the person approved to listen (operator ruling 2026-11-01, option C). Seatbelt
+     * cannot limit this to loopback: "localhost" in its filters matches every local address. */
+    listen?: boolean;
   },
 ): string {
   const w = sbplPath(root, 'workspace path'),
@@ -311,6 +314,12 @@ export function seatbeltProfile(
       : `(allow file-write* (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`,
     `(allow file-ioctl ${devices} (regex #"^/dev/fd/"))`,
     ...(options.network ? ['(allow network*)'] : []),
+    ...(options.listen && level === 'workspace-write' && !options.network
+      ? [
+          '(allow network-bind (local ip "localhost:*"))',
+          '(allow network-inbound (local ip "localhost:*"))',
+        ]
+      : []),
     ...(options.brokerPort !== undefined && !options.network
       ? [`(allow network-outbound (remote tcp "localhost:${brokerPort(options.brokerPort)}"))`]
       : []),
@@ -323,7 +332,12 @@ export function seatbeltArgv(
   tmp: string,
   argv: string[],
   seatbelt: Seatbelt | null,
-  options: { network: boolean; brokerPort?: number; readPaths?: readonly string[] },
+  options: {
+    network: boolean;
+    brokerPort?: number;
+    readPaths?: readonly string[];
+    listen?: boolean;
+  },
 ): string[] {
   if (level === 'full-access') return argv;
   if (!seatbelt)

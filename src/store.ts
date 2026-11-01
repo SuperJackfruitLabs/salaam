@@ -664,6 +664,13 @@ export class Store {
   lastActivityAny(): number {
     return Math.max(this.openedAt, ...this.activity.values());
   }
+  /** The newest prompt submitted to a session, for the session picker. */
+  lastPrompt(id: string): string | null {
+    const row = this.db
+      .prepare('SELECT text FROM submissions WHERE session_id=? ORDER BY rowid DESC LIMIT 1')
+      .get(id) as { text: string } | undefined;
+    return row?.text ?? null;
+  }
   sessions(): Session[] {
     return (
       this.db.prepare('SELECT id FROM sessions ORDER BY rowid').all() as { id: string }[]

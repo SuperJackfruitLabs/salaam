@@ -130,6 +130,8 @@ export const LOCAL_TOOL_ERRORS = [
   'command_conflict',
   'command_limit',
   'invalid_cursor',
+  'shell_binding',
+  'listen_unreachable',
 ];
 export function processIdentity(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;
@@ -227,6 +229,8 @@ export class Supervisor extends EventEmitter {
   localCoding?: import('./local-coding.js').LocalCoding;
   /** Built-in web search and fetch for interactive coding (operator ruling 2026-10-31). */
   web?: import('./web-search.js').WebSearch;
+  /** Desk-session hooks (Phase 4b); absent means none run. */
+  hooks?: import('./hooks.js').Hooks;
   tasks!: TaskContext;
   private compactionJobs = new Set<Promise<void>>();
   private readonly fetchBreaker = new HostBreaker();
@@ -608,6 +612,21 @@ export class Supervisor extends EventEmitter {
       });
       worker.pi.on('activity', (observation: import('./pi.js').ToolObservation) => {
         if (!worker.attempt || worker.stopping) return;
+        // PostToolUse runs after the tool and cannot change it; it is recorded like any hook.
+        if (observation.phase === 'finished' && this.hooks) {
+          const input = parsedInput(observation.input);
+          void this.hook(
+            id,
+            'PostToolUse',
+            {
+              tool_name: observation.tool,
+              tool_input: input,
+              tool_use_id: observation.tool_call_id,
+              tool_response: { output: observation.output ?? '', failed: !!observation.failed },
+            },
+            [observation.tool, ...hookAliases(observation.tool, input)],
+          ).catch(() => {});
+        }
         try {
           this.store.request(
             `tool-activity:${id}:${epoch}:${worker.attempt}`,
@@ -804,6 +823,32 @@ export class Supervisor extends EventEmitter {
    * whose strict semantics stay as they are. */
   isInteractiveCoding(id: string): boolean {
     return this.interactiveCoding(id);
+  }
+  /** Run this desk session's hooks for `event`; other sessions (board, station, children) run none. */
+  private async hook(
+    id: string,
+    event: import('./hooks.js').HookEvent,
+    payload: Record<string, unknown>,
+    names: readonly string[] = [],
+  ): Promise<import('./hooks.js').HookOutcome | null> {
+    if (!this.hooks || !this.interactiveCoding(id)) return null;
+    return this.hooks.fire(id, event, payload, names);
+  }
+  /** A PreToolUse hook that blocks turns the tool call into an error the model reads. */
+  private async preToolUse(
+    id: string,
+    tool: string,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<void> {
+    const out = await this.hook(
+      id,
+      'PreToolUse',
+      { tool_name: tool, tool_input: input, tool_use_id: toolCallId },
+      [tool, ...hookAliases(tool, input)],
+    );
+    if (out?.blocked)
+      throw new ServiceError('hook_blocked', `Blocked by a PreToolUse hook: ${out.blocked}`);
   }
   private interactiveCoding(id: string): boolean {
     return (
@@ -1191,6 +1236,12 @@ export class Supervisor extends EventEmitter {
         this.assertActive(id, w.epoch, w.attempt);
         const args = object(body.args);
         const toolCallId = string(body.tool_call_id, 'tool_call_id', 512);
+        await this.preToolUse(
+          id,
+          method === 'web.search' ? 'salaam_web_search' : 'salaam_web_fetch',
+          args,
+          toolCallId,
+        );
         if (method === 'web.search') {
           const out = await this.web.search({
             query: string(args.query, 'query', 300),
@@ -1265,14 +1316,26 @@ export class Supervisor extends EventEmitter {
         )
           throw new ServiceError('local_denied', 'Local coding is not admitted', 403);
         this.assertActive(id, w.epoch, w.attempt);
-        if (method === 'local.prepare')
-          return this.localCoding.prepare(
+        if (method === 'local.prepare') {
+          const toolCall = string(body.tool_call_id, 'tool_call_id', 512);
+          const args = object(body.args);
+          // A retried prepare returns the recorded call; its hooks already ran.
+          const fresh = !this.localCoding.hasCall(id, w.epoch, toolCall);
+          if (fresh) await this.preToolUse(id, 'salaam_local', args, toolCall);
+          const prepared = await this.localCoding.prepareReviewed(
             id,
             w.epoch,
             w.attempt,
-            string(body.tool_call_id, 'tool_call_id', 512),
-            object(body.args),
+            toolCall,
+            args,
           );
+          if (fresh && prepared.approval?.state === 'pending')
+            void this.hook(id, 'Notification', {
+              notification_type: 'permission_prompt',
+              message: `Salaam needs your approval for a ${String(args.action ?? 'local')} request`,
+            }).catch(() => {});
+          return prepared;
+        }
         const c = this.localCoding.get(string(body.call_id, 'call_id'));
         if (c.session_id !== id || c.epoch !== w.epoch || c.attempt_id !== w.attempt)
           throw new ServiceError('local_scope', 'Operation belongs to another invocation', 403);
@@ -1286,6 +1349,12 @@ export class Supervisor extends EventEmitter {
         this.assertActive(id, w.epoch, w.attempt);
         this.store.taskGrantCheck?.(id);
         const args = object(body.args);
+        await this.preToolUse(
+          id,
+          'salaam_workspace',
+          args,
+          string(body.tool_call_id, 'tool_call_id', 512),
+        );
         const result = readLocalWorkspace(this.store.session(id).cwd, args);
         this.store.transaction(() =>
           this.store.event(id, 'workspace.read', {
@@ -1572,6 +1641,9 @@ export class Supervisor extends EventEmitter {
         ].includes(error.code)
       )
         throw error;
+      // A hook that blocked a tool call is the person's policy speaking, not a broken control: the
+      // model reads the reason as the tool's result (Phase 4b).
+      if (error instanceof ServiceError && error.code === 'hook_blocked') throw error;
       if (
         (method.startsWith('coding.') || method.startsWith('local.')) &&
         error instanceof ServiceError &&
@@ -1937,9 +2009,22 @@ export class Supervisor extends EventEmitter {
       }
       // The folder as it was before this turn, so /rewind can return to it.
       if (this.interactiveCoding(id)) this.tasks.checkpoints?.capture(id, work.attempt.id);
+      // UserPromptSubmit hooks may stop the prompt or add context to it (Phase 4b).
+      let message = work.submission.text;
+      const gate = await this.hook(id, 'UserPromptSubmit', { prompt: message });
+      if (gate?.blocked) {
+        this.store.finish(
+          work.attempt.id,
+          'failed',
+          null,
+          'Blocked by a UserPromptSubmit hook: ' + gate.blocked,
+        );
+        return true;
+      }
+      if (gate?.context) message += '\n\n<hook-context>\n' + gate.context + '\n</hook-context>';
       const images = takeImages(this.store.db, work.submission.id);
       const response = await w.pi.command('prompt', {
-        message: work.submission.text,
+        message,
         ...(images.length ? { images } : {}),
       });
       const disposition = object(response.data ?? {}).disposition;
@@ -1958,6 +2043,7 @@ export class Supervisor extends EventEmitter {
         { epoch: w.epoch, ...entries },
         outcome,
       );
+      void this.hook(id, 'Stop', { outcome: outcome ? 'failed' : 'completed' }).catch(() => {});
     } catch (error) {
       const message = redactFailureText((error as Error).message, w.secrets);
       if (!w.stopping && !this.store.cancelled(work.attempt.id))
@@ -2043,4 +2129,22 @@ export function toolFailureMessage(toolName: unknown): string {
   return typeof toolName === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(toolName)
     ? `Tool execution failed (tool ${toolName})`
     : 'Tool execution failed';
+}
+
+/** Claude Code names for Salaam's tools, so a `Bash` or `Edit|Write` matcher works unchanged. */
+export function hookAliases(tool: string, input: Record<string, unknown>): string[] {
+  if (tool === 'salaam_local')
+    return input.action === 'command' ? ['Bash'] : input.action === 'edit' ? ['Edit', 'Write'] : [];
+  if (tool === 'salaam_web_search') return ['WebSearch'];
+  if (tool === 'salaam_web_fetch') return ['WebFetch'];
+  if (tool === 'salaam_workspace') return ['Read'];
+  return [];
+}
+function parsedInput(input: string | undefined): Record<string, unknown> {
+  try {
+    const value = JSON.parse(input ?? '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
 }

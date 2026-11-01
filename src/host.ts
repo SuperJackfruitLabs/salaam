@@ -1,4 +1,5 @@
 import { DEFAULT_COMMAND_NETWORK_SOCKET } from './command-network.js';
+import { loadDangerClassifierOptions } from './danger-classifier.js';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -116,6 +117,10 @@ export interface HostLocalSandbox {
   /** Operator ruling 2026-10-31: whether a desk session on this host may choose YOLO (no sandbox, no
    * approvals). Hosts allow it only when the operator sets `allow_yolo_sessions: true`. */
   yolo_sessions?: 'allow';
+  /** Operator 2026-10-31: the command reviewer on this host. Forbidden unless the operator names a
+   * reviewed config (its digest pinned here), optionally pinning one of its options. */
+  danger_classifier?:
+    { mode: 'forbid' } | { mode: 'config'; config: string; digest: string; pin?: string };
 }
 export function hostLocalSandbox(
   platform: NodeJS.Platform = process.platform,
@@ -126,6 +131,7 @@ export function hostLocalSandbox(
   readPaths: readonly string[] = [],
   allowFullAccessSessions = false,
   allowYoloSessions = false,
+  dangerClassifier?: HostLocalSandbox['danger_classifier'],
 ): HostLocalSandbox {
   const { kind } = chooseLocalSandbox('workspace-write', platform, find, findSb);
   return {
@@ -144,6 +150,7 @@ export function hostLocalSandbox(
     ...(readPaths.length ? { read_paths: [...readPaths] } : {}),
     ...(allowFullAccessSessions ? { full_access_sessions: 'allow' as const } : {}),
     ...(allowYoloSessions ? { yolo_sessions: 'allow' as const } : {}),
+    ...(dangerClassifier ? { danger_classifier: dangerClassifier } : {}),
   };
 }
 /** The read-only paths outside the workspace the reviewed manifest lets local commands read. */
@@ -160,6 +167,13 @@ export function hostAllowsFullAccessSessions(m: HostManifest): boolean {
 /** Whether the reviewed manifest lets a desk session choose YOLO. */
 export function hostAllowsYoloSessions(m: HostManifest): boolean {
   return (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.yolo_sessions === 'allow';
+}
+/** The command reviewer a host service may run: a reviewed config and optional pin, or none
+ * ({ pin: 'off' }). Absent means forbidden: hosts get no reviewer without the operator. */
+export function hostDangerClassifier(m: HostManifest): { config?: string; pin?: string } {
+  const d = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier;
+  if (!d || d.mode !== 'config') return { pin: 'off' };
+  return { config: d.config, ...(d.pin ? { pin: d.pin } : {}) };
 }
 /** The broker socket local commands reach the network through, or null for no network. */
 export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
@@ -283,6 +297,7 @@ async function planAgentPod(
     'local_sandbox_read_paths',
     'allow_full_access_sessions',
     'allow_yolo_sessions',
+    'danger_classifier',
   ];
   if (Object.keys(c).some((k) => !fields.includes(k)))
     throw Error('Unexpected AgentPod host config field');
@@ -339,6 +354,7 @@ async function planAgentPod(
     if (typeof sock !== 'string' || !isAbsolute(sock) || sock.includes('\0'))
       throw Error('command_network_socket must be an absolute path');
   }
+  const dangerClassifier = parseHostDangerClassifier(c.danger_classifier);
   let readPaths: string[] = [];
   if (c.local_sandbox_read_paths !== undefined) {
     const raw = c.local_sandbox_read_paths;
@@ -448,7 +464,45 @@ async function planAgentPod(
       readPaths,
       allowFullAccessSessions,
       allowYoloSessions,
+      dangerClassifier,
     ),
+  };
+}
+function reviewerDigest(path: string): string | null {
+  try {
+    return digest(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function parseHostDangerClassifier(raw: unknown): HostLocalSandbox['danger_classifier'] {
+  if (raw === undefined) return undefined;
+  if (raw === 'forbid') return { mode: 'forbid' };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    throw Error('danger_classifier is "forbid" or { config, pin? }');
+  const c = raw as Record<string, unknown>;
+  if (Object.keys(c).some((k) => k !== 'config' && k !== 'pin'))
+    throw Error('danger_classifier takes only config and pin');
+  if (typeof c.config !== 'string' || !isAbsolute(c.config) || c.config.includes('\0'))
+    throw Error('danger_classifier.config must be an absolute path');
+  let names: string[];
+  try {
+    // Keys are named by environment variable and checked when the service starts, not here.
+    const anyKey = new Proxy({}, { get: () => 'checked-at-start' }) as Record<string, string>;
+    names = loadDangerClassifierOptions(
+      JSON.parse(readFileSync(c.config, 'utf8')),
+      anyKey,
+    ).options.map((o) => o.name);
+  } catch (error) {
+    throw Error('danger_classifier.config: ' + (error as Error).message);
+  }
+  if (c.pin !== undefined && (typeof c.pin !== 'string' || !names.includes(c.pin)))
+    throw Error("danger_classifier.pin must name one of the config's options");
+  return {
+    mode: 'config',
+    config: c.config,
+    digest: reviewerDigest(c.config)!,
+    ...(typeof c.pin === 'string' ? { pin: c.pin } : {}),
   };
 }
 export function hostDigests() {
@@ -613,10 +667,17 @@ export function readHost(path: string): HostManifest {
             hostCommandNetwork(m)?.socket,
             hostReadPaths(m),
             hostAllowsFullAccessSessions(m),
+            hostAllowsYoloSessions(m),
+            (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier,
           ),
         )
     )
       throw Error('Host command sandbox changed; run host plan again');
+    {
+      const d = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier;
+      if (d?.mode === 'config' && reviewerDigest(d.config) !== d.digest)
+        throw Error('Host command reviewer config changed; run host plan again');
+    }
     const pins = readAgentPodPins(m.agentpod_config, m.state);
     const managed = hostMcp(m);
     if (m.schema === 3 || ([4, 5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {

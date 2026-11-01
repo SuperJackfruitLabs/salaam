@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { DangerClassifier, loadDangerClassifierOptions } from './danger-classifier.js';
 import { WebSearch, loadWebSearchConfig } from './web-search.js';
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from 'node:http';
 import { loadPersona } from './persona.js';
@@ -30,6 +32,7 @@ import { OperatorInbox } from './operator-inbox.js';
 import { RecurringWork } from './recurring-work.js';
 import { JobWork } from './job-work.js';
 import { Store } from './store.js';
+import { pickerSummary } from './session-pick.js';
 import { acquireStateLock } from './state-lock.js';
 import { Artifacts } from './artifacts.js';
 import { Supervisor, type SupervisorOptions } from './supervisor.js';
@@ -69,6 +72,7 @@ import { expandPrompt, storeImages, type PromptImage } from './mentions.js';
 import { ApprovalRules } from './approval-rules.js';
 import { chooseLocalSandbox, type SandboxLevel, resolveReadPaths } from './command-sandbox.js';
 import { LocalCoding, type LocalSandbox } from './local-coding.js';
+import { Hooks } from './hooks.js';
 import { localDiff } from './local-diff.js';
 import { reviewUndo, applyUndo, reconcileUndo } from './local-undo.js';
 import { forkPiSession } from './pi-sessions.js';
@@ -128,8 +132,15 @@ export interface ServiceOptions extends Omit<SupervisorOptions, 'stateDir' | 'br
   /** Web search config file: optional providers (searxng, brave, tavily, exa) and their key
    * references. Keyless official APIs answer without one (operator ruling 2026-10-31). */
   webSearchConfig?: string;
+  /** Phase 4c: the optional small-model command reviewer (a JSON file); absent means off. */
+  dangerClassifierConfig?: string;
+  /** A host's reviewed pin: one option's name (sessions cannot switch or turn it off), or "off"
+   * (the reviewer is forbidden). Absent: sessions choose from the config's options. */
+  dangerClassifierPin?: string;
   /** The user's approval rules file (default ~/.config/salaam/permissions.json). */
   permissionsFile?: string;
+  /** Your hooks file (Phase 4b); defaults to ~/.config/salaam/hooks.json or $SALAAM_HOOKS_FILE. */
+  hooksFile?: string;
   /** Host config `command_network: "broker"`: sandboxed local commands reach the network only
    * through this stk local-commands socket (operator rulings 2026-10-30). */
   commandNetwork?: { socket: string };
@@ -202,6 +213,18 @@ export class SalaamService {
   /** Phase 2b: whether interactive sessions here may choose full access (no OS sandbox). */
   private readonly allowFullAccessSessions: boolean;
   private readonly allowYoloSessions: boolean;
+  private readonly reviewers = new Map<string, DangerClassifier>();
+  private reviewerDefault = 'off';
+  private reviewerPin?: string;
+  /** The reviewer a session uses: the host's pin, else its own choice, else the config default. */
+  private reviewerChoice(session: string): string {
+    if (this.reviewerPin) return this.reviewerPin;
+    const row = this.store.db
+      .prepare('SELECT choice FROM danger_classifier_choice WHERE session_id=?')
+      .get(session) as { choice: string } | undefined;
+    const choice = row?.choice ?? this.reviewerDefault;
+    return choice === 'off' || this.reviewers.has(choice) ? choice : 'off';
+  }
   private constructor(options: ServiceOptions) {
     this.allowFullAccessSessions = options.allowFullAccessSessions !== false;
     this.allowYoloSessions = options.allowYoloSessions !== false;
@@ -430,6 +453,40 @@ export class SalaamService {
         this.localCoding.rules = new ApprovalRules(this.store, options.permissionsFile);
         this.localCoding.interactive = (id) => this.supervisor.isInteractiveCoding(id);
         this.supervisor.localCoding = this.localCoding;
+        if (options.dangerClassifierConfig) {
+          const loaded = loadDangerClassifierOptions(
+            JSON.parse(readFileSync(options.dangerClassifierConfig, 'utf8')),
+          );
+          for (const o of loaded.options) this.reviewers.set(o.name, new DangerClassifier(o));
+          this.reviewerDefault = loaded.default;
+        }
+        if (options.dangerClassifierPin !== undefined) {
+          if (
+            options.dangerClassifierPin !== 'off' &&
+            !this.reviewers.has(options.dangerClassifierPin)
+          )
+            throw Error(
+              `The pinned command reviewer ${options.dangerClassifierPin} is not configured`,
+            );
+          this.reviewerPin = options.dangerClassifierPin;
+        }
+        if (this.reviewers.size) {
+          this.store.db.exec(
+            'CREATE TABLE IF NOT EXISTS danger_classifier_choice(session_id TEXT PRIMARY KEY, choice TEXT NOT NULL)',
+          );
+          this.localCoding.classifier = {
+            review: (s, command, cwd) => {
+              const reviewer = this.reviewers.get(this.reviewerChoice(s));
+              return reviewer ? reviewer.review(s, command, cwd) : Promise.resolve(null);
+            },
+          };
+        }
+        const local = this.localCoding;
+        this.supervisor.hooks = new Hooks(
+          this.store,
+          (session, command, input, timeout) => local.runHook(session, command, input, timeout),
+          options.hooksFile,
+        );
         const webConfig = options.webSearchConfig
           ? loadWebSearchConfig(options.webSearchConfig)
           : { providers: [] };
@@ -2028,7 +2085,10 @@ export class SalaamService {
         this.send(
           res,
           200,
-          this.store.sessions().map((x) => this.supervisor.inspect(x.id)),
+          this.store.sessions().map((x) => {
+            const session = this.supervisor.inspect(x.id);
+            return { ...session, ...pickerSummary(session, this.store) };
+          }),
         );
         return;
       }
@@ -2252,6 +2312,100 @@ export class SalaamService {
               ),
             );
             return;
+          }
+        }
+        if (parts.length === 4 && parts[3] === 'danger-classifier') {
+          const view = () => {
+            const choice = this.reviewers.size ? this.reviewerChoice(id) : 'off',
+              chosen = this.reviewers.get(choice)?.config;
+            return {
+              configured: this.reviewers.size > 0,
+              enabled: !!chosen,
+              ...(chosen
+                ? {
+                    provider: chosen.provider,
+                    model: chosen.model,
+                    on_unavailable: chosen.on_unavailable,
+                  }
+                : {}),
+              choice,
+              pinned: this.reviewerPin !== undefined,
+              options: [...this.reviewers.values()].map(({ config: o }) => ({
+                name: o.name,
+                provider: o.provider,
+                model: o.model,
+              })),
+            };
+          };
+          if (req.method === 'GET') {
+            this.send(res, 200, view());
+            return;
+          }
+          if (req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.store.authorizeControl(id, {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            });
+            // `enabled` is the earlier on/off form: on means the config's default.
+            const choice =
+              typeof body.enabled === 'boolean'
+                ? body.enabled
+                  ? this.reviewerDefault === 'off'
+                    ? [...this.reviewers.keys()][0]
+                    : this.reviewerDefault
+                  : 'off'
+                : string(body.choice, 'choice', 64);
+            if (!this.reviewers.size && choice !== 'off')
+              throw new ServiceError(
+                'classifier_unavailable',
+                'No command reviewer is configured on this host (--danger-classifier-config)',
+              );
+            if (this.reviewerPin !== undefined)
+              throw new ServiceError(
+                'classifier_pinned',
+                `This host pinned the command reviewer (${this.reviewerPin}); sessions cannot change it`,
+                403,
+              );
+            if (choice !== 'off' && !this.reviewers.has(choice ?? ''))
+              throw new ServiceError('invalid_field', `Unknown reviewer ${choice}`);
+            if (this.reviewers.size)
+              this.store.transaction(() => {
+                this.store.db
+                  .prepare(
+                    'INSERT INTO danger_classifier_choice(session_id,choice) VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET choice=excluded.choice',
+                  )
+                  .run(id, choice!);
+                this.store.event(id, 'permission.classifier-set', { choice });
+              });
+            this.send(res, 200, view());
+            return;
+          }
+        }
+        // Desk-session hooks (Phase 4b): list, trust the reviewed repository file, or revoke it.
+        if (parts[3] === 'hooks' && this.supervisor.hooks) {
+          if (!this.supervisor.isInteractiveCoding(id))
+            throw new ServiceError('hooks_denied', 'Hooks run only in your own desk sessions', 403);
+          const hooks = this.supervisor.hooks;
+          if (parts.length === 4 && req.method === 'GET') {
+            this.send(res, 200, { sources: hooks.sources(id) });
+            return;
+          }
+          if (parts.length === 5 && req.method === 'POST') {
+            const body = object(await readJson(req));
+            this.store.authorizeControl(id, {
+              client_id: string(body.client_id, 'client_id', 128),
+              token: string(body.token, 'token', 128),
+            });
+            if (parts[4] === 'trust') {
+              this.send(res, 200, hooks.trust(id, string(body.digest, 'digest', 128)));
+              return;
+            }
+            if (parts[4] === 'revoke') {
+              hooks.revoke(id);
+              this.send(res, 200, { revoked: true });
+              return;
+            }
           }
         }
         if (parts[3] === 'local-tasks' && this.localCoding) {

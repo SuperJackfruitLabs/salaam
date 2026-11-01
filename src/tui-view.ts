@@ -1,12 +1,14 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
 import { SalaamTheme, safeText, shortId, humanTool } from './tui-theme.js';
-import { instructionsLabel, type OperatorClient } from './tui-client.js';
+import { typedText } from './shell-passthrough.js';
+import { instructionsLabel, sessionFailure, type OperatorClient } from './tui-client.js';
 import type { WorkspaceChange } from './workspace-diff.js';
 import { workspaceDiff } from './workspace-diff.js';
 import { commandTerminal } from './coding.js';
 import { interactiveCoding, runningAttempt } from './tui-turn-keys.js';
 import { backgroundNote, changeCounts } from './tui-review.js';
+import { activityVerb, progressLine, toolLine, type ToolLine } from './tui-activity.js';
 
 export type ViewTab = 'conversation' | 'changes' | 'commands' | 'context';
 export interface DiffPage {
@@ -30,6 +32,42 @@ export interface ViewModel {
   review?: import('./tui-review.js').ReviewView;
   /** Phase 2b: the session's mode, its access (full access or YOLO) and where commands run. */
   mode?: { mode: string; access?: 'full' | 'yolo'; sandbox?: string };
+  /** Trial polish #9: every tool call with its full recorded output, not the compact lines. */
+  transcript?: boolean;
+  /** When the running turn was first seen, for the progress line's elapsed seconds. */
+  turn?: { attempt: string; since: number };
+}
+/** The session's tool calls, oldest first, each as one compact line. */
+export function toolLines(
+  view: ViewModel,
+): (ToolLine & { parent?: string; key: string; output?: string })[] {
+  const calls = new Map<
+    string,
+    {
+      tool: string;
+      input?: string;
+      finished?: { failed?: boolean; output?: string };
+      parent?: string;
+    }
+  >();
+  for (const event of view.client.activity) {
+    const p = event.payload;
+    const key = p.attempt_id + ':' + p.tool_call_id;
+    const before = calls.get(key);
+    calls.set(key, {
+      tool: p.tool,
+      input: event.kind === 'tool.started' ? p.input : before?.input,
+      finished:
+        event.kind === 'tool.finished' ? { failed: p.failed, output: p.output } : before?.finished,
+      parent: p.parent_tool_call_id ? p.attempt_id + ':' + p.parent_tool_call_id : before?.parent,
+    });
+  }
+  return [...calls.entries()].map(([key, c]) => ({
+    key,
+    parent: c.parent,
+    output: c.finished?.output,
+    ...toolLine(c.tool, c.input, c.finished),
+  }));
 }
 /** How the status line names a mode. */
 export function modeLabel(mode: string): string {
@@ -123,19 +161,46 @@ export function status(view: ViewModel, width: number): string[] {
   const active = c.snapshot?.attempts.find((a) =>
     ['accepted', 'dispatching', 'running'].includes(a.state),
   );
-  const state = view.busy
-    ? 'Working…'
-    : pending
-      ? `${pending} approval${pending === 1 ? '' : 's'} waiting · ctrl+o to review`
-      : c.notice ||
-        (!c.snapshot
-          ? 'ctrl+n to start · ctrl+p to return to a session'
-          : active
-            ? `Agent ${active.state} · detach anytime`
-            : c.controlling
-              ? 'Ready when you are.'
-              : 'Observing · ctrl+k → Take control');
-  const tone = pending ? 'amber' : c.connection === 'reconnecting' ? 'amber' : 'muted';
+  // The turn is timed from when this terminal first saw it running (attempts carry no start time).
+  if (active && view.turn?.attempt !== active.id)
+    view.turn = { attempt: active.id, since: Date.now() };
+  if (!active) view.turn = undefined;
+  const turn = active ? view.turn : undefined;
+  const running = toolLines(view)
+    .filter((l) => l.state === 'running')
+    .at(-1);
+  const state =
+    turn && !pending
+      ? progressLine(
+          activityVerb(running),
+          turn.since,
+          Date.now(),
+          c.usage?.observations
+            ? compactTokens(c.usage.known_input + c.usage.known_output)
+            : undefined,
+        )
+      : view.busy
+        ? 'Working…'
+        : pending
+          ? `${pending} approval${pending === 1 ? '' : 's'} waiting · ctrl+o to review`
+          : sessionFailure(c.snapshot) ||
+            c.notice ||
+            (!c.snapshot
+              ? 'ctrl+n to start · ctrl+p to return to a session'
+              : active
+                ? `Agent ${active.state} · detach anytime`
+                : c.controlling
+                  ? 'Ready when you are.'
+                  : 'Observing · ctrl+k → Take control');
+  const tone = pending
+    ? 'amber'
+    : sessionFailure(c.snapshot) && !view.busy
+      ? 'red'
+      : turn
+        ? 'jade'
+        : c.connection === 'reconnecting'
+          ? 'amber'
+          : 'muted';
   const guidance = c.snapshot?.project_instructions?.files.length
     ? '  Using ' + instructionsLabel(c.snapshot.project_instructions)
     : '';
@@ -170,18 +235,18 @@ export function status(view: ViewModel, width: number): string[] {
     t.line(
       (c.snapshot && interactiveCoding(c.snapshot) && runningAttempt(c.snapshot)
         ? [
-            t.key('esc', 'stop'),
+            t.key('esc', 'interrupt'),
             t.key('enter', 'steer'),
             t.key('tab', 'queue'),
             t.key('alt+enter', 'newline'),
-            t.key('ctrl+c', 'detach'),
+            t.key('ctrl+c ×2', 'leave'),
           ]
         : [
             t.key('enter', 'send'),
             t.key('alt+enter', 'newline'),
             t.key('ctrl+k', 'actions'),
             t.key('ctrl+p', 'sessions'),
-            t.key('ctrl+c', 'detach'),
+            t.key('ctrl+c ×2', 'leave'),
           ]
       ).join('   '),
       width,
@@ -319,7 +384,7 @@ export class DocumentView implements Component {
       ),
       t.fill('', width),
       t.line(t.key('ctrl+n', 'new session') + '     ' + t.key('ctrl+p', 'recent sessions'), width),
-      t.line(t.key('ctrl+k', 'all actions') + '      ' + t.key('ctrl+g', 'review changes'), width),
+      t.line(t.key('ctrl+k', 'all actions') + '      ' + t.key('alt+g', 'review changes'), width),
       ...(c.snapshot
         ? [
             t.fill('', width),
@@ -385,9 +450,11 @@ export class DocumentView implements Component {
           ),
         );
         lines.push(
-          ...this.prose(message.entry_id, message.text, width - 4).map((line) =>
-            t.line(line, width),
-          ),
+          ...this.prose(
+            message.entry_id,
+            message.role === 'user' ? typedText(message.text) : message.text,
+            width - 4,
+          ).map((line) => t.line(line, width)),
           ...(message.truncated
             ? this.text(
                 'Message preview truncated. Read its full history entry to inspect all content.',
@@ -406,52 +473,48 @@ export class DocumentView implements Component {
             width,
             'muted',
           ),
-          ...this.text(submission.text, width),
+          ...this.text(typedText(submission.text), width),
           t.fill('', width),
         );
       }
-      const tools = new Map<
-        string,
-        { label: string; state: string; failed: boolean; parent?: string }
-      >();
-      for (const event of c.activity) {
-        const p = event.payload;
-        const key = p.attempt_id + ':' + p.tool_call_id;
-        const before = tools.get(key);
-        tools.set(key, {
-          label:
-            event.kind === 'tool.started'
-              ? humanTool(p.tool, p.input)
-              : (before?.label ?? humanTool(p.tool)),
-          state: event.kind === 'tool.started' ? 'running' : p.failed ? 'failed' : 'finished',
-          failed: !!p.failed,
-          parent: p.parent_tool_call_id
-            ? p.attempt_id + ':' + p.parent_tool_call_id
-            : before?.parent,
-        });
-      }
-      if (tools.size) {
-        lines.push(...this.title('TOOL ACTIVITY', width, 'muted'));
-        for (const tool of [...tools.values()].slice(-6)) {
+      const calls = toolLines(this.view);
+      if (calls.length) {
+        const byKey = new Map(calls.map((l) => [l.key, l]));
+        lines.push(
+          ...this.title(
+            this.view.transcript
+              ? 'TRANSCRIPT · every tool call'
+              : 'TOOLS · ctrl+x for the full transcript',
+            width,
+            'muted',
+          ),
+        );
+        for (const call of this.view.transcript ? calls : calls.slice(-8)) {
           let depth = 0,
-            parent = tool.parent;
+            parent = call.parent;
           const visited = new Set<string>();
           while (parent && !visited.has(parent) && depth < 4) {
             visited.add(parent);
             depth++;
-            parent = tools.get(parent)?.parent;
+            parent = byKey.get(parent)?.parent;
           }
+          const indent = depth ? '  '.repeat(depth) + '└─ ' : '';
           lines.push(
             t.line(
               t.ink(
-                tool.state === 'running' ? '◌ ' : tool.failed ? '× ' : '✓ ',
-                tool.failed ? 'red' : tool.state === 'running' ? 'amber' : 'jade',
-              ) +
-                t.ink((depth ? '  '.repeat(depth) + '└─ ' : '') + tool.label) +
-                t.ink('  ' + tool.state, 'muted'),
+                call.state === 'running' ? '◌ ' : call.state === 'failed' ? '× ' : '✓ ',
+                call.state === 'failed' ? 'red' : call.state === 'running' ? 'amber' : 'jade',
+              ) + t.ink(indent + call.label),
               width,
             ),
           );
+          const detail = this.view.transcript
+            ? call.output
+              ? safeText(call.output).split('\n').slice(0, 40)
+              : []
+            : call.tail;
+          for (const tail of detail)
+            lines.push(...this.text('  ' + ' '.repeat(indent.length) + '│ ' + tail, width));
         }
         lines.push(t.fill('', width));
       }
@@ -528,6 +591,8 @@ export class DocumentView implements Component {
         ),
       );
     } else if (tab === 'changes') {
+      const failed = sessionFailure(c.snapshot);
+      if (failed && !c.workspace) return this.text(failed, width);
       if (!c.workspace)
         return this.text(
           'This session has no coding workspace. Create a coding session to review guarded edits.',

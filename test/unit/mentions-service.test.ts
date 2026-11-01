@@ -84,8 +84,10 @@ test('a board session submission is not expanded', async () => {
 test('dispatch sends the stored images with the prompt', () => {
   const sup = readFileSync(new URL('../../src/supervisor.ts', import.meta.url), 'utf8');
   expect(sup).toMatch(
-    /const images = takeImages\(this\.store\.db, work\.submission\.id\);\s*const response = await w\.pi\.command\('prompt', \{\s*message: work\.submission\.text,\s*\.\.\.\(images\.length \? \{ images \} : \{\}\)/,
+    /const images = takeImages\(this\.store\.db, work\.submission\.id\);\s*const response = await w\.pi\.command\('prompt', \{\s*message,\s*\.\.\.\(images\.length \? \{ images \} : \{\}\)/,
   );
+  // The message is the submission's text (plus any UserPromptSubmit hook context, Phase 4b).
+  expect(sup).toMatch(/let message = work\.submission\.text;/);
 });
 
 test('the outbox keeps the confirmation and gives up on a refused secret', () => {

@@ -8,6 +8,7 @@ import {
   hostUnit,
   hostCommandNetwork,
   hostAllowsFullAccessSessions,
+  hostDangerClassifier,
 } from '../../src/host.js';
 import { digest } from '../../src/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
@@ -190,4 +191,54 @@ test('a host plan with read paths (and full access) reads back unchanged', async
   const file = join(f.root, 'host-read-paths.json');
   writeFileSync(file, JSON.stringify(planned), { mode: 0o600 });
   expect(readHost(file)).toEqual(planned);
+});
+
+// The YOLO setting was pinned at plan but left out of readHost's re-check, so a host with
+// `allow_yolo_sessions: true` refused its own manifest ("command sandbox changed").
+test('a host plan that allows YOLO reads back unchanged', async () => {
+  const f = fixture();
+  const planned = await planHost({ ...f.input, allow_yolo_sessions: true });
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(planned), { mode: 0o600 });
+  expect(readHost(file)).toEqual(planned);
+});
+
+// Operator 2026-10-31: the command reviewer has its own model selection; a host pins one option or
+// forbids the reviewer, and the reviewed manifest records the config file's digest.
+test('danger_classifier: a host forbids the reviewer or pins one option, digest-bound', async () => {
+  const f = fixture();
+  const sbx = (m: unknown) => (m as { local_sandbox: Record<string, unknown> }).local_sandbox;
+  expect(hostDangerClassifier(await planHost(f.input))).toEqual({ pin: 'off' });
+  const forbid = await planHost({ ...f.input, danger_classifier: 'forbid' });
+  expect(sbx(forbid)).toMatchObject({ danger_classifier: { mode: 'forbid' } });
+  const config = join(f.root, 'dc.json');
+  writeFileSync(
+    config,
+    JSON.stringify({
+      options: [
+        { name: 'local', provider: 'openai-compatible', model: 'q', url: 'http://127.0.0.1:9/v1' },
+      ],
+    }),
+  );
+  const pinned = await planHost({ ...f.input, danger_classifier: { config, pin: 'local' } });
+  expect(hostDangerClassifier(pinned)).toEqual({ config, pin: 'local' });
+  const free = await planHost({ ...f.input, danger_classifier: { config } });
+  expect(hostDangerClassifier(free)).toEqual({ config });
+  for (const bad of [
+    'on',
+    { config, pin: 'nope' },
+    { config: 'relative.json' },
+    { config, extra: 1 },
+  ])
+    await expect(planHost({ ...f.input, danger_classifier: bad })).rejects.toThrow(
+      'danger_classifier',
+    );
+  const file = join(f.root, 'host.json');
+  writeFileSync(file, JSON.stringify(pinned), { mode: 0o600 });
+  expect(readHost(file)).toEqual(pinned);
+  writeFileSync(
+    config,
+    JSON.stringify({ provider: 'openai-compatible', model: 'other', url: 'http://127.0.0.1:9/v1' }),
+  );
+  expect(() => readHost(file)).toThrow(/reviewer config changed/);
 });

@@ -57,6 +57,8 @@ export interface ToolActivity {
     input?: string;
     input_truncated?: boolean;
     failed?: boolean;
+    output?: string;
+    output_truncated?: boolean;
   };
 }
 export interface LivePreview {
@@ -222,6 +224,25 @@ export class OperatorClient extends EventEmitter {
       ...this.actor(),
     });
     this.report('Rule removed.');
+  }
+  /** Your hooks and this workspace's, with their trust state (Phase 4b). */
+  async hooks(): Promise<{ sources: import('./hooks.js').HookSource[] }> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    return call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks`);
+  }
+  /** Trust this workspace's hooks file as reviewed; `digest` binds the content you saw. */
+  async trustHooks(digest: string): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks/trust`, {
+      ...this.actor(),
+      digest,
+    });
+    this.report('Workspace hooks trusted. They run from the next tool call or prompt.');
+  }
+  async revokeHooks(): Promise<void> {
+    if (!this.snapshot) throw new Error('Choose a session first.');
+    await call(this.socket, `/v1/sessions/${this.snapshot.id}/hooks/revoke`, { ...this.actor() });
+    this.report('Workspace hooks no longer trusted; they will not run.');
   }
   async steer(text: string): Promise<void> {
     if (!this.snapshot) throw new Error('Choose a session first.');
@@ -483,7 +504,7 @@ export class OperatorClient extends EventEmitter {
       return lease;
     }
   }
-  private actor(): { client_id: string; token: string } {
+  actor(): { client_id: string; token: string } {
     if (!this.lease) throw new Error('Take control before sending an instruction.');
     return { client_id: this.clientId, token: this.lease.token };
   }
@@ -544,6 +565,8 @@ export class OperatorClient extends EventEmitter {
         'Delivery pending. The saved instruction will be retried: ' + (error as Error).message;
     }
     await this.refresh().catch(() => {});
+    // A failed worker cannot take the instruction: say so instead of "accepted".
+    this.notice = sessionFailure(this.snapshot) ?? this.notice;
     this.changed();
     return record.request_id;
   }
@@ -882,4 +905,13 @@ export class OperatorClient extends EventEmitter {
     this.stopped = true;
     await this.leave();
   }
+}
+
+/** What went wrong when a session's worker has failed, for the status line and the Changes tab. */
+export function sessionFailure(
+  s: { state: string; error: string | null } | undefined,
+): string | undefined {
+  if (!s) return undefined;
+  if (s.state !== 'unhealthy' && !(s.state === 'exited' && s.error)) return undefined;
+  return `Session stopped: ${s.error ?? 'the worker is not healthy'}. Fix it, then /new or ctrl+n for a fresh session.`;
 }

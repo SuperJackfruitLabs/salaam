@@ -52,7 +52,24 @@ import {
   parseSlashCommand,
   slashHelp,
 } from './tui-commands.js';
+import {
+  branchInstruction,
+  commitInstruction,
+  currentBranch,
+  defaultBase,
+  forgeTool,
+  loadGitPrefs,
+  prInstruction,
+  validBranchName,
+} from './git-helpers.js';
 import { conversationExport, writeConversationExport } from './tui-export.js';
+import { describeHooks } from './hooks.js';
+import {
+  expandCustomCommand,
+  loadCustomCommands,
+  matchCustomCommand,
+  type CustomCommand,
+} from './custom-commands.js';
 import { credentialPath } from './credentials.js';
 import { call } from './transport.js';
 import { notificationFor, notify, notifyMode, jobsText, type JobRow } from './tui-notify.js';
@@ -78,12 +95,24 @@ import {
   FormModal,
   ConfirmModal,
   ApprovalModal,
+  approvalReason,
   onceOnlyReason,
   TextModal,
 } from './tui-modals.js';
 import type { Approval } from './protocol.js';
 import { commandTerminal } from './coding.js';
-import { rewindSummary } from './tui-review.js';
+import { rewindItems, rewindSummary } from './tui-review.js';
+import { classifierItems, classifierNotice, type ClassifierView } from './tui-classifier.js';
+import { GLOBAL_KEYS, REVIEW_KEYS, keySheet, type GlobalAction } from './tui-keymap.js';
+import { HerdrReporter, statusEnabled, terminalState, titleFor } from './terminal-status.js';
+import {
+  ComposerHistory,
+  ctrlCAction,
+  historyPath,
+  searchHistory,
+  searchPrompt,
+  shellPassthrough,
+} from './tui-composer.js';
 import type { RewindMode } from './turn-rewind.js';
 
 export interface TuiOptions {
@@ -95,6 +124,8 @@ export interface TuiOptions {
   cwd?: string;
   codingRoot?: string;
   codingSocket?: string;
+  /** Your own custom commands folder; defaults to ~/.config/salaam/commands. */
+  commandsDir?: string;
   /** `salaam code`: open this folder directly (step 0, 2026-10-31). */
   start?: import('./session-pick.js').CodeStart;
 }
@@ -185,6 +216,12 @@ export class SalaamApp {
   private lastSession?: string;
   private lastRevision?: number;
   private readonly historyKeys = new Set<string>();
+  /** Messages this user sent, kept across sessions without secret-looking lines (Ctrl+R searches it). */
+  private readonly sent = new ComposerHistory(historyPath());
+  /** When Ctrl+C was last pressed on an empty composer; a second press within 2 s leaves. */
+  private ctrlCArmed?: number;
+  /** Reverse history search in progress: the query, the matching entry and the draft it replaces. */
+  private search?: { query: string; index: number; draft: string };
   private readonly removeInput: () => void;
   constructor(readonly options: TuiOptions) {
     this.client = new OperatorClient(options.state);
@@ -218,6 +255,7 @@ export class SalaamApp {
     );
     // The app journals the exact expanded input before clearing it. The library's submit path trims and clears first.
     this.editor.disableSubmit = true;
+    for (const entry of this.sent.entries) this.editor.addToHistory(entry);
     this.editor.setAutocompleteProvider(
       new MentionAutocompleteProvider([...SLASH_COMPLETIONS], options.cwd ?? process.cwd()),
     );
@@ -229,6 +267,8 @@ export class SalaamApp {
         return;
       }
       if (this.client.snapshot) this.drafts.set(this.client.snapshot.id, clean);
+      // Starting a command reloads this workspace's custom commands into the completion list.
+      if (clean === '/') this.refreshCommandCompletions();
       this.tui.requestRender();
     };
     this.document = new DocumentView(this.view);
@@ -298,8 +338,27 @@ export class SalaamApp {
       this.terminal.columns - (this.rail && this.terminal.columns >= 104 ? 31 : 0),
     );
   }
+  // Trial polish C: the window title and Herdr say working / needs you / idle.
+  private readonly statusOn = statusEnabled();
+  private herdr = new HerdrReporter();
+  private lastTitle?: string;
+  private reportStatus(): void {
+    if (!this.statusOn) return;
+    const snapshot = this.client.snapshot;
+    const state = terminalState(snapshot);
+    const name = snapshot
+      ? (this.client.names[snapshot.id] ?? (snapshot.cwd ? basename(snapshot.cwd) : undefined))
+      : undefined;
+    const title = titleFor(state, name);
+    if (title !== this.lastTitle) {
+      this.lastTitle = title;
+      this.terminal.setTitle(title);
+    }
+    this.herdr.report(state, snapshot?.id);
+  }
   private changed(): void {
     const snapshot = this.client.snapshot;
+    this.reportStatus();
     if (snapshot) {
       if (snapshot.id !== this.lastSession) {
         if (this.lastSession) this.drafts.set(this.lastSession, this.editor.getExpandedText());
@@ -334,19 +393,30 @@ export class SalaamApp {
     this.tui.requestRender();
   }
   private input(data: string): { consume: true } | undefined {
-    if (
-      matchesKey(data, 'ctrl+c') ||
-      (matchesKey(data, 'ctrl+d') && !this.editor.getExpandedText())
-    ) {
+    if (this.search) return this.searchKey(data);
+    if (matchesKey(data, 'ctrl+c')) {
+      this.ctrlC();
+      return { consume: true };
+    }
+    this.ctrlCArmed = undefined;
+    if (matchesKey(data, 'ctrl+d') && !this.editor.getExpandedText()) {
       this.finish();
       return { consume: true };
     }
     if (this.modal) return;
+    if (matchesKey(data, 'ctrl+r')) {
+      this.startSearch();
+      return { consume: true };
+    }
     if (
       this.editor.isShowingAutocomplete() &&
       (matchesKey(data, 'enter') || matchesKey(data, 'tab') || matchesKey(data, 'escape'))
     )
       return;
+    if (data === '?' && this.editor.getExpandedText() === '') {
+      this.help();
+      return { consume: true };
+    }
     // Esc stops the running turn, Enter steers it, Tab queues behind it (interactive coding only).
     const key = turnKey(data);
     const action = key
@@ -382,6 +452,7 @@ export class SalaamApp {
           );
         }
         this.editor.addToHistory(text);
+        this.sent.add(text);
         if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
           this.editor.setText('');
           if (session) this.drafts.delete(session);
@@ -404,25 +475,11 @@ export class SalaamApp {
       else submit();
       return { consume: true };
     }
-    const keys: [KeyId, () => void][] = [
-      ['ctrl+k', () => this.palette()],
-      ['ctrl+p', () => void this.execute(() => this.sessions())],
-      ['ctrl+n', () => void this.execute(() => this.newSession())],
-      ['ctrl+o', () => this.approvals()],
-      ['ctrl+g', () => this.setTab('changes')],
-      ['ctrl+t', () => this.setTab('commands')],
-      [
-        'ctrl+b',
-        () => {
-          this.rail = !this.rail;
-          this.tui.requestRender(true);
-        },
-      ],
-      ['ctrl+r', () => void this.execute(() => this.refresh())],
-      ['ctrl+e', () => void this.execute(() => this.editPrompt())],
-      ['shift+tab', () => void this.execute(() => this.cycleMode())],
-      ['f1', () => this.help()],
-    ];
+    // Ctrl+K kills to the end of the line while the composer has text (readline); on an empty
+    // composer it opens the actions palette. F2 always opens it.
+    if (matchesKey(data, 'ctrl+k') && this.editor.getExpandedText() !== '') return;
+    const actions = this.globalActions();
+    const keys: [KeyId, () => void][] = GLOBAL_KEYS.map((k) => [k.key, () => actions[k.action]()]);
     for (const [key, action] of keys)
       if (matchesKey(data, key)) {
         if (this.view.busy) this.pendingAction = action;
@@ -452,6 +509,30 @@ export class SalaamApp {
     }
     return;
   }
+  /** What each key in GLOBAL_KEYS does; the table owns the keys, this owns the actions. */
+  private globalActions(): Record<GlobalAction, () => void> {
+    return (this.actionTable ??= {
+      palette: () => this.palette(),
+      sessions: () => void this.execute(() => this.sessions()),
+      new: () => void this.execute(() => this.newSession()),
+      approvals: () => this.approvals(),
+      changes: () => this.setTab('changes'),
+      commands: () => this.setTab('commands'),
+      rail: () => {
+        this.rail = !this.rail;
+        this.tui.requestRender(true);
+      },
+      transcript: () => {
+        this.view.transcript = !this.view.transcript;
+        this.setTab('conversation');
+      },
+      refresh: () => void this.execute(() => this.refresh()),
+      editor: () => void this.execute(() => this.editPrompt()),
+      mode: () => void this.execute(() => this.cycleMode()),
+      help: () => this.help(),
+    });
+  }
+  private actionTable?: Record<GlobalAction, () => void>;
   private async execute(work: () => Promise<unknown>): Promise<void> {
     if (this.view.busy) {
       const session = this.client.snapshot?.id ?? this.options.session;
@@ -728,7 +809,48 @@ export class SalaamApp {
       return;
     }
     if (command === 'help') {
-      this.showText('Salaam commands', slashHelp(args || undefined));
+      const custom = args ? [] : this.customCommands();
+      const problems = args ? [] : this.customCommandProblems;
+      this.showText(
+        'Salaam commands',
+        slashHelp(args || undefined) +
+          (custom.length
+            ? '\n\nCustom commands (write a prompt only):\n' +
+              custom
+                .map(
+                  (c) =>
+                    `/${c.name}${c.argumentHint ? ' ' + c.argumentHint : ''} — ${c.description} [${c.scope}]`,
+                )
+                .join('\n')
+            : '') +
+          (problems.length ? '\n\nSkipped command files:\n' + problems.join('\n') : ''),
+      );
+      return;
+    }
+    if (command === 'hooks') {
+      if (args === 'revoke') {
+        await this.client.revokeHooks();
+        return;
+      }
+      const { sources } = await this.client.hooks();
+      if (args === 'trust') {
+        const repo = sources.find((s) => s.scope === 'repo');
+        if (!repo?.digest) throw new Error('This workspace has no readable .salaam/hooks.json.');
+        if (repo.trusted) {
+          this.showText('Hooks', 'This workspace’s hooks are already trusted as they are.');
+          return;
+        }
+        this.confirm(
+          'Trust this workspace’s hooks?',
+          describeHooks([repo]) +
+            '\n\nThese commands will run on your machine, in this session’s sandbox, whenever their event happens. Trust covers this exact content; any change needs trusting again.',
+          'Trust these hooks',
+          () => this.client.trustHooks(repo.digest!),
+        );
+        return;
+      }
+      if (args) throw new Error('Use /hooks, /hooks trust or /hooks revoke.');
+      this.showText('Hooks', describeHooks(sources));
       return;
     }
     if (command === 'keys') {
@@ -872,6 +994,29 @@ export class SalaamApp {
       );
       return;
     }
+    if (command === 'commit' || command === 'branch' || command === 'pr') {
+      if (!snapshot.capabilities.includes('local-coding-reviewed'))
+        throw new Error(`/${command} runs git. Start a coding session with /coding first.`);
+      const root = snapshot.cwd;
+      let instruction: string;
+      if (command === 'commit')
+        instruction = commitInstruction({ ...loadGitPrefs(), session: snapshot.id });
+      else if (command === 'branch') {
+        if (!args) throw new Error('Usage: /branch <name>');
+        instruction = branchInstruction(args);
+      } else {
+        const branch = currentBranch(root),
+          base = args || defaultBase(root);
+        if (!branch) throw new Error('/pr needs a checked-out branch, not a detached HEAD.');
+        if (branch === base)
+          throw new Error(`You are on ${base}. Create a branch first with /branch <name>.`);
+        if (!validBranchName(base)) throw new Error(`"${base}" is not a valid branch name.`);
+        instruction = prInstruction({ tool: forgeTool(root), branch, base });
+      }
+      await this.client.submit(instruction);
+      this.setTab('conversation');
+      return;
+    }
     if (command === 'init') {
       if (!snapshot.capabilities.includes('local-coding-reviewed'))
         throw new Error('/init writes a file. Start a coding session with /coding first.');
@@ -892,7 +1037,9 @@ export class SalaamApp {
       return;
     }
     if (command === 'diff') {
-      if (snapshot.capabilities.includes('local-workspace-read')) {
+      // Coding sessions review their diff file by file in Changes (Phase 3a).
+      if (snapshot.capabilities.includes('local-coding-reviewed')) this.setTab('changes');
+      else if (snapshot.capabilities.includes('local-workspace-read')) {
         const diff = await call<{ text: string }>(
           this.client.socket,
           `/v1/sessions/${snapshot.id}/local-diff`,
@@ -907,6 +1054,40 @@ export class SalaamApp {
     }
     if (command === 'tasks') {
       this.taskActions();
+      return;
+    }
+    if (command === 'classifier') {
+      const path = `/v1/sessions/${snapshot.id}/danger-classifier`;
+      const set = async (choice: string) => {
+        const v = await call<ClassifierView>(this.client.socket, path, {
+          ...this.client.actor(),
+          choice,
+        });
+        this.client.notice = classifierNotice(v);
+        this.tui.requestRender();
+      };
+      const want = args.trim();
+      if (want === 'on') {
+        const v = await call<ClassifierView>(this.client.socket, path, {
+          ...this.client.actor(),
+          enabled: true,
+        });
+        this.client.notice = classifierNotice(v);
+        return;
+      }
+      if (want) {
+        await set(want);
+        return;
+      }
+      const v = await call<ClassifierView>(this.client.socket, path);
+      const items = classifierItems(v);
+      if (!items.length) {
+        this.client.notice = classifierNotice(v);
+        return;
+      }
+      this.choice('Command reviewer · ' + classifierNotice(v).split('.')[0], items, (choice) => {
+        void this.execute(() => set(choice));
+      });
       return;
     }
     if (command === 'jobs') {
@@ -1233,19 +1414,28 @@ export class SalaamApp {
     );
   }
   private async sessions(): Promise<void> {
+    const { pickerOrder, sessionDescription } = await import('./session-pick.js');
     await this.client.list();
+    const now = Date.now();
     this.choice(
       'Your Salaam sessions',
       [
         { value: 'new', label: '+ New session', description: 'Start a fresh workspace' },
-        ...this.client.sessions.map((session) => ({
-          value: session.id,
-          label:
-            (this.client.names[session.id] ?? basename(session.cwd)) + '  ' + shortId(session.id),
-          description: session.state + ' · ' + session.cwd,
-        })),
+        ...pickerOrder(this.client.sessions, resolve(this.options.cwd ?? process.cwd())).map(
+          (session) => ({
+            value: session.id,
+            label:
+              (this.client.names[session.id] ?? basename(session.cwd)) + '  ' + shortId(session.id),
+            description: sessionDescription(session, now),
+          }),
+        ),
       ],
       (value) => {
+        if (value === 'transcript') {
+          this.view.transcript = !this.view.transcript;
+          this.setTab('conversation');
+          return;
+        }
         if (value === 'model') this.modelPicker();
         else if (value === 'help') void this.execute(() => this.runSlashCommand('help'));
         else if (value === 'coding') void this.execute(() => this.newSession(true));
@@ -1261,11 +1451,71 @@ export class SalaamApp {
       },
     );
   }
+  private commandCache?: { root: string; at: number; commands: CustomCommand[] };
+  private customCommandProblems: string[] = [];
+  /** This workspace's and your own custom commands, reread at most every two seconds. */
+  customCommands(): CustomCommand[] {
+    const root = this.client.snapshot?.cwd ?? this.options.cwd ?? process.cwd();
+    const cached = this.commandCache;
+    if (cached && cached.root === root && Date.now() - cached.at < 2000) return cached.commands;
+    const { commands, problems } = loadCustomCommands(root, this.options.commandsDir);
+    this.customCommandProblems = problems;
+    this.commandCache = { root, at: Date.now(), commands };
+    return commands;
+  }
+  private refreshCommandCompletions(): void {
+    const root = this.client.snapshot?.cwd ?? this.options.cwd ?? process.cwd();
+    this.editor.setAutocompleteProvider(
+      new MentionAutocompleteProvider(
+        [
+          ...SLASH_COMPLETIONS,
+          ...this.customCommands().map((c) => ({
+            name: c.name,
+            description: `${c.description} [${c.scope}]`,
+          })),
+        ],
+        root,
+      ),
+    );
+  }
   private async submit(): Promise<void> {
     const text = this.editor.getExpandedText(),
       session = this.client.snapshot?.id,
       continuation = this.view.continuation;
     if (!text.trim()) return;
+    const shell = shellPassthrough(text);
+    if (shell) {
+      if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
+      if (!interactiveCoding(this.client.snapshot))
+        throw new Error('!command works in local coding sessions (salaam code).');
+      await this.deliver(shell, session, continuation, false, text);
+      return;
+    }
+    // A custom command only writes a prompt; built-in names never reach here (they are refused at
+    // load), and the expanded prompt goes through every check an ordinary message does.
+    const custom = text.trim().startsWith('/')
+      ? matchCustomCommand(text, this.customCommands())
+      : null;
+    if (custom) {
+      if (!session) throw new Error('Create or choose a session with ctrl+n or ctrl+p first.');
+      const prompt = expandCustomCommand(custom.command, custom.args);
+      if (Buffer.byteLength(prompt) > 65536)
+        throw new Error(`/${custom.command.name} expands past 64 KiB. Shorten the command file.`);
+      const secrets = extractMentions(prompt).filter(isSensitivePath);
+      const send = (sensitive: boolean) =>
+        this.deliver(prompt, session, continuation, sensitive, text);
+      if (secrets.length) {
+        this.confirm(
+          'Attach secret-looking files?',
+          `/${custom.command.name} mentions ${secrets.map((s) => '@' + s).join(', ')}, which will be sent to the model in full.`,
+          'Attach and send',
+          () => send(true),
+        );
+        return;
+      }
+      await send(false);
+      return;
+    }
     const command = parseSlashCommand(text);
     if (command) {
       await this.runSlashCommand(command.name, command.args);
@@ -1293,10 +1543,13 @@ export class SalaamApp {
     session: string,
     continuation: string | undefined,
     confirmSensitive: boolean,
+    /** What was typed, when it differs from what is sent (a custom command). */
+    typed = text,
   ): Promise<void> {
     await this.client.submit(text, continuation, confirmSensitive);
-    this.editor.addToHistory(text);
-    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === text) {
+    this.editor.addToHistory(typed);
+    this.sent.add(typed);
+    if (this.client.snapshot?.id === session && this.editor.getExpandedText() === typed) {
       this.editor.setText('');
       this.drafts.delete(session);
     }
@@ -1334,17 +1587,23 @@ export class SalaamApp {
     const review = this.view.review;
     if (!review?.data?.files.length) return;
     const file = review.data.files[review.file]!;
-    if (matchesKey(data, 'alt+right') || matchesKey(data, 'alt+left')) {
-      const next = review.file + (matchesKey(data, 'alt+right') ? 1 : -1);
+    if (
+      matchesKey(data, REVIEW_KEYS.nextFile.key) ||
+      matchesKey(data, REVIEW_KEYS.previousFile.key)
+    ) {
+      const next = review.file + (matchesKey(data, REVIEW_KEYS.nextFile.key) ? 1 : -1);
       if (next >= 0 && next < review.data.files.length)
         void this.execute(() => this.loadReview(next));
       return { consume: true };
     }
-    if (matchesKey(data, 'alt+down') || matchesKey(data, 'alt+up')) {
+    if (
+      matchesKey(data, REVIEW_KEYS.nextHunk.key) ||
+      matchesKey(data, REVIEW_KEYS.previousHunk.key)
+    ) {
       const count = review.hunks?.length ?? 0;
       review.hunk = Math.max(
         -1,
-        Math.min(count - 1, review.hunk + (matchesKey(data, 'alt+down') ? 1 : -1)),
+        Math.min(count - 1, review.hunk + (matchesKey(data, REVIEW_KEYS.nextHunk.key) ? 1 : -1)),
       );
       this.document.invalidate();
       this.tui.requestRender();
@@ -1359,11 +1618,11 @@ export class SalaamApp {
       await this.loadReview(review.file);
       this.client.report((action === 'accept' ? 'Accepted ' : 'Reverted ') + what + '.');
     };
-    if (data === 'a') {
+    if (data === REVIEW_KEYS.accept.key) {
       void this.execute(act('accept'));
       return { consume: true };
     }
-    if (data === 'r') {
+    if (data === REVIEW_KEYS.revert.key) {
       this.confirm(
         'Revert ' + what,
         (hunk ? 'Puts this hunk back' : 'Puts this file back') +
@@ -1373,7 +1632,7 @@ export class SalaamApp {
       );
       return { consume: true };
     }
-    if (data === 'i') {
+    if (data === REVIEW_KEYS.instruct.key) {
       this.setTab('conversation');
       this.editor.setText(
         `In ${file.path}${hunk ? ` (the change at ${hunk.text.split('\n')[0]})` : ''}: `,
@@ -1429,18 +1688,7 @@ export class SalaamApp {
       choose(found.attempt_id);
       return;
     }
-    this.choice(
-      'Rewind to before which turn?',
-      points
-        .slice()
-        .reverse()
-        .map((p) => ({
-          value: p.attempt_id,
-          label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,
-          description: p.at,
-        })),
-      choose,
-    );
+    this.choice('Rewind to before which turn?', rewindItems(points), choose);
   }
   private resetScroll(): void {
     if (this.view.tab === 'conversation' || this.view.tab === 'commands') this.scroll.scrollToEnd();
@@ -1498,6 +1746,7 @@ export class SalaamApp {
           reviewed.operation,
           rules.applies && !onceOnly,
           onceOnly,
+          rules.applies,
         );
       });
     if (approvals.length === 1) open(approvals[0]!.id);
@@ -1609,6 +1858,7 @@ export class SalaamApp {
     operation: import('./protocol.js').Operation,
     offerRules = false,
     onceOnly?: string,
+    desk = false,
   ): void {
     this.showModal(
       new ApprovalModal(
@@ -1623,6 +1873,33 @@ export class SalaamApp {
           this.closeModal();
           if (decision === 'approve' || decision === 'deny') {
             void this.execute(() => this.client.decide(approval, decision));
+            return;
+          }
+          if (decision === 'deny-feedback') {
+            // Deny, then tell the agent why in its own turn, the way steering reaches it.
+            this.taskInput(
+              'Deny and tell it why',
+              '',
+              'Why not, or what to do instead',
+              'One line. The request is denied and this reaches the agent as feedback.',
+              (why) =>
+                void this.execute(async () => {
+                  await this.client.decide(approval, 'deny');
+                  const text = why.trim();
+                  if (!text) return;
+                  // The turn has usually moved on by now; if it ended, put the reason in the
+                  // composer instead of losing it.
+                  const feedback = `I denied that request (${safeText(operation.target)}). ${text}`;
+                  try {
+                    await this.client.steer(feedback);
+                  } catch {
+                    this.editor.setText(feedback);
+                    this.client.report(
+                      'Denied. The turn had ended, so your reason is in the composer; press enter to send it.',
+                    );
+                  }
+                }),
+            );
             return;
           }
           // The rule is the exact request just reviewed: its command words or its edited paths.
@@ -1659,6 +1936,7 @@ This exact request will be approved without asking in every desk session on this
         },
         offerRules,
         onceOnly,
+        { desk, reason: approvalReason(String(operation.value), this.view.mode?.mode) },
       ),
       86,
     );
@@ -2395,8 +2673,13 @@ This exact request will be approved without asking in every desk session on this
         label: 'Job actions',
         description: 'Bound one-shot admission and durable occurrence recovery',
       },
-      { value: 'changes', label: 'Review changes', description: 'ctrl+g · guarded workspace diff' },
+      { value: 'changes', label: 'Review changes', description: 'alt+g · guarded workspace diff' },
       { value: 'commands', label: 'Commands and output', description: 'ctrl+t' },
+      {
+        value: 'transcript',
+        label: 'Full transcript',
+        description: 'ctrl+x · every tool call and its output',
+      },
       {
         value: 'context',
         label: 'Session context',
@@ -2448,11 +2731,11 @@ This exact request will be approved without asking in every desk session on this
         label: 'Cancel current work',
         description: 'Explicitly cancel a running instruction',
       },
-      { value: 'refresh', label: 'Refresh connection', description: 'ctrl+r' },
+      { value: 'refresh', label: 'Refresh connection', description: 'f5' },
       {
         value: 'editor',
         label: 'Edit prompt externally',
-        description: 'ctrl+e · VISUAL or EDITOR',
+        description: 'ctrl+g · VISUAL or EDITOR',
       },
       {
         value: 'theme',
@@ -2706,46 +2989,18 @@ This exact request will be approved without asking in every desk session on this
       },
     );
   }
+  /** The keys for where you are: `?` on an empty composer, or F1. Built from tui-keymap.ts. */
   private help(): void {
+    const snapshot = this.client.snapshot;
+    const sheet = keySheet({
+      tab: this.view.tab,
+      coding: interactiveCoding(snapshot),
+      running: interactiveCoding(snapshot) && runningAttempt(snapshot) !== undefined,
+      custom: this.customCommands(),
+    });
     this.choice(
-      'Salaam · keyboard',
-      [
-        {
-          value: 'close',
-          label: 'Enter · send the exact prompt',
-          description: 'The durable outbox saves it before delivery',
-        },
-        {
-          value: 'close',
-          label: 'Alt+Enter / Ctrl+J · new line',
-          description: 'Shift+Enter also works with supported keyboard protocols',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+K · all actions',
-          description: 'Ctrl+P sessions · Ctrl+N new session · Ctrl+O approvals',
-        },
-        {
-          value: 'close',
-          label: 'Tab · switch view',
-          description: 'Conversation · Changes · Commands · Context',
-        },
-        {
-          value: 'close',
-          label: 'PageUp / PageDown · scroll',
-          description: 'Mouse wheel also scrolls; Ctrl+Home/End jump to the top/bottom',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+E · external prompt editor',
-          description: 'Runs VISUAL or EDITOR with terminal modes restored',
-        },
-        {
-          value: 'close',
-          label: 'Ctrl+C · detach',
-          description: 'Work continues. Cancel and stop service are separate actions.',
-        },
-      ],
+      sheet.title,
+      sheet.rows.map((row) => ({ value: 'close', ...row })),
       () => {},
     );
   }
@@ -2787,6 +3042,74 @@ This exact request will be approved without asking in every desk session on this
       }
     }
   }
+  /** Ctrl+C: stop a running coding turn, else clear the composer, else arm; twice within 2 s leaves. */
+  private ctrlC(): void {
+    const attempt = interactiveCoding(this.client.snapshot)
+      ? runningAttempt(this.client.snapshot)
+      : undefined;
+    const action = this.modal
+      ? 'exit'
+      : ctrlCAction({
+          running: attempt !== undefined,
+          text: this.editor.getExpandedText(),
+          armedAt: this.ctrlCArmed,
+          now: Date.now(),
+        });
+    this.ctrlCArmed = undefined;
+    if (action === 'exit') this.finish();
+    else if (action === 'interrupt')
+      void this.execute(async () => {
+        await this.client.cancel(attempt!);
+        this.client.report('Stopped the turn. Press ctrl+c twice to leave.');
+      });
+    else if (action === 'clear') {
+      this.editor.setText('');
+      this.client.report('Cleared. Press ctrl+c again to leave, or ctrl+- to undo.');
+    } else {
+      this.ctrlCArmed = Date.now();
+      this.client.report('Press ctrl+c again to leave. Work continues in the service.');
+    }
+  }
+  private startSearch(): void {
+    this.search = { query: '', index: this.sent.entries.length, draft: this.editor.getText() };
+    this.client.report(searchPrompt('', undefined));
+  }
+  /** Keys while Ctrl+R search is open: type to narrow, ctrl+r for older, enter keeps, esc restores. */
+  private searchKey(data: string): { consume: true } {
+    const s = this.search!,
+      entries = this.sent.entries;
+    const show = () => {
+      const match = s.index < entries.length ? entries[s.index] : undefined;
+      if (match !== undefined) this.editor.setText(match);
+      this.client.report(searchPrompt(s.query, match));
+    };
+    if (matchesKey(data, 'escape') || matchesKey(data, 'ctrl+c') || matchesKey(data, 'ctrl+g')) {
+      this.editor.setText(s.draft);
+      this.search = undefined;
+      this.client.report('');
+    } else if (matchesKey(data, 'enter') || matchesKey(data, 'right') || matchesKey(data, 'left')) {
+      this.search = undefined;
+      this.client.report('');
+    } else if (matchesKey(data, 'ctrl+r')) {
+      const found = searchHistory(entries, s.query, s.index);
+      if (found >= 0) s.index = found;
+      show();
+    } else if (matchesKey(data, 'backspace')) {
+      s.query = s.query.slice(0, -1);
+      s.index = searchHistory(entries, s.query, entries.length);
+      if (s.index < 0) s.index = entries.length;
+      if (s.query === '') this.editor.setText(s.draft);
+      show();
+    } else if (data.length === 1 && data >= ' ' && data !== '\x7f') {
+      s.query += data;
+      const found = searchHistory(entries, s.query, Math.min(s.index + 1, entries.length));
+      s.index = found >= 0 ? found : entries.length;
+      if (found < 0) this.editor.setText(s.draft);
+      show();
+    }
+    this.tui.requestRender();
+    return { consume: true };
+  }
   private async initialize(): Promise<void> {
     await this.execute(async () => {
       if (this.options.start) return this.openHere(this.options.start);
@@ -2824,7 +3147,11 @@ This exact request will be approved without asking in every desk session on this
         observe: this.options.observe,
         takeover: this.options.takeover,
       });
-    else await this.client.create(cwd, false, this.selectedRoute, true);
+    else {
+      await this.client.create(cwd, false, this.selectedRoute, true);
+      if (start === 'continue')
+        this.client.notice = 'No earlier session in this folder, so this is a new one.';
+    }
     this.setTab('conversation');
   }
   async run(): Promise<void> {
@@ -2846,7 +3173,11 @@ This exact request will be approved without asking in every desk session on this
         if (
           this.client.preview ||
           this.client.snapshot?.approvals.some((a) => a.state === 'pending') ||
-          this.client.commands.some((run) => !commandTerminal(run.state))
+          this.client.commands.some((run) => !commandTerminal(run.state)) ||
+          // The progress line counts seconds while a turn runs, so it never shows a stale state.
+          this.client.snapshot?.attempts.some((a) =>
+            ['accepted', 'dispatching', 'running'].includes(a.state),
+          )
         )
           this.tui.requestRender();
       }, 1000);
@@ -2861,6 +3192,7 @@ This exact request will be approved without asking in every desk session on this
       for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.off(signal, close);
       process.stdin.off('end', close);
       process.stdout.off('error', close);
+      if (this.statusOn) this.herdr.release();
       await this.terminal.drainInput(150, 25);
       process.stdin.pause();
       process.stdin.unref();

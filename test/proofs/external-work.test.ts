@@ -380,7 +380,7 @@ test('a real terminal shows external invocation scope and stop state on the shar
     await terminal.contains('fixture-acp');
     await terminal.contains('model usage unknown');
     await terminal.contains('stop unconfirmed');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     await f.action('cancel');
     expect([...backend.runs.values()].every((r) => r.stopped)).toBe(true);

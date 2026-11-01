@@ -106,7 +106,7 @@ test('approval cannot approve before full review or after its binding changes', 
     (decision) => decisions.push(decision),
   );
   modal.render(64);
-  modal.handleInput('\x1b[C');
+  // Focus starts on Approve once (trial polish #2), but a strict request is gated until read.
   modal.handleInput('\r');
   expect(decisions).toEqual([]);
   modal.handleInput('\x1b[F');

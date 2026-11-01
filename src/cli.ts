@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadDangerClassifierOptions } from './danger-classifier.js';
 import { loadWebSearchConfig } from './web-search.js';
 import { SANDBOX_LEVELS, type SandboxLevel } from './command-sandbox.js';
 import { acp } from './acp.js';
@@ -67,6 +68,10 @@ async function main(): Promise<void> {
   if (args[0] === '--version' || args[0] === '-V' || args[0] === 'version') {
     console.log('salaam ' + VERSION);
     return;
+  }
+  if (args[0] === '-c' || args[0] === '--continue') {
+    const { continueArgs } = await import('./session-pick.js');
+    args.splice(0, args.length, ...continueArgs(args)!);
   }
   if (args[0] === 'mcp') {
     // Parsed before global help: a declared command's own flags follow "--".
@@ -520,6 +525,7 @@ async function main(): Promise<void> {
       hostAllowsUnsandboxed,
       hostAllowsFullAccessSessions,
       hostAllowsYoloSessions,
+      hostDangerClassifier,
       hostCommandNetwork,
       hostReadPaths,
     } = await import('./host.js');
@@ -668,6 +674,13 @@ async function main(): Promise<void> {
           // A host session may choose full access only when the reviewed manifest says so.
           allowFullAccessSessions: hostAllowsFullAccessSessions(m),
           allowYoloSessions: hostAllowsYoloSessions(m),
+          // The command reviewer only as the reviewed manifest names it (forbidden when absent).
+          ...(hostDangerClassifier(m).config
+            ? { dangerClassifierConfig: hostDangerClassifier(m).config }
+            : {}),
+          ...(hostDangerClassifier(m).pin
+            ? { dangerClassifierPin: hostDangerClassifier(m).pin }
+            : {}),
           ...(hostCommandNetwork(m) ? { commandNetwork: hostCommandNetwork(m)! } : {}),
           ...(hostReadPaths(m).length ? { localSandboxReadPaths: hostReadPaths(m) } : {}),
         });
@@ -1665,7 +1678,15 @@ async function main(): Promise<void> {
         .map((p) => p.trim())
         .filter(Boolean),
       webSearchConfig =
-        option('--web-search-config') ?? (process.env.SALAAM_WEB_SEARCH_CONFIG || undefined);
+        option('--web-search-config') ?? (process.env.SALAAM_WEB_SEARCH_CONFIG || undefined),
+      dangerClassifierConfig =
+        option('--danger-classifier-config') ??
+        (process.env.SALAAM_DANGER_CLASSIFIER_CONFIG || undefined);
+    // Fail early on a bad command-reviewer config; its key is read from the named variable, never printed.
+    if (dangerClassifierConfig)
+      loadDangerClassifierOptions(
+        JSON.parse(readFileSync(resolve(dangerClassifierConfig), 'utf8')),
+      );
     // Fail early on a bad web search config; its keys are read, never printed.
     if (webSearchConfig) loadWebSearchConfig(resolve(webSearchConfig));
     if (localSandbox !== undefined && !(SANDBOX_LEVELS as readonly string[]).includes(localSandbox))
@@ -1688,6 +1709,9 @@ async function main(): Promise<void> {
         ...(unsandboxedCommands ? { unsandboxedCommands: 'allow' as const } : {}),
         ...(localSandboxRead.length ? { localSandboxReadPaths: localSandboxRead } : {}),
         ...(webSearchConfig ? { webSearchConfig: resolve(webSearchConfig) } : {}),
+        ...(dangerClassifierConfig
+          ? { dangerClassifierConfig: resolve(dangerClassifierConfig) }
+          : {}),
         effectConnector: effectSocket
           ? new SocketEffectConnector(resolve(effectSocket), { opaque })
           : undefined,
@@ -1783,6 +1807,9 @@ async function main(): Promise<void> {
         ...(unsandboxedCommands ? ['--unsandboxed-commands', 'allow'] : []),
         ...(localSandboxRead.length ? ['--local-sandbox-read', localSandboxRead.join(',')] : []),
         ...(webSearchConfig ? ['--web-search-config', resolve(webSearchConfig)] : []),
+        ...(dangerClassifierConfig
+          ? ['--danger-classifier-config', resolve(dangerClassifierConfig)]
+          : []),
       ],
       { detached: true, stdio: ['ignore', fd, fd] },
     );

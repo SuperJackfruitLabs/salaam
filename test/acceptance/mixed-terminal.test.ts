@@ -46,7 +46,7 @@ test.runIf(Boolean(process.env.SALAAM_M18_TERMINAL_CONTEXT))(
         const path = join(context.local, `remote-team-${index}.svg`);
         await terminal.capture(path);
         captures.push(path);
-        await terminal.write('\x03');
+        await terminal.leave();
         expect(await terminal.exit()).toEqual({ code: 0, restored: true });
       } finally {
         await terminal.close();

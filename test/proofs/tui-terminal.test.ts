@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { createServer, request } from 'node:http';
 import { join } from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { fixture, create, ready, until } from '../helpers.js';
 import { ROOT } from '../../src/config.js';
 import { PtyClient } from '../terminal-helpers.js';
@@ -113,7 +113,7 @@ test('real PTY opens Salaam, preserves Unicode multiline paste, resizes and rest
       mkdirSync(process.env.SALAAM_TUI_CAPTURE_DIR, { recursive: true });
       await terminal.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'night-conversation.svg'));
     }
-    await terminal.write('\x03');
+    await terminal.leave();
     expect(await terminal.exit()).toEqual({ code: 0, restored: true });
     expect(f.service.supervisor.inspect(session.id).state).toBe('ready');
     const raw = Buffer.concat(terminal.captured).toString();
@@ -162,11 +162,54 @@ test('hard terminal loss, observer reconnect and explicit TUI takeover preserve 
     expect(f.service.store.snapshot(session.id).attempts).toHaveLength(1);
     expect(f.service.store.attempt(attempt.id).state).toBe('completed');
     expect(f.service.supervisor.inspect(session.id).epoch).toBe(original.epoch);
-    await second.write('\x03');
+    await second.leave();
     expect((await second.exit()).restored).toBe(true);
   } finally {
     await first?.close();
     await second?.close();
+    await f.close();
+  }
+}, 30000);
+
+test('a running turn shows a live progress line that counts seconds and says esc interrupts', async () => {
+  const f = await fixture({ extensionPath: join(ROOT, 'test/fixtures/blocked-extension.mjs') });
+  let terminal: PtyClient | undefined;
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'attach', session.id, '--state', f.dir],
+      {
+        state: f.dir,
+        columns: 116,
+        rows: 38,
+      },
+    );
+    await terminal.contains('You have control');
+    await terminal.write('Keep one running turn\r');
+    const { existsSync } = await import('node:fs');
+    await until(() => existsSync(join(f.dir, 'probe-entered')), Boolean);
+    await terminal.contains('esc to interrupt');
+    // Trial polish #8: the line keeps counting on its own, with no input and no refresh.
+    const seconds = (screen: string) => Number(/… · (\d+)s · /.exec(screen)?.[1] ?? -1);
+    const first = await until(
+      () => terminal!.screen(),
+      (screen) => seconds(screen) >= 0,
+    );
+    await until(
+      () => terminal!.screen(),
+      (screen) => seconds(screen) >= seconds(first) + 2,
+    );
+    writeFileSync(join(f.dir, 'release-probe'), 'go');
+    await terminal.contains('Offline reply: Keep one running turn');
+    await until(
+      () => terminal!.screen(),
+      (screen) => !screen.includes('esc to interrupt'),
+    );
+    await terminal.leave();
+    expect((await terminal.exit()).restored).toBe(true);
+  } finally {
+    await terminal?.close();
     await f.close();
   }
 }, 30000);
@@ -216,14 +259,15 @@ test('TUI reviews two operation-bound approvals in reverse order and observer de
     );
     if (process.env.SALAAM_TUI_CAPTURE_DIR)
       await observer.capture(join(process.env.SALAAM_TUI_CAPTURE_DIR, 'approval.svg'));
-    await observer.write('\x1b[C\r');
+    // Focus opens on Approve once (trial polish #2).
+    await observer.write('\r');
     await until(
       () => f.service.store.approvals(session.id),
       (approvals) => approvals.some((a) => a.decision === 'approve'),
     );
     await observer.write('\x0f');
     await observer.contains('Approve?');
-    await observer.write('\r');
+    await observer.write('n');
     await until(
       () => f.service.store.snapshot(session.id),
       (snapshot) => snapshot.attempts[0]?.state === 'completed',
@@ -294,7 +338,7 @@ test('external prompt editor runs in cooked mode, returns exact input and resume
       { state: f.dir, env: { EDITOR: process.execPath + ' ' + editor } },
     );
     await terminal.contains('You have control');
-    await terminal.write('\x05');
+    await terminal.write('\x07');
     const { existsSync } = await import('node:fs');
     await until(() => existsSync(gate), Boolean);
     expect((await terminal.command({ op: 'status' })).raw).toBe(false);
@@ -341,7 +385,7 @@ test('slow terminal output recovers a complete fresh frame and still accepts one
     );
     expect(f.service.store.snapshot(session.id).submissions).toHaveLength(1);
     await terminal.contains('Offline reply: After slow output');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
   } finally {
     await terminal?.close();
@@ -396,7 +440,7 @@ test('terminating the TUI while an external editor is open cleans up that editor
       { state: f.dir, env: { EDITOR: process.execPath + ' ' + editor } },
     );
     await terminal.contains('You have control');
-    await terminal.write('\x05');
+    await terminal.write('\x07');
     const { existsSync } = await import('node:fs');
     await until(() => existsSync(gate), Boolean);
     const editorPid = Number(readFileSync(gate, 'utf8'));
@@ -476,7 +520,7 @@ test('TUI preserves M8 daemon compatibility when health and coding routes lack M
     await terminal.contains('Command execution is off');
     await terminal.write('\t');
     await terminal.contains('SESSION CONTEXT');
-    await terminal.write('\x03');
+    await terminal.leave();
     expect(await terminal.exit()).toEqual({ code: 0, restored: true });
     expect(f.service.store.snapshot(session.id).submissions).toHaveLength(0);
   } finally {
@@ -530,6 +574,104 @@ test('slash completion, help and model selection work in a real terminal without
   } finally {
     await terminal?.close();
     await client.close();
+    await f.close();
+  }
+}, 30000);
+
+// Trial polish C (2026-10-31): `?` on an empty composer shows the keys, a `?` inside text stays
+// text, and the window title says the state and is restored on exit.
+test('? opens the key sheet only on an empty composer, and the title is pushed and restored', async () => {
+  const f = await fixture();
+  let terminal: PtyClient | undefined;
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'tui', '--session', session.id, '--state', f.dir],
+      { state: f.dir, columns: 116, rows: 40 },
+    );
+    await terminal.contains('You have control');
+    await terminal.write('?');
+    await terminal.contains('Keys · Conversation');
+    await terminal.write('all actions');
+    await terminal.contains('Ctrl+K · all actions');
+    await terminal.write('\x1b');
+    await until(
+      () => terminal!.screen(),
+      (screen) => !screen.includes('Keys · Conversation'),
+    );
+    await terminal.write('why?');
+    await terminal.contains('why?');
+    expect(terminal.screen()).not.toContain('Keys · Conversation');
+    await terminal.leave();
+    expect((await terminal.exit()).restored).toBe(true);
+    const raw = Buffer.concat(terminal.captured).toString();
+    expect(raw).toContain('\x1b[22;0t');
+    expect(raw).toMatch(/\x1b\]0;Salaam · [^\x07]+ · idle\x07/);
+    expect(raw).toContain('\x1b[23;0t');
+  } finally {
+    await terminal?.close();
+    await f.close();
+  }
+}, 30000);
+
+// Trial polish C (2026-10-31): inside a Herdr pane, Salaam reports through Herdr's documented
+// `pane report-agent` command, and releases the pane when it exits.
+test('inside Herdr the TUI reports its state and resume command, then releases the pane', async () => {
+  const f = await fixture();
+  const bin = join(f.dir, 'fake-herdr.cjs');
+  const log = join(f.dir, 'herdr.log');
+  writeFileSync(
+    bin,
+    `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`,
+    { mode: 0o755 },
+  );
+  let terminal: PtyClient | undefined;
+  try {
+    const session = await create(f.service, f.dir);
+    await ready(f.service, session.id);
+    terminal = new PtyClient(
+      [join(ROOT, 'bin/salaam.mjs'), 'tui', '--session', session.id, '--state', f.dir],
+      {
+        state: f.dir,
+        columns: 116,
+        rows: 38,
+        env: { HERDR_ENV: '1', HERDR_PANE_ID: 'w1:p3', HERDR_BIN_PATH: bin },
+      },
+    );
+    await terminal.contains('You have control');
+    const reports = () =>
+      (existsSync(log) ? readFileSync(log, 'utf8') : '')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as string[]);
+    // The first report can come before the session loads; the resume command follows it.
+    await until(reports, (r) => r.some((a) => a[1] === 'report-agent' && a.includes('--')));
+    const first = reports().find((a) => a[1] === 'report-agent' && a.includes('--'))!;
+    expect(first.slice(0, 9)).toEqual([
+      'pane',
+      'report-agent',
+      'w1:p3',
+      '--source',
+      'salaam',
+      '--agent',
+      'salaam',
+      '--state',
+      'idle',
+    ]);
+    expect(first.slice(first.indexOf('--'))).toEqual(['--', 'salaam', '--session', session.id]);
+    await terminal.leave();
+    expect((await terminal.exit()).restored).toBe(true);
+    await until(reports, (r) => r.some((a) => a[1] === 'release-agent'));
+    const all = reports();
+    const seqs = all.map((a) => Number(a[a.indexOf('--seq') + 1]));
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect(all.at(-1)!.slice(0, 3)).toEqual(['pane', 'release-agent', 'w1:p3']);
+    expect(JSON.stringify(all)).not.toContain(f.dir + '/');
+  } finally {
+    await terminal?.close();
     await f.close();
   }
 }, 30000);

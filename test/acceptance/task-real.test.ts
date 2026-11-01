@@ -253,7 +253,8 @@ test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bou
       (screen) => screen.includes('Approve once') && !screen.includes('Read to the end'),
     );
     await terminal.capture(join(ROOT, '.state/evidence/m11/screens/real-approval.svg'));
-    await terminal.write('\x1b[C\r');
+    // Trial polish: focus opens on Approve once, so Enter approves.
+    await terminal.write('\r');
     const completed = await until(task, (t) => t.state === 'succeeded', 45000);
     expect(completed.verification.completion.fresh).toBe(true);
     expect(completed.steps.map((s: any) => s.id)).toEqual(result.step_ids);
@@ -269,7 +270,7 @@ test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bou
     await terminal.write('Session context\r');
     await terminal.contains('SUCCEEDED');
     await terminal.capture(join(ROOT, '.state/evidence/m11/screens/real-completed.svg'));
-    await terminal.write('\x03');
+    await terminal.leave();
     expect((await terminal.exit()).restored).toBe(true);
     terminal = undefined;
     const commands = await call<any[]>(socket, `/v1/sessions/${session.id}/commands`);

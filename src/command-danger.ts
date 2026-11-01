@@ -23,7 +23,9 @@ export type DangerCategory =
   | 'database'
   | 'containers'
   | 'install-global'
-  | 'outside-workspace';
+  | 'outside-workspace'
+  /** The optional small-model reviewer (Phase 4c) asked for it. */
+  | 'classifier';
 export type DangerVerdict =
   | { dangerous: false }
   | { dangerous: true; category: DangerCategory; reason: string; segment: string };

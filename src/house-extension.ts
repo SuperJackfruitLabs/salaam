@@ -54,6 +54,8 @@ function platformNote(): string {
   return `Commands run on ${process.platform} under /bin/sh.`;
 }
 
+/** Long enough for PreToolUse hooks (at most 600 s each, as in Claude Code) plus the call itself. */
+const HOOKED_BRIDGE_TIMEOUT = 11 * 60 * 1000;
 export default function house(pi: ExtensionAPI): void {
   const config = JSON.parse(process.env.SALAAM_WORKER_CONFIG ?? 'null') as WorkerConfig | null;
   if (!config) throw new Error('Missing Salaam worker configuration');
@@ -67,10 +69,11 @@ export default function house(pi: ExtensionAPI): void {
       c.token,
       method === 'provider.auth' || method.startsWith('operator_mcp.')
         ? 125000
-        : method.startsWith('station.')
-          ? 35000
-          : method.startsWith('web.')
-            ? 45000
+        : // PreToolUse hooks run before these answer, each for up to its own timeout (Phase 4b).
+          method === 'local.prepare' || method === 'local.read' || method.startsWith('web.')
+          ? HOOKED_BRIDGE_TIMEOUT
+          : method.startsWith('station.')
+            ? 35000
             : 2000,
     );
   let timer: NodeJS.Timeout | undefined;
@@ -735,7 +738,7 @@ export default function house(pi: ExtensionAPI): void {
       name: 'salaam_local',
       label: 'Reviewed local coding',
       description:
-        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless full access is on. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. For a long-running command such as a dev server or watcher, set background: true; it returns a task id at once and keeps running after this turn (read or stop it with salaam_tasks). Inspect actual results; do not claim success after failure.',
+        'Apply reviewed edits in the real workspace or run a shell command as the local user, inside the host OS sandbox unless full access is on. Each invocation is approved by a person, an approval rule or the session mode. For edits, read files first and provide their sha256. To change an existing file, give replacements: exact old text (copied from the file, matching exactly once) and its new text; do not resend the whole file. Give content only for a new file (sha256 null, in an existing directory) or a deliberate full rewrite. Commands run at the workspace root. For a long-running command such as a dev server or watcher, set background: true; it returns a task id at once and keeps running after this turn (read or stop it with salaam_tasks). A sandboxed command cannot listen for connections; for a server the person should reach, also set listen: true, which always asks them (on Linux it is refused, since the sandbox has its own network). Inspect actual results; do not claim success after failure.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('edit'), Type.Literal('command')]),
         edits: Type.Optional(
@@ -757,6 +760,7 @@ export default function house(pi: ExtensionAPI): void {
         command: Type.Optional(Type.String()),
         timeout_ms: Type.Optional(Type.Integer({ minimum: 100, maximum: 120000 })),
         background: Type.Optional(Type.Boolean()),
+        listen: Type.Optional(Type.Boolean()),
       }),
       async execute(id, args, signal, _update, ctx) {
         type Result = ReturnType<import('./local-coding.js').LocalCoding['view']>;

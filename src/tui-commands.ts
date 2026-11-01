@@ -35,7 +35,22 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
     [],
     '<text>',
   ),
-  command('diff', 'Review workspace changes'),
+  command('diff', 'Review workspace changes file by file'),
+  command(
+    'commit',
+    'Draft a commit of the current work; staging and the commit each ask (uses provider credits)',
+    [],
+    undefined,
+    'model',
+  ),
+  command('branch', 'Switch to a branch, creating it if needed', [], '<name>', 'model'),
+  command(
+    'pr',
+    'Push this branch and open a pull request; both always ask, except in YOLO',
+    [],
+    '[base]',
+    'model',
+  ),
   command('tools', 'Inspect available capabilities and recorded tool activity'),
   command('permissions', 'Configure local permissions independently of task progression'),
   command('mode', 'Cycle review → accept edits → auto (shift+tab)'),
@@ -83,6 +98,18 @@ export const SLASH_COMMANDS: readonly SlashDefinition[] = [
   command('agents', 'Inspect native/external worker profiles and child work'),
   command('progression', 'Choose manual or bounded task progression; permissions stay separate'),
   command('tasks', 'Open durable task actions'),
+  command(
+    'classifier',
+    'Pick the small-model command reviewer for this session, or turn it off',
+    [],
+    '[name|on|off]',
+  ),
+  command(
+    'hooks',
+    'Show your hooks and this workspace’s; trust or revoke the workspace file',
+    [],
+    '[trust|revoke]',
+  ),
   command('jobs', 'Show background commands and their output, or stop one', ['bg'], '[stop <id>]'),
 ];
 export const SLASH_COMPLETIONS = SLASH_COMMANDS.flatMap((c) =>

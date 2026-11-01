@@ -13,6 +13,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
+import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
+import { boundShellCommand } from './shell-passthrough.js';
+import type { ClassifierReview } from './danger-classifier.js';
 import { join } from 'node:path';
 import type { Store } from './store.js';
 import type { ManagedWork } from './managed.js';
@@ -38,6 +41,7 @@ import {
   type RuleRequest,
 } from './approval-rules.js';
 import { assertUndoSettled } from './local-undo.js';
+import type { HookRun } from './hooks.js';
 import { processIdentity, processStart } from './supervisor.js';
 
 const TASK_TAIL = 65536;
@@ -129,6 +133,10 @@ export class LocalCoding {
   private unregister: () => void;
   /** Desk-session approval rules (allow/ask/deny), set by the service; absent means every request asks. */
   public rules?: ApprovalRules;
+  /** The optional small-model command reviewer (Phase 4c); absent means the rules alone decide. */
+  public classifier?: {
+    review(session: string, command: string, cwd: string): Promise<ClassifierReview | null>;
+  };
   constructor(
     readonly store: Store,
     readonly managed: ManagedWork,
@@ -231,12 +239,70 @@ export class LocalCoding {
         'Another operation or uncertain outcome owns this workspace',
       );
   }
+  /** prepare, after the optional reviewer has looked at a command the session would run unasked. */
+  async prepareReviewed(
+    session: string,
+    epoch: number,
+    attempt: string,
+    toolCall: string,
+    input: Record<string, unknown>,
+  ) {
+    let review: ClassifierReview | null = null;
+    if (this.classifier && input.action === 'command' && typeof input.command === 'string') {
+      const p = permissionPolicy(this.store, session);
+      // Only where the mode would run the command without asking; review mode asks anyway.
+      if (p.access || p.mode === 'auto') {
+        const root = this.store.session(session).cwd;
+        if (!classifyCommand(input.command, this.dangerContext(root)).dangerous)
+          review = await this.classifier.review(session, input.command, root);
+      }
+    }
+    return this.prepare(session, epoch, attempt, toolCall, input, review);
+  }
+  private dangerContext(root: string) {
+    return {
+      root,
+      home: homedir(),
+      tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
+    };
+  }
+  /** Has this tool call already been prepared? */
+  hasCall(session: string, epoch: number, toolCall: string): boolean {
+    return !!this.store.db
+      .prepare('SELECT 1 FROM local_calls WHERE session_id=? AND epoch=? AND tool_call=?')
+      .get(session, epoch, toolCall);
+  }
+  /** A `!command` turn runs only what was typed, once (trial polish #12): enforced here, not by
+   * the model following its instruction, so it holds in auto, full access and YOLO alike. */
+  private assertShellBinding(session: string, attempt: string, input: Record<string, unknown>) {
+    const row = this.store.db
+      .prepare(
+        'SELECT s.text FROM attempts a JOIN submissions s ON s.id=a.submission_id WHERE a.id=? AND a.session_id=?',
+      )
+      .get(attempt, session) as { text: string } | undefined;
+    const bound = row ? boundShellCommand(row.text) : undefined;
+    if (bound === undefined) return;
+    if (input.action !== 'command' || input.command !== bound || input.background)
+      throw new ServiceError(
+        'shell_binding',
+        `This turn runs only the command you typed: ${bound}. Run exactly that, unchanged.`,
+      );
+    const ran = this.store.db
+      .prepare('SELECT 1 FROM local_calls WHERE session_id=? AND attempt_id=?')
+      .get(session, attempt);
+    if (ran)
+      throw new ServiceError(
+        'shell_binding',
+        'This turn already ran the command you typed. Report its output; do not run anything else.',
+      );
+  }
   prepare(
     session: string,
     epoch: number,
     attempt: string,
     toolCall: string,
     input: Record<string, unknown>,
+    review: ClassifierReview | null = null,
   ) {
     const prior = this.store.db
       .prepare(
@@ -248,6 +314,7 @@ export class LocalCoding {
         throw new ServiceError('request_conflict', 'Tool call already binds different arguments');
       return this.view(String(prior.id));
     }
+    this.assertShellBinding(session, attempt, input);
     const root = this.store.session(session).cwd;
     const c: LocalCall = {
       id: randomUUID(),
@@ -273,6 +340,7 @@ export class LocalCoding {
           command: string;
           timeout_ms: number;
           background?: true;
+          listen?: true;
           sandbox: { kind: string; level: string; bwrap: string | null; network?: 'broker' };
         };
     if (kind === 'edit') args = { action: 'edit', edits: prepareLocalEdits(root, input.edits) };
@@ -284,7 +352,17 @@ export class LocalCoding {
       if (input.background !== undefined && typeof input.background !== 'boolean')
         throw new ServiceError('invalid_field', 'background must be true or false');
       if (background) this.assertBackground(session);
+      if (input.listen !== undefined && typeof input.listen !== 'boolean')
+        throw new ServiceError('invalid_field', 'listen must be true or false');
       const sb = this.sandboxFor(session);
+      // Operator ruling 2026-11-01 (option C): a sandboxed command listens only when a person
+      // approves that exact command to. Linux's sandbox has its own network, so it cannot serve.
+      const listen = input.listen === true && this.sandboxed(sb);
+      if (listen && sb.kind === 'bwrap')
+        throw new ServiceError(
+          'listen_unreachable',
+          'On Linux the command sandbox has its own network namespace, so a server it starts cannot be reached from the host. Ask for full access for this command, or run the server yourself.',
+        );
       if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
         throw new ServiceError(
           'sandbox_unavailable',
@@ -297,6 +375,7 @@ export class LocalCoding {
         command: string(input.command, 'command', 8192),
         timeout_ms: background ? BACKGROUND_LIFETIME : Number(timeout),
         ...(background ? { background: true as const } : {}),
+        ...(listen ? { listen: true as const } : {}),
         // Bound into the approval and the operation digest: the sandbox is part of what is approved.
         sandbox: {
           kind: sb.kind,
@@ -308,19 +387,27 @@ export class LocalCoding {
     } else throw new ServiceError('invalid_field', 'Choose edit or command');
     c.args = JSON.stringify(args);
     // Operator ruling 2026-10-31: full access asks only for commands this check calls dangerous.
-    const danger: DangerVerdict =
+    const rulesDanger: DangerVerdict =
       args.action === 'command'
-        ? classifyCommand(args.command, {
-            root,
-            home: homedir(),
-            tmp: [...new Set(['/tmp', '/private/tmp', tmpdir(), realpathSync(tmpdir())])],
-          })
+        ? classifyCommand(args.command, this.dangerContext(root))
         : { dangerous: false };
+    // Phase 4c: the reviewer can only add a reason to ask, never remove one.
+    const escalated = !rulesDanger.dangerous && args.action === 'command' && !!review?.escalate;
+    const danger: DangerVerdict = escalated
+      ? {
+          dangerous: true,
+          category: 'classifier',
+          reason: `${review!.reason} (reviewed by ${review!.model})`,
+          segment: (args as { command: string }).command,
+        }
+      : rulesDanger;
+    // Pushing and opening a pull request ask in every mode but YOLO (operator ruling 2026-10-31).
+    const publishes = args.action === 'command' ? publishesToRemote(args.command) : null;
     this.store.transaction(() => {
       const reviewed =
         args.action === 'edit'
           ? reviewLocalEdits(args.edits)
-          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}Command:\n${args.command}`;
+          : `Runs as ${this.tools.mode === 'tools-user' ? `tools user ${this.tools.user} (uid ${this.tools.uid})` : 'your local user'}, ${this.sandboxText(this.bound(args))}\nDirectory: ${root}${args.background ? `\nRuns in the background until stopped (at most ${BACKGROUND_LIFETIME / 3600000} h); the last ${TASK_TAIL / 1024} KiB of output is kept` : `\nTimeout: ${args.timeout_ms} ms`}\n${danger.dangerous ? `Dangerous (${danger.category}): ${danger.reason}\n` : ''}${publishes ? `Publishes: ${publishes}; this always asks, except in YOLO\n` : ''}${args.listen ? 'May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule\n' : ''}Command:\n${args.command}`;
       const permission = this.managed.prepareWorkspaceInTransaction(
         session,
         epoch,
@@ -353,6 +440,17 @@ export class LocalCoding {
         action: kind,
       });
     });
+    if (review)
+      this.store.transaction(() =>
+        this.store.event(session, 'permission.classifier', {
+          call_id: c.id,
+          operation_id: c.operation_id,
+          model: review.model,
+          verdict: review.verdict,
+          escalated,
+          ...(review.reason ? { reason: review.reason } : {}),
+        }),
+      );
     const policy = permissionPolicy(this.store, session);
     // Desk-session rules: a matching deny refuses, a matching allow approves and is recorded with the
     // rule that decided it; anything else falls through to the scoped-edit policy and then asks.
@@ -361,9 +459,12 @@ export class LocalCoding {
         args.action === 'command'
           ? { tool: 'command', argv: commandArgv(args.command) }
           : { tool: 'edit', paths: args.edits.map((e) => e.path) };
-      // A repo's allow rules cannot approve a dangerous command: only the person's own rules can.
+      // A repo's allow rules cannot approve a dangerous or publishing command: only the person's own
+      // rules can.
       const usable = (all: ReturnType<ApprovalRules['list']>) =>
-        danger.dangerous ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow')) : all;
+        danger.dangerous || publishes || (args.action === 'command' && args.listen)
+          ? all.filter((r) => !(r.source === 'repo' && r.effect === 'allow'))
+          : all;
       const decided = evaluateRules(usable(this.rules.list(session)), request);
       const approval = this.managed.forOperation(c.operation_id);
       const rule = decided.rule && {
@@ -424,7 +525,12 @@ export class LocalCoding {
             p,
             args.edits.map((e) => e.path),
           )
-        : autoApprovesCommands(p, this.sandboxed(this.bound(args)), danger.dangerous);
+        : autoApprovesCommands(
+            p,
+            this.sandboxed(this.bound(args)),
+            danger.dangerous,
+            publishes !== null || args.listen === true,
+          ) && !(escalated && p.access !== 'yolo');
     if (this.managed.forOperation(c.operation_id).state === 'pending' && covered(policy)) {
       const approval = this.managed.forOperation(c.operation_id);
       this.managed.decide(
@@ -459,7 +565,9 @@ export class LocalCoding {
             ...(args.action === 'command' ? { command: args.command } : {}),
             ...(danger.dangerous
               ? { would_have_asked: { category: danger.category, reason: danger.reason } }
-              : {}),
+              : publishes
+                ? { would_have_asked: { category: 'publish', reason: publishes } }
+                : {}),
           }),
         );
     }
@@ -582,6 +690,80 @@ export class LocalCoding {
   private brokerNetwork(sb: LocalSandbox = this.sandbox): { socket: string } | null {
     return sb.network && this.sandboxed(sb) ? sb.network : null;
   }
+  /** Run a hook (Phase 4b) as one of this session's sandboxed commands would run: the same sandbox
+   * and level, no network, a minimal environment, `input` on stdin, bounded output and a timeout.
+   * Never as the tools user, whose process accounting is for approved operations only. */
+  runHook(session: string, command: string, input: string, timeoutMs: number): Promise<HookRun> {
+    const refused = (why: string): Promise<HookRun> =>
+      Promise.resolve({
+        code: null,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        truncated: false,
+        refused: why,
+      });
+    if (this.tools.mode === 'tools-user')
+      return refused('Hooks do not run when commands run as a separate tools user');
+    const sb = this.sandboxFor(session);
+    if (sb.kind === 'bwrap' && sb.level !== 'full-access' && !sb.bwrap)
+      return refused('This host has no usable bubblewrap, so it cannot run a sandboxed hook');
+    if (sb.kind === 'none' && sb.level !== 'full-access' && !sb.allowUnsandboxed)
+      return refused(UNSANDBOXED_REFUSAL);
+    const root = this.store.session(session).cwd;
+    const tmp =
+      sb.kind === 'seatbelt' && sb.level !== 'full-access'
+        ? realpathSync(mkdtempSync(join(tmpdir(), 'salaam-hook-')))
+        : undefined;
+    const argv = this.commandArgv(root, command, tmp, null, sb);
+    const cap = 16 * 1024;
+    return new Promise<HookRun>((resolve) => {
+      let stdout = '',
+        stderr = '',
+        truncated = false,
+        timedOut = false;
+      const child = spawn(argv[0]!, argv.slice(1), {
+        cwd: root,
+        detached: true,
+        env: {
+          PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+          HOME: process.env.HOME ?? root,
+          LANG: 'en_US.UTF-8',
+          TMPDIR: '/tmp',
+          SALAAM_PROJECT_DIR: root,
+          CLAUDE_PROJECT_DIR: root,
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const take = (current: string, chunk: Buffer) => {
+        const room = cap - Buffer.byteLength(current);
+        if (chunk.length > room) truncated = true;
+        return room > 0 ? current + chunk.subarray(0, room).toString('utf8') : current;
+      };
+      child.stdout.on('data', (c: Buffer) => (stdout = take(stdout, c)));
+      child.stderr.on('data', (c: Buffer) => (stderr = take(stderr, c)));
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      }, timeoutMs);
+      const finish = (code: number | null) => {
+        clearTimeout(timer);
+        if (tmp) rmSync(tmp, { recursive: true, force: true });
+        resolve({ code: timedOut ? null : code, stdout, stderr, timedOut, truncated });
+      };
+      child.once('error', (error) => {
+        stderr = take(stderr, Buffer.from(error.message));
+        finish(null);
+      });
+      child.once('close', (code) => finish(code));
+    });
+  }
   /** The process a command runs as. Under the tools user, the host-side shell reports its own
    * process group (the one a stop kills) before exec-ing bubblewrap, whose PID namespace would
    * otherwise report a number that means nothing on the host. */
@@ -591,6 +773,7 @@ export class LocalCoding {
     tmp?: string,
     relay?: BrokerRelay | null,
     sb: LocalSandbox = this.sandbox,
+    listen = false,
   ): string[] {
     const sandboxed = this.sandboxed(sb);
     const inner = (s: string) =>
@@ -601,6 +784,7 @@ export class LocalCoding {
               network: false,
               ...(relay?.port ? { brokerPort: relay.port } : {}),
               readPaths: sb.readPaths ?? [],
+              ...(listen ? { listen: true } : {}),
             })
           : sandboxArgv(sb.level, root, ['/bin/sh', '-c', s], sb.bwrap, {
               network: false,
@@ -669,7 +853,14 @@ export class LocalCoding {
       const tools = this.tools.mode === 'tools-user';
       const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
       // As the tools user, setsid makes the shell its own group leader so it can be killed by group.
-      const argv = this.commandArgv(c.root, script, tmp, relay, sb);
+      const argv = this.commandArgv(
+        c.root,
+        script,
+        tmp,
+        relay,
+        sb,
+        JSON.parse(c.args).listen === true,
+      );
       let toolGroup: number | null = null,
         marker = tools ? '' : null,
         spawned = false;
@@ -686,6 +877,7 @@ export class LocalCoding {
           HOME: process.env.HOME ?? c.root,
           LANG: 'en_US.UTF-8',
           TMPDIR: '/tmp',
+          ...(this.sandboxed(sb) ? gitIdentityEnv(c.root) : {}),
           ...(relay ? proxyEnv(relay.port ?? COMMAND_NETWORK_PORT) : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -885,7 +1077,14 @@ export class LocalCoding {
         : undefined;
     // Network for a long-lived task needs a relay that lives as long; keep it simple and honest.
     const script = 'IFS= read -r salaam_start_gate || exit 125\nexec 0</dev/null\n' + command;
-    const argv = this.commandArgv(c.root, script, tmp, null, sb);
+    const argv = this.commandArgv(
+      c.root,
+      script,
+      tmp,
+      null,
+      sb,
+      JSON.parse(c.args).listen === true,
+    );
     const child = spawn(argv[0]!, argv.slice(1), {
       cwd: c.root,
       detached: true,
@@ -894,6 +1093,7 @@ export class LocalCoding {
         HOME: process.env.HOME ?? c.root,
         LANG: 'en_US.UTF-8',
         TMPDIR: '/tmp',
+        ...(this.sandboxed(sb) ? gitIdentityEnv(c.root) : {}),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
