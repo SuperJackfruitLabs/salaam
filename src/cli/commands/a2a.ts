@@ -129,7 +129,7 @@ export async function a2aCommand(ctx: CliContext): Promise<boolean> {
       value = object(privateJSON(credential_file));
     if (
       value.peer !== peer ||
-      Object.keys(value).sort().join(',') !== 'peer,token' ||
+      Object.keys(value).toSorted().join(',') !== 'peer,token' ||
       typeof value.token !== 'string' ||
       !/^[A-Za-z0-9._~-]{32,512}$/.test(value.token)
     )

@@ -56,7 +56,7 @@ export function cancelChoices(snapshot: TurnSnapshot): { id: string; label: stri
   const order = ['running', 'dispatching', 'accepted'];
   return snapshot.attempts
     .filter((a) => order.includes(a.state))
-    .sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state))
+    .toSorted((a, b) => order.indexOf(a.state) - order.indexOf(b.state))
     .map((a) => ({
       id: a.id,
       label: (a.state === 'accepted' ? 'queued' : a.state) + ' · ' + a.id.slice(0, 8),

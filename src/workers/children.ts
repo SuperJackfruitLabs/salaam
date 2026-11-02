@@ -80,7 +80,7 @@ export class ChildWork {
     const input = digest({
       prompt,
       budget,
-      requested: [...new Set(requested)].sort(),
+      requested: [...new Set(requested)].toSorted(),
       ...(profileId ? { profile: profileId } : {}),
       ...(admission ? { assignment: admission.assignment } : {}),
       ...(admission?.runtime ? { runtime: admission.runtime } : {}),
@@ -118,7 +118,7 @@ export class ChildWork {
         ...new Set(
           agent && !requested.length ? available : requested.filter((x) => available.includes(x)),
         ),
-      ].sort();
+      ].toSorted();
       const effectivePrompt = agent
         ? `${agent.profile.prompt ?? 'Run the diagnostic probe.'}${admission?.runtime ? '\n\nRuntime binding: use the admitted external harness tools for the corresponding file and command actions. Its private draft is /workspace. Return evidence for explicit root integration; this invocation cannot verify the root task.' : ''}\n\nGoal:\n${prompt}\n\nExplicitly selected facts:\n${JSON.stringify(agent.facts)}`
         : prompt;
@@ -257,7 +257,7 @@ export class ChildWork {
       );
     if (!prompt.trim() || prompt.length > 32768)
       throw new ServiceError('invalid_child', 'Invalid critic prompt');
-    const authority = [...grant.profile.tools].sort();
+    const authority = [...grant.profile.tools].toSorted();
     const input = digest({
       prompt,
       budget,

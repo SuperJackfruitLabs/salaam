@@ -393,7 +393,7 @@ export class Workspaces {
     if (action === 'inspect') return this.inspect(session);
     const offset = args.offset === undefined ? 0 : integer(args.offset, 'offset');
     if (action === 'list') {
-      const all = Object.keys(tree).sort();
+      const all = Object.keys(tree).toSorted();
       return {
         workspace_id: w.id,
         revision: w.revision,
@@ -440,7 +440,7 @@ export class Workspaces {
         matches: unknown[] = [];
       let index = 0,
         next: number | null = null;
-      outer: for (const path of Object.keys(tree).sort()) {
+      outer: for (const path of Object.keys(tree).toSorted()) {
         const text = Buffer.from(tree[path]!.content, 'base64').toString('utf8');
         if (text.includes('\0')) continue;
         const lines = text.split('\n');
@@ -553,7 +553,7 @@ export class Workspaces {
       .get(workspace, key) as unknown as Mutation | undefined;
   }
   private writeTree(root: string, before: WorkspaceTree, after: WorkspaceTree): void {
-    for (const path of Object.keys(after).sort()) {
+    for (const path of Object.keys(after).toSorted()) {
       if (digest(after[path]) === digest(before[path] ?? null)) continue;
       const full = join(root, filePath(path));
       mkdirSync(dirname(full), { recursive: true, mode: 0o700 });
@@ -574,7 +574,7 @@ export class Workspaces {
         closeSync(parent);
       }
     }
-    for (const path of Object.keys(before).sort())
+    for (const path of Object.keys(before).toSorted())
       if (!after[path]) {
         unlinkSync(join(root, filePath(path)));
         let empty = dirname(join(root, path));
@@ -666,7 +666,7 @@ export class Workspaces {
     if (digest(current) !== w.digest)
       throw new ServiceError('workspace_changed', 'Workspace changed during diff capture');
     const changes = [...new Set([...Object.keys(baseline), ...Object.keys(current)])]
-      .sort()
+      .toSorted()
       .filter((path) => digest(baseline[path] ?? null) !== digest(current[path] ?? null))
       .map((path) => ({ path, before: baseline[path] ?? null, after: current[path] ?? null }));
     return {

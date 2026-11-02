@@ -116,7 +116,7 @@ export function rankFiles(files: string[], query: string): string[] {
   return files
     .map((file) => ({ file, s: score(file) }))
     .filter((x) => x.s > 0)
-    .sort((a, b) => b.s - a.s || a.file.length - b.file.length || a.file.localeCompare(b.file))
+    .toSorted((a, b) => b.s - a.s || a.file.length - b.file.length || a.file.localeCompare(b.file))
     .map((x) => x.file);
 }
 

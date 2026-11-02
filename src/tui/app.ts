@@ -280,7 +280,7 @@ export class SalaamApp implements PaletteContext {
         this.editor.setText(this.drafts.get(snapshot.id) ?? '');
         this.resetScroll();
       }
-      for (const submission of [...snapshot.submissions].reverse())
+      for (const submission of [...snapshot.submissions].toReversed())
         if (!this.historyKeys.has(submission.id)) {
           this.historyKeys.add(submission.id);
           this.editor.addToHistory(submission.text);

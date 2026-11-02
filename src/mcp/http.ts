@@ -18,7 +18,7 @@ export const mcpToolDigest = (tool: unknown): string => digest(object(tool));
 export function mcpCatalogDigest(tools: readonly unknown[]): string {
   const definitions = tools
     .map(object)
-    .sort((a, b) =>
+    .toSorted((a, b) =>
       String(a.name) < String(b.name) ? -1 : String(a.name) > String(b.name) ? 1 : 0,
     );
   return digest(definitions);

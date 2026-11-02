@@ -36,7 +36,7 @@ const ROLE_TOOLS = {
   integrator: ['salaam_probe', 'salaam_repository', 'salaam_findings'],
 } as const;
 export function profileTools(role: keyof typeof ROLE_TOOLS): string[] {
-  return [...ROLE_TOOLS[role]].sort();
+  return [...ROLE_TOOLS[role]].toSorted();
 }
 export const BUILTIN_PROFILES: AgentProfile[] = [
   DIAGNOSTIC_PROFILE,
@@ -108,7 +108,7 @@ export function parseAgentProfile(name: string, source: string): AgentProfile {
               string(x, 'tool', 128),
             ),
           ),
-        ].sort();
+        ].toSorted();
   if (!tools.length || tools.some((x) => !profileTools(role).includes(x)))
     throw new ServiceError('invalid_profile', 'Tools exceed the specialist role');
   const revision = integer(metadata.revision ?? 1, 'revision');
@@ -164,7 +164,7 @@ export class AgentProfiles {
     }
     const names = readdirSync(directory)
       .filter((name) => name.endsWith('.md'))
-      .sort();
+      .toSorted();
     if (names.length > 32) throw new ServiceError('invalid_profile', 'At most 32 project profiles');
     const profiles = names.map((file) => {
       const path = join(directory, file),

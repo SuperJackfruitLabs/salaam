@@ -80,7 +80,7 @@ export class RepositorySnapshots {
     };
     if (action === 'inspect') return { ...identity, authority: 'snapshot-read-only' };
     if (action === 'list') {
-      const paths = Object.keys(tree).sort();
+      const paths = Object.keys(tree).toSorted();
       return {
         ...identity,
         files: paths.slice(offset, offset + 20).map((path) => ({
@@ -124,7 +124,7 @@ export class RepositorySnapshots {
         matches: unknown[] = [];
       let index = 0,
         next: number | null = null;
-      outer: for (const path of Object.keys(tree).sort()) {
+      outer: for (const path of Object.keys(tree).toSorted()) {
         const bytes = Buffer.from(tree[path]!.content, 'base64'),
           text = bytes.toString('utf8');
         if (text.includes('\0') || !Buffer.from(text).equals(bytes)) continue;
@@ -151,7 +151,7 @@ export class RepositorySnapshots {
         this.artifacts.read(binding.repository!.base_artifact),
       ) as WorkspaceTree;
       const paths = [...new Set([...Object.keys(base), ...Object.keys(tree)])]
-        .sort()
+        .toSorted()
         .filter((path) => digest(base[path] ?? null) !== digest(tree[path] ?? null));
       return {
         ...identity,

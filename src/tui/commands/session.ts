@@ -182,7 +182,7 @@ const copy: SlashCommand = {
   names: ['copy'],
   session: true,
   async run(ctx, _args, _name, snapshot) {
-    const last = [...snapshot.messages].reverse().find((m) => m.role === 'assistant');
+    const last = [...snapshot.messages].toReversed().find((m) => m.role === 'assistant');
     if (!last) throw new Error('No assistant response to copy.');
     if (last.truncated)
       throw new Error('Response preview is truncated. Use /export for complete captured history.');

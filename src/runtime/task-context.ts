@@ -92,7 +92,7 @@ export class TaskContext {
             },
           ]),
       ).values(),
-    ].sort((a, b) => a.profile_id.localeCompare(b.profile_id));
+    ].toSorted((a, b) => a.profile_id.localeCompare(b.profile_id));
     // The compaction cursor is a projection, not a task fact/version.
     const frame =
       'SALAAM_TASK_STATE ' +

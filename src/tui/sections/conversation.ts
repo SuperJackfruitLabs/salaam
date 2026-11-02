@@ -187,7 +187,7 @@ export function conversationLines(
     );
   }
   for (const submission of [...session.submissions]
-    .reverse()
+    .toReversed()
     .filter((s) => ['accepted', 'dispatching', 'running'].includes(s.state))) {
     lines.push(
       ...doc.title(

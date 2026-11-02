@@ -115,7 +115,7 @@ export function adjacent(s: Schedule, after: number, direction: 1 | -1 = 1): num
         const p = local(ms, s.timezone);
         return Date.UTC(p[0]!, p[1]! - 1, p[2], p[3], p[4]) === naive;
       })
-      .sort((a, b) => a - b);
+      .toSorted((a, b) => a - b);
     const selected = s.fold === 'first' ? candidates[0] : candidates.at(-1);
     if (selected !== undefined && (direction === 1 ? selected > after : selected < after))
       return selected;

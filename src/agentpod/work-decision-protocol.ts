@@ -48,7 +48,7 @@ function fail(): never {
   throw new ServiceError('invalid_work_decision', 'Exact versioned work decision required');
 }
 function keys(v: Record<string, unknown>, expected: string[]) {
-  if (Object.keys(v).sort().join(',') !== expected.sort().join(',')) fail();
+  if (Object.keys(v).toSorted().join(',') !== expected.sort().join(',')) fail();
 }
 function text(v: unknown, max: number): v is string {
   return typeof v === 'string' && v.length > 0 && v.length <= max;

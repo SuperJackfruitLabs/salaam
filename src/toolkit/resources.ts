@@ -277,7 +277,7 @@ export class ToolkitResources {
     }
     const rel = relative(binding.workspace, spec.state_dir);
     if (
-      Object.keys(spec).sort().join(',') !==
+      Object.keys(spec).toSorted().join(',') !==
         ('cleanup' in spec
           ? 'cleanup,id,launch_digest,manifest_digest,profile_digest,root_digest,session_id,state_dir'
           : 'id,launch_digest,manifest_digest,profile_digest,root_digest,session_id,state_dir') ||
@@ -470,7 +470,7 @@ export class ToolkitResources {
       (proof.method === 'not_started' && proof.pid !== null) ||
       typeof proof.observer_boot !== 'string' ||
       !/^[a-f0-9-]{36}$/.test(proof.observer_boot) ||
-      Object.keys(proof).sort().join(',') !==
+      Object.keys(proof).toSorted().join(',') !==
         'identity,input_digest,method,observer_boot,pid,profile_digest,resource_id,root_digest,scope,version' ||
       digest(proof) !== row.stop_digest ||
       proof.resource_id !== id ||

@@ -26,9 +26,9 @@ export function stationFileResult(
   const extra =
     request.action === 'patch' && 'created_directories' in v ? ['created_directories'] : [];
   if (
-    Object.keys(v).sort().join(',') !==
+    Object.keys(v).toSorted().join(',') !==
       ['version', 'ok', 'tree_digest', 'files', 'root_identity', ...fields!, ...extra]
-        .sort()
+        .toSorted()
         .join(',') ||
     v.version !== 1 ||
     v.ok !== true ||
@@ -83,7 +83,7 @@ export function stationFileResult(
     for (const value of v.entries as unknown[]) {
       const e = object(value);
       if (
-        Object.keys(e).sort().join(',') !== 'bytes,ctime,dev,inode,mode,mtime,path' ||
+        Object.keys(e).toSorted().join(',') !== 'bytes,ctime,dev,inode,mode,mtime,path' ||
         typeof e.path !== 'string' ||
         e.path.length > 512 ||
         e.path.startsWith('/') ||
@@ -97,7 +97,7 @@ export function stationFileResult(
       for (const t of ['ctime', 'mtime']) {
         const time = object(e[t]);
         if (
-          Object.keys(time).sort().join(',') !== 'Nsec,Sec' ||
+          Object.keys(time).toSorted().join(',') !== 'Nsec,Sec' ||
           !Number.isSafeInteger(time.Sec) ||
           !Number.isSafeInteger(time.Nsec) ||
           Number(time.Nsec) < 0 ||

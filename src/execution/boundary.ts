@@ -342,7 +342,7 @@ export function inspectBoundary(
     'Healthcheck',
   ])
     requireProfile(same(c[key], expected[key]), 'Config.' + key);
-  requireProfile(same([...c.Env].sort(), [...expected.Env].sort()), 'Config.Env');
+  requireProfile(same([...c.Env].toSorted(), [...expected.Env].toSorted()), 'Config.Env');
   requireProfile(!c.Volumes || Object.keys(c.Volumes).length === 0);
   for (const key of Object.keys(expected.HostConfig)) {
     // Docker omits the false ReadOnly zero value from HostConfig.Mounts.

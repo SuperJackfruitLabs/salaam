@@ -47,7 +47,7 @@ function bad(): never {
 }
 function closed(value: unknown, fields: string): Record<string, unknown> {
   const v = object(value);
-  if (Object.keys(v).sort().join(',') !== fields.split(',').sort().join(',')) bad();
+  if (Object.keys(v).toSorted().join(',') !== fields.split(',').toSorted().join(',')) bad();
   return v;
 }
 function textResult(result: CallToolResult): unknown {
@@ -55,7 +55,7 @@ function textResult(result: CallToolResult): unknown {
     Object.keys(result).some((k) => !['content', 'isError'].includes(k)) ||
     result.content.length !== 1 ||
     result.content[0]?.type !== 'text' ||
-    Object.keys(result.content[0]).sort().join(',') !== 'text,type' ||
+    Object.keys(result.content[0]).toSorted().join(',') !== 'text,type' ||
     Buffer.byteLength(result.content[0].text) > 270000
   )
     bad();
@@ -65,7 +65,7 @@ function textResult(result: CallToolResult): unknown {
 export function toolkitCatalogReview(value: unknown): ToolkitCatalogReview {
   const review = structuredClone(object(value)) as unknown as ToolkitCatalogReview;
   if (
-    Object.keys(review).sort().join(',') !== 'actions,catalog_digest' ||
+    Object.keys(review).toSorted().join(',') !== 'actions,catalog_digest' ||
     typeof review.catalog_digest !== 'string' ||
     !hashShape.test(review.catalog_digest) ||
     !Array.isArray(review.actions) ||

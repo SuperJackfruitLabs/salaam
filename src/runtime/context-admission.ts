@@ -56,7 +56,7 @@ const sorted = (value: unknown): unknown =>
     : value && typeof value === 'object'
       ? Object.fromEntries(
           Object.entries(value)
-            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
             .map(([k, v]) => [k, sorted(v)]),
         )
       : value;
@@ -85,11 +85,11 @@ function relative(path: unknown): string {
 }
 function selection(value: unknown): ContextSelection {
   const s = object(value);
-  if (Object.keys(s).sort().join(',') !== 'bundles,files')
+  if (Object.keys(s).toSorted().join(',') !== 'bundles,files')
     invalid('Expected only files and bundles');
   const list = (value: unknown): string[] => {
     if (!Array.isArray(value) || value.length > 32) invalid('Select at most 32 paths of each kind');
-    const paths = (value as unknown[]).map(relative).sort();
+    const paths = (value as unknown[]).map(relative).toSorted();
     if (new Set(paths).size !== paths.length) invalid('Duplicate context paths');
     return paths;
   };
@@ -237,7 +237,7 @@ export class ContextAdmission {
       const metadataBytes = read(cwd, path + '/sjl-bundle.json');
       const metadata = object(metadataJson(utf8(metadataBytes)));
       if (
-        Object.keys(metadata).sort().join(',') !==
+        Object.keys(metadata).toSorted().join(',') !==
           'digest,files,harness,name,profile,schema_version,skills,version,visibility' ||
         metadata.schema_version !== 1 ||
         metadata.harness !== 'salaam' ||
@@ -258,7 +258,7 @@ export class ContextAdmission {
       const actual = inventory(cwd, path).filter(
         (p) => !['sjl-bundle.json', '.sjl-receipt.json'].includes(p),
       );
-      if (canonical(actual) !== canonical(Object.keys(files).sort()))
+      if (canonical(actual) !== canonical(Object.keys(files).toSorted()))
         invalid('Skill bundle file inventory differs');
       let total = 0;
       for (const resource of actual) {
@@ -267,7 +267,7 @@ export class ContextAdmission {
         total += bytes.length;
         if (
           total > 8 * MAX_RESOURCE_BYTES ||
-          Object.keys(pin).sort().join(',') !== 'executable,sha256' ||
+          Object.keys(pin).toSorted().join(',') !== 'executable,sha256' ||
           typeof pin.executable !== 'boolean'
         )
           invalid('Invalid bundle resource inventory');

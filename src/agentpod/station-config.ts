@@ -81,7 +81,7 @@ export function stationWorkspaceIdentity(path: string): string {
 function executable(value: unknown): StationExecutable {
   const e = object(value);
   if (
-    Object.keys(e).sort().join(',') !== 'path,sha256' ||
+    Object.keys(e).toSorted().join(',') !== 'path,sha256' ||
     typeof e.path !== 'string' ||
     typeof e.sha256 !== 'string' ||
     !hashShape.test(e.sha256) ||
@@ -139,7 +139,8 @@ export function stationRuntimeFingerprint(root: string): string {
       String(st.ctimeNs),
       st.isSymbolicLink() ? readlinkSync(path) : null,
     ]);
-    if (st.isDirectory()) for (const n of readdirSync(path).sort()) walk(join(path, n), depth + 1);
+    if (st.isDirectory())
+      for (const n of readdirSync(path).toSorted()) walk(join(path, n), depth + 1);
   };
   walk(root, 0);
   return digest(entries);
@@ -153,7 +154,7 @@ export function readStationConfig(
     const v = object(JSON.parse(stationPrivateFile(path, 16384).toString('utf8')));
     const keys = Object.keys(v)
       .filter((k) => k !== 'tools_user')
-      .sort()
+      .toSorted()
       .join(',');
     if (
       keys !==

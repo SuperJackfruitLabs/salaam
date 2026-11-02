@@ -72,7 +72,7 @@ export function workerTools(
   operatorMcp = false,
 ): string[] {
   return child
-    ? [...(childTools ?? ['salaam_probe'])].sort()
+    ? [...(childTools ?? ['salaam_probe'])].toSorted()
     : [
         ...(local ? ['salaam_history', 'salaam_workspace'] : TOOLS),
         // Interactive coding also gets built-in web search and fetch (operator ruling 2026-10-31).
@@ -87,7 +87,7 @@ export function workerTools(
         // salaam_board: read-only board reads, served by the hub (operator ruling 2026-10-28).
         ...(station ? ['salaam_board', 'salaam_station'] : []),
         ...(operatorMcp ? ['salaam_operator_mcp'] : []),
-      ].sort();
+      ].toSorted();
 }
 export interface ChildTask {
   worker?: WorkerBoundaryView;
@@ -286,7 +286,7 @@ export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value !== null && typeof value === 'object') {
     return `{${Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
       .join(',')}}`;
   }

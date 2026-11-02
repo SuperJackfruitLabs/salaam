@@ -93,7 +93,7 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
             return { rubric: string(v.rubric, 'critic rubric', 4096) };
           })();
     if (
-      Object.keys(g).sort().join(',') !== 'critic,hooks' ||
+      Object.keys(g).toSorted().join(',') !== 'critic,hooks' ||
       !Array.isArray(hooks) ||
       hooks.length > 8 ||
       (!critic && hooks.length < 1)

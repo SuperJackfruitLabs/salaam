@@ -86,7 +86,7 @@ export class StationCheckpoints {
         step_key: step.key,
         tree_digest: tree,
         at,
-        files_changed: [...new Set(mine.map((p) => p.path))].sort(),
+        files_changed: [...new Set(mine.map((p) => p.path))].toSorted(),
       });
     }
     return out;
@@ -118,7 +118,7 @@ export class StationCheckpoints {
     const checkpoint = this.get(task, id);
     const patches = this.patches(task.session_id);
     const recorded = patches.at(-1)?.tree ?? checkpoint.tree_digest;
-    const paths = [...new Set(patches.map((p) => p.path))].sort();
+    const paths = [...new Set(patches.map((p) => p.path))].toSorted();
     const files = [];
     for (const path of paths) {
       const now = await live.file(path);

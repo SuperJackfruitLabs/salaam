@@ -78,7 +78,7 @@ export class ToolkitWork {
     },
   ) {
     this.config = structuredClone(config);
-    if (Object.keys(config).sort().join(',') !== 'catalog,profile_path,profile_sha256')
+    if (Object.keys(config).toSorted().join(',') !== 'catalog,profile_path,profile_sha256')
       unavailable();
     this.template = new ToolkitAdmission(this.config.profile_path, this.config.profile_sha256);
     this.calls = new ToolkitCalls(store, managed, {
@@ -205,7 +205,7 @@ export class ToolkitWork {
       category = string(value.category, 'category', 128),
       action = string(value.action, 'action', 128),
       args = object(value.arguments);
-    if (Object.keys(value).sort().join(',') !== 'action,arguments,category')
+    if (Object.keys(value).toSorted().join(',') !== 'action,arguments,category')
       throw new ServiceError('invalid_mcp_arguments', 'Unexpected native Toolkit call field', 400);
     const saved = this.store.db
       .prepare(

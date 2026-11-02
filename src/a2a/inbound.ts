@@ -108,7 +108,7 @@ export class A2AInbound {
   private token(grant: A2AInboundGrant): string {
     const v = a2aObject(privateJSON(grant.credential_file));
     if (
-      Object.keys(v).sort().join(',') !== 'peer,token' ||
+      Object.keys(v).toSorted().join(',') !== 'peer,token' ||
       v.peer !== grant.peer ||
       typeof v.token !== 'string' ||
       !/^[A-Za-z0-9._~-]{32,512}$/.test(v.token) ||
@@ -120,7 +120,7 @@ export class A2AInbound {
   private read(): InboundConfig {
     const c = a2aObject<A2AObject & { port: number }>(privateJSON(this.path));
     if (
-      Object.keys(c).sort().join(',') !== 'grants,host,port,schema' ||
+      Object.keys(c).toSorted().join(',') !== 'grants,host,port,schema' ||
       c.schema !== 1 ||
       c.host !== '127.0.0.1' ||
       !Number.isSafeInteger(c.port) ||
@@ -137,7 +137,7 @@ export class A2AInbound {
       if (
         Object.keys(g)
           .filter((k) => k !== 'client')
-          .sort()
+          .toSorted()
           .join(',') !==
         'assignment_id,binding_digest,credential_digest,credential_file,peer,skill,tenant'
       )

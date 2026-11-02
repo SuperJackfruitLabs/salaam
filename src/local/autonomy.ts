@@ -122,7 +122,7 @@ export function validatePermissions(value: unknown): {
     );
   return {
     mode: input.mode as PermissionMode,
-    paths: [...paths].sort(),
+    paths: [...paths].toSorted(),
     ...(input.access === 'full' || input.access === 'yolo' ? { access: input.access } : {}),
   };
 }

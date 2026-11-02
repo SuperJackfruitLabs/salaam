@@ -25,7 +25,7 @@ export function readinessFingerprint(
 export function verifyReadinessFingerprint(value: ReadinessFingerprint): ReadinessFingerprint {
   const { digest: recorded, ...input } = value;
   if (
-    Object.keys(input).sort().join(',') !==
+    Object.keys(input).toSorted().join(',') !==
       'bundle_digest,context_admission_digest,context_digest,harness,harness_version,model,pi_version,policy_digest,provider,session_id,verification,version,worker_epoch' ||
     typeof input.session_id !== 'string' ||
     !/^[a-f0-9-]{36}$/i.test(input.session_id) ||

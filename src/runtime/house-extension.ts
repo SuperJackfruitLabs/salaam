@@ -122,7 +122,7 @@ export default function house(pi: ExtensionAPI): void {
         .getAllTools()
         .filter((tool) => tool.exposure !== 'hidden')
         .map((tool) => tool.name)
-        .sort(),
+        .toSorted(),
       active_tools: pi.getActiveTools().sort(),
       provider: route.provider,
       route,

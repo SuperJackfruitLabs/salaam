@@ -113,7 +113,7 @@ export class BoardReads {
   /** The hub's answer: once, for a read of this session, bounded. */
   answer(session: string, value: unknown): BoardRead {
     const a = (value ?? {}) as Record<string, unknown>;
-    const keys = Object.keys(a).sort().join();
+    const keys = Object.keys(a).toSorted().join();
     const ok = a.ok === true;
     if (
       typeof a.read_id !== 'string' ||

@@ -211,7 +211,7 @@ export function parseVerdict(text: string): { verdict: 'ok' } | { verdict: 'ask'
   }
   if (!v || typeof v !== 'object' || Array.isArray(v)) return garbled;
   const o = v as Record<string, unknown>,
-    keys = Object.keys(o).sort().join(',');
+    keys = Object.keys(o).toSorted().join(',');
   if (o.verdict === 'ok' && keys === 'verdict') return { verdict: 'ok' };
   if (
     o.verdict === 'ask' &&

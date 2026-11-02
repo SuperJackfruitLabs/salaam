@@ -136,7 +136,7 @@ function inventory(
       actual.push(String(tool.name ?? object(tool.function).name));
     } else actual.push(String(tool.name));
   }
-  if (canonical(actual.sort()) !== canonical([...names].sort()))
+  if (canonical(actual.sort()) !== canonical([...names].toSorted()))
     throw new Error('Unapproved provider tool inventory');
 }
 function lastText(messages: unknown, frame: string, parts: string, role = 'user') {

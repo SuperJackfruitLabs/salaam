@@ -87,7 +87,7 @@ export function verifyStdioProcessLaunch(p: StdioProcessLaunch): void {
       Object.values(p.limits).some(
         (n) => !Number.isSafeInteger(n) || n < 256 || n > 4 * 1024 * 1024,
       ) ||
-      Object.keys(p.limits).sort().join(',') !==
+      Object.keys(p.limits).toSorted().join(',') !==
         'request_bytes,response_bytes,stderr_bytes,timeout_ms' ||
       p.limits.timeout_ms > 120000
     )

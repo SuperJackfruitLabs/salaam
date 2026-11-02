@@ -18,7 +18,7 @@ export function latestSessionFor(
   cwd: string,
 ): string | undefined {
   const want = folder(cwd);
-  return [...sessions].reverse().find((s) => folder(s.cwd) === want)?.id;
+  return [...sessions].toReversed().find((s) => folder(s.cwd) === want)?.id;
 }
 
 /** Whether a new `salaam code` session should use Anthropic: only when nothing was chosen, the
@@ -53,8 +53,8 @@ const activeAt = (s: { last_active_at?: string }) =>
 export function pickerOrder<T extends PickerSession>(sessions: readonly T[], cwd: string): T[] {
   const want = folder(cwd);
   const newest = (a: T, b: T) => activeAt(b) - activeAt(a);
-  const here = sessions.filter((s) => folder(s.cwd) === want).sort(newest);
-  return [...here, ...sessions.filter((s) => folder(s.cwd) !== want).sort(newest)];
+  const here = sessions.filter((s) => folder(s.cwd) === want).toSorted(newest);
+  return [...here, ...sessions.filter((s) => folder(s.cwd) !== want).toSorted(newest)];
 }
 
 export function relativeTime(at: string | undefined, now = Date.now()): string {

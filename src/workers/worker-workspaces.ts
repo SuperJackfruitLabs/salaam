@@ -103,7 +103,7 @@ export class WorkerWorkspaces {
     if (digest(current) !== workspace.digest)
       throw new ServiceError('workspace_changed', 'Worker draft changed during inspection');
     const changes = [...new Set([...Object.keys(baseline), ...Object.keys(current)])]
-      .sort()
+      .toSorted()
       .filter((path) => digest(baseline[path] ?? null) !== digest(current[path] ?? null))
       .map((path) => {
         repositoryPath(path);

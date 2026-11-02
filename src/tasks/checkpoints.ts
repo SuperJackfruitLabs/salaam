@@ -60,7 +60,7 @@ export class TaskCheckpoints {
     )
       return;
     const changes: Change[] = Object.keys({ ...before, ...after })
-      .sort()
+      .toSorted()
       .filter((path) => digest(before[path] ?? null) !== digest(after[path] ?? null))
       .map((path) => ({ path, before: before[path] ?? null, after: after[path] ?? null }));
     const artifact = this.artifacts.prepare(session, canonical(changes));
@@ -195,7 +195,7 @@ export class TaskCheckpoints {
             afterArtifact.id,
             revision,
             reviewed,
-            canonical([...conflicts].sort()),
+            canonical([...conflicts].toSorted()),
           );
         this.store.db.prepare('UPDATE task_runtime SET auto_enabled=0 WHERE task_id=?').run(id);
         this.store.db

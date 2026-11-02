@@ -16,7 +16,7 @@ export class A2ABackend implements ExternalBackend {
   private read(): A2APeer[] {
     const config = a2aObject(privateJSON(this.config));
     if (
-      Object.keys(config).sort().join(',') !== 'peers,schema' ||
+      Object.keys(config).toSorted().join(',') !== 'peers,schema' ||
       config.schema !== 1 ||
       !Array.isArray(config.peers) ||
       !config.peers.length ||

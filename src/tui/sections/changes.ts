@@ -103,7 +103,7 @@ export function localCommandLines(
         width,
       ),
     );
-  for (const op of operations.slice().reverse()) {
+  for (const op of operations.slice().toReversed()) {
     lines.push(
       t.rule(width),
       ...doc.title(
@@ -183,7 +183,7 @@ export function commandLines(doc: DocumentBlocks, width: number): string[] {
         width,
       ),
     );
-  for (const run of [...c.commands].reverse()) {
+  for (const run of [...c.commands].toReversed()) {
     const role =
       run.state === 'succeeded'
         ? 'jade'

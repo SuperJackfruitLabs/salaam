@@ -17,7 +17,7 @@ export interface AgentPodWorkAdmission extends AgentPodWorkBinding {
   request_id: string;
 }
 function keys(value: Record<string, unknown>, expected: string[]): void {
-  if (Object.keys(value).sort().join(',') !== expected.sort().join(','))
+  if (Object.keys(value).toSorted().join(',') !== expected.sort().join(','))
     throw new ServiceError('invalid_work_admission', 'Unsupported work admission fields');
 }
 function clean(value: unknown, name: string, max = 128): string {

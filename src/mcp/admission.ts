@@ -75,8 +75,8 @@ export class McpAdmission {
       (Object.keys(this.pins) as (keyof AgentPodPins)[]).some(
         (key) => this.pins[key] !== current[key],
       ) ||
-      canonical(assignment.servers.map((s) => s.name).sort()) !==
-        canonical(profile.servers.map((s) => s.name).sort()) ||
+      canonical(assignment.servers.map((s) => s.name).toSorted()) !==
+        canonical(profile.servers.map((s) => s.name).toSorted()) ||
       assignment.servers.some(
         (s) =>
           new URL(s.url).origin !== profile.proxy_origin ||

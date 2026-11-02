@@ -25,7 +25,7 @@ function saved(store: Store, request: string, session: string, root: string) {
   if (!row) return null;
   const value = JSON.parse(String(row.response));
   if (
-    Object.keys(value).sort().join(',') !==
+    Object.keys(value).toSorted().join(',') !==
       'authority,parent,root_digest,session_id,traceparent,version' ||
     value.version !== 1 ||
     value.authority !== false ||

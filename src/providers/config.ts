@@ -149,9 +149,9 @@ export function validateClaudePayload(
   if (last.role !== 'user' || text !== frame)
     throw new Error('Required task context missing from Claude payload');
   if (!Array.isArray(payload.tools)) throw new Error('Claude tool inventory missing');
-  const names = payload.tools.map((value) => String(object(value).name)).sort();
+  const names = payload.tools.map((value) => String(object(value).name)).toSorted();
   if (
-    canonical(names) !== canonical([...tools].sort()) ||
+    canonical(names) !== canonical([...tools].toSorted()) ||
     payload.tools.some(
       (value) => object(value).type !== undefined && object(value).type !== 'custom',
     )

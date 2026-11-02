@@ -126,7 +126,7 @@ export function readLocalWorkspace(root: string, args: Record<string, unknown>):
       truncated = false;
     const walk = (dir: string) => {
       check(dir);
-      for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      for (const entry of readdirSync(dir, { withFileTypes: true }).toSorted((a, b) =>
         a.name.localeCompare(b.name),
       )) {
         if (++visited > 50000 || matches.length >= 100 || performance.now() > deadline) {

@@ -32,7 +32,7 @@ function refused(): never {
   );
 }
 function exact(value: Record<string, unknown>, keys: string): void {
-  if (Object.keys(value).sort().join(',') !== keys.split(',').sort().join(',')) refused();
+  if (Object.keys(value).toSorted().join(',') !== keys.split(',').toSorted().join(',')) refused();
 }
 function outside(base: string, path: string): boolean {
   const r = relative(base, path);

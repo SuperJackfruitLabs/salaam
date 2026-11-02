@@ -67,7 +67,7 @@ export function readToolkitConfig(
   try {
     const value = object(JSON.parse(privateFile(path, 262144).toString('utf8')));
     if (
-      Object.keys(value).sort().join(',') !== 'catalog,profile_path,profile_sha256,version' ||
+      Object.keys(value).toSorted().join(',') !== 'catalog,profile_path,profile_sha256,version' ||
       value.version !== 1 ||
       typeof value.profile_path !== 'string' ||
       typeof value.profile_sha256 !== 'string' ||

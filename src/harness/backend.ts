@@ -35,7 +35,7 @@ import type { ExternalBackend, ExternalHooks } from '../workers/index.js';
 export async function harnessRuntimeDigest(root: string): Promise<string> {
   const entries: unknown[] = [];
   async function walk(dir: string): Promise<void> {
-    for (const name of readdirSync(dir).sort()) {
+    for (const name of readdirSync(dir).toSorted()) {
       const p = join(dir, name),
         s = lstatSync(p);
       if (s.isDirectory()) await walk(p);

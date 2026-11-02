@@ -5,7 +5,7 @@ import { join } from 'node:path';
 export function packageDigest(root: string): string {
   const files: string[][] = [];
   function walk(relative = ''): void {
-    for (const name of readdirSync(join(root, relative)).sort()) {
+    for (const name of readdirSync(join(root, relative)).toSorted()) {
       if (name === 'node_modules') continue;
       const child = relative ? `${relative}/${name}` : name;
       const path = join(root, child);

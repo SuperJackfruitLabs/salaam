@@ -141,7 +141,7 @@ export function checkpointList(points: readonly TurnCheckpoint[], now = Date.now
     '',
     ...points
       .slice()
-      .reverse()
+      .toReversed()
       .map(
         (p) =>
           `- Turn ${p.turn} · ${relativeTime(p.at, now)} · ${p.text.split('\n')[0]!.slice(0, 80)}`,

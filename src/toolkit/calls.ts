@@ -167,7 +167,7 @@ export class ToolkitCalls {
   private action(resource: string, request: ToolkitRequest): ToolkitActionPin {
     const pin = this.options.action(resource, request.service, request.action);
     if (
-      Object.keys(pin).sort().join(',') !== 'digest,kind,policy' ||
+      Object.keys(pin).toSorted().join(',') !== 'digest,kind,policy' ||
       !/^[a-f0-9]{64}$/.test(pin.digest) ||
       !['read', 'write', 'destructive'].includes(pin.kind) ||
       !['agent', 'approval'].includes(pin.policy) ||

@@ -71,7 +71,7 @@ export function rewindItems(
 ) {
   return points
     .slice()
-    .reverse()
+    .toReversed()
     .map((p) => ({
       value: p.attempt_id,
       label: `Turn ${p.turn} · ${p.text.split('\n')[0]!.slice(0, 80)}`,

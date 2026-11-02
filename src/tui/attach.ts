@@ -197,7 +197,7 @@ export class Outbox {
     return readdirSync(this.dir)
       .filter((name) => /^[a-f0-9-]{36}\.json$/i.test(name))
       .map((name) => JSON.parse(readFileSync(join(this.dir, name), 'utf8')) as Pending)
-      .sort((a, b) => a.created_at - b.created_at);
+      .toSorted((a, b) => a.created_at - b.created_at);
   }
   async flush(socket: string, session: string, controller?: Controller): Promise<void> {
     for (const record of this.records()) {

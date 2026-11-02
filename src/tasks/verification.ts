@@ -363,7 +363,7 @@ export class TaskVerification {
           baseline_digest: digest(baseline),
           current_digest: digest(current),
           changes: Object.keys({ ...baseline, ...current })
-            .sort()
+            .toSorted()
             .filter((p) => digest(baseline[p] ?? null) !== digest(current[p] ?? null))
             .map((path) => ({
               path,

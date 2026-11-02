@@ -605,7 +605,7 @@ export function readHost(path: string): HostManifest {
       ...(m.schema === 6 && Object.hasOwn(m, 'approval_ttl_ms') ? ['approval_ttl_ms'] : []),
       ...(Object.hasOwn(m, 'local_sandbox') ? ['local_sandbox'] : []),
     ];
-    if (m.mode !== 'agentpod' || Object.keys(m).sort().join(',') !== fields.sort().join(','))
+    if (m.mode !== 'agentpod' || Object.keys(m).toSorted().join(',') !== fields.sort().join(','))
       throw Error('Unsupported AgentPod host manifest fields');
     if (
       m.schema === 6 &&
@@ -616,7 +616,7 @@ export function readHost(path: string): HostManifest {
     if (access !== undefined) {
       const a = object(access);
       if (
-        Object.keys(a).sort().join(',') !== 'gid,group' ||
+        Object.keys(a).toSorted().join(',') !== 'gid,group' ||
         canonical(resolveOperatorGroup(a.group)) !== canonical({ group: a.group, gid: a.gid })
       )
         throw Error('Host operator group changed');
@@ -626,7 +626,7 @@ export function readHost(path: string): HostManifest {
     if (m.schema === 6 && Object.hasOwn(m, 'operator_mcp')) {
       const o = object(m.operator_mcp);
       if (
-        Object.keys(o).sort().join(',') !== 'config,digest' ||
+        Object.keys(o).toSorted().join(',') !== 'config,digest' ||
         typeof o.config !== 'string' ||
         !isAbsolute(o.config) ||
         realpathSync(o.config) !== o.config ||
@@ -642,7 +642,7 @@ export function readHost(path: string): HostManifest {
       } catch {
         current = null;
       }
-      if (Object.keys(p).sort().join(',') !== 'config,digest' || current !== p.digest)
+      if (Object.keys(p).toSorted().join(',') !== 'config,digest' || current !== p.digest)
         throw Error('Host persona changed; run host plan again');
     }
     if (m.cli_digest !== digest(readFileSync(join(ROOT, 'bin/salaam.mjs'), 'utf8')))
@@ -674,20 +674,21 @@ export function readHost(path: string): HostManifest {
     const managed = hostMcp(m);
     if (m.schema === 3 || ([4, 5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_mcp'))) {
       if (!managed) throw Error('Missing managed MCP host fields');
-      if (Object.keys(object(managed)).sort().join(',') !== 'config,profile_digest')
+      if (Object.keys(object(managed)).toSorted().join(',') !== 'config,profile_digest')
         throw Error('Unsupported managed MCP host fields');
       new McpAdmission(managed.config, pins, managed.profile_digest);
     }
     const native = hostToolkit(m);
     if (m.schema === 4 || ([5, 6].includes(m.schema) && Object.hasOwn(m, 'managed_toolkit'))) {
       if (!native) throw Error('Missing native Toolkit host fields');
-      if (Object.keys(object(native)).sort().join(',') !== 'config,configuration_digest')
+      if (Object.keys(object(native)).toSorted().join(',') !== 'config,configuration_digest')
         throw Error('Unsupported native Toolkit host fields');
       readToolkitConfig(native.config, native.configuration_digest, pins.workspace);
     }
     if (m.schema === 5 || m.schema === 6) {
       if (
-        Object.keys(object(m.station_execution)).sort().join(',') !== 'config,configuration_digest'
+        Object.keys(object(m.station_execution)).toSorted().join(',') !==
+        'config,configuration_digest'
       )
         throw Error('Unsupported station execution fields');
       readStationConfig(

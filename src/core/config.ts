@@ -59,7 +59,7 @@ export const POLICY = {
     'salaam-proof/scripted',
     ...PI_PROVIDERS.flatMap((provider) =>
       provider.getModels().map((model) => provider.id + '/' + model.id),
-    ).sort(),
+    ).toSorted(),
   ],
   provider_retries: 0,
   task_token_budget: 'capped-default-explicit-null-opt-out-v1',

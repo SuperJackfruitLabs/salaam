@@ -19,7 +19,7 @@ export function validateManagedMcpDeclarations(
   for (const value of input) {
     const server = object(value);
     if (
-      Object.keys(server).sort().join(',') !== 'headers,name,type,url' ||
+      Object.keys(server).toSorted().join(',') !== 'headers,name,type,url' ||
       server.type !== 'http' ||
       typeof server.name !== 'string' ||
       typeof server.url !== 'string' ||

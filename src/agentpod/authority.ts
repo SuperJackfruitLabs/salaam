@@ -61,8 +61,8 @@ export function readAgentPodPins(configPath: string, state: string): AgentPodPin
   ) as unknown as AgentPodPins;
   const p = pins;
   if (
-    Object.keys(p).sort().join(',') !==
-    ['version', 'organization_id', 'node_id', 'station_key', 'workspace'].sort().join(',')
+    Object.keys(p).toSorted().join(',') !==
+    ['version', 'organization_id', 'node_id', 'station_key', 'workspace'].toSorted().join(',')
   )
     throw Error('AgentPod pins contain unsupported fields');
   agentpodBinding({
@@ -105,7 +105,7 @@ export function approvalRules(value: unknown): ApprovalRule[] {
     if (!r || typeof r !== 'object' || Array.isArray(r)) bad();
     const v = r as Record<string, unknown>;
     if (
-      Object.keys(v).sort().join(',') !== 'id,scope,set_by' ||
+      Object.keys(v).toSorted().join(',') !== 'id,scope,set_by' ||
       typeof v.id !== 'string' ||
       !ruleId.test(v.id) ||
       v.scope !== 'workspace-write' ||

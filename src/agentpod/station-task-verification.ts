@@ -308,7 +308,7 @@ export class StationTaskVerification {
       call.session_id !== task.session_id ||
       args.action !== 'check' ||
       args.command !== configured.command ||
-      Object.keys(args).sort().join(',') !== 'action,command,expected_tree' ||
+      Object.keys(args).toSorted().join(',') !== 'action,command,expected_tree' ||
       typeof args.expected_tree !== 'string' ||
       !/^[a-f0-9]{64}$/.test(args.expected_tree) ||
       digest(args) !== call.input_digest ||

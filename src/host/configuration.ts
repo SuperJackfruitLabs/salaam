@@ -261,7 +261,7 @@ export async function hostConfiguration(
       const want = object(r.want[0]);
       if (want.settingId !== HOST_MANIFEST_SETTING)
         return refuse('UNKNOWN_SETTING', 'Salaam manages only its reviewed host manifest');
-      if (Object.keys(want).sort().join(',') !== 'settingId,value')
+      if (Object.keys(want).toSorted().join(',') !== 'settingId,value')
         return refuse('SHAPE_UNEXPECTED', 'Unexpected declared setting field');
       let target: HostManifest;
       try {

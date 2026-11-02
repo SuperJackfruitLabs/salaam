@@ -92,7 +92,10 @@ export function loadCustomCommands(
       });
     }
   }
-  return { commands: [...found.values()].sort((a, b) => a.name.localeCompare(b.name)), problems };
+  return {
+    commands: [...found.values()].toSorted((a, b) => a.name.localeCompare(b.name)),
+    problems,
+  };
 }
 
 function inside(root: string, path: string): boolean {

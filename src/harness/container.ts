@@ -141,7 +141,7 @@ export class DockerHarnessBoundary {
     effective.CapAdd = host.CapAdd ?? [];
     effective.SecurityOpt = (host.SecurityOpt ?? [])
       .map((v: string) => v.replace(':true', ''))
-      .sort();
+      .toSorted();
     effective.RestartPolicy = { Name: host.RestartPolicy?.Name };
     const mounts = c.Mounts
       ? c.Mounts.map((m: EngineMount) => ({
@@ -161,7 +161,7 @@ export class DockerHarnessBoundary {
     return digest({
       image: config.Image,
       user: config.User,
-      env: [...config.Env].sort(),
+      env: [...config.Env].toSorted(),
       entrypoint: config.Entrypoint ?? [],
       args: config.Cmd,
       cwd: config.WorkingDir,

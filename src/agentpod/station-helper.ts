@@ -36,7 +36,7 @@ export function definiteHelperRefusal(
     return 'station_files_changed';
   if (
     result.code === 'station_request_invalid' &&
-    Object.keys(result).sort().join(',') === 'code,ok,version'
+    Object.keys(result).toSorted().join(',') === 'code,ok,version'
   )
     return 'station_request_invalid';
   return null;

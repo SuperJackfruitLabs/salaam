@@ -120,7 +120,7 @@ export function privateJSON(path: string): unknown {
 export function peerCredential(peer: A2APeer): string {
   const value = a2aObject(privateJSON(peer.credential_file));
   if (
-    Object.keys(value).sort().join(',') !== 'peer,token' ||
+    Object.keys(value).toSorted().join(',') !== 'peer,token' ||
     value.peer !== peer.id ||
     typeof value.token !== 'string' ||
     !/^[A-Za-z0-9._~-]{32,512}$/.test(value.token) ||
@@ -152,7 +152,7 @@ export function validatePeer(value: unknown): A2APeer {
     'cancel',
     'streaming',
   ];
-  if (Object.keys(p).sort().join(',') !== keys.sort().join(','))
+  if (Object.keys(p).toSorted().join(',') !== keys.sort().join(','))
     return fail('Unknown or missing peer configuration field');
   for (const key of ['id', 'skill']) a2aIdentity(p[key]);
   if (typeof p.tenant !== 'string' || p.tenant.length > 256 || /[\x00-\x1f\x7f]/.test(p.tenant))
