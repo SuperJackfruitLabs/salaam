@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { create, ready, fixture, until, control } from '../helpers.js';
 import { submit, decide } from '../managed-helpers.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { PiProcess } from '../../src/pi.js';
-import type { Compaction, TaskState } from '../../src/task-context.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import type { Compaction, TaskState } from '../../src/runtime/task-context.js';
 
 async function turn(f: Awaited<ReturnType<typeof fixture>>, id: string, text: string) {
   const accepted = await submit(f.service, id, text);
@@ -198,7 +198,7 @@ test('compaction cannot abort a turn waiting for an approval; invalid outgoing t
 
 test('compaction and idle parent replacement preserve an outstanding real child and an unresolved effect', async () => {
   const { effectFixture } = await import('../managed-helpers.js');
-  const { SocketEffectConnector } = await import('../../src/effect-connector.js');
+  const { SocketEffectConnector } = await import('../../src/execution/effect-connector.js');
   const external = await effectFixture(true);
   writeFileSync(join(external.dir, 'hold-response'), 'hold');
   let parent: PiProcess | undefined;

@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding, type LocalSandbox } from '../../src/local-coding.js';
-import { chooseLocalSandbox } from '../../src/command-sandbox.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding, type LocalSandbox } from '../../src/local/coding.js';
+import { chooseLocalSandbox } from '../../src/local/command-sandbox.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 
 // Phase 4b: a hook runs as one of the session's own sandboxed commands would, with its JSON on
 // stdin, bounded output and a timeout, and never as the tools user.

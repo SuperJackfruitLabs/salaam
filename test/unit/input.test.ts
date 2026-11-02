@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { PassThrough } from 'node:stream';
 import type { ReadStream } from 'node:tty';
-import { terminalInput } from '../../src/input.js';
+import { terminalInput } from '../../src/tui/input.js';
 
 test('terminal submits on Enter, preserves Unicode separators and detaches without submitting partial text', () => {
   const input = new PassThrough() as unknown as ReadStream;

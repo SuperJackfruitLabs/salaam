@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { fixture, create, ready, until } from '../helpers.js';
 import { submit, decide, effectFixture } from '../managed-helpers.js';
-import { call } from '../../src/transport.js';
-import type { Approval, SessionSnapshot } from '../../src/protocol.js';
-import { PiProcess } from '../../src/pi.js';
-import { SalaamService } from '../../src/service.js';
-import { Outbox } from '../../src/attach.js';
+import { call } from '../../src/core/transport.js';
+import type { Approval, SessionSnapshot } from '../../src/core/protocol.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import { SalaamService } from '../../src/service/service.js';
+import { Outbox } from '../../src/tui/attach.js';
 import { createServer, request } from 'node:http';
 import { join } from 'node:path';
 

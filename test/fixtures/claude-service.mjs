@@ -1,6 +1,6 @@
-import { SalaamService } from '../../dist/src/service.js';
-import { providerRoute } from '../../dist/src/provider-config.js';
-import { ROOT } from '../../dist/src/config.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { providerRoute } from '../../dist/src/providers/config.js';
+import { ROOT } from '../../dist/src/core/config.js';
 import { join } from 'node:path';
 const service = await SalaamService.open({
   stateDir: process.argv[2],

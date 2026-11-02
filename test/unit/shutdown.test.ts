@@ -3,8 +3,8 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
-import { acquireStateLock } from '../../src/state-lock.js';
+import { ROOT } from '../../src/core/config.js';
+import { acquireStateLock } from '../../src/core/state-lock.js';
 
 test.each(['resource', 'journal'])(
   'failed %s shutdown retains ownership until process death and still attempts other cleanup',

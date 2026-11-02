@@ -1,4 +1,4 @@
-import house from '../../dist/src/house-extension.js';
+import house from '../../dist/src/runtime/house-extension.js';
 
 export default function contextFault(pi) {
   house(

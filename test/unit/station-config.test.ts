@@ -18,10 +18,10 @@ import {
   stationWorkspaceIdentity,
   stationRuntimeFingerprint,
   stationHash,
-} from '../../src/station-config.js';
-import { digest } from '../../src/protocol.js';
-import { hostApprovalTtlMs, planHost, readHost } from '../../src/host.js';
-import { Store } from '../../src/store.js';
+} from '../../src/agentpod/station-config.js';
+import { digest } from '../../src/core/protocol.js';
+import { hostApprovalTtlMs, planHost, readHost } from '../../src/host/host.js';
+import { Store } from '../../src/store/store.js';
 
 function fixture() {
   const dir = realpathSync(mkdtempSync('/tmp/sal-station-')),

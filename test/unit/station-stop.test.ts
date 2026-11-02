@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { StationWork } from '../../src/station-work.js';
-import { StationSystemd } from '../../src/station-systemd.js';
+import { Store } from '../../src/store/store.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import { StationSystemd } from '../../src/agentpod/station-systemd.js';
 
 // Real durable unit journal; controlled systemd stop barrier. This is concurrency
 // conformance, not an OS cgroup proof (the Linux acceptance owns that evidence).

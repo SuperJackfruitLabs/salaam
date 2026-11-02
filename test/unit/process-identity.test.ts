@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { processIdentity } from '../../src/supervisor.js';
+import { processIdentity } from '../../src/core/process-identity.js';
 test('process identity is stable for the current process and absent for nonexistent PIDs', () => {
   const identity = processIdentity(process.pid);
   expect(identity).toBeTruthy();

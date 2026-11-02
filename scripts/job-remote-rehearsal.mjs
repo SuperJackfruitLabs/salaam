@@ -7,8 +7,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PtyClient } from '../dist/test/terminal-helpers.js';
 import { until } from '../dist/test/helpers.js';
-import { shellQuote } from '../dist/src/remote.js';
-import { digest } from '../dist/src/protocol.js';
+import { shellQuote } from '../dist/src/cli/remote.js';
+import { digest } from '../dist/src/core/protocol.js';
 const option = (name) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -74,7 +74,7 @@ const ssh = async (argv) =>
 const js = async (code) => JSON.parse(await ssh([node, '--input-type=module', '-e', code]));
 const rpc = (path, body) =>
   js(
-    `import{call}from${JSON.stringify(repo + '/dist/src/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)},${JSON.stringify(body)})));`,
+    `import{call}from${JSON.stringify(repo + '/dist/src/core/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)},${JSON.stringify(body)})));`,
   );
 const cli = async (...args) => JSON.parse(await ssh([bin, ...args, '--state', state]));
 let pid, first, observer, session, taskId;
@@ -131,7 +131,7 @@ try {
     `import{mkdirSync,writeFileSync,chmodSync}from'node:fs';for(const p of ${JSON.stringify([work, state, source, owned])})mkdirSync(p,{recursive:true,mode:448});for(const[p,text]of Object.entries(${JSON.stringify(files)}))writeFileSync(p,text);chmodSync(${JSON.stringify(bin)},448);console.log('true');`,
   );
   manifest = await js(
-    `import{planHost,hostUnit}from${JSON.stringify(repo + '/dist/src/host.js')};import{writeFileSync}from'node:fs';const m=await planHost(${JSON.stringify({ state, coding_root: owned, coding_socket: '/var/run/docker.sock' })});writeFileSync(${JSON.stringify(work + '/host.json')},JSON.stringify(m),{mode:384});writeFileSync(${JSON.stringify(work + '/salaam.service')},hostUnit(${JSON.stringify(work + '/host.json')},'systemd'));console.log(JSON.stringify(m));`,
+    `import{planHost,hostUnit}from${JSON.stringify(repo + '/dist/src/host/host.js')};import{writeFileSync}from'node:fs';const m=await planHost(${JSON.stringify({ state, coding_root: owned, coding_socket: '/var/run/docker.sock' })});writeFileSync(${JSON.stringify(work + '/host.json')},JSON.stringify(m),{mode:384});writeFileSync(${JSON.stringify(work + '/salaam.service')},hostUnit(${JSON.stringify(work + '/host.json')},'systemd'));console.log(JSON.stringify(m));`,
   );
   report.manifest = manifest;
   await boot();
@@ -427,7 +427,7 @@ try {
     30000,
   ).catch(() => {});
   report.cleanup = await js(
-    `import{DatabaseSync}from'node:sqlite';import{existsSync,rmSync}from'node:fs';import{DockerCodingExecutor}from${JSON.stringify(repo + '/dist/src/coding-executor.js')};import{engineRequest,engineJson}from${JSON.stringify(repo + '/dist/src/execution-boundary.js')};let runs=[];if(existsSync(${JSON.stringify(state + '/journal.sqlite')})){const db=new DatabaseSync(${JSON.stringify(state + '/journal.sqlite')},{readOnly:true});runs=db.prepare('SELECT id,profile_digest FROM command_runs').all();db.close();}const request=engineRequest('/var/run/docker.sock'),executor=new DockerCodingExecutor(request);for(const r of runs){executor.profileDigest=r.profile_digest;await executor.cleanup(r.id);}const rows=engineJson(await request('GET','/containers/json?all=1'));if(rows.some(c=>runs.some(r=>c.Labels?.['salaam.command.run']===r.id)))throw Error('Owned containers remain');rmSync(${JSON.stringify(state)},{recursive:true,force:true});rmSync(${JSON.stringify(work)},{recursive:true,force:true});console.log(JSON.stringify({owned_containers_remaining:0,disposable_state_removed:true,disposable_workspace_removed:true}));`,
+    `import{DatabaseSync}from'node:sqlite';import{existsSync,rmSync}from'node:fs';import{DockerCodingExecutor}from${JSON.stringify(repo + '/dist/src/coding/executor.js')};import{engineRequest,engineJson}from${JSON.stringify(repo + '/dist/src/execution/boundary.js')};let runs=[];if(existsSync(${JSON.stringify(state + '/journal.sqlite')})){const db=new DatabaseSync(${JSON.stringify(state + '/journal.sqlite')},{readOnly:true});runs=db.prepare('SELECT id,profile_digest FROM command_runs').all();db.close();}const request=engineRequest('/var/run/docker.sock'),executor=new DockerCodingExecutor(request);for(const r of runs){executor.profileDigest=r.profile_digest;await executor.cleanup(r.id);}const rows=engineJson(await request('GET','/containers/json?all=1'));if(rows.some(c=>runs.some(r=>c.Labels?.['salaam.command.run']===r.id)))throw Error('Owned containers remain');rmSync(${JSON.stringify(state)},{recursive:true,force:true});rmSync(${JSON.stringify(work)},{recursive:true,force:true});console.log(JSON.stringify({owned_containers_remaining:0,disposable_state_removed:true,disposable_workspace_removed:true}));`,
   );
   report.finished_at = new Date().toISOString();
   save();

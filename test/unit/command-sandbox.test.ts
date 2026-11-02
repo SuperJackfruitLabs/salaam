@@ -8,7 +8,7 @@ import {
   SANDBOX_LEVELS,
   type Bwrap,
   type Seatbelt,
-} from '../../src/command-sandbox.js';
+} from '../../src/local/command-sandbox.js';
 
 // Item 10: a local command runs under bubblewrap unless the operator chose full access.
 const bwrap: Bwrap = { path: '/usr/bin/bwrap', version: 'bubblewrap 0.11.1' };

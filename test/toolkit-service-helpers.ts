@@ -9,12 +9,12 @@ import {
   existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { SalaamService } from '../src/service.js';
-import { digest } from '../src/protocol.js';
-import { mcpCatalogDigest } from '../src/mcp-http.js';
-import { call } from '../src/transport.js';
-import { PiProcess } from '../src/pi.js';
-import type { ToolkitWorkConfig } from '../src/toolkit-work.js';
+import { SalaamService } from '../src/service/service.js';
+import { digest } from '../src/core/protocol.js';
+import { mcpCatalogDigest } from '../src/mcp/http.js';
+import { call } from '../src/core/transport.js';
+import { PiProcess } from '../src/runtime/pi.js';
+import type { ToolkitWorkConfig } from '../src/toolkit/work.js';
 import corpus from './fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 export async function toolkitServiceFixture(mode = 'normal', privateConfig = false) {

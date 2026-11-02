@@ -4,12 +4,12 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
-import { planHost } from '../../src/host.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
+import { planHost } from '../../src/host/host.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
 import { until } from '../helpers.js';
-import { startHost } from '../../src/host-start.js';
-import { SalaamService } from '../../src/service.js';
+import { startHost } from '../../src/host/start.js';
+import { SalaamService } from '../../src/service/service.js';
 
 const exec = promisify(execFile);
 test('concurrent private-runtime startup owns one daemon, restarts a killed child and rejects changed or foreign manifests', async () => {

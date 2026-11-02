@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { DatabaseSync } from 'node:sqlite';
-import { digest, type ChildTask } from '../../src/protocol.js';
+import { digest, type ChildTask } from '../../src/core/protocol.js';
 
 test.each([false, true])(
   'parent and child reservations survive restart without refunds (token budget disabled: %s)',

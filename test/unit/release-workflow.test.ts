@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 // GitHub refuses to start a workflow whose called job asks for a permission the caller does not
 // grant. release.yml calls ci.yml, so when ci.yml's `plan` job gained `pull-requests: read`

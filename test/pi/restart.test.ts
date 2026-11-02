@@ -4,10 +4,10 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { fixture, create, ready, until, probe } from '../helpers.js';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
-import { ROOT } from '../../src/config.js';
-import type { Session } from '../../src/protocol.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
+import { ROOT } from '../../src/core/config.js';
+import type { Session } from '../../src/core/protocol.js';
 
 test('an explicitly resumed worker reuses the recorded Pi transcript', async () => {
   const f = await fixture();
@@ -51,7 +51,7 @@ test('the state lock and worker fencing recover after abrupt service death', asy
   const dir = mkdtempSync('/tmp/sal-crash-');
   const child = spawn(
     process.execPath,
-    [join(ROOT, 'dist/src/cli.js'), 'service', 'start', '--foreground', '--state', dir],
+    [join(ROOT, 'dist/src/cli/cli.js'), 'service', 'start', '--foreground', '--state', dir],
     { stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let replacement: SalaamService | undefined;

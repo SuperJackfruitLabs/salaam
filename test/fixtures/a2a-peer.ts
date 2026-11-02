@@ -8,8 +8,8 @@ import {
   ServerCallContext,
   type A2ARequestHandler,
 } from '@a2a-js/sdk/server';
-import { digest } from '../../src/protocol.js';
-import type { A2APeer } from '../../src/a2a-peer.js';
+import { digest } from '../../src/core/protocol.js';
+import type { A2APeer } from '../../src/a2a/peer.js';
 
 /** Actual pinned official SDK wire serialization; no live model or peer-product claim. */
 export async function sdkPeer() {
@@ -53,37 +53,43 @@ export async function sdkPeer() {
     },
   } as unknown as A2ARequestHandler;
   const transport = new JsonRpcTransportHandler(handler);
-  const server = createServer(async (req, res) => {
-    try {
-      if (req.headers.authorization !== `Bearer ${token}` || req.headers['a2a-version'] !== '1.0') {
-        res.writeHead(401);
+  const server = createServer((req, res) => {
+    // A rejection stays unhandled, as it was when this handler was async.
+    void (async () => {
+      try {
+        if (
+          req.headers.authorization !== `Bearer ${token}` ||
+          req.headers['a2a-version'] !== '1.0'
+        ) {
+          res.writeHead(401);
+          res.end();
+          return;
+        }
+        if (req.url === '/.well-known/agent-card.json') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(card));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        requests.push(body);
+        if (body.params.tenant !== 'tenant-a') throw Error('Wrong fixture tenant');
+        const response = await transport.handle(
+          body,
+          new ServerCallContext({ requestedVersion: '1.0', tenant: 'tenant-a' }),
+        );
+        if (lost && body.method === 'SendMessage') {
+          res.destroy();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'application/json', 'A2A-Version': '1.0' });
+        res.end(JSON.stringify(response));
+      } catch {
+        res.writeHead(500);
         res.end();
-        return;
       }
-      if (req.url === '/.well-known/agent-card.json') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(card));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(Buffer.from(chunk));
-      const body = JSON.parse(Buffer.concat(chunks).toString());
-      requests.push(body);
-      if (body.params.tenant !== 'tenant-a') throw Error('Wrong fixture tenant');
-      const response = await transport.handle(
-        body,
-        new ServerCallContext({ requestedVersion: '1.0', tenant: 'tenant-a' }),
-      );
-      if (lost && body.method === 'SendMessage') {
-        res.destroy();
-        return;
-      }
-      res.writeHead(200, { 'content-type': 'application/json', 'A2A-Version': '1.0' });
-      res.end(JSON.stringify(response));
-    } catch {
-      res.writeHead(500);
-      res.end();
-    }
+    })();
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port,

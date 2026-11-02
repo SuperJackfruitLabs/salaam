@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 import { join } from 'node:path';
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { fixture, ready, until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
+import { OperatorClient } from '../../src/tui/client.js';
 
 // Phase 4b in a real terminal: a repository command expands into the prompt that is sent, and
 // /hooks shows an untrusted workspace file without running it.

@@ -1,7 +1,7 @@
 import { test, expect, afterEach } from 'vitest';
 import { mkdtempSync, realpathSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadPersona, personaSection } from '../../src/persona.js';
+import { loadPersona, personaSection } from '../../src/runtime/persona.js';
 
 // Item 9: the host's persona is an operator file, pinned by digest, appended last to the prompt.
 // realpath: macOS /tmp is a symlink, and a persona path must be canonical.
@@ -67,7 +67,7 @@ async function promptWith(
           : () => undefined,
     },
   );
-  const { default: house } = await import('../../src/house-extension.js');
+  const { default: house } = await import('../../src/runtime/house-extension.js');
   house(pi as never);
   let prompt = 'Base prompt.';
   for (const h of handlers) {
@@ -86,7 +86,7 @@ test('a worker with the host persona ends its system prompt with it; without one
 });
 
 test('the daemon refuses a persona that changed since host plan, and gives workers the pinned one', async () => {
-  const { SalaamService } = await import('../../src/service.js');
+  const { SalaamService } = await import('../../src/service/service.js');
   const d = dir();
   const p = join(d, 'persona.md');
   writeFileSync(p, 'Warm.\n');

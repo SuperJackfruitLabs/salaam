@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { READ_ONLY_REVIEW_TOOLS } from '../../src/task-budget.js';
-import { ChildWork } from '../../src/children.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { AgentProfiles } from '../../src/agent-profiles.js';
-import type { Supervisor } from '../../src/supervisor.js';
-import { RepositorySnapshots } from '../../src/repository-snapshots.js';
-import { digest } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { READ_ONLY_REVIEW_TOOLS } from '../../src/tasks/budget.js';
+import { ChildWork } from '../../src/workers/children.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { AgentProfiles } from '../../src/runtime/agent-profiles.js';
+import type { Supervisor } from '../../src/runtime/supervisor.js';
+import { RepositorySnapshots } from '../../src/workers/repository-snapshots.js';
+import { digest } from '../../src/core/protocol.js';
 
 // Item 8: the critic child. A reviewer over an immutable snapshot of the verified deliverables,
 // linked to the task's last step attempt (which has settled), charged to its own budget, started at once.

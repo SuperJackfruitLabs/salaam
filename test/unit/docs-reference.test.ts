@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import prettier from 'prettier';
 import { test, expect } from 'vitest';
-import { lintDocs, regenerate, sourceTextOf } from '../../src/docs-reference.js';
+import { lintDocs, regenerate, sourceTextOf } from '../../src/cli/docs-reference.js';
 
 const root = join(import.meta.dirname, '../..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');

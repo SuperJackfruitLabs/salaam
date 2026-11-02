@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest';
-import { SalaamApp } from '../../src/tui.js';
-import { ServiceError, type SessionSnapshot } from '../../src/protocol.js';
-import { providerRoute } from '../../src/provider-config.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import { ServiceError, type SessionSnapshot } from '../../src/core/protocol.js';
+import { providerRoute } from '../../src/providers/config.js';
 
 type Internal = {
   applyRoute(route: ReturnType<typeof providerRoute>): Promise<void>;

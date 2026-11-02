@@ -2,9 +2,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { SalaamApp } from '../../src/tui.js';
-import { ChoiceModal } from '../../src/tui-modals.js';
-import type { SessionSnapshot } from '../../src/protocol.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import { ChoiceModal } from '../../src/tui/modals.js';
+import type { SessionSnapshot } from '../../src/core/protocol.js';
 
 function app(snapshot?: Partial<SessionSnapshot>) {
   const a = new SalaamApp({ state: '/tmp/salaam-composer-keys' });

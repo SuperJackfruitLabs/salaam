@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Store } from '../../src/store.js';
-import { canonical, digest } from '../../src/protocol.js';
-import { committedToolkitResolutionEvidence, toolkitEvidence } from '../../src/toolkit-evidence.js';
+import type { Store } from '../../src/store/store.js';
+import { canonical, digest } from '../../src/core/protocol.js';
+import { committedToolkitResolutionEvidence, toolkitEvidence } from '../../src/toolkit/evidence.js';
 
 const binding = {
   root_digest: digest('root'),

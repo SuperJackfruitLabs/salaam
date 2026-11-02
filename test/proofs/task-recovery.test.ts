@@ -5,16 +5,16 @@ import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SalaamService } from '../../src/service.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { acquireControl } from '../../src/attach.js';
+import { SalaamService } from '../../src/service/service.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { acquireControl } from '../../src/tui/attach.js';
 import { until } from '../helpers.js';
-import type { Controller, Session, SessionSnapshot } from '../../src/protocol.js';
-import type { WorkTask } from '../../src/task-work.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { DocumentView } from '../../src/tui-view.js';
-import { SalaamTheme } from '../../src/tui-theme.js';
+import type { Controller, Session, SessionSnapshot } from '../../src/core/protocol.js';
+import type { WorkTask } from '../../src/core/records.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { DocumentView } from '../../src/tui/view.js';
+import { SalaamTheme } from '../../src/tui/theme.js';
 
 const plan = {
   objective: 'Repair addition once',

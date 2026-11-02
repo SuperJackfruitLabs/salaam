@@ -48,52 +48,57 @@ if (existsSync(socket)) {
     throw Error('Provider socket owner changed');
   unlinkSync(socket);
 }
-const gateway = createServer(async (req, res) => {
-  try {
-    if (stopping || req.method !== 'POST' || req.url !== '/messages' || pending.size >= 8)
-      throw Error('Provider relay unavailable');
-    let size = 0;
-    const chunks = [];
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > 3145728) throw Error('Provider frame bound');
-      chunks.push(Buffer.from(chunk));
+const gateway = createServer((req, res) => {
+  // A rejection stays unhandled, as it was when this handler was async.
+  void (async () => {
+    try {
+      if (stopping || req.method !== 'POST' || req.url !== '/messages' || pending.size >= 8)
+        throw Error('Provider relay unavailable');
+      let size = 0;
+      const chunks = [];
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > 3145728) throw Error('Provider frame bound');
+        chunks.push(Buffer.from(chunk));
+      }
+      const frame = JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        id = randomUUID();
+      pending.set(id, res);
+      res.on('close', () => {
+        if (pending.delete(id)) emit({ kind: 'model_cancel', id });
+      });
+      emit({
+        kind: 'model_request',
+        id,
+        method: frame.method,
+        path: frame.path,
+        headers: frame.headers,
+        body: frame.body,
+      });
+    } catch {
+      res.destroy();
     }
-    const frame = JSON.parse(Buffer.concat(chunks).toString('utf8')),
-      id = randomUUID();
-    pending.set(id, res);
-    res.on('close', () => {
-      if (pending.delete(id)) emit({ kind: 'model_cancel', id });
-    });
-    emit({
-      kind: 'model_request',
-      id,
-      method: frame.method,
-      path: frame.path,
-      headers: frame.headers,
-      body: frame.body,
-    });
-  } catch {
-    res.destroy();
-  }
+  })();
 });
 await new Promise((resolve) => gateway.listen(socket, resolve));
 chmodSync(socket, 0o600);
 globalThis.fetch = providerFetch(socket);
-const { SalaamService } = await import(pathToFileURL(join(pkg, 'dist/src/service.js'))),
-  { PiProcess } = await import(pathToFileURL(join(pkg, 'dist/src/pi.js'))),
-  { providerRoute } = await import(pathToFileURL(join(pkg, 'dist/src/provider-config.js'))),
-  { ProviderCredentialStore } = await import(pathToFileURL(join(pkg, 'dist/src/provider-auth.js'))),
-  { call } = await import(pathToFileURL(join(pkg, 'dist/src/transport.js'))),
-  { hostDigests } = await import(pathToFileURL(join(pkg, 'dist/src/host.js')));
-const { HarnessProtocol } = await import(pathToFileURL(join(pkg, 'dist/src/harness-protocol.js')));
+const { SalaamService } = await import(pathToFileURL(join(pkg, 'dist/src/service/service.js'))),
+  { PiProcess } = await import(pathToFileURL(join(pkg, 'dist/src/runtime/pi.js'))),
+  { providerRoute } = await import(pathToFileURL(join(pkg, 'dist/src/providers/config.js'))),
+  { ProviderCredentialStore } = await import(
+    pathToFileURL(join(pkg, 'dist/src/providers/auth.js'))
+  ),
+  { call } = await import(pathToFileURL(join(pkg, 'dist/src/core/transport.js'))),
+  { hostDigests } = await import(pathToFileURL(join(pkg, 'dist/src/core/config.js')));
+const { HarnessProtocol } = await import(pathToFileURL(join(pkg, 'dist/src/harness/protocol.js')));
 const originalPermission = HarnessProtocol.prototype.permission;
 HarnessProtocol.prototype.permission = async function (method, params) {
   emit({ kind: 'harness_permission_observed', method, params });
   return originalPermission.call(this, method, params);
 };
 const credentials = new ProviderCredentialStore();
-const { readTree } = await import(pathToFileURL(join(pkg, 'dist/src/workspaces.js')));
+const { readTree } = await import(pathToFileURL(join(pkg, 'dist/src/coding/workspaces.js')));
 await credentials.modify('anthropic', async () => ({ type: 'api_key', key: config.proxy_token }));
 const input = createInterface({ input: process.stdin });
 async function close() {
@@ -138,7 +143,7 @@ input.on('line', (line) => {
           .prepare('SELECT hash,response FROM requests WHERE actor=? AND id=?')
           .get('local-operator', value.request_id);
         if (!saved) throw Error('No saved owned request');
-        const { digest } = await import(pathToFileURL(join(pkg, 'dist/src/protocol.js')));
+        const { digest } = await import(pathToFileURL(join(pkg, 'dist/src/core/protocol.js')));
         let body;
         for (let expected = 0; expected <= Math.min(task.revision, 1024); expected++)
           if (

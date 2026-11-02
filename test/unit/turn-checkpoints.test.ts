@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { ShadowCheckpoints } from '../../src/turn-checkpoints.js';
+import { ShadowCheckpoints } from '../../src/runtime/turn-checkpoints.js';
 
 function setup() {
   const root = realpathSync(mkdtempSync('/tmp/sal-turn-ck-'));

@@ -1,10 +1,10 @@
 import { expect, test, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { StationWork } from '../../src/station-work.js';
-import { canonical, textDigest } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import { canonical, textDigest } from '../../src/core/protocol.js';
 
 // Controlled helper completion: filesystem protocol validation has its own corpus.
 function fixture(
@@ -240,11 +240,12 @@ for (const [refusal, definite] of [
         });
         f.helper.mockImplementation(async () => {
           if (!definite) throw Error('uncertain');
-          const { definiteHelperRefusal } = await import('../../src/station-work.js');
+          const { definiteHelperRefusal } = await import('../../src/agentpod/station-work.js');
           const code = definiteHelperRefusal(1, false, { version: 1, ok: false, code: refusal });
           const failure = Object.assign(
             Object.create(
-              (await import('../../src/station-work.js')).StationFilesDefiniteFailure.prototype,
+              (await import('../../src/agentpod/station-work.js')).StationFilesDefiniteFailure
+                .prototype,
             ),
             { code },
           );

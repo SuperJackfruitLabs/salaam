@@ -4,7 +4,7 @@ import {
   statusEnabled,
   terminalState,
   titleFor,
-} from '../../src/terminal-status.js';
+} from '../../src/tui/terminal-status.js';
 
 // Trial polish C (2026-10-31): Salaam tells the terminal whether it is working, needs you, or is
 // idle: in the window title, and to Herdr through its documented `pane report-agent` command

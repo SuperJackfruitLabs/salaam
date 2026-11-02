@@ -12,15 +12,19 @@ import {
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { LocalCoding } from '../../src/local-coding.js';
-import { localHash } from '../../src/local-edits.js';
-import { localDiff } from '../../src/local-diff.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
-import { probeToolsUser, serviceToolIdentity, type ToolIdentity } from '../../src/tool-identity.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { LocalCoding } from '../../src/local/coding.js';
+import { localHash } from '../../src/local/edits.js';
+import { localDiff } from '../../src/local/diff.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import {
+  probeToolsUser,
+  serviceToolIdentity,
+  type ToolIdentity,
+} from '../../src/local/tool-identity.js';
 import { fixture, fake, until } from '../helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 
 const linux = process.platform === 'linux';
 // Conditional tests are left undefined rather than skipped: CI evidence rejects pending tests.
@@ -181,7 +185,7 @@ testIf(linux)(
       expect(edit.call.state).toBe('succeeded');
       expect(edit.result).toMatchObject({ applied: ['new.txt'], tool_uid: 4242 });
       expect(readFileSync(join(f.root, 'new.txt'), 'utf8')).toBe('hello');
-      expect(readFileSync(fl.log, 'utf8')).toMatch(/local-edit-helper\.js /);
+      expect(readFileSync(fl.log, 'utf8')).toMatch(/local\/edit-helper\.js /);
       // A timeout kills the tool's own process group through the launcher.
       const slow = await f.run('slow', { action: 'command', command: 'sleep 30', timeout_ms: 200 });
       expect(slow.call.state).toBe('timed_out');

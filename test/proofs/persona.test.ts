@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { fixture, create, ready, until } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
-import { ROOT } from '../../src/config.js';
-import { loadPersona } from '../../src/persona.js';
+import { ROOT } from '../../src/core/config.js';
+import { loadPersona } from '../../src/runtime/persona.js';
 
 // Item 9 proof: a real pinned Pi worker on a host with a persona sends it as the last section of
 // its system prompt, and attests the persona digest the host pinned.

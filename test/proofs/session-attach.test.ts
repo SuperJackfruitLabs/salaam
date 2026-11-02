@@ -5,11 +5,11 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'no
 import { join } from 'node:path';
 import { createServer, request } from 'node:http';
 import { fixture, create, ready, until, control } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { Outbox, subscribe, acquireControl } from '../../src/attach.js';
-import { SalaamService } from '../../src/service.js';
-import type { Session, SessionSnapshot } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { Outbox, subscribe, acquireControl } from '../../src/tui/attach.js';
+import { SalaamService } from '../../src/service/service.js';
+import type { Session, SessionSnapshot } from '../../src/core/protocol.js';
 
 async function kill(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -34,7 +34,7 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
         const session = await create(f.service, f.dir);
         const original = await ready(f.service, session.id);
         terminal = spawn(process.execPath, [
-          join(ROOT, 'dist/src/cli.js'),
+          join(ROOT, 'dist/src/cli/cli.js'),
           'attach',
           session.id,
           '--state',
@@ -58,7 +58,7 @@ describe.each(Array.from({ length: repetitions }, (_, index) => index + 1))(
           epoch: original.epoch,
         });
         observer = spawn(process.execPath, [
-          join(ROOT, 'dist/src/cli.js'),
+          join(ROOT, 'dist/src/cli/cli.js'),
           'attach',
           session.id,
           '--observe',

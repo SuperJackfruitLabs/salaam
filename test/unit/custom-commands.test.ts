@@ -7,7 +7,7 @@ import {
   loadCustomCommands,
   matchCustomCommand,
   splitArguments,
-} from '../../src/custom-commands.js';
+} from '../../src/runtime/custom-commands.js';
 
 const dirs: string[] = [];
 const temp = () => {

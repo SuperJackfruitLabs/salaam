@@ -1,11 +1,11 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
-import { digest, type Session } from '../../src/protocol.js';
-import { ROOT } from '../../src/config.js';
-import { readTree } from '../../src/workspaces.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
+import { digest, type Session } from '../../src/core/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { readTree } from '../../src/coding/workspaces.js';
 import { PtyClient } from '../terminal-helpers.js';
 import { client } from '../acp-helpers.js';
 import { ready, until } from '../helpers.js';

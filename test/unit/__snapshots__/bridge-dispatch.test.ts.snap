@@ -1,0 +1,384 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the worker bridge answers each kind of request as recorded 1`] = `
+{
+  "a second handshake": {
+    "answer": {
+      "code": "readiness_rejected",
+      "message": "Duplicate handshake",
+      "status": 403,
+    },
+    "error": "Duplicate handshake",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "a stale epoch": {
+    "answer": {
+      "code": "stale_worker",
+      "message": "Worker epoch is no longer current",
+      "status": 403,
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "a wrong token": {
+    "answer": {
+      "code": "unauthorized",
+      "message": "Invalid worker credentials",
+      "status": 403,
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "an unknown method": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Unsupported worker operation",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "bgtask.list": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Background commands are not admitted",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "board.read": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Board reads need protected station work",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "child.list": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No active parent attempt",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "child.spawn": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No active parent attempt",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "coding.files": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Coding authority is unavailable",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "compaction.plan": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No managed compaction grant",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "context": {
+    "answer": {
+      "result": {
+        "frame": "SALAAM_TASK_STATE {"binding":"<hex32>","facts":[],"instructions":"Runtime bookkeeping, not a user message or a new task. Answer the latest actual user request. Empty facts mean no saved notes, not an empty workspace or missing objective. Inspect workspace tools for filesystem questions; history is only for prior conversation. Use active facts; superseded facts are historical. Do not repeat completed steps.","session_id":"<session>","version":0}",
+        "version": 0,
+      },
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "failure": {
+    "answer": {
+      "result": {
+        "ok": true,
+      },
+    },
+    "error": "Required extension failed",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "heartbeat": {
+    "answer": {
+      "result": {
+        "ok": true,
+      },
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "history": {
+    "answer": {
+      "result": {
+        "entries": [],
+        "next_offset": null,
+      },
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "history of a missing entry": {
+    "answer": {
+      "code": "not_found",
+      "message": "History entry not found",
+      "status": 404,
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "local.prepare": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Local coding is not admitted",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "local.read": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Local workspace is not admitted",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "mcp.catalog": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Worker has no managed MCP authority",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "model": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Provider or task context is invalid",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "operation.prepare": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No active managed attempt",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "operator_mcp.catalog": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Worker has no declared MCP servers",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "policy for a tool outside policy": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Tool is outside policy",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "policy for an admitted tool": {
+    "answer": {
+      "result": {
+        "ok": true,
+      },
+    },
+    "error": null,
+    "events": [
+      "policy.allowed",
+    ],
+    "state": "ready",
+  },
+  "provider.auth": {
+    "answer": {
+      "result": "<undefined>",
+    },
+    "error": null,
+    "events": [],
+    "state": "ready",
+  },
+  "specialist.read": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No active specialist assignment",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "specialist.report": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No active specialist assignment",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "station.read": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Station execution is unavailable",
+    "events": [
+      {
+        "station.call_refused": {
+          "action": "list",
+          "attempt_id": null,
+          "code": "station_disabled",
+          "method": "station.read",
+        },
+      },
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "team.send": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: No owned team assignment",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "tool for an admitted tool": {
+    "answer": {
+      "result": {
+        "ok": true,
+      },
+    },
+    "error": null,
+    "events": [
+      "tool.granted",
+    ],
+    "state": "ready",
+  },
+  "toolkit.catalog": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Worker has no native Toolkit authority",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "usage": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Usage does not belong to this request",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+  "web.search": {
+    "answer": {
+      "code": "control_failed",
+      "message": "Required control unavailable",
+      "status": 503,
+    },
+    "error": "Required control failed: Web search is not admitted for this session",
+    "events": [
+      "worker.unhealthy",
+    ],
+    "state": "unhealthy",
+  },
+}
+`;

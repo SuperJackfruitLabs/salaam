@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { SalaamService } from '../dist/src/service.js';
-import { call } from '../dist/src/transport.js';
-import { acquireControl, Outbox } from '../dist/src/attach.js';
+import { SalaamService } from '../dist/src/service/service.js';
+import { call } from '../dist/src/core/transport.js';
+import { acquireControl, Outbox } from '../dist/src/tui/attach.js';
 
 const state = mkdtempSync('/tmp/sal-demo-');
 let service;

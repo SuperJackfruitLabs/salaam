@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
+import { Store } from '../../src/store/store.js';
 
 function fixture() {
   const dir = mkdtempSync('/tmp/sal-usage-evidence-');

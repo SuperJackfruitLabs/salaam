@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { autoApprovesCommands } from '../../src/autonomy.js';
+import { autoApprovesCommands } from '../../src/local/autonomy.js';
 import {
   branchInstruction,
   commitInstruction,
@@ -12,7 +12,7 @@ import {
   prInstruction,
   publishesToRemote,
   validBranchName,
-} from '../../src/git-helpers.js';
+} from '../../src/local/git-helpers.js';
 
 const isolated = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 const git = (cwd: string, ...args: string[]) =>

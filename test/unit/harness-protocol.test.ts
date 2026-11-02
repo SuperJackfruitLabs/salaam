@@ -6,8 +6,8 @@ import {
   HarnessProtocol,
   type HarnessCheckpoint,
   type HarnessProtocolHooks,
-} from '../../src/harness-protocol.js';
-import { ROOT } from '../../src/config.js';
+} from '../../src/harness/protocol.js';
+import { ROOT } from '../../src/core/config.js';
 
 function fixture(dialect: 'acp' | 'codex', mode = 'normal') {
   const dir = mkdtempSync('/tmp/sal-harness-protocol-'),

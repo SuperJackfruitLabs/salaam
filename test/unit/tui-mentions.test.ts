@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { MentionAutocompleteProvider } from '../../src/tui-mentions.js';
+import { MentionAutocompleteProvider } from '../../src/tui/mentions.js';
 
 function provider() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'sal-ac-')));

@@ -25,7 +25,7 @@ import { inventory, verify, hash } from './inventory.mjs';
 import { validatePrivateRuntimeReceipt, privateRuntimeImage } from './receipt.mjs';
 import { verifyReproducibleBuilds } from './reproducibility.mjs';
 
-test('private activation gates schema, preserves pointers on rejection, and permits restored-state rollback', async () => {
+void test('private activation gates schema, preserves pointers on rejection, and permits restored-state rollback', async () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sal-runtime-test-')));
   let ownerChild;
   try {
@@ -154,7 +154,7 @@ test('private activation gates schema, preserves pointers on rejection, and perm
   }
 });
 
-test('service launcher chooses private executable with no inherited credentials or Node options', () => {
+void test('service launcher chooses private executable with no inherited credentials or Node options', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sal-launch-test-'));
   try {
     mkdirSync(join(dir, 'bin'));
@@ -188,7 +188,7 @@ test('service launcher chooses private executable with no inherited credentials 
   }
 });
 
-test('installer rejects mismatched private archive before executing any runtime', () => {
+void test('installer rejects mismatched private archive before executing any runtime', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sal-install-test-'));
   try {
     const archive = join(dir, 'bundle.tgz');
@@ -214,7 +214,7 @@ test('installer rejects mismatched private archive before executing any runtime'
   }
 });
 
-test('installer rejects traversing paths and archive links even with a matching reviewed hash', () => {
+void test('installer rejects traversing paths and archive links even with a matching reviewed hash', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sal-unsafe-archive-')));
   try {
     for (const [name, type, link] of [
@@ -264,7 +264,7 @@ test('installer rejects traversing paths and archive links even with a matching 
   }
 });
 
-test('CI private runtime receipt binds run, package and pinned image and denies incomplete proofs', () => {
+void test('CI private runtime receipt binds run, package and pinned image and denies incomplete proofs', () => {
   const expected = { commit: 'reviewed-commit', run_id: '123', run_attempt: 2, version: 'fixture' };
   const receipt = {
     schema: 1,
@@ -314,7 +314,7 @@ test('CI private runtime receipt binds run, package and pinned image and denies 
     );
 });
 
-test('two-build verifier compares actual bytes and manifest identity before accepting reproducibility', () => {
+void test('two-build verifier compares actual bytes and manifest identity before accepting reproducibility', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sal-reproducible-builds-'));
   try {
     const firstArchive = join(dir, 'first.tgz'),
@@ -391,7 +391,7 @@ test('two-build verifier compares actual bytes and manifest identity before acce
   }
 });
 
-test('container proof overrides the image entrypoint with a shell and retains offline read-only isolation', () => {
+void test('container proof overrides the image entrypoint with a shell and retains offline read-only isolation', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sal-container-command-'));
   try {
     const docker = join(dir, 'docker'),

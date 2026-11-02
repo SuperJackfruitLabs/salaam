@@ -4,7 +4,7 @@ import {
   agentpodWorkAdmission,
   checkAgentPodWorkAdmission,
   checkAgentPodWorkReplay,
-} from '../../src/agentpod-work-protocol.js';
+} from '../../src/core/agentpod-work-protocol.js';
 const corpus = JSON.parse(
   readFileSync(new URL('../fixtures/agentpod-work-v1.json', import.meta.url), 'utf8'),
 );
@@ -26,8 +26,8 @@ for (const sample of corpus.replays)
 
 // Producer publishes every default explicitly. Consumer normalization must not
 // silently alter the admitted digest before durable task creation.
-import { TaskWork } from '../../src/task-work.js';
-import { digest } from '../../src/protocol.js';
+import { TaskWork } from '../../src/tasks/work.js';
+import { digest } from '../../src/core/protocol.js';
 const payloads = JSON.parse(
   readFileSync(new URL('../fixtures/agentpod-work-payload-v1.json', import.meta.url), 'utf8'),
 );

@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { fixture, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { providerRoute } from '../../src/provider-config.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { providerRoute } from '../../src/providers/config.js';
 
 test('an interactive session switches model and thinking between turns on the same transcript', async () => {
   const f = await fixture({ anthropicApiKey: 'sk-ant-test-' + 'x'.repeat(40) });
@@ -31,7 +31,7 @@ test('an interactive session switches model and thinking between turns on the sa
     );
   } finally {
     await client.leave().catch(() => {});
-    f.close();
+    void f.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -46,7 +46,7 @@ test('strict sessions cannot switch route', async () => {
     );
     expect(f.service.tasks.instructions!.applies(session.id)).toBe(false);
   } finally {
-    f.close();
+    void f.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -10,10 +10,10 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { bindHost } from '../../src/host-bind.js';
-import { readHost, hostToolsUser } from '../../src/host.js';
-import { readStationConfig } from '../../src/station-config.js';
-import { digest } from '../../src/protocol.js';
+import { bindHost } from '../../src/host/bind.js';
+import { readHost, hostToolsUser } from '../../src/host/host.js';
+import { readStationConfig } from '../../src/agentpod/station-config.js';
+import { digest } from '../../src/core/protocol.js';
 
 const root = process.getuid?.() === 0 && process.platform === 'linux';
 // Conditional tests are left undefined rather than skipped: CI evidence rejects pending tests.

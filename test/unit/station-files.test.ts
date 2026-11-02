@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { stationFileResult } from '../../src/station-files.js';
+import { stationFileResult } from '../../src/agentpod/station-files.js';
 import corpus from '../fixtures/agentpod-station-files-v1.json' with { type: 'json' };
 
 for (const c of corpus.receipts)

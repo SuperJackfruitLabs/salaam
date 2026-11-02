@@ -3,16 +3,16 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { SalaamService } from '../../src/service.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { SalaamService } from '../../src/service/service.js';
 import { until } from '../helpers.js';
-import type { Session } from '../../src/protocol.js';
+import type { Session } from '../../src/core/protocol.js';
 
 test('detached CLI forwards the selected Claude route and keeps the key out of logs and API responses', async () => {
   const dir = mkdtempSync('/tmp/sal-claude-cli-'),
     socket = join(dir, 'operator.sock'),
-    cli = join(ROOT, 'dist/src/cli.js');
+    cli = join(ROOT, 'dist/src/cli/cli.js');
   const run = async (...args: string[]) =>
     (
       await promisify(execFile)(process.execPath, [cli, ...args, '--state', dir], {

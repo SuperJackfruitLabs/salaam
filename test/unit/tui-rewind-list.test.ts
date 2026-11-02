@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { rewindItems } from '../../src/tui-review.js';
+import { rewindItems } from '../../src/tui/review.js';
 
 // PR #103 live pass: /rewind listed raw ISO timestamps; it now says how long ago, newest first.
 test('the rewind list shows turns newest first with relative times', () => {

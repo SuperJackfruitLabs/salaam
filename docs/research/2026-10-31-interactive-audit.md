@@ -155,7 +155,7 @@ Salaam at `12a260c` (v0.0.4), on the Mac, run as a local coding session under Se
 
 ## Appendix C: Salaam inventory
 
-Sources: the code (`src/tui*.ts`, `src/cli*.ts`, `src/local-*.ts`, `src/acp.ts`, `src/input.ts`) and the docs (`docs/tui.md`, `docs/autonomy.md`, `docs/context-and-skills.md`, `docs/clients.md`, `docs/mcp.md`, `docs/coding.md`).
+Sources: the code (`src/tui*.ts`, `src/cli*.ts`, `src/local-*.ts`, `src/acp/server.ts`, `src/tui/input.ts`) and the docs (`docs/tui.md`, `docs/autonomy.md`, `docs/context-and-skills.md`, `docs/clients.md`, `docs/mcp.md`, `docs/coding.md`).
 
 The hands-on evidence is step 0's run on this Mac (`step0-findings.md`, CLI and headless). The full-screen TUI needs a real terminal (TTY), which this agent's shell cannot provide. So TUI behaviour here comes from code and docs, not from interactive use. Three TUI points stay unmeasured: time to first token, how diffs look, and undo.
 

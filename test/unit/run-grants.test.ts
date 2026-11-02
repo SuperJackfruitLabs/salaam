@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { Store } from '../../src/store.js';
-import { RunGrants, runGrantCovers, runGrantPrefix } from '../../src/run-grants.js';
+import { Store } from '../../src/store/store.js';
+import { RunGrants, runGrantCovers, runGrantPrefix } from '../../src/tasks/run-grants.js';
 
 const prefix = runGrantPrefix('run_abc12345')!;
 const patch = (path: string, content: string | null = 'x') => ({

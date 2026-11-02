@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { probeHarness } from '../../src/harness-probe.js';
+import { probeHarness } from '../../src/harness/probe.js';
 
 test('operator capability probe has an empty credential home and never promotes advertised tools to authority', async () => {
   const dir = mkdtempSync('/tmp/sal-harness-pin-'),

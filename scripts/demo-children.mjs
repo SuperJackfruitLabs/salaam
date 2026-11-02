@@ -4,11 +4,11 @@ import { promisify } from 'node:util';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { call } from '../dist/src/transport.js';
+import { call } from '../dist/src/core/transport.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const state = mkdtempSync('/tmp/sal-child-demo-'),
   socket = join(state, 'operator.sock'),
-  cli = join(root, 'dist/src/cli.js');
+  cli = join(root, 'dist/src/cli/cli.js');
 let service;
 const run = async (...args) =>
   (

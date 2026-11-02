@@ -1,11 +1,11 @@
 import { test, expect } from 'vitest';
-import { Store } from '../../src/store.js';
+import { Store } from '../../src/store/store.js';
 import {
   RATE_LIMIT_BACKOFF_MS,
   RATE_LIMIT_MAX_FAILURES,
   RATE_LIMIT_STOP,
   RateLimitRetries,
-} from '../../src/rate-limit-retries.js';
+} from '../../src/providers/rate-limit-retries.js';
 
 // 429: a step whose attempt the provider rate-limited is re-run as a fresh admitted attempt after
 // a backoff, up to three failures; then the task stops with a provable rate-limit block.
@@ -97,9 +97,9 @@ test('any other failure, more than one failed step, or no failed step is not a r
   });
 });
 
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
-import { TaskWork } from '../../src/task-work.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
+import { TaskWork } from '../../src/tasks/work.js';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 

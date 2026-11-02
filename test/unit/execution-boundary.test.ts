@@ -13,9 +13,9 @@ import {
   decodeLogs,
   engineRequest,
   type EngineRequest,
-} from '../../src/execution-boundary.js';
-import { workerTools, CAPABILITIES } from '../../src/protocol.js';
-import { ROOT } from '../../src/config.js';
+} from '../../src/execution/boundary.js';
+import { workerTools, CAPABILITIES } from '../../src/core/protocol.js';
+import { ROOT } from '../../src/core/config.js';
 
 const run = '021802ee-966f-4b14-a620-1ed19604d73b';
 const id = 'a'.repeat(64);

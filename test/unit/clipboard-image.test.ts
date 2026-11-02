@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 import { crc32, deflateSync } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
-import { imagesInPrompt, readClipboardImage } from '../../src/clipboard-image.js';
-import { imageMime } from '../../src/mentions.js';
+import { imagesInPrompt, readClipboardImage } from '../../src/tui/clipboard-image.js';
+import { imageMime } from '../../src/runtime/mentions.js';
 
 // Ctrl+V reads an image from the system clipboard, because a terminal pastes only text.
 

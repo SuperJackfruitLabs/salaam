@@ -1,7 +1,7 @@
-import { Store } from '../../dist/src/store.js';
-import { Artifacts } from '../../dist/src/artifacts.js';
-import { Workspaces, readTree } from '../../dist/src/workspaces.js';
-import { digest } from '../../dist/src/protocol.js';
+import { Store } from '../../dist/src/store/store.js';
+import { Artifacts } from '../../dist/src/store/artifacts.js';
+import { Workspaces, readTree } from '../../dist/src/coding/workspaces.js';
+import { digest } from '../../dist/src/core/protocol.js';
 import { join } from 'node:path';
 const [state, root, session] = process.argv.slice(2),
   store = new Store(join(state, 'journal.sqlite'));

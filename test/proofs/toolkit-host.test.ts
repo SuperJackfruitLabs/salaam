@@ -12,14 +12,14 @@ import {
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { planHost, readHost } from '../../src/host.js';
-import { readToolkitConfig } from '../../src/toolkit-config.js';
-import { ROOT } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
-import { call } from '../../src/transport.js';
+import { planHost, readHost } from '../../src/host/host.js';
+import { readToolkitConfig } from '../../src/toolkit/config.js';
+import { ROOT } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
+import { call } from '../../src/core/transport.js';
 import { until } from '../helpers.js';
 import { toolkitServiceFixture } from '../toolkit-service-helpers.js';
-import { processIdentity } from '../../src/supervisor.js';
+import { processIdentity } from '../../src/core/process-identity.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const exec = promisify(execFile);
@@ -243,10 +243,14 @@ test('normal CLI cold startup applies schema4 native tools before actual Pi and 
         // Linux identities are opaque boot/start/executable/argv hashes. Compare
         // the identity captured from this test's successful private host startup;
         // never treat that hash as a printable argv or signal a replacement PID.
+        // Failing here, even over the body's own failure, is deliberate: a changed supervisor
+        // must never be signalled.
+        // oxlint-disable-next-line no-unsafe-finally
         if (identity !== supervisorIdentity) throw Error('Owned host supervisor identity changed');
         try {
           process.kill(supervisor, 'SIGTERM');
         } catch (e) {
+          // oxlint-disable-next-line no-unsafe-finally
           if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e;
         }
         await until(() => processIdentity(supervisor!) !== identity, Boolean, 10000);

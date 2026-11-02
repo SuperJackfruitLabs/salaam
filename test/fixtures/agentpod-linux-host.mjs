@@ -5,9 +5,9 @@ import { promisify } from 'node:util';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { planHost } from '../../dist/src/host.js';
-import { ROOT } from '../../dist/src/config.js';
-import { call } from '../../dist/src/transport.js';
+import { planHost } from '../../dist/src/host/host.js';
+import { ROOT } from '../../dist/src/core/config.js';
+import { call } from '../../dist/src/core/transport.js';
 
 const exec = promisify(execFile);
 assert.equal(process.platform, 'linux');

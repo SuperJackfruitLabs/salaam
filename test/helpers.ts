@@ -1,13 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { SalaamService, type ServiceOptions } from '../src/service.js';
-import { call } from '../src/transport.js';
-import type { Session } from '../src/protocol.js';
-import type { ControlLease } from '../src/protocol.js';
+import { SalaamService, type ServiceOptions } from '../src/service/service.js';
+import { call } from '../src/core/transport.js';
+import type { Session } from '../src/core/protocol.js';
+import type { ControlLease } from '../src/core/protocol.js';
 import { randomUUID } from 'node:crypto';
-import { PiProcess } from '../src/pi.js';
-import { ROOT } from '../src/config.js';
-import { chooseLocalSandbox } from '../src/command-sandbox.js';
+import { PiProcess } from '../src/runtime/pi.js';
+import { ROOT } from '../src/core/config.js';
+import { chooseLocalSandbox } from '../src/local/command-sandbox.js';
 
 /** Tests that run real local commands on a machine with no usable OS sandbox (a CI container where
  * bubblewrap cannot start) run them with the operator opt-in; a machine with bubblewrap or Seatbelt

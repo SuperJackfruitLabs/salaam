@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { ROOT } from '../dist/src/config.js';
+import { ROOT } from '../dist/src/core/config.js';
 
 // Provision this existing pinned image outside model execution. No pull/install happens here.
 const image =

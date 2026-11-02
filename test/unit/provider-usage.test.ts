@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { ProviderUsageReceipt } from '../../src/provider-usage.js';
-import { providerRoute } from '../../src/provider-config.js';
+import { ProviderUsageReceipt } from '../../src/providers/usage.js';
+import { providerRoute } from '../../src/providers/config.js';
 
 test('missing usage and an initial Anthropic output zero remain unknown', () => {
   const receipt = new ProviderUsageReceipt();
@@ -19,7 +19,7 @@ test('missing usage and an initial Anthropic output zero remain unknown', () => 
 });
 
 test('a rejected live request transcript cannot create a usage admission; dispatched unknown work remains charged', async () => {
-  const { Store } = await import('../../src/store.js');
+  const { Store } = await import('../../src/store/store.js');
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { join } = await import('node:path');
   const dir = mkdtempSync('/tmp/sal-rejected-usage-');
@@ -58,7 +58,7 @@ test('a rejected live request transcript cannot create a usage admission; dispat
 });
 
 test('reimporting a completed Pi message cannot turn an unreceipted managed request into zero spend', async () => {
-  const { Store } = await import('../../src/store.js');
+  const { Store } = await import('../../src/store/store.js');
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { join } = await import('node:path');
   const dir = mkdtempSync('/tmp/sal-unknown-usage-'),

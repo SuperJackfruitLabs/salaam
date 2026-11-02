@@ -127,7 +127,7 @@ function validateManifest(record, expected, profile, shard) {
       d.requested_repeats === plan.rounds,
     'Missing, duplicate or misplaced proof rounds',
   );
-  const labels = plan.baseline ? ['format', 'types', 'pin', 'full-suite'] : [];
+  const labels = plan.baseline ? ['format', 'types', 'lint', 'pin', 'full-suite'] : [];
   for (const group of ['operators', 'tasks', 'jobs']) {
     const field = group === 'operators' ? 'operator' : group === 'tasks' ? 'task' : 'job';
     requireThat(

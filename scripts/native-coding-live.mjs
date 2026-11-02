@@ -3,13 +3,13 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import { DatabaseSync } from 'node:sqlite';
-import { SalaamService } from '../dist/src/service.js';
-import { ROOT } from '../dist/src/config.js';
-import { hostDigests } from '../dist/src/host.js';
-import { digest } from '../dist/src/protocol.js';
-import { providerRoute, DEFAULT_CLAUDE_MODEL } from '../dist/src/provider-config.js';
-import { call } from '../dist/src/transport.js';
-import { readTree } from '../dist/src/workspaces.js';
+import { SalaamService } from '../dist/src/service/service.js';
+import { ROOT } from '../dist/src/core/config.js';
+import { hostDigests } from '../dist/src/core/config.js';
+import { digest } from '../dist/src/core/protocol.js';
+import { providerRoute, DEFAULT_CLAUDE_MODEL } from '../dist/src/providers/config.js';
+import { call } from '../dist/src/core/transport.js';
+import { readTree } from '../dist/src/coding/workspaces.js';
 import { LiveAcceptanceBudget } from './live-acceptance-budget.mjs';
 
 if (!process.argv.includes('--run'))

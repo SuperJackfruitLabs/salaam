@@ -13,10 +13,10 @@ import {
 import { join } from 'node:path';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
 import { ready, control, until } from '../helpers.js';
-import { ToolkitAdmission, ToolkitCleanupAdmission } from '../../src/toolkit-admission.js';
-import { ToolkitCalls } from '../../src/toolkit-calls.js';
-import { digest } from '../../src/protocol.js';
-import { call } from '../../src/transport.js';
+import { ToolkitAdmission, ToolkitCleanupAdmission } from '../../src/toolkit/admission.js';
+import { ToolkitCalls } from '../../src/toolkit/calls.js';
+import { digest } from '../../src/core/protocol.js';
+import { call } from '../../src/core/transport.js';
 
 const sha = (p: string) => createHash('sha256').update(readFileSync(p)).digest('hex');
 async function fixture(read = false) {

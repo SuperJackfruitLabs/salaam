@@ -5,13 +5,14 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { acquireControl } from '../../src/attach.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { acquireControl } from '../../src/tui/attach.js';
 import { until } from '../helpers.js';
 import { checkedPlan } from '../task-helpers.js';
-import type { Controller, Session } from '../../src/protocol.js';
-import type { Job, JobAcceptance } from '../../src/job-work.js';
+import type { Controller, Session } from '../../src/core/protocol.js';
+import type { JobAcceptance } from '../../src/tasks/job-work.js';
+import type { Job } from '../../src/core/records.js';
 async function fixture(mode: string) {
   const dir = mkdtempSync('/tmp/sal-job-proof-'),
     source = join(dir, 'source'),

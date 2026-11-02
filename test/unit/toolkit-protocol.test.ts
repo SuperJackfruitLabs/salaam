@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { toolkitRequest, toolkitControl } from '../../src/toolkit-protocol.js';
-import { digest } from '../../src/protocol.js';
+import { toolkitRequest, toolkitControl } from '../../src/toolkit/protocol.js';
+import { digest } from '../../src/core/protocol.js';
 
 // Read with the actual JavaScript decoder: the corpus includes an invalid lone
 // surrogate that the build tool's JSON loader rejects before the consumer runs.

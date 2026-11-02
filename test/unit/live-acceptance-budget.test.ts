@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 const exec = promisify(execFile),
   moduleUrl = pathToFileURL(join(ROOT, 'scripts/live-acceptance-budget.mjs')).href;

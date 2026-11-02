@@ -1,11 +1,11 @@
 import { test, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { setCapabilityOverrides, visibleWidth } from '@earendil-works/pi-tui';
-import { remoteArguments, shellQuote } from '../../src/remote.js';
-import { editorArguments, SalaamApp } from '../../src/tui.js';
-import { ChoiceModal, ApprovalModal } from '../../src/tui-modals.js';
-import { SalaamTheme, safeText } from '../../src/tui-theme.js';
-import type { Approval, Operation, SessionSnapshot } from '../../src/protocol.js';
+import { remoteArguments, shellQuote } from '../../src/cli/remote.js';
+import { editorArguments, SalaamApp } from '../../src/tui/app.js';
+import { ChoiceModal, ApprovalModal } from '../../src/tui/modals.js';
+import { SalaamTheme, safeText } from '../../src/tui/theme.js';
+import type { Approval, Operation, SessionSnapshot } from '../../src/core/protocol.js';
 
 test('context stays at the top when a short conversation grows or its first snapshot arrives', () => {
   const app = new SalaamApp({ state: '/tmp/salaam-scroll-proof' });

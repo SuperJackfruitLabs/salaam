@@ -5,13 +5,13 @@ import { randomUUID } from 'node:crypto';
 import { taskFixture } from '../task-helpers.js';
 import { submit } from '../managed-helpers.js';
 import { until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
-import { parseAgentProfile } from '../../src/agent-profiles.js';
+import { ROOT } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
+import { parseAgentProfile } from '../../src/runtime/agent-profiles.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
-import { DEFAULT_CLAUDE_MODEL } from '../../src/provider-config.js';
+import { DEFAULT_CLAUDE_MODEL } from '../../src/providers/config.js';
 
 const extensionPath = join(ROOT, 'test/fixtures/specialist-extension.mjs');
 test('profiles reject executable, credential, plugin and excess tool authority', () => {

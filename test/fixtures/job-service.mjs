@@ -1,5 +1,5 @@
-import { SalaamService } from '../../dist/src/service.js';
-import { ROOT } from '../../dist/src/config.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { ROOT } from '../../dist/src/core/config.js';
 import { TaskFixtureBackend } from './task-backend.mjs';
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';

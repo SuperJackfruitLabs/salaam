@@ -2,8 +2,8 @@ import { expect, test } from 'vitest';
 import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { ManagedHttpMcp, mcpCatalogDigest, mcpToolDigest } from '../../src/mcp-http.js';
-import { mcpAssignment, mcpProfile } from '../../src/mcp-protocol.js';
+import { ManagedHttpMcp, mcpCatalogDigest, mcpToolDigest } from '../../src/mcp/http.js';
+import { mcpAssignment, mcpProfile } from '../../src/mcp/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 const tool = {

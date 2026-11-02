@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 const { publicFiles, verifyPublicFiles } = await import(
   pathToFileURL(join(ROOT, 'scripts/verify-sites.mjs')).href

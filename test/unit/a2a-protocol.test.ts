@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { A2AInvocation, a2aTask, type A2ACheckpoint } from '../../src/a2a-protocol.js';
-import { A2AHttp, validatePeer } from '../../src/a2a-peer.js';
-import { digest } from '../../src/protocol.js';
+import { A2AInvocation, a2aTask, type A2ACheckpoint } from '../../src/a2a/protocol.js';
+import { A2AHttp, validatePeer } from '../../src/a2a/peer.js';
+import { digest } from '../../src/core/protocol.js';
 import { sdkPeer } from '../fixtures/a2a-peer.js';
 
 function fixture(rpc: any) {

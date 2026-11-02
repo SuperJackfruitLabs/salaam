@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
 import { client } from '../acp-helpers.js';
 import { ready, until } from '../helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 
 const prompt = (sessionId: string, args: unknown, requestId = randomUUID()) => ({
   sessionId,

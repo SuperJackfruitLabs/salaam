@@ -1,9 +1,9 @@
 import { test, expect } from 'vitest';
 import { matchesKey } from '@earendil-works/pi-tui';
-import { SalaamApp } from '../../src/tui.js';
-import type { ChoiceModal } from '../../src/tui-modals.js';
-import type { SessionSnapshot } from '../../src/protocol.js';
-import { GLOBAL_KEYS, REVIEW_KEYS, keyLabel, keySheet } from '../../src/tui-keymap.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import type { ChoiceModal } from '../../src/tui/modals.js';
+import type { SessionSnapshot } from '../../src/core/protocol.js';
+import { GLOBAL_KEYS, REVIEW_KEYS, keyLabel, keySheet } from '../../src/tui/keymap.js';
 
 // Trial polish C (2026-10-31): `?` on an empty composer shows the keys for where you are, built
 // from the same table the TUI binds, so the sheet cannot drift from the keys.

@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
-import { TaskWork } from '../../src/task-work.js';
-import { ManagedWork } from '../../src/managed.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
+import { TaskWork } from '../../src/tasks/work.js';
+import { ManagedWork } from '../../src/execution/managed.js';
 
 const plan = {
   objective: 'Repair addition',

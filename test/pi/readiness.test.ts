@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, create, ready, until, probe } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { verifyReadinessFingerprint } from '../../src/readiness-fingerprint.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { verifyReadinessFingerprint } from '../../src/core/readiness-fingerprint.js';
 
 test('real pinned Pi passes readiness, executes a gated turn, and persists its session', async () => {
   const f = await fixture();

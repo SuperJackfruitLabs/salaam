@@ -9,11 +9,11 @@ import {
   existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { ManagedStdioTransport } from '../../src/mcp-stdio.js';
-import { ToolkitMcp, type ToolkitCatalogReview } from '../../src/toolkit-mcp.js';
-import { mcpCatalogDigest } from '../../src/mcp-http.js';
-import { digest } from '../../src/protocol.js';
-import type { ToolkitRequest } from '../../src/toolkit-protocol.js';
+import { ManagedStdioTransport } from '../../src/mcp/stdio.js';
+import { ToolkitMcp, type ToolkitCatalogReview } from '../../src/toolkit/mcp.js';
+import { mcpCatalogDigest } from '../../src/mcp/http.js';
+import { digest } from '../../src/core/protocol.js';
+import type { ToolkitRequest } from '../../src/toolkit/protocol.js';
 
 const description = 'Pinned synthetic native tool definition';
 const names = [

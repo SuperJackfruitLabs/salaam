@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 const { downloadPinnedSource } = await import(
   pathToFileURL(join(ROOT, 'scripts/download-pinned-source.mjs')).href

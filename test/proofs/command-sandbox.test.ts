@@ -9,8 +9,8 @@ import {
   findSeatbelt,
   sandboxArgv,
   seatbeltArgv,
-} from '../../src/command-sandbox.js';
-import { hostLocalSandbox } from '../../src/host.js';
+} from '../../src/local/command-sandbox.js';
+import { hostLocalSandbox } from '../../src/host/host.js';
 
 // Item 10 proof. Every host runs a real assertion and nothing is skipped: Linux proves bubblewrap
 // where usable, macOS always proves Seatbelt, and a host with neither proves that local commands

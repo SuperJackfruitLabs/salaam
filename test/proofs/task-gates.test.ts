@@ -4,10 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { Outbox } from '../../src/attach.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { Outbox } from '../../src/tui/attach.js';
 
 test('runtime expiry aborts an active step and leaves a durable limit reason without starting another step', async () => {
   const f = await taskFixture({ extensionPath: join(ROOT, 'test/fixtures/blocked-extension.mjs') });

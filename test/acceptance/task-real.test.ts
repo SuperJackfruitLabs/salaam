@@ -12,15 +12,15 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ROOT, bundleDigest } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { acquireControl } from '../../src/attach.js';
-import { digest, type Session } from '../../src/protocol.js';
-import { engineRequest, engineJson } from '../../src/execution-boundary.js';
-import { DockerCodingExecutor } from '../../src/coding-executor.js';
+import { ROOT, bundleDigest } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { acquireControl } from '../../src/tui/attach.js';
+import { digest, type Session } from '../../src/core/protocol.js';
+import { engineRequest, engineJson } from '../../src/execution/boundary.js';
+import { DockerCodingExecutor } from '../../src/coding/executor.js';
 import { until } from '../helpers.js';
 import { PtyClient } from '../terminal-helpers.js';
-import { readTree } from '../../src/workspaces.js';
+import { readTree } from '../../src/coding/workspaces.js';
 
 test('real executor: TUI task, guarded repair, daemon SIGKILL between steps, bound human approval and fresh completion', async () => {
   const engineSocket = process.env.SALAAM_TASK_REAL_SOCKET,

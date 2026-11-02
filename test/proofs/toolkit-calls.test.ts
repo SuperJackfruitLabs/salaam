@@ -3,13 +3,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { AgentPodAuthority } from '../../src/agentpod-authority.js';
-import { ToolkitResources } from '../../src/toolkit-resources.js';
-import { ToolkitCalls, type ToolkitActionPin } from '../../src/toolkit-calls.js';
-import { ManagedWork } from '../../src/managed.js';
-import { digest } from '../../src/protocol.js';
-import type { ToolkitRequest } from '../../src/toolkit-protocol.js';
+import { Store } from '../../src/store/store.js';
+import { AgentPodAuthority } from '../../src/agentpod/authority.js';
+import { ToolkitResources } from '../../src/toolkit/resources.js';
+import { ToolkitCalls, type ToolkitActionPin } from '../../src/toolkit/calls.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { digest } from '../../src/core/protocol.js';
+import type { ToolkitRequest } from '../../src/toolkit/protocol.js';
 
 async function fixture(read = false) {
   const base = realpathSync(mkdtempSync('/tmp/stkc-')),

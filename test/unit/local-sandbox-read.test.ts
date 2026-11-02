@@ -7,8 +7,8 @@ import {
   sandboxArgv,
   seatbeltArgv,
   seatbeltProfile,
-} from '../../src/command-sandbox.js';
-import { hostLocalSandbox, hostReadPaths, planHost } from '../../src/host.js';
+} from '../../src/local/command-sandbox.js';
+import { hostLocalSandbox, hostReadPaths, planHost } from '../../src/host/host.js';
 
 // Phase 1 (operator, 2026-10-31): make local commands usable on a Mac. Step 0 found git failing
 // under Seatbelt (Apple's /usr/bin/git shim needs Xcode's licence preferences) and every
@@ -168,7 +168,7 @@ test('a local coding session is told its platform, its shell tools, and to edit 
           : () => undefined,
     },
   );
-  const { default: house } = await import('../../src/house-extension.js');
+  const { default: house } = await import('../../src/runtime/house-extension.js');
   house(pi as never);
   let prompt = '';
   for (const h of handlers) {

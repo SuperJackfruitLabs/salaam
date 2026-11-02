@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { chooseLocalSandbox } from '../../src/command-sandbox.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { chooseLocalSandbox } from '../../src/local/command-sandbox.js';
 
 const sandbox = chooseLocalSandbox('workspace-write').kind;
 

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
-import { ROOT } from '../src/config.js';
+import { ROOT } from '../src/core/config.js';
 import { until } from './helpers.js';
 export function client(state: string, env: Record<string, string> = {}, args: string[] = []) {
   const child = spawn(

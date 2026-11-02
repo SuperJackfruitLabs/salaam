@@ -1,8 +1,8 @@
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
-import { AnthropicHarnessGateway } from '../dist/src/harness-model-gateway.js';
-import { ProviderCredentialStore, resolveProviderAuth } from '../dist/src/provider-auth.js';
-import { providerRoute } from '../dist/src/provider-config.js';
+import { AnthropicHarnessGateway } from '../dist/src/harness/model-gateway.js';
+import { ProviderCredentialStore, resolveProviderAuth } from '../dist/src/providers/auth.js';
+import { providerRoute } from '../dist/src/providers/config.js';
 
 export class AcceptanceChannel {
   constructor(child, onFrame) {

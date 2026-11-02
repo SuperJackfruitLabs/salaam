@@ -4,10 +4,10 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { mkdtempSync, rmSync, readFileSync, realpathSync, cpSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
 import { until } from '../helpers.js';
-import type { SessionSnapshot } from '../../src/protocol.js';
+import type { SessionSnapshot } from '../../src/core/protocol.js';
 
 const exec = promisify(execFile);
 test('npm link installs both executable names, with help/version and one shared service from outside the checkout', async () => {

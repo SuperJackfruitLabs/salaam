@@ -4,10 +4,11 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
-import { getProvider, providerRoute, PI_PROVIDERS } from '../../src/provider-config.js';
-import { SalaamService } from '../../src/service.js';
-import { PiProcess } from '../../src/pi.js';
-import { ROOT } from '../../src/config.js';
+import { getProvider, providerRoute } from '../../src/providers/config.js';
+import { PI_PROVIDERS } from '../../src/core/provider-catalog.js';
+import { SalaamService } from '../../src/service/service.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import { ROOT } from '../../src/core/config.js';
 import { create, ready, until, control } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
 import { client } from '../acp-helpers.js';
@@ -145,7 +146,7 @@ async function setup(
     .getModels()
     .find((m) => m.api === api)!;
   const options = {
-    launch: (launch: import('../../src/supervisor.js').Launch) => {
+    launch: (launch: import('../../src/runtime/supervisor.js').Launch) => {
       const pi = new PiProcess(launch.command, launch.args, launch.cwd, launch.env);
       return pi;
     },
@@ -272,7 +273,7 @@ test.each(['openai', 'openai-codex'])(
       ).toMatchObject({ state: 'completed', result: 'Provider fixture complete.' });
       expect((await f.stats()).count).toBe(2);
       const actor = await control(f.service, session.id, true);
-      const { call } = await import('../../src/transport.js');
+      const { call } = await import('../../src/core/transport.js');
       expect(await call(f.service.socket, '/v1/health')).toMatchObject({
         task_execution: { durable_tasks: true, task_budgets: true, task_token_budgets: false },
       });
@@ -307,7 +308,7 @@ test.each(['openai', 'openai-codex'])(
           plan: { ...plan, limits: { token_units: null, output_token_bound: 512 } },
         }),
       ).rejects.toThrow('no output cap');
-      const task = await call<import('../../src/task-work.js').WorkTask>(
+      const task = await call<import('../../src/core/records.js').WorkTask>(
         f.service.socket,
         '/v1/tasks',
         {
@@ -417,7 +418,7 @@ test.each([
 ])('%s cancellation preserves unknown usage without a replay', async (provider, api) => {
   const f = await setup(provider, api, 'hold');
   try {
-    const { call } = await import('../../src/transport.js');
+    const { call } = await import('../../src/core/transport.js');
     const session = await create(f.service, f.dir);
     await ready(f.service, session.id);
     const request = await submit(f.service, session.id, 'Wait for cancellation');
@@ -443,18 +444,23 @@ test('OpenAI daemon death retains route, session identity and unknown usage with
   const f = await setup('openai', 'openai-responses', 'hold');
   let daemon: ReturnType<typeof spawn> | undefined, replacement: SalaamService | undefined;
   try {
-    const { call } = await import('../../src/transport.js');
+    const { call } = await import('../../src/core/transport.js');
     await f.service.close();
     writeFileSync(join(f.dir, 'provider-route.json'), JSON.stringify(f.options.providerRoute));
     daemon = spawn(process.execPath, [join(ROOT, 'test/fixtures/provider-service.mjs'), f.dir]);
     await once(daemon.stdout!, 'data');
     const socket = join(f.dir, 'operator.sock');
-    const session = await call<import('../../src/protocol.js').Session>(socket, '/v1/sessions', {
-      request_id: 'create',
-      cwd: f.dir,
-    });
+    const session = await call<import('../../src/core/protocol.js').Session>(
+      socket,
+      '/v1/sessions',
+      {
+        request_id: 'create',
+        cwd: f.dir,
+      },
+    );
     await until(
-      () => call<import('../../src/protocol.js').Session>(socket, `/v1/sessions/${session.id}`),
+      () =>
+        call<import('../../src/core/protocol.js').Session>(socket, `/v1/sessions/${session.id}`),
       (s) => s.state === 'ready',
     );
     const lease = await call<{ token: string }>(socket, `/v1/sessions/${session.id}/control`, {
@@ -463,7 +469,7 @@ test('OpenAI daemon death retains route, session identity and unknown usage with
       action: 'acquire',
       expected_epoch: 0,
     });
-    const current = await call<import('../../src/protocol.js').Session>(
+    const current = await call<import('../../src/core/protocol.js').Session>(
       socket,
       `/v1/sessions/${session.id}`,
     );
@@ -814,7 +820,7 @@ test('switching to subscription auth requires an existing capped plan to explici
 test('local subscription model selection retains its uncapped capability on a capped daemon and rejects an explicit cap', async () => {
   const f = await setup('openai', 'openai-responses', 'tool', true);
   const selected = { provider: 'openai', model: f.service.supervisor.route.model };
-  const { call } = await import('../../src/transport.js');
+  const { call } = await import('../../src/core/transport.js');
   try {
     f.options.providerRoute = providerRoute();
     await f.restart();
@@ -827,7 +833,7 @@ test('local subscription model selection retains its uncapped capability on a ca
         route: { ...selected, max_tokens: 4096 },
       }),
     ).rejects.toThrow('cannot enforce');
-    const session = await call<import('../../src/protocol.js').Session>(
+    const session = await call<import('../../src/core/protocol.js').Session>(
       f.service.socket,
       '/v1/sessions',
       { request_id: randomUUID(), cwd: f.dir, local_workspace: true, route: selected },

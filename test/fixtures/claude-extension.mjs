@@ -1,4 +1,4 @@
-import house from '../../dist/src/house-extension.js';
+import house from '../../dist/src/runtime/house-extension.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 export default function fixture(pi) {

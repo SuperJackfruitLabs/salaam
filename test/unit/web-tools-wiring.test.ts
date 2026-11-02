@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { workerTools } from '../../src/protocol.js';
+import { workerTools } from '../../src/core/protocol.js';
 
 // Web search and fetch are offered to interactive local coding sessions only: never to child
 // workers, and not to station (board) work, which reaches the web through the broker.
@@ -31,7 +31,8 @@ test('an interactive coding worker gets web search and fetch in its tool allowli
 });
 
 test('the extension registers both tools for interactive coding roots only', () => {
-  const ext = src('house-extension.ts');
+  // Phase 4: the house extension's desk tools and its bridge live in their own files.
+  const ext = src('runtime/house/desk.ts');
   const registered = [
     ...ext.matchAll(
       /if \(c\.localCoding && !c\.child\)\s*pi\.registerTool\(\{\s*name: '([a-z_]+)'/g,
@@ -40,19 +41,25 @@ test('the extension registers both tools for interactive coding roots only', () 
   expect(registered).toEqual(expect.arrayContaining(['salaam_web_search', 'salaam_web_fetch']));
   // Their bridge calls get a timeout long enough for a real HTTP round trip.
   // (Phase 4b: the same long timeout as local calls, since PreToolUse hooks run first.)
-  expect(ext).toMatch(/method\.startsWith\('web\.'\)\s*\?\s*HOOKED_BRIDGE_TIMEOUT/);
-  expect(ext).toMatch(/const HOOKED_BRIDGE_TIMEOUT = \d+ \* 60 \* 1000;/);
+  const bridge = src('runtime/house/context.ts');
+  expect(bridge).toMatch(/method\.startsWith\('web\.'\)\s*\?\s*HOOKED_BRIDGE_TIMEOUT/);
+  expect(bridge).toMatch(/const HOOKED_BRIDGE_TIMEOUT = \d+ \* 60 \* 1000;/);
 });
 
 test('the supervisor serves web calls only to admitted interactive coding sessions', () => {
-  const sup = src('supervisor.ts');
-  const block =
-    /if \(method === 'web\.search' \|\| method === 'web\.fetch'\) \{([\s\S]*?)\n {6}\}/.exec(sup);
+  // Phase 4: the bridge routes web.search and web.fetch to one handler.
+  expect(src('runtime/bridge/routes.ts')).toMatch(
+    /at\(exact\('web\.search', 'web\.fetch'\), \(r\) => desk\.web\(r\)\)/,
+  );
+  const handlers = src('runtime/bridge/desk.ts');
+  const block = /async web\(\{[^}]*\}: BridgeRequest\): Promise<unknown> \{([\s\S]*?)\n {2}\}/.exec(
+    handlers,
+  );
   expect(block, 'web dispatch block').toBeTruthy();
-  expect(block![1]).toMatch(/!this\.web/);
-  expect(block![1]).toMatch(/!this\.store\.localCoding\(id\)/);
-  expect(block![1]).toMatch(/this\.children\?\.owned\(id\)/);
-  expect(block![1]).toMatch(/this\.assertActive\(id, w\.epoch, w\.attempt\)/);
+  expect(block![1]).toMatch(/!this\.s\.web/);
+  expect(block![1]).toMatch(/!this\.s\.store\.localCoding\(id\)/);
+  expect(block![1]).toMatch(/this\.s\.children\?\.owned\(id\)/);
+  expect(block![1]).toMatch(/this\.s\.assertActive\(id, w\.epoch, w\.attempt\)/);
   // What is recorded: kind, backends and timings — never the provider keys.
   expect(block![1]).toMatch(/'web\.search'/);
 });

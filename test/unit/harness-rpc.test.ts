@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../src/config.js';
-import { HarnessRpc } from '../../src/harness-rpc.js';
+import { ROOT } from '../../src/core/config.js';
+import { HarnessRpc } from '../../src/harness/rpc.js';
 
 function peer(mode: string, dialect: 'acp' | 'codex' = 'acp', failed?: (error: Error) => void) {
   const dir = mkdtempSync('/tmp/sal-rpc-');

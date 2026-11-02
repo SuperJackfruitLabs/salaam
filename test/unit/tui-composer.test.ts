@@ -12,7 +12,7 @@ import {
   searchHistory,
   searchPrompt,
   shellPassthrough,
-} from '../../src/tui-composer.js';
+} from '../../src/tui/composer.js';
 
 test('ctrl+c interrupts a turn, clears text, then needs a second press to leave', () => {
   expect(ctrlCAction({ running: true, text: 'x', armedAt: 1, now: 2 })).toBe('interrupt');

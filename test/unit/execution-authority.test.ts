@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { ChildWork } from '../../src/children.js';
-import { Artifacts } from '../../src/artifacts.js';
-import type { Supervisor } from '../../src/supervisor.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { ChildWork } from '../../src/workers/children.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import type { Supervisor } from '../../src/runtime/supervisor.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 

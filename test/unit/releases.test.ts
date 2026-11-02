@@ -12,7 +12,7 @@ import {
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 test('release validation rejects mismatched lock versions, missing notes and unsafe tag versions', () => {
   const dir = mkdtempSync('/tmp/sal-version-');

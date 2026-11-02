@@ -1,4 +1,4 @@
-import { repositoryPath, repositoryTree } from '../../src/repository-snapshots.js';
+import { repositoryPath, repositoryTree } from '../../src/workers/repository-snapshots.js';
 import { test, expect } from 'vitest';
 import {
   mkdtempSync,
@@ -10,9 +10,9 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { DockerHarnessBackend, harnessRuntimeDigest } from '../../src/harness-backend.js';
-import type { DockerCodingExecutor } from '../../src/coding-executor.js';
-import { digest } from '../../src/protocol.js';
+import { DockerHarnessBackend, harnessRuntimeDigest } from '../../src/harness/backend.js';
+import type { DockerCodingExecutor } from '../../src/coding/executor.js';
+import { digest } from '../../src/core/protocol.js';
 
 function fixture() {
   const dir = realpathSync(mkdtempSync('/tmp/sal-harness-pin-')),

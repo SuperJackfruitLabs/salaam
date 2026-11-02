@@ -7,8 +7,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PtyClient } from '../dist/test/terminal-helpers.js';
 import { until } from '../dist/test/helpers.js';
-import { shellQuote } from '../dist/src/remote.js';
-import { digest } from '../dist/src/protocol.js';
+import { shellQuote } from '../dist/src/cli/remote.js';
+import { digest } from '../dist/src/core/protocol.js';
 const option = (name) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -74,7 +74,7 @@ const ssh = async (argv) =>
 const js = async (code) => JSON.parse(await ssh([node, '--input-type=module', '-e', code]));
 const rpc = (path, body) =>
   js(
-    `import{call}from${JSON.stringify(repo + '/dist/src/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)},${JSON.stringify(body)})));`,
+    `import{call}from${JSON.stringify(repo + '/dist/src/core/transport.js')};console.log(JSON.stringify(await call(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(path)},${JSON.stringify(body)})));`,
   );
 const cli = async (...args) => JSON.parse(await ssh([bin, ...args, '--state', state]));
 let pid, first, observer, session, taskId;
@@ -130,7 +130,7 @@ try {
     `import{mkdirSync,writeFileSync,chmodSync}from'node:fs';for(const p of ${JSON.stringify([work, state, source, owned])})mkdirSync(p,{recursive:true,mode:448});for(const[p,text]of Object.entries(${JSON.stringify(fixtureFiles)}))writeFileSync(p,text);chmodSync(${JSON.stringify(bin)},448);console.log('true');`,
   );
   report.runtime = await js(
-    `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=b=>createHash('sha256').update(b).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
+    `import{bundleDigest}from${JSON.stringify(repo + '/dist/src/core/config.js')};import{readFileSync,readdirSync}from'node:fs';import{createHash}from'node:crypto';const hash=b=>createHash('sha256').update(b).digest('hex');const files=readdirSync(${JSON.stringify(repo + '/src')}).filter(f=>f.endsWith('.ts')).sort().map(f=>({path:'src/'+f,sha256:hash(readFileSync(${JSON.stringify(repo + '/src/')}+f))}));console.log(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,bundle_digest:bundleDigest(),runtime_source_digest:hash(JSON.stringify(files)),lock_digest:hash(readFileSync(${JSON.stringify(repo + '/package-lock.json')}))}));`,
   );
   await boot('between-steps');
   report.executor = await js(
@@ -144,7 +144,7 @@ try {
     20000,
   );
   const lease = await js(
-    `import{acquireControl}from${JSON.stringify(repo + '/dist/src/attach.js')};console.log(JSON.stringify(await acquireControl(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(session.id)},'remote-rehearsal')));`,
+    `import{acquireControl}from${JSON.stringify(repo + '/dist/src/tui/attach.js')};console.log(JSON.stringify(await acquireControl(${JSON.stringify(state + '/operator.sock')},${JSON.stringify(session.id)},'remote-rehearsal')));`,
   );
   const auth = { client_id: 'remote-rehearsal', token: lease.token };
   const baseline = await rpc('/v1/sessions/' + session.id + '/commands', {
@@ -319,7 +319,7 @@ try {
   await rpc('/v1/shutdown', {}).catch(() => {});
   await kill();
   report.cleanup = await js(
-    `import{DatabaseSync}from'node:sqlite';import{existsSync,rmSync}from'node:fs';import{DockerCodingExecutor}from${JSON.stringify(repo + '/dist/src/coding-executor.js')};import{engineRequest,engineJson}from${JSON.stringify(repo + '/dist/src/execution-boundary.js')};const path=${JSON.stringify(state + '/journal.sqlite')};let runs=[];if(existsSync(path)){const db=new DatabaseSync(path,{readOnly:true});runs=db.prepare('SELECT id,profile_digest FROM command_runs').all();db.close();}const request=engineRequest('/var/run/docker.sock'),executor=new DockerCodingExecutor(request);for(const r of runs){executor.profileDigest=r.profile_digest;await executor.cleanup(r.id);}const rows=engineJson(await request('GET','/containers/json?all=1'));const remaining=rows.filter(c=>runs.some(r=>c.Labels?.['salaam.command.run']===r.id));if(remaining.length)throw Error('Owned containers remain');rmSync(${JSON.stringify(state)},{recursive:true,force:true});rmSync(${JSON.stringify(work)},{recursive:true,force:true});console.log(JSON.stringify({owned_containers_remaining:0,disposable_state_removed:true,disposable_workspace_removed:true}));`,
+    `import{DatabaseSync}from'node:sqlite';import{existsSync,rmSync}from'node:fs';import{DockerCodingExecutor}from${JSON.stringify(repo + '/dist/src/coding/executor.js')};import{engineRequest,engineJson}from${JSON.stringify(repo + '/dist/src/execution/boundary.js')};const path=${JSON.stringify(state + '/journal.sqlite')};let runs=[];if(existsSync(path)){const db=new DatabaseSync(path,{readOnly:true});runs=db.prepare('SELECT id,profile_digest FROM command_runs').all();db.close();}const request=engineRequest('/var/run/docker.sock'),executor=new DockerCodingExecutor(request);for(const r of runs){executor.profileDigest=r.profile_digest;await executor.cleanup(r.id);}const rows=engineJson(await request('GET','/containers/json?all=1'));const remaining=rows.filter(c=>runs.some(r=>c.Labels?.['salaam.command.run']===r.id));if(remaining.length)throw Error('Owned containers remain');rmSync(${JSON.stringify(state)},{recursive:true,force:true});rmSync(${JSON.stringify(work)},{recursive:true,force:true});console.log(JSON.stringify({owned_containers_remaining:0,disposable_state_removed:true,disposable_workspace_removed:true}));`,
   );
   report.finished_at = new Date().toISOString();
   save();

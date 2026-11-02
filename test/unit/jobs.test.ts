@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 import { until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { Outbox } from '../../src/attach.js';
-import { ROOT } from '../../src/config.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { Outbox } from '../../src/tui/attach.js';
+import { ROOT } from '../../src/core/config.js';
 
 const define = async (f: Awaited<ReturnType<typeof taskFixture>>, steps = 1) => {
   const task = await f.plan(checkedPlan(steps));

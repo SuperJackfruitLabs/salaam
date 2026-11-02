@@ -1,10 +1,10 @@
 import { test, expect } from 'vitest';
 import { join } from 'node:path';
 import { fixture, create, ready, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { Outbox } from '../../src/attach.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { Outbox } from '../../src/tui/attach.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
 
 test('operator reconnect recovers one journaled prompt after an acceptance response is lost', async () => {
   const f = await fixture();

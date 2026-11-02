@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
+import { Store } from '../../src/store/store.js';
 
 test('v16 upgrade preserves saved admissions and event bytes before enabling peer mappings; reopen is idempotent', () => {
   const dir = mkdtempSync('/tmp/sal-a2a-migration-'),

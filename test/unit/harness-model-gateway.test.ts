@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
-import { AnthropicHarnessGateway } from '../../src/harness-model-gateway.js';
-import type { GatewayRequest } from '../../src/harness-container.js';
+import { AnthropicHarnessGateway } from '../../src/harness/model-gateway.js';
+import type { GatewayRequest } from '../../src/harness/container.js';
 const token = 'fixture-ephemeral-token-'.repeat(3),
   model = 'fixture-model';
 const request = (change: Record<string, unknown> = {}): GatewayRequest => ({

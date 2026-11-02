@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { join } from 'node:path';
-import { PiProcess } from '../../src/pi.js';
-import { ROOT } from '../../src/config.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import { ROOT } from '../../src/core/config.js';
 
 test('LF framing preserves Unicode separators and fragmented UTF-8; stderr stays separate', async () => {
   const pi = new PiProcess(

@@ -4,12 +4,12 @@ import { once } from 'node:events';
 import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { SalaamService } from '../../src/service.js';
-import { ROOT } from '../../src/config.js';
+import { SalaamService } from '../../src/service/service.js';
+import { ROOT } from '../../src/core/config.js';
 import { until } from '../helpers.js';
-import type { ToolkitResource } from '../../src/toolkit-resources.js';
-import { processIdentity } from '../../src/supervisor.js';
-import { acquireStateLock } from '../../src/state-lock.js';
+import type { ToolkitResource } from '../../src/toolkit/resources.js';
+import { processIdentity } from '../../src/core/process-identity.js';
+import { acquireStateLock } from '../../src/core/state-lock.js';
 
 for (const role of ['execution', 'cleanup'] as const)
   test(`actual daemon SIGKILL recovers its recorded ${role} process before a new lease can execute`, async () => {

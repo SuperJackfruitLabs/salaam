@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { once } from 'node:events';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import xterm from '@xterm/headless';
-import { ROOT } from '../src/config.js';
+import { ROOT } from '../src/core/config.js';
 import { until } from './helpers.js';
 
 export class PtyClient {

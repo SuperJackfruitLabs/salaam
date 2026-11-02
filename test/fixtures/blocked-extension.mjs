@@ -1,4 +1,4 @@
-import house from '../../dist/src/house-extension.js';
+import house from '../../dist/src/runtime/house-extension.js';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
