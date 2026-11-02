@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto';
+// Over 600 lines: an operation's whole lifecycle shares one set of guards; rows, owners and owned results live beside it.
 import {
   canonical,
-  digest,
   ServiceError,
   type Approval,
   type Operation,
@@ -17,25 +16,22 @@ import {
   type EffectInput,
   type EffectReceipt,
 } from './effect-connector.js';
+import {
+  McpOwners,
+  type McpPermissionController,
+  type McpResolutionController,
+  type OperationResolution,
+} from './mcp-owners.js';
+import { OperationRecords, operationBinding, preparedRecords } from './operation-records.js';
+import * as owned from './owned-results.js';
+import { cancelInTransaction } from './cancellation.js';
 
-export function operationBinding(op: Operation): string {
-  return digest({
-    id: op.id,
-    session: op.session_id,
-    attempt: op.attempt_id,
-    epoch: op.worker_epoch,
-    tool_call: op.tool_call_id,
-    kind: op.kind,
-    action_key: op.action_key,
-    argument_digest: op.argument_digest,
-    target: op.target,
-    value: op.value,
-    target_version: op.target_version,
-    policy: op.policy_digest,
-    connector: op.connector,
-    replay: op.replay,
-  });
-}
+export { operationBinding } from './operation-records.js';
+export type {
+  McpPermissionController,
+  McpResolutionController,
+  OperationResolution,
+} from './mcp-owners.js';
 
 export interface ManagedOptions {
   connector?: EffectConnector;
@@ -47,28 +43,13 @@ export interface ManagedOptions {
   /** Legacy trusted controller seam; production controllers register their ownership below. */
   assertMcpSettlement?: (operation: Operation) => void;
 }
-export interface McpPermissionController {
-  owns(operation: Operation): boolean;
-  assert(operation: Operation): void;
-  assertSettled(operation: Operation): void;
-}
-export interface OperationResolution {
-  kind: 'operation-resolution';
-  id: string;
-  revision: number;
-  binding: string;
-  outcome: 'succeeded' | 'failed_definite';
-  evidence: string;
-}
-/** Historical operator settlement is separate from execution permission. It
- * cannot be used by fresh() or takePermission(), including after a restart. */
-export interface McpResolutionController {
-  owns(operation: Operation): boolean;
-  assertResolution(operation: Operation, request: string, input: OperationResolution): void;
-}
+/** Managed operations: each tool effect prepared once, approved by the operator (or a policy the
+ * operator set), dispatched once, and settled with a receipt or left honestly unknown. */
 export class ManagedWork {
-  private mcpControllers = new Map<string, Readonly<McpPermissionController>>();
-  private mcpResolvers = new Map<string, Readonly<McpResolutionController>>();
+  private mcp: McpOwners;
+  private records: OperationRecords;
+  /** What the owned-result and cancellation steps work on. */
+  private settling: owned.OwnedResultDeps;
   private active = new Map<string, { controller: AbortController; done: Promise<void> }>();
   private reconciling = new Set<string>();
   private lookups = new Set<Promise<Operation>>();
@@ -78,6 +59,9 @@ export class ManagedWork {
     readonly store: Store,
     readonly options: ManagedOptions,
   ) {
+    this.mcp = new McpOwners(options);
+    this.records = new OperationRecords(store);
+    this.settling = { store, records: this.records, mcp: this.mcp };
     store.changes.on('event', this.changed);
     this.timer = setInterval(() => {
       try {
@@ -90,59 +74,10 @@ export class ManagedWork {
   }
   /** Ownership comes from the controller's durable records, never a tool target prefix. */
   registerMcpController(name: string, controller: McpPermissionController): () => void {
-    if (
-      !/^[a-z][a-z0-9-]{0,63}$/.test(name) ||
-      this.mcpControllers.has(name) ||
-      this.options.assertMcpOperation
-    )
-      throw Error('MCP execution controller already registered or invalid');
-    const registered = Object.freeze({ ...controller });
-    this.mcpControllers.set(name, registered);
-    return () => {
-      if (this.mcpControllers.get(name) === registered) this.mcpControllers.delete(name);
-    };
-  }
-  private mcpController(op: Operation): Readonly<McpPermissionController> {
-    if (this.mcpControllers.size && this.options.assertMcpOperation)
-      throw new ServiceError('mcp_owner_unavailable', 'MCP controller registration conflicts');
-    const owners = [...this.mcpControllers.values()].filter((owner) => owner.owns(op));
-    if (owners.length === 1) return owners[0]!;
-    if (owners.length === 0 && this.mcpControllers.size === 0 && this.options.assertMcpOperation)
-      return {
-        owns: () => true,
-        assert: this.options.assertMcpOperation,
-        assertSettled:
-          this.options.assertMcpSettlement ??
-          (() => {
-            throw new ServiceError(
-              'mcp_resources_unconfirmed',
-              'MCP resource settlement is unavailable',
-            );
-          }),
-      };
-    throw new ServiceError('mcp_owner_unavailable', 'MCP permission has no unique execution owner');
+    return this.mcp.register(name, controller);
   }
   registerMcpResolutionController(name: string, controller: McpResolutionController): () => void {
-    if (!/^[a-z][a-z0-9-]{0,63}$/.test(name) || this.mcpResolvers.has(name))
-      throw Error('MCP resolution controller already registered or invalid');
-    const registered = Object.freeze({ ...controller });
-    this.mcpResolvers.set(name, registered);
-    return () => {
-      if (this.mcpResolvers.get(name) === registered) this.mcpResolvers.delete(name);
-    };
-  }
-  private assertMcpResolution(op: Operation, request: string, input: OperationResolution): void {
-    const owners = [...this.mcpResolvers.values()].filter((owner) => owner.owns(op));
-    if (owners.length === 1) {
-      owners[0]!.assertResolution(op, request, input);
-      return;
-    }
-    if (owners.length)
-      throw new ServiceError(
-        'mcp_owner_unavailable',
-        'MCP resolution has no unique settlement owner',
-      );
-    this.mcpController(op).assertSettled(op);
+    return this.mcp.registerResolution(name, controller);
   }
   private changed = (event: DurableEvent) => {
     if (
@@ -161,27 +96,13 @@ export class ManagedWork {
     }
   };
   operation(id: string): Operation {
-    const row = this.store.db.prepare('SELECT * FROM operations WHERE id=?').get(id) as unknown as
-      Operation | undefined;
-    if (!row) throw new ServiceError('not_found', 'Operation not found', 404);
-    return row;
+    return this.records.operation(id);
   }
   approval(id: string): Approval {
-    const row = this.store.db.prepare('SELECT * FROM approvals WHERE id=?').get(id) as unknown as
-      Approval | undefined;
-    if (!row) throw new ServiceError('not_found', 'Approval not found', 404);
-    return row;
+    return this.records.approval(id);
   }
   pending(): Approval[] {
-    return this.store.db
-      .prepare("SELECT * FROM approvals WHERE state='pending'")
-      .all() as unknown as Approval[];
-  }
-  private insert(table: 'operations' | 'approvals', row: Operation | Approval): void {
-    const keys = Object.keys(row);
-    this.store.db
-      .prepare(`INSERT INTO ${table}(${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`)
-      .run(...Object.values(row));
+    return this.records.pending();
   }
   private binding(op: Operation): string {
     return operationBinding(op);
@@ -193,30 +114,10 @@ export class ManagedWork {
     receipt: string | null = null,
     resolution: string | null = null,
   ): void {
-    this.store.db
-      .prepare(
-        'UPDATE operations SET state=?,revision=revision+1,error=?,receipt=COALESCE(?,receipt),resolution=COALESCE(?,resolution) WHERE id=?',
-      )
-      .run(state, error, receipt, resolution, op.id);
-    this.store.event(op.session_id, 'operation.' + state, {
-      operation_id: op.id,
-      attempt_id: op.attempt_id,
-      error,
-    });
+    this.records.transition(op, state, error, receipt, resolution);
   }
   private invalidateApproval(approval: Approval, state: 'expired' | 'invalidated'): void {
-    this.store.db
-      .prepare('UPDATE approvals SET state=?,revision=revision+1 WHERE id=?')
-      .run(state, approval.id);
-    this.store.db
-      .prepare(
-        "UPDATE approval_dialogs SET state='invalidated' WHERE approval_id=? AND state!='pending'",
-      )
-      .run(approval.id);
-    this.store.event(approval.session_id, 'approval.' + state, {
-      approval_id: approval.id,
-      operation_id: approval.operation_id,
-    });
+    this.records.invalidateApproval(approval, state);
   }
   async prepare(
     session: string,
@@ -253,7 +154,7 @@ export class ManagedWork {
   ): { operation: Operation; approval: Approval } {
     if (!this.store.db.isTransaction) throw Error('MCP preparation requires a transaction');
     if (
-      (!this.options.assertMcpOperation && this.mcpControllers.size === 0) ||
+      (!this.options.assertMcpOperation && this.mcp.size === 0) ||
       !/^[a-f0-9]{64}$/.test(context)
     )
       throw new ServiceError('mcp_disabled', 'A reviewed MCP execution controller is required');
@@ -268,72 +169,24 @@ export class ManagedWork {
     value: string,
     context: string,
   ): { operation: Operation; approval: Approval } {
-    if (
-      !this.store.db.isTransaction ||
-      !/^[a-f0-9]{64}$/.test(context) ||
-      !this.mcpControllers.size
-    )
+    if (!this.store.db.isTransaction || !/^[a-f0-9]{64}$/.test(context) || !this.mcp.size)
       throw new ServiceError('workspace_disabled', 'A reviewed workspace controller is required');
     return this.insertPrepared(session, epoch, attempt, call, 'workspace', target, value, context);
   }
   workspaceResultInTransaction(id: string, receipt: unknown): void {
-    if (!this.store.db.isTransaction) throw Error('Workspace result requires a transaction');
-    const op = this.operation(id);
-    if (op.kind !== 'workspace' || op.state !== 'dispatching')
-      throw new ServiceError('operation_scope', 'Not a dispatched workspace permission');
-    this.mcpController(op).assertSettled(op);
-    this.transition(op, 'succeeded', null, JSON.stringify(receipt), 'workspace-content-receipt-v1');
+    owned.workspaceResultInTransaction(this.settling, id, receipt);
   }
   localExecutionResultInTransaction(id: string, success: boolean, receipt: unknown): void {
-    const op = this.operation(id);
-    if (
-      !this.store.db.isTransaction ||
-      op.kind !== 'workspace' ||
-      !['dispatching', 'outcome_unknown'].includes(op.state)
-    )
-      throw new ServiceError('operation_scope', 'Not a dispatched local execution');
-    this.mcpController(op).assertSettled(op);
-    this.transition(
-      op,
-      success ? 'succeeded' : 'failed_definite',
-      success
-        ? null
-        : 'Local command ended without success; recorded output and any workspace effects remain available',
-      JSON.stringify(receipt),
-      'local-command-exit-v1',
-    );
+    owned.localExecutionResultInTransaction(this.settling, id, success, receipt);
   }
   workspaceUnknownInTransaction(id: string): void {
-    const op = this.operation(id);
-    if (!this.store.db.isTransaction || op.kind !== 'workspace')
-      throw new ServiceError('operation_scope', 'Not a workspace permission');
-    if (op.state === 'dispatching')
-      this.transition(
-        op,
-        'outcome_unknown',
-        'Workspace apply result is unconfirmed; inspect the recorded intent',
-      );
+    owned.workspaceUnknownInTransaction(this.settling, id);
   }
   workspaceDefiniteFailureInTransaction(id: string): void {
-    const op = this.operation(id);
-    if (!this.store.db.isTransaction || op.kind !== 'workspace' || op.state !== 'dispatching')
-      throw new ServiceError('operation_scope', 'Not a dispatched workspace permission');
-    this.mcpController(op).assertSettled(op);
-    this.transition(
-      op,
-      'failed_definite',
-      'Protected filesystem refused before its mutation boundary',
-    );
+    owned.workspaceDefiniteFailureInTransaction(this.settling, id);
   }
   workspaceNotSentInTransaction(id: string): void {
-    const op = this.operation(id);
-    if (!this.store.db.isTransaction || op.kind !== 'workspace')
-      throw new ServiceError('operation_scope', 'Not a workspace permission');
-    if (op.state !== 'prepared') return;
-    const approval = this.forOperation(id);
-    if (['pending', 'decided'].includes(approval.state))
-      this.invalidateApproval(approval, 'invalidated');
-    this.transition(op, 'failed_definite', 'Workspace apply was cancelled before dispatch');
+    owned.workspaceNotSentInTransaction(this.settling, id);
   }
   private async prepareBound(
     session: string,
@@ -410,62 +263,21 @@ export class ManagedWork {
     }
     if (this.paused || this.store.hasUnknown(session))
       throw new ServiceError('operation_blocked', 'Unresolved effects block new operations');
-    const id = randomUUID();
-    const op: Operation = {
-      id,
-      session_id: session,
-      attempt_id: attempt,
-      worker_epoch: epoch,
-      tool_call_id: call,
+    const { operation: op, approval } = preparedRecords(
+      session,
+      epoch,
+      attempt,
+      call,
       kind,
-      action_key: digest({ id, attempt, epoch, call, target, value, version }),
-      argument_digest: digest({ target, value, target_version: version }),
-      operation_digest: '',
       target,
       value,
-      target_version: version,
-      policy_digest: POLICY_DIGEST,
-      connector:
-        kind === 'workspace'
-          ? 'station-workspace-v1'
-          : kind === 'mcp'
-            ? 'managed-mcp-protocol-v1'
-            : kind === 'harness'
-              ? 'external-harness-once-v1'
-              : kind === 'review'
-                ? 'local-review-v1'
-                : connector!.id,
-      replay:
-        kind === 'harness' || kind === 'workspace'
-          ? 'opaque'
-          : kind === 'mcp'
-            ? 'opaque'
-            : kind === 'review'
-              ? 'read-only'
-              : connector!.replay,
-      revision: 1,
-      state: 'prepared',
-      receipt: null,
-      error: null,
-      resolution: null,
-    };
-    op.operation_digest = this.binding(op);
-    const approval: Approval = {
-      id: randomUUID(),
-      operation_id: id,
-      session_id: session,
-      worker_epoch: epoch,
-      operation_digest: op.operation_digest,
-      revision: 1,
-      actor_scope: 'local-operator',
-      policy_digest: POLICY_DIGEST,
-      expires_at: Date.now() + (this.options.approvalTtlMs ?? 300000),
-      state: 'pending',
-      decision: null,
-      decided_by: null,
-    };
-    this.insert('operations', op);
-    this.insert('approvals', approval);
+      version,
+      connector,
+      this.options.approvalTtlMs,
+    );
+    const id = op.id;
+    this.records.insert('operations', op);
+    this.records.insert('approvals', approval);
     this.store.event(session, 'operation.prepared', {
       operation_id: id,
       attempt_id: attempt,
@@ -486,10 +298,7 @@ export class ManagedWork {
     return { operation: op, approval };
   }
   forOperation(id: string): Approval {
-    const row = this.store.db.prepare('SELECT id FROM approvals WHERE operation_id=?').get(id) as
-      { id: string } | undefined;
-    if (!row) throw new ServiceError('approval_missing', 'Operation has no approval');
-    return this.approval(row.id);
+    return this.records.forOperation(id);
   }
   assertDecisionOffer(id: string): void {
     const approval = this.approval(id);
@@ -581,7 +390,7 @@ export class ManagedWork {
     if (op.kind === 'effect' && this.options.connector?.id !== op.connector)
       throw new ServiceError('connector_changed', 'Effect connector changed');
     if (op.kind === 'mcp' || op.kind === 'workspace') {
-      this.mcpController(op).assert(op);
+      this.mcp.controller(op).assert(op);
     }
   }
   bindDialog(session: string, epoch: number, id: string, binding: string, request: string): void {
@@ -706,48 +515,17 @@ export class ManagedWork {
     this.store.transaction(() => this.permissionResultInTransaction(id, success, receipt));
   }
   permissionResultInTransaction(id: string, success: boolean, receipt: unknown): void {
-    if (!this.store.db.isTransaction) throw Error('Owned result requires a transaction');
-    const op = this.operation(id);
-    if (!['harness', 'mcp'].includes(op.kind) || op.state !== 'dispatching') return;
-    this.transition(
-      op,
-      success && op.kind !== 'mcp' ? 'succeeded' : 'outcome_unknown',
-      op.kind === 'mcp'
-        ? 'An MCP protocol result does not verify the external effect; inspect the bound receipt'
-        : success
-          ? null
-          : 'Owned tool failed after permission delivery; inspect actual effects',
-      JSON.stringify(receipt),
-      op.kind === 'mcp' ? 'managed-mcp-protocol-return' : 'owned-harness-tool-return',
-    );
+    owned.permissionResultInTransaction(this.settling, id, success, receipt);
   }
   mcpNotSent(id: string): void {
     this.store.transaction(() => this.mcpNotSentInTransaction(id));
   }
   mcpNotSentInTransaction(id: string): void {
-    if (!this.store.db.isTransaction) throw Error('MCP failure requires a transaction');
-    const op = this.operation(id);
-    if (op.kind !== 'mcp') throw new ServiceError('operation_scope', 'Not an MCP permission');
-    if (op.state === 'dispatching') {
-      this.permissionResultInTransaction(id, false, { protocol_result: 'unknown' });
-      return;
-    }
-    if (op.state !== 'prepared') return;
-    const approval = this.forOperation(id);
-    if (['pending', 'decided'].includes(approval.state))
-      this.invalidateApproval(approval, 'invalidated');
-    this.transition(op, 'failed_definite', 'MCP call failed before transport handoff');
+    owned.mcpNotSentInTransaction(this.settling, id);
   }
   /** A broken adapter boundary is uncertainty, never evidence that no mutation happened. */
   mcpUnknownInTransaction(id: string): void {
-    if (!this.store.db.isTransaction) throw Error('MCP uncertainty requires a transaction');
-    const op = this.operation(id);
-    if (op.kind !== 'mcp') throw new ServiceError('operation_scope', 'Not an MCP permission');
-    if (!['prepared', 'dispatching'].includes(op.state)) return;
-    const approval = this.forOperation(id);
-    if (['pending', 'decided'].includes(approval.state))
-      this.invalidateApproval(approval, 'invalidated');
-    this.transition(op, 'outcome_unknown', 'MCP transport dispatch boundary is unconfirmed');
+    owned.mcpUnknownInTransaction(this.settling, id);
   }
   private async dispatch(id: string, signal: AbortSignal): Promise<void> {
     try {
@@ -914,7 +692,7 @@ export class ManagedWork {
       if (op.operation_digest !== binding || binding !== this.binding(op))
         throw new ServiceError('binding_changed', 'Resolution binding mismatch');
       if (op.kind === 'mcp' || op.kind === 'workspace')
-        this.assertMcpResolution(op, request, input);
+        this.mcp.assertResolution(op, request, input);
       this.transition(
         op,
         outcome,
@@ -926,41 +704,7 @@ export class ManagedWork {
     });
   }
   cancelInTransaction(attempt: string, request: string, actor = 'local-operator') {
-    if (!this.store.db.isTransaction) throw new Error('Cancellation requires a transaction');
-    const work = this.store.attempt(attempt);
-    this.store.db.prepare('INSERT OR IGNORE INTO cancellations VALUES (?,?)').run(attempt, actor);
-    if (work.state === 'accepted') {
-      this.store.db.prepare("UPDATE attempts SET state='cancelled' WHERE id=?").run(attempt);
-      this.store.db
-        .prepare("UPDATE submissions SET state='cancelled' WHERE id=?")
-        .run(work.submission_id);
-      this.store.finishChild?.(this.store.attempt(attempt));
-      this.store.projectTaskAttempt?.(this.store.attempt(attempt));
-    }
-    const ops = this.store.db
-      .prepare(
-        "SELECT * FROM operations WHERE attempt_id=? AND state IN ('prepared','dispatching')",
-      )
-      .all(attempt) as unknown as Operation[];
-    for (const op of ops) {
-      this.invalidateApproval(this.forOperation(op.id), 'invalidated');
-      this.transition(
-        op,
-        op.state === 'prepared' ? 'cancelled_before_dispatch' : 'outcome_unknown',
-        'Cancellation requested',
-      );
-    }
-    this.store.cancelChildren?.(attempt);
-    this.store.event(work.session_id, 'attempt.cancel_requested', { attempt_id: attempt }, request);
-    return {
-      attempt_id: attempt,
-      cancel_requested: true as const,
-      unresolved_operations: (
-        this.store.db
-          .prepare("SELECT id FROM operations WHERE attempt_id=? AND state='outcome_unknown'")
-          .all(attempt) as { id: string }[]
-      ).map((row) => row.id),
-    };
+    return cancelInTransaction(this.settling, attempt, request, actor);
   }
   abortCancelled(attempt: string): void {
     for (const [id, active] of this.active)
@@ -999,6 +743,6 @@ export class ManagedWork {
     await Promise.all([...this.active.values()].map((active) => active.done));
     await Promise.allSettled(this.lookups);
     this.store.changes.off('event', this.changed);
-    this.mcpControllers.clear();
+    this.mcp.clear();
   }
 }

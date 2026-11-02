@@ -10,12 +10,7 @@ const SRC = join(import.meta.dirname, '../../src');
 const SIZE_LIMIT = 1000;
 
 /** Files over SIZE_LIMIT and the most lines each may have. Lower these; never raise them. */
-const OVERSIZE: Record<string, number> = {
-  'local/coding.ts': 1363,
-  'store/store.ts': 1341,
-  'acp/server.ts': 1240,
-  'execution/managed.ts': 1004,
-};
+const OVERSIZE: Record<string, number> = {};
 /** Files in the largest import cycle. Lower it; never raise it. */
 const LARGEST_CYCLE = 5;
 
