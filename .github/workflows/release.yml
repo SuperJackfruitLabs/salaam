@@ -125,3 +125,14 @@ jobs:
           path: .state/release/
       - name: Publish the exact verified tarball through npm OIDC
         run: node scripts/npm-release.mjs
+  summary:
+    needs: [validate, github-release, npm]
+    # Notes only, after the release and the package are out; a failed summary leaves both as they
+    # are. It runs when npm publishing is switched off too.
+    if: ${{ !cancelled() && needs.github-release.result == 'success' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-summary.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
