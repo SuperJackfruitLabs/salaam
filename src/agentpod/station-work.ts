@@ -1,26 +1,7 @@
-import { spawn } from 'node:child_process';
-import type { FileNow, LiveTree } from './station-checkpoints.js';
-import {
-  mkdirSync,
-  mkdtempSync,
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  lstatSync,
-  rmSync,
-  chmodSync,
-} from 'node:fs';
+import type { LiveTree } from './station-checkpoints.js';
+import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  processIdentity,
-  canonical,
-  digest,
-  object,
-  string,
-  integer,
-  ServiceError,
-  type Operation,
-} from '../core/index.js';
+import { canonical, digest, string, integer, ServiceError, type Operation } from '../core/index.js';
 import { randomUUID } from 'node:crypto';
 import type { Store, Artifacts } from '../store/index.js';
 import type { ManagedWork } from '../execution/index.js';
@@ -33,47 +14,36 @@ import {
   stationWorkspaceIdentity,
   type StationConfig,
 } from './station-config.js';
-import { stationFileResult } from './station-files.js';
-import { type RunGrants, runGrantCovers, runGrantPrefix } from '../tasks/index.js';
-import { StationSystemd, type StationUnit } from './station-systemd.js';
+import type { RunGrants } from '../tasks/index.js';
 import type { StationBinding, StationCall } from '../runtime/index.js';
+import { answerFromGrant } from './station-approvals.js';
+import {
+  StationFilesDefiniteFailure,
+  runStationHelper,
+  stopStationHelper,
+  type StationHelperDeps,
+} from './station-helper.js';
+import {
+  liveTree,
+  recoverRestores,
+  replayedRestore,
+  restoreFiles,
+  restoreTables,
+  type RestorePlan,
+  type StationRestoreDeps,
+} from './station-restore.js';
+import {
+  createStationUnit,
+  executeStationUnit,
+  stationUnit,
+  stopStationUnit,
+  type StationUnitDeps,
+  type UnitRow,
+} from './station-units.js';
 
-interface UnitRow {
-  id: string;
-  session_id: string | null;
-  call_id: string | null;
-  context_digest: string;
-  config_json: string;
-  snapshot_path: string;
-  output_path: string;
-  unit_json: string | null;
-  state: 'prepared' | 'launching' | 'running' | 'unconfirmed' | 'stopped';
-  stop_json: string | null;
-}
+export { StationFilesDefiniteFailure, definiteHelperRefusal } from './station-helper.js';
+
 const hashes = /^[a-f0-9]{64}$/;
-export class StationFilesDefiniteFailure extends ServiceError {
-  constructor(code: string) {
-    super(code, 'Protected file primitive refused before mutation');
-  }
-}
-/** A helper refusal that provably changed nothing, as the code recorded for it, or null. The
- * helper writes station_request_invalid as exactly {version, ok, code} and only while decoding,
- * before it executes anything; any other shape (an effect_state, extra fields) is not definite. */
-export function definiteHelperRefusal(
-  exitCode: number | null,
-  transportFailed: boolean,
-  result: Record<string, unknown>,
-): string | null {
-  if (transportFailed || exitCode !== 1 || result.version !== 1 || result.ok !== false) return null;
-  if (result.code === 'station_files_unavailable' && result.effect_state === 'not_started')
-    return 'station_files_changed';
-  if (
-    result.code === 'station_request_invalid' &&
-    Object.keys(result).sort().join(',') === 'code,ok,version'
-  )
-    return 'station_request_invalid';
-  return null;
-}
 const terminal = (s: string) => ['returned', 'failed', 'outcome_unknown', 'cancelled'].includes(s);
 
 /** Root-only station controller. Writable source access stays behind the private
@@ -247,218 +217,25 @@ export class StationWork {
         : {}),
     };
   }
+  /** The journal, configuration and call fence a helper run uses, read from this station. */
+  private helperDeps(): StationHelperDeps {
+    return {
+      store: this.store,
+      config: this.config,
+      files: this.files,
+      get: (id) => this.get(id),
+      guard: (c) => this.guard(c),
+    };
+  }
   private helper(
     request: Record<string, unknown>,
     id?: string,
     verificationGuard?: () => void,
   ): Promise<Record<string, any>> {
-    const controller = new AbortController();
-    if (id) this.files.set(id, controller);
-    if (id)
-      this.store.transaction(() =>
-        this.store.db
-          .prepare("UPDATE station_calls SET helper_state='launching' WHERE id=?")
-          .run(id),
-      );
-    return new Promise((accept, reject) => {
-      const child = spawn(this.config.files.path, ['salaam-station-files-v1'], {
-        env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C' },
-        detached: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        signal: controller.signal,
-        killSignal: 'SIGKILL',
-      });
-      const chunks: Buffer[] = [];
-      let bytes = 0,
-        failed = false,
-        spawned = false,
-        settled = false;
-      const timeout = setTimeout(() => {
-        failed = true;
-        controller.abort();
-      }, 30000);
-      timeout.unref();
-      const failure = () =>
-        new ServiceError(
-          'station_files_unavailable',
-          'Station files changed or the protected file primitive failed',
-        );
-      child.once('spawn', () => {
-        spawned = true;
-        try {
-          if (id) {
-            // Own the process first: a guard that refuses below must still leave a pid and identity
-            // that a stop can prove exited (staging card_06a619a3e2e94faf left a pid-less helper).
-            const identity = processIdentity(child.pid!);
-            if (!identity) stationUnavailable();
-            this.store.transaction(() =>
-              this.store.db
-                .prepare(
-                  "UPDATE station_calls SET helper_pid=?,helper_identity=?,helper_state='running' WHERE id=? AND helper_state='launching'",
-                )
-                .run(child.pid!, identity, id),
-            );
-            const c = this.get(id);
-            if (verificationGuard) verificationGuard();
-            else this.guard(c);
-            if (c.state !== 'dispatching') stationUnavailable();
-          }
-          child.stdin.end(
-            JSON.stringify({
-              version: 1,
-              root: this.config.workspace,
-              root_identity: this.config.workspace_identity,
-              ...request,
-            }),
-          );
-        } catch {
-          failed = true;
-          controller.abort();
-        }
-      });
-      child.stdout.on('data', (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > 2 * 1024 * 1024) {
-          failed = true;
-          controller.abort();
-        } else chunks.push(chunk);
-      });
-      child.stderr.resume();
-      child.stdin.on('error', () => {
-        failed = true;
-        controller.abort();
-      });
-      child.on('error', () => {
-        failed = true;
-      });
-      child.once('close', (code) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        if (id) this.files.delete(id);
-        try {
-          if (id) {
-            const c = this.get(id);
-            const exited =
-              !spawned ||
-              (!!c.helper_pid &&
-                !this.processExists(c.helper_pid, true) &&
-                !this.processExists(c.helper_pid));
-            this.store.transaction(() =>
-              this.store.db
-                .prepare('UPDATE station_calls SET helper_state=?,helper_stop_json=? WHERE id=?')
-                .run(
-                  exited ? 'stopped' : 'unconfirmed',
-                  exited
-                    ? canonical({
-                        version: 1,
-                        scope: 'local_process_group',
-                        pid: c.helper_pid ?? null,
-                        identity: c.helper_identity ?? null,
-                        method: spawned ? 'observed_exit' : 'not_started',
-                      })
-                    : null,
-                  id,
-                ),
-            );
-            if (!exited) stationUnavailable();
-          }
-          const result = object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-          const refusal = definiteHelperRefusal(code, failed, result);
-          if (refusal) throw new StationFilesDefiniteFailure(refusal);
-          if (failed || code !== 0 || result.version !== 1 || result.ok !== true)
-            stationUnavailable();
-          accept(
-            stationFileResult(
-              { ...request, root_identity: this.config.workspace_identity },
-              result,
-            ),
-          );
-        } catch (error) {
-          reject(error instanceof StationFilesDefiniteFailure ? error : failure());
-        }
-      });
-    });
+    return runStationHelper(this.helperDeps(), request, id, verificationGuard);
   }
-  private processExists(pid: number, group = false): boolean {
-    try {
-      process.kill(group ? -pid : pid, 0);
-      return true;
-    } catch (error) {
-      return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-    }
-  }
-  /** Whether no process on this host runs the station file helper, proven from every /proc entry. */
-  private noHelperProcess(): boolean {
-    if (process.platform !== 'linux') return false;
-    for (const entry of readdirSync('/proc')) {
-      if (!/^\d+$/.test(entry)) continue;
-      let argv: string[];
-      try {
-        argv = readFileSync(join('/proc', entry, 'cmdline'), 'utf8').split('\0');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        return false;
-      }
-      if (argv.includes('salaam-station-files-v1')) return false;
-    }
-    return true;
-  }
-  private async stopHelper(id: string): Promise<void> {
-    const c = this.get(id);
-    if (!c.helper_state || c.helper_state === 'none' || c.helper_state === 'stopped') return;
-    this.files.get(id)?.abort();
-    try {
-      if (!c.helper_pid || !c.helper_identity) {
-        // Recorded before the fix above: no pid to prove. Settle only when the whole process table
-        // holds no station helper; any live or unreadable process keeps the call fenced.
-        if (!this.noHelperProcess()) stationUnavailable();
-        this.store.transaction(() =>
-          this.store.db
-            .prepare(
-              "UPDATE station_calls SET helper_state='stopped',helper_stop_json=? WHERE id=?",
-            )
-            .run(
-              canonical({ version: 1, scope: 'host_process_table', method: 'no_helper_process' }),
-              id,
-            ),
-        );
-        return;
-      }
-      if (this.processExists(c.helper_pid) || this.processExists(c.helper_pid, true)) {
-        if (processIdentity(c.helper_pid) !== c.helper_identity) stationUnavailable();
-        process.kill(-c.helper_pid, 'SIGKILL');
-        for (
-          let i = 0;
-          i < 100 && (this.processExists(c.helper_pid) || this.processExists(c.helper_pid, true));
-          i++
-        )
-          await new Promise((r) => setTimeout(r, 20));
-      }
-      if (this.processExists(c.helper_pid) || this.processExists(c.helper_pid, true))
-        stationUnavailable();
-      this.store.transaction(() =>
-        this.store.db
-          .prepare("UPDATE station_calls SET helper_state='stopped',helper_stop_json=? WHERE id=?")
-          .run(
-            canonical({
-              version: 1,
-              scope: 'local_process_group',
-              pid: c.helper_pid,
-              identity: c.helper_identity,
-              method: 'observed_exit',
-            }),
-            id,
-          ),
-      );
-    } catch {
-      this.store.transaction(() =>
-        this.store.db
-          .prepare("UPDATE station_calls SET helper_state='unconfirmed' WHERE id=?")
-          .run(id),
-      );
-      stationUnavailable();
-    }
+  private stopHelper(id: string): Promise<void> {
+    return stopStationHelper(this.helperDeps(), id);
   }
   /** A task verifier has no active model attempt. Its read still owns a durable
    * native helper and must revalidate its caller's task fence before/after I/O. */
@@ -809,292 +586,44 @@ export class StationWork {
       this.answerFromGrant(prepared.operation_id, session, args);
     return this.view(id);
   }
-  /** A write the run's grant covers is answered by it, checked again at decision time. The
-   * operation is still prepared, digest-bound and journaled on its own; deletes always ask. */
-  /** An agent's standing "Always allow" rule (pinned at admission or added by a renewal, dropped at the renewal that no
-   * longer lists it) answers a workspace write anywhere in the workspace, never a delete or a
-   * hidden path. Checked again at decision time, so a rule revoked meanwhile answers nothing. */
-  private answerFromRule(operation: string, session: string, args: Record<string, unknown>): void {
-    if (!runGrantCovers('', args)) return;
-    const live = () =>
-      this.authority.approvalRules(session).find((r) => r.scope === 'workspace-write');
-    const rule = live();
-    if (!rule) return;
-    const approval = this.managed.forOperation(operation);
-    if (approval.state !== 'pending') return;
-    this.managed.decide(
-      approval.id,
-      'rule:' + operation,
-      approval.revision,
-      approval.operation_digest,
-      'approve',
-      {
-        decidedBy: 'rule:' + rule.id,
-        receipt: { rule: 'agent-rule', rule_id: rule.id, set_by: rule.set_by },
-        authorize: () => {
-          if (live()?.id !== rule.id)
-            throw new ServiceError(
-              'permission_changed',
-              'The approval rule no longer covers this write',
-            );
-        },
-      },
-    );
-  }
   private answerFromGrant(operation: string, session: string, args: Record<string, unknown>): void {
-    if (!this.grants || !this.grantScope) return;
-    const binding = this.authority.binding(session) as { run?: { id?: unknown } } | null;
-    const prefix = runGrantPrefix(typeof binding?.run?.id === 'string' ? binding.run.id : '');
-    const live = () => {
-      const scope = this.grantScope!(session);
-      if (!scope || !prefix || !runGrantCovers(prefix, args)) return null;
-      const g = this.grants!.active({
-        session_id: session,
-        binding_digest: digest(binding),
-        ...scope,
-      });
-      return g;
+    answerFromGrant(this, operation, session, args);
+  }
+  /** The journal, artifacts and helper a restore uses, read from this station. */
+  private restoreDeps(): StationRestoreDeps {
+    return {
+      store: this.store,
+      artifacts: this.artifacts,
+      configurationDigest: this.configurationDigest,
+      helper: (request) => this.helper(request),
     };
-    const grant = live();
-    if (!grant) return this.answerFromRule(operation, session, args);
-    const approval = this.managed.forOperation(operation);
-    if (approval.state !== 'pending') return;
-    this.managed.decide(
-      approval.id,
-      'run-grant:' + operation,
-      approval.revision,
-      approval.operation_digest,
-      'approve',
-      {
-        decidedBy: 'run-grant:' + grant.id,
-        receipt: {
-          rule: 'run-grant',
-          grant_id: grant.id,
-          granted_by: grant.granted_by,
-          granted_on: grant.approval_id,
-        },
-        authorize: () => {
-          if (live()?.id !== grant.id)
-            throw new ServiceError(
-              'permission_changed',
-              'The run grant no longer covers this write',
-            );
-        },
-      },
-    );
   }
   /** Item 11b: the restore journal. Each write is recorded before it is sent, so a daemon stop
    * mid-restore leaves an honest unknown, never a silent effect. */
   private restoreTables(): void {
-    this.store.db.exec(`CREATE TABLE IF NOT EXISTS station_restores(
-      id TEXT PRIMARY KEY NOT NULL, session_id TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE,
-      restore_digest TEXT NOT NULL, approved_by TEXT NOT NULL, state TEXT NOT NULL, receipt TEXT);
-    CREATE TABLE IF NOT EXISTS station_restore_writes(
-      restore_id TEXT NOT NULL REFERENCES station_restores(id), n INTEGER NOT NULL, path TEXT NOT NULL,
-      args_json TEXT NOT NULL, state TEXT NOT NULL, result_json TEXT, artifact_id TEXT,
-      PRIMARY KEY(restore_id, n));`);
+    restoreTables(this.restoreDeps());
   }
-  /** Item 11b: the live workspace through the helper's closed verbs (inspect, search, read). A
-   * path is absent only when an exact search finds no entry for it; a file the helper refuses to
-   * read (too large, not text) is unreadable, never guessed. */
-  async live(): Promise<LiveTree> {
-    const inspected = await this.helper({ action: 'inspect' });
-    return {
-      tree: String(inspected.tree_digest),
-      file: async (path: string): Promise<FileNow> => {
-        let offset: number | null = 0,
-          found = false;
-        while (offset !== null && !found) {
-          const page: Record<string, any> = await this.helper({
-            action: 'search',
-            query: path,
-            offset,
-          });
-          found = (page.entries as { path: string }[]).some((e) => e.path === path);
-          offset = page.next_offset ?? null;
-        }
-        if (!found) return { state: 'absent' };
-        try {
-          const read = await this.helper({ action: 'read', path });
-          return { state: 'content', content: String(read.content), sha256: String(read.sha256) };
-        } catch {
-          return { state: 'unreadable' };
-        }
-      },
-    };
+  /** Item 11b: the live workspace through the helper's closed verbs (inspect, search, read). */
+  live(): Promise<LiveTree> {
+    return liveTree(this.restoreDeps());
   }
-  /** Item 11b: the journal's answer for a restore request already seen, or null for a new one.
-   * A replay returns the saved receipt exactly; the same request for another restore is a
-   * conflict; an unfinished one says so. Checked before any plan is recomputed. */
+  /** Item 11b: the journal's answer for a restore request already seen, or null for a new one. */
   replayed(session: string, request: string, restoreDigest: string): unknown | null {
-    this.restoreTables();
-    const saved = this.store.db
-      .prepare('SELECT * FROM station_restores WHERE request_id=?')
-      .get(request);
-    if (!saved) return null;
-    if (saved.restore_digest !== restoreDigest || saved.session_id !== session)
-      throw new ServiceError(
-        'request_conflict',
-        'This restore request was used for another restore',
-      );
-    if (saved.receipt) return JSON.parse(String(saved.receipt));
-    throw new ServiceError('restore_unconfirmed', 'This restore did not finish; review it again');
+    return replayedRestore(this.restoreDeps(), session, request, restoreDigest);
   }
   /** At start: a restore write that was in flight has an unknown outcome; its restore is partial. */
   recoverRestores(): void {
-    this.restoreTables();
-    this.store.transaction(() => {
-      for (const w of this.store.db
-        .prepare("SELECT restore_id,n FROM station_restore_writes WHERE state='dispatching'")
-        .all()) {
-        this.store.db
-          .prepare(
-            "UPDATE station_restore_writes SET state='outcome_unknown' WHERE restore_id=? AND n=?",
-          )
-          .run(String(w.restore_id), Number(w.n));
-        this.store.db
-          .prepare("UPDATE station_restores SET state='partial' WHERE id=?")
-          .run(String(w.restore_id));
-      }
-    });
+    recoverRestores(this.restoreDeps());
   }
-  /**
-   * Item 11b: restore files exactly as planned and approved, after the run has ended. The caller
-   * checks the ended run and the approval; this writes. It refuses a workspace whose live tree is
-   * not the reviewed one, then sends each write through the protected helper in order, chaining
-   * the expected tree and each file's current hash, with a receipt per file. The same request
-   * replays its receipt. A failure stops the restore; nothing is retried.
-   */
-  async restore(
+  /** Item 11b: restore files exactly as planned and approved, after the run has ended. */
+  restore(
     session: string,
     rootDigest: string,
-    plan: {
-      restore_digest: string;
-      current_tree: string;
-      writes: { path: string; content: string | null; expected_hash: string | null }[];
-    },
+    plan: RestorePlan,
     request: string,
     approvedBy: string,
   ): Promise<unknown> {
-    this.restoreTables();
-    const saved = this.store.db
-      .prepare('SELECT * FROM station_restores WHERE request_id=?')
-      .get(request);
-    if (saved) {
-      if (saved.restore_digest !== plan.restore_digest || saved.session_id !== session)
-        throw new ServiceError(
-          'request_conflict',
-          'This restore request was used for another restore',
-        );
-      if (saved.receipt) return JSON.parse(String(saved.receipt));
-      throw new ServiceError('restore_unconfirmed', 'This restore did not finish; review it again');
-    }
-    const live = (await this.helper({ action: 'inspect' })) as { tree_digest?: unknown };
-    if (live.tree_digest !== plan.current_tree)
-      throw new ServiceError(
-        'restore_changed',
-        'The workspace changed since this restore was reviewed',
-      );
-    const id = randomUUID();
-    this.store.transaction(() =>
-      this.store.db
-        .prepare("INSERT INTO station_restores VALUES (?,?,?,?,?,'running',NULL)")
-        .run(id, session, request, plan.restore_digest, approvedBy),
-    );
-    let tree = plan.current_tree;
-    const done: { path: string; artifact_id: string }[] = [];
-    let stopped: string | null = null;
-    for (const [n, w] of plan.writes.entries()) {
-      const args = {
-        action: 'patch',
-        path: w.path,
-        expected_tree: tree,
-        expected_hash: w.expected_hash,
-        content: w.content,
-        // The helper accepts only a 64-hex request id: one per restore write, stable on replay.
-        request_id: digest({ restore: id, write: n }),
-        deadline_ms: Date.now() + 5000,
-      };
-      this.store.transaction(() =>
-        this.store.db
-          .prepare("INSERT INTO station_restore_writes VALUES (?,?,?,?,'dispatching',NULL,NULL)")
-          .run(id, n, w.path, canonical(args)),
-      );
-      let result: Record<string, unknown>;
-      try {
-        result = (await this.helper(args)) as Record<string, unknown>;
-      } catch (error) {
-        const definite = error instanceof StationFilesDefiniteFailure;
-        this.store.transaction(() =>
-          this.store.db
-            .prepare(
-              'UPDATE station_restore_writes SET state=?,result_json=? WHERE restore_id=? AND n=?',
-            )
-            .run(
-              definite ? 'failed' : 'outcome_unknown',
-              canonical({
-                code: definite ? (error as ServiceError).code : 'station_execution_unconfirmed',
-              }),
-              id,
-              n,
-            ),
-        );
-        stopped = w.path;
-        break;
-      }
-      const artifact = this.artifacts.prepare(
-        session,
-        canonical({
-          version: 1,
-          kind: 'station-restore-receipt',
-          restore_id: id,
-          request_id: request,
-          restore_digest: plan.restore_digest,
-          approved_by: approvedBy,
-          session_id: session,
-          root_digest: rootDigest,
-          configuration_digest: this.configurationDigest,
-          path: w.path,
-          patch: {
-            content: w.content,
-            expected_tree: args.expected_tree,
-            expected_hash: w.expected_hash,
-          },
-          result,
-        }),
-      );
-      this.store.transaction(() => {
-        artifact.commit();
-        this.store.db
-          .prepare(
-            "UPDATE station_restore_writes SET state='returned',result_json=?,artifact_id=? WHERE restore_id=? AND n=?",
-          )
-          .run(canonical(result), artifact.id, id, n);
-      });
-      done.push({ path: w.path, artifact_id: artifact.id });
-      tree = String(result.tree_digest);
-    }
-    const receipt = {
-      version: 1 as const,
-      state: stopped ? ('partial' as const) : ('restored' as const),
-      restore_id: id,
-      restore_digest: plan.restore_digest,
-      tree_digest: tree,
-      writes: done,
-      ...(stopped ? { stopped_at: stopped } : {}),
-    };
-    this.store.transaction(() => {
-      this.store.db
-        .prepare('UPDATE station_restores SET state=?,receipt=? WHERE id=?')
-        .run(receipt.state, canonical(receipt), id);
-      this.store.event(session, 'station.restored', {
-        restore_id: id,
-        restore_digest: plan.restore_digest,
-        approved_by: approvedBy,
-        state: receipt.state,
-      });
-    });
-    return receipt;
+    return restoreFiles(this.restoreDeps(), session, rootDigest, plan, request, approvedBy);
   }
   run(id: string): unknown {
     const c = this.get(id);
@@ -1252,137 +781,30 @@ export class StationWork {
       }),
     );
   }
+  /** The journal, configuration and directory the units use, read from this station. */
+  private unitDeps(): StationUnitDeps {
+    return {
+      store: this.store,
+      config: this.config,
+      directory: this.directory,
+      unitStops: this.unitStops,
+    };
+  }
   private unit(id: string): UnitRow {
-    const row = this.store.db
-      .prepare('SELECT * FROM station_units WHERE id=?')
-      .get(id) as unknown as UnitRow | undefined;
-    if (!row) stationUnavailable();
-    return row;
+    return stationUnit(this.unitDeps(), id);
   }
   private createUnit(session: string | null, call: string | null, context: string): UnitRow {
-    const id = digest(['station-unit-v1', call ?? randomUUID(), context]),
-      base = mkdtempSync(join(this.directory, 'unit-'));
-    const row: UnitRow = {
-      id,
-      session_id: session,
-      call_id: call,
-      context_digest: context,
-      config_json: canonical(this.config),
-      snapshot_path: join(base, 'source'),
-      output_path: join(base, 'output'),
-      unit_json: null,
-      state: 'prepared',
-      stop_json: null,
-    };
-    writeFileSync(row.output_path, '', { mode: 0o600 });
-    this.store.transaction(() =>
-      this.store.db
-        .prepare('INSERT INTO station_units VALUES(?,?,?,?,?,?,?,?,?,?)')
-        .run(
-          row.id,
-          row.session_id,
-          row.call_id,
-          row.context_digest,
-          row.config_json,
-          row.snapshot_path,
-          row.output_path,
-          null,
-          'prepared',
-          null,
-        ),
-    );
-    return row;
+    return createStationUnit(this.unitDeps(), session, call, context);
   }
-  private async executeUnit(
+  private executeUnit(
     row: UnitRow,
     command: string,
     grant: () => void,
   ): Promise<{ exit_code: number | null; output: string; cleanup: unknown }> {
-    const runtime = new StationSystemd(JSON.parse(row.config_json));
-    grant();
-    this.store.transaction(() =>
-      this.store.db
-        .prepare("UPDATE station_units SET state='launching' WHERE id=? AND state='prepared'")
-        .run(row.id),
-    );
-    try {
-      await runtime.launch(row.id, row.context_digest, row.snapshot_path, row.output_path, command);
-      let observed = await runtime.inspect(row.id, row.context_digest);
-      if (!observed) stationUnavailable();
-      this.store.transaction(() =>
-        this.store.db
-          .prepare(
-            "UPDATE station_units SET state='running',unit_json=? WHERE id=? AND state='launching'",
-          )
-          .run(canonical(observed), row.id),
-      );
-      const until = Date.now() + 35000;
-      while (
-        observed.sub === 'running' ||
-        observed.sub === 'start' ||
-        observed.sub === 'start-pre'
-      ) {
-        grant();
-        if (Date.now() > until) stationUnavailable();
-        await new Promise((r) => setTimeout(r, 100));
-        const next = await runtime.inspect(row.id, row.context_digest);
-        if (!next || next.invocation !== observed.invocation) stationUnavailable();
-        observed = next;
-      }
-      const exit = observed.code === 1 ? observed.status : null,
-        cleanup = await this.stopUnit(row.id);
-      const st = lstatSync(row.output_path);
-      if (!st.isFile() || st.nlink !== 1 || st.size >= 65536) stationUnavailable();
-      return { exit_code: exit, output: readFileSync(row.output_path, 'utf8'), cleanup };
-    } catch (error) {
-      await this.stopUnit(row.id);
-      throw error;
-    }
+    return executeStationUnit(this.unitDeps(), row, command, grant);
   }
   private stopUnit(id: string): Promise<unknown> {
-    const pending = this.unitStops.get(id);
-    if (pending) return pending;
-    // Revocation, attempt cancellation and the executor finalizer can converge.
-    // They must share one actual stop observation, not race stale row snapshots.
-    const work = this.stopUnitOnce(id);
-    this.unitStops.set(id, work);
-    void work
-      .finally(() => {
-        if (this.unitStops.get(id) === work) this.unitStops.delete(id);
-      })
-      .catch(() => {});
-    return work;
-  }
-  private async stopUnitOnce(id: string): Promise<unknown> {
-    const row = this.unit(id);
-    if (row.state === 'stopped') return JSON.parse(row.stop_json!);
-    try {
-      const proof =
-        row.state === 'prepared'
-          ? { version: 1, method: 'not_started' }
-          : await new StationSystemd(JSON.parse(row.config_json)).stop(
-              id,
-              row.context_digest,
-              row.unit_json ? JSON.parse(row.unit_json) : undefined,
-            );
-      this.store.transaction(() =>
-        this.store.db
-          .prepare("UPDATE station_units SET state='stopped',stop_json=? WHERE id=?")
-          .run(canonical(proof), id),
-      );
-      if (
-        !row.snapshot_path.startsWith(this.directory + '/unit-') ||
-        !row.snapshot_path.endsWith('/source')
-      )
-        stationUnavailable();
-      rmSync(row.snapshot_path, { recursive: true, force: true });
-      return proof;
-    } catch {
-      this.store.transaction(() =>
-        this.store.db.prepare("UPDATE station_units SET state='unconfirmed' WHERE id=?").run(id),
-      );
-      stationUnavailable();
-    }
+    return stopStationUnit(this.unitDeps(), id);
   }
   async initialize(): Promise<void> {
     this.proven = false;
