@@ -34,7 +34,7 @@ export async function approvals(
     const op = await call<Operation>(ctx.socket, `/v1/operations/${approval.operation_id}`);
     c.permissions.add(approval.id);
     const id = 'permission:' + randomUUID();
-    const value = String(op.value);
+    const value = op.value;
     // Your own session can approve for the rest of it, unless the command can never be a rule.
     const sessionRule = !!c.desk?.rules && !onceOnlyReason(value);
     const edits = c.desk

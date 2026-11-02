@@ -9,7 +9,6 @@ import type { AgentPodAuthority } from './authority.js';
 import {
   readStationConfig,
   stationUnavailable,
-  stationHash,
   stationPrivateFile,
   stationWorkspaceIdentity,
   type StationConfig,
@@ -135,10 +134,10 @@ export class StationWork {
     if (c.task_check_id) {
       if (c.attempt_id !== null || !this.taskCheckGuard || !['read', 'check'].includes(c.kind))
         stationUnavailable();
-      this.taskCheckGuard!(c);
+      this.taskCheckGuard(c);
     } else {
       if (!c.attempt_id) stationUnavailable();
-      this.options.assertActive(c.session_id, c.worker_epoch, c.attempt_id!);
+      this.options.assertActive(c.session_id, c.worker_epoch, c.attempt_id);
     }
   }
   private guard(c: StationCall): void {
@@ -956,7 +955,7 @@ export class StationWork {
         .all()
         .map((r) => this.stopHelper(String(r.id))),
     ]);
-    await Promise.allSettled([...this.jobs.values()]);
+    await Promise.allSettled(this.jobs.values());
     this.unregister();
     if (results.some((r) => r.status === 'rejected')) stationUnavailable();
   }

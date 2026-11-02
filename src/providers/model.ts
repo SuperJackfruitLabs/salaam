@@ -3,6 +3,7 @@ import type { Api, Model, AuthResult, TranscriptContext } from '@earendil-works/
 import { canonical } from '../core/protocol.js';
 import { getProviderModel, ROUTING_FIELDS } from './config.js';
 import type { ProviderRoute } from '../core/provider-route.js';
+import type { ReasoningLevel } from '../core/provider-route.js';
 export function materialize(model: Model<Api>, auth: AuthResult): Model<Api> {
   let baseUrl = auth.auth.baseUrl ?? model.baseUrl;
   for (const [key, value] of Object.entries(auth.env ?? {}))
@@ -66,7 +67,7 @@ export function bindProviderConfiguration(route: ProviderRoute, auth: AuthResult
   if (!catalog) throw new Error('Pinned provider model missing');
   const model = materialize(catalog, auth);
   const configuration = Object.fromEntries(
-    ROUTING_FIELDS.flatMap((key) => (auth.env?.[key] ? [[key, auth.env[key]!]] : [])),
+    ROUTING_FIELDS.flatMap((key) => (auth.env?.[key] ? [[key, auth.env[key]]] : [])),
   );
   const changed =
     route.provider !== 'anthropic' ||
@@ -85,7 +86,7 @@ export function generationOptions(
   model: Model<Api>,
   context: TranscriptContext,
   cap: number,
-  reasoning?: import('../core/provider-route.js').ReasoningLevel,
+  reasoning?: ReasoningLevel,
 ) {
   const maxTokens = clampMaxTokensToContext(model, context, cap);
   return {

@@ -90,7 +90,7 @@ export class DeskHandlers {
       const { renderFetched } = await import('../../web/fetch.js');
       return { ok: true, url: page.url, text: renderFetched(page) };
     } catch (error) {
-      const message = String((error as Error).message ?? error).slice(0, 300);
+      const message = String((error as { message?: unknown }).message ?? error).slice(0, 300);
       this.s.store.transaction(() =>
         this.s.store.event(id, 'web.fetch', {
           attempt_id: w.attempt,

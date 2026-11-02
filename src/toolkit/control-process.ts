@@ -94,7 +94,9 @@ export class ToolkitControlProcess {
     this.faulted = true;
     try {
       sync(() => this.lifecycle.failed?.());
-    } catch {}
+    } catch {
+      // A failing lifecycle observer must not stop the abort below.
+    }
     this.abort?.();
   }
   async run(): Promise<Record<string, unknown>> {
@@ -161,7 +163,7 @@ export class ToolkitControlProcess {
           (k) => !['version', 'control_digest', 'root_revoked', 'receipt'].includes(k),
         ) ||
         (this.control.action === 'revoke'
-          ? result.root_revoked !== true || 'receipt' in result
+          ? !result.root_revoked || 'receipt' in result
           : !('receipt' in result))
       )
         failed();

@@ -175,7 +175,7 @@ export function readStationConfig(
       version: 1,
       kind: v.kind,
       workspace,
-      workspace_identity: String(v.workspace_identity),
+      workspace_identity: v.workspace_identity,
       files: executable(v.files),
       systemd_run: executable(v.systemd_run),
       systemctl: executable(v.systemctl),

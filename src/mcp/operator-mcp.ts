@@ -108,7 +108,7 @@ export function validateDeclaration(input: unknown, index = 0): McpDeclaration {
       transport: 'stdio',
       command: s.command,
       ...(s.args ? { args: [...(s.args as string[])] } : {}),
-      ...(s.cwd ? { cwd: s.cwd as string } : {}),
+      ...(s.cwd ? { cwd: s.cwd } : {}),
       ...(s.env ? { env: { ...(s.env as Record<string, string>) } } : {}),
     };
   }
@@ -303,7 +303,7 @@ export class OperatorMcp {
       transport,
       ready: client.connect(transport, { timeout: 30_000 }),
     };
-    connection.ready.catch(() => owned!.delete(d.name));
+    connection.ready.catch(() => owned.delete(d.name));
     owned.set(d.name, connection);
     return connection;
   }

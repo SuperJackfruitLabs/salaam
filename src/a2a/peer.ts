@@ -43,7 +43,7 @@ const fail = (message: string): never => {
 export function a2aObject(value: unknown): A2AObject {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return fail('Expected an A2A object');
-  return value as A2AObject;
+  return value;
 }
 export function a2aIdentity(value: unknown): string {
   if (

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { realpathSync, lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { engineJson, type EngineRequest } from '../execution/index.js';

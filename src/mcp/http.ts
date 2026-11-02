@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { JsonSchemaType, JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
+import type { JsonSchemaValidator } from '@modelcontextprotocol/sdk/validation';
 import { admittedMcpSchema } from './schema.js';
 import {
   CallToolResultSchema,
@@ -132,10 +132,10 @@ export class ManagedHttpMcp {
         // Only compile definitions after their complete catalog and individual pins match.
         // A fresh validator per schema prevents unrelated tools sharing an AJV $id cache.
         this.validators.set(pin.name, {
-          input: admittedMcpSchema(tool.inputSchema as JsonSchemaType),
+          input: admittedMcpSchema(tool.inputSchema),
           ...(tool.outputSchema
             ? {
-                output: admittedMcpSchema(tool.outputSchema as JsonSchemaType),
+                output: admittedMcpSchema(tool.outputSchema),
               }
             : {}),
         });

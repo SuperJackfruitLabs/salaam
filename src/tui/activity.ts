@@ -49,7 +49,9 @@ export function toolLine(
   } = {};
   try {
     args = JSON.parse(input ?? '{}');
-  } catch {}
+  } catch {
+    // Unparseable arguments read as none.
+  }
   if (tool === 'salaam_local' && args.action === 'edit' && Array.isArray(args.edits)) {
     let added = 0,
       removed = 0,
@@ -67,7 +69,9 @@ export function toolLine(
     }
     const what =
       args.edits.length === 1
-        ? safeText(String(args.edits[0]!.path ?? ''))
+        ? // The arguments are a model's tool call; the conversion guards a non-string path.
+          // oxlint-disable-next-line typescript/no-unnecessary-type-conversion
+          safeText(String(args.edits[0]!.path ?? ''))
         : `${args.edits.length} files`;
     return {
       state,

@@ -4,7 +4,7 @@ import { call, planUpdate, toolMetadata, toolTitle, type SessionSnapshot } from 
 import type { LocalEdit } from '../local/index.js';
 import { subscribe } from '../tui/index.js';
 import { approvals } from './approvals.js';
-import { snapshot, update, type AcpContext, type Connection, type Json } from './context.js';
+import { snapshot, update, type AcpContext, type Connection } from './context.js';
 import { editDiffs } from './desk.js';
 import { deskState } from './desk-session.js';
 import { replay } from './history.js';
@@ -40,7 +40,7 @@ export async function sendPlan(
   const key = plan ? JSON.stringify(plan) : undefined;
   if (!plan || key === c.plan) return;
   c.plan = key;
-  await update(ctx, c.id, plan as unknown as Json);
+  await update(ctx, c.id, plan);
 }
 
 export function refresh(ctx: AcpContext, c: Connection): Promise<void> {

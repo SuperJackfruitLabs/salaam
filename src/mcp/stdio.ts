@@ -226,10 +226,14 @@ export class ManagedStdioTransport implements Transport {
     this.faulted = true;
     try {
       synchronous(() => this.lifecycle?.failed?.());
-    } catch {}
+    } catch {
+      // A failing lifecycle observer must not stop the fault being reported.
+    }
     try {
       this.onerror?.(failed());
-    } catch {}
+    } catch {
+      // A failing error handler must not stop the close below.
+    }
     void this.close().catch(() => {});
   }
   private receive(chunk: Buffer): void {

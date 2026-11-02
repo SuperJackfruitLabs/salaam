@@ -229,7 +229,9 @@ export class HarnessRpc {
     // Pending callers already reject; the committed dispatch intent remains for recovery.
     try {
       this.handlers.failed?.(error);
-    } catch {}
+    } catch {
+      // Ignored for the reason above.
+    }
   }
   async close(): Promise<void> {
     this.stopping = true;

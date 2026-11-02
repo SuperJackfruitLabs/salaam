@@ -12,14 +12,14 @@ import {
 } from 'node:fs';
 import { join, relative, dirname, isAbsolute } from 'node:path';
 import { DockerHarnessBoundary, type HarnessContainers } from './container.js';
-import { DockerCodingExecutor, readTree, validateTree } from '../coding/index.js';
+import type { DockerCodingExecutor } from '../coding/index.js';
+import { readTree, validateTree } from '../coding/index.js';
 import { engineRequest, engineJson } from '../execution/index.js';
 import { HarnessProtocol, type HarnessCheckpoint } from './protocol.js';
 import {
   HARNESS_TARGETS,
   type HarnessTarget,
   digest,
-  canonical,
   ServiceError,
   hostDigests,
 } from '../core/index.js';
@@ -360,7 +360,9 @@ export class DockerHarnessBackend implements ExternalBackend {
       } catch (error) {
         try {
           hooks.failed(error as Error);
-        } catch {}
+        } catch {
+          // The original error is rethrown below.
+        }
         throw error;
       }
     };

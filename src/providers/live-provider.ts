@@ -2,7 +2,6 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
-  type AssistantMessageEvent,
   type AuthResult,
 } from '@earendil-works/pi-ai';
 import { zstdDecompressSync } from 'node:zlib';
@@ -320,12 +319,7 @@ export function registerLiveProvider(
               Object.assign(message, { salaamFailure: outcome.failure });
               message.errorMessage = outcome.failure!.message;
               output.push({ ...event, error: message });
-            } else
-              output.push(
-                ('partial' in event
-                  ? { ...event, partial: last! }
-                  : event) as AssistantMessageEvent,
-              );
+            } else output.push('partial' in event ? { ...event, partial: last! } : event);
           }
           output.end();
           if (failed && !cancelled && !options?.signal?.aborted) await fail();

@@ -26,7 +26,7 @@ export class RateLimitStop implements FailureRule {
       task.steps.some((s) => !['completed', 'failed', 'pending'].includes(s.state))
     )
       return null;
-    const last = String(failed[0]!.attempt_id ?? '');
+    const last = failed[0]!.attempt_id ?? '';
     const limits = new RateLimitRetries(this.store);
     const recorded = this.store.db
       .prepare(

@@ -102,7 +102,9 @@ export class ToolkitWork {
     if (entry) this.resources.fence(entry.resource);
     try {
       this.options.failed(session, error);
-    } catch {}
+    } catch {
+      // A failing observer must not undo the fence above.
+    }
   }
   private live(session: string): Entry {
     if (this.closing || this.fatal.has(session)) unavailable();

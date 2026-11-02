@@ -85,8 +85,8 @@ export async function openSession(ctx: AcpContext, method: string, params: Json)
   if (desk && Array.isArray(params.mcpServers)) {
     if (params.mcpServers.length && !ctx.ignoredMcp) {
       ctx.ignoredMcp = true;
-      console.error(
-        `Salaam does not use the editor's MCP servers; ignored ${params.mcpServers.length}.`,
+      process.stderr.write(
+        `Salaam does not use the editor's MCP servers; ignored ${params.mcpServers.length}.\n`,
       );
     }
   } else validateManagedMcpDeclarations(params.mcpServers, bound?.managed_mcp);

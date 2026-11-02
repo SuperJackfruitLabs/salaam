@@ -2,7 +2,6 @@ import {
   constants,
   openSync,
   closeSync,
-  readFileSync,
   readSync,
   writeFileSync,
   fsyncSync,
@@ -18,7 +17,7 @@ import {
   existsSync,
   chmodSync,
 } from 'node:fs';
-import { join, resolve, relative, dirname, isAbsolute, sep } from 'node:path';
+import { join, relative, dirname, isAbsolute, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { digest, ServiceError, string, integer } from '../core/index.js';
 import type { Store, Artifacts } from '../store/index.js';
@@ -309,7 +308,9 @@ export class Workspaces {
     let observed_digest: string | null = null;
     try {
       observed_digest = digest(readTree(w.root));
-    } catch {}
+    } catch {
+      // An unreadable tree is reported as no observed digest.
+    }
     return {
       ...w,
       observed_digest,
@@ -616,12 +617,16 @@ export class Workspaces {
     let actual = '';
     try {
       actual = digest(readTree(op.after_root));
-    } catch {}
+    } catch {
+      // An unreadable tree leaves the digest empty, which never matches.
+    }
     this.store.transaction(() => {
       let before = '';
       try {
         before = digest(readTree(op.before_root));
-      } catch {}
+      } catch {
+        // An unreadable tree leaves the digest empty, which never matches.
+      }
       const prior =
         w.root === op.before_root &&
         before === op.before_digest &&

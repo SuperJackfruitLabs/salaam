@@ -190,6 +190,6 @@ export async function guardedRequest(
     url: url.toString(),
     body: Buffer.concat(chunks).toString('utf8'),
     truncated,
-    contentType: String(res.headers['content-type'] ?? ''),
+    contentType: res.headers['content-type'] ?? '',
   };
 }

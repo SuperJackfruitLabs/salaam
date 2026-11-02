@@ -127,7 +127,7 @@ function stoppedUnboundUnits(
     if (
       stop.version !== 1 ||
       stop.observed_empty !== true ||
-      stop.unit !== `salaam-station-${unit.id}.service` ||
+      stop.unit !== `salaam-station-${String(unit.id)}.service` ||
       stop.cgroup !== `/system.slice/${stop.unit}` ||
       typeof stop.invocation !== 'string' ||
       !/^[a-f0-9]{32}$/.test(stop.invocation)

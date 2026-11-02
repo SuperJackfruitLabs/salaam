@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AnthropicHarnessGateway } from './model-gateway.js';
+import type { AnthropicHarnessGateway } from './model-gateway.js';
 import type { GatewayRequest, GatewayResponse } from './container.js';
 import { ServiceError } from '../core/index.js';
 
@@ -11,7 +11,7 @@ function invalid(): never {
   );
 }
 const object = (value: unknown): Json =>
-  value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : invalid();
+  value && typeof value === 'object' && !Array.isArray(value) ? value : invalid();
 const list = (value: unknown): Json[] =>
   Array.isArray(value) && value.length <= 512 ? value.map(object) : invalid();
 const text = (value: unknown): string => (typeof value === 'string' ? value : invalid());

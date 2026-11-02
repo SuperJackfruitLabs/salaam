@@ -593,6 +593,8 @@ export async function attach(
         action: 'release',
         expected_epoch: lease.epoch,
       });
-    } catch {}
+    } catch {
+      // Releasing is best effort while detaching; the lease expires on its own.
+    }
   }
 }

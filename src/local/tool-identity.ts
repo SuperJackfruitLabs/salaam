@@ -54,6 +54,8 @@ export function probeToolsUser(
   if (process.platform !== 'linux' && prefix[0] === 'sudo')
     throw new Error('--tools-user is supported on Linux hosts only');
   const id = run([...prefix, '/usr/bin/id', '-u']);
+  // stdout is null, not a string, when the command could not be spawned.
+  // oxlint-disable-next-line typescript/no-unnecessary-type-conversion
   const uid = Number(String(id.stdout).trim());
   if (id.status !== 0 || !Number.isSafeInteger(uid))
     throw new Error(
@@ -97,14 +99,12 @@ export function applyEditsAsTools(
     toolArgv(identity, [process.execPath, EDIT_HELPER, root]),
     JSON.stringify(edits),
   );
-  for (const line of String(result.stdout ?? '').split('\n')) {
+  for (const line of (result.stdout ?? '').split('\n')) {
     if (line.startsWith('applied ')) applied(JSON.parse(line.slice(8)) as string);
   }
   if (result.status !== 0)
     throw new ServiceError(
       'tool_identity',
-      `Edit as ${identity.user} failed: ${String(result.stderr ?? '')
-        .trim()
-        .slice(0, 400)}`,
+      `Edit as ${identity.user} failed: ${(result.stderr ?? '').trim().slice(0, 400)}`,
     );
 }

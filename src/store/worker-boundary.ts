@@ -28,7 +28,8 @@ export interface AgentGrants {
 /** Never equate one opaque invocation with one model request. Invocation admission is separate. */
 export function assertModelRequestBoundary(capabilities: {
   schema_version: number;
-  model_requests: boolean;
+  /** Read from a worker's declared capabilities; only an exact `true` passes. */
+  model_requests: unknown;
 }): void {
   if (capabilities.schema_version !== 1)
     throw new ServiceError('worker_capability_version', 'Unsupported worker capability version');

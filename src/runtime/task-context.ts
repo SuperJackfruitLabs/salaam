@@ -4,6 +4,7 @@ import type { ProjectInstructions } from './project-instructions.js';
 import type { Store, Artifacts } from '../store/index.js';
 import { canonical, ServiceError, string, integer, object } from '../core/index.js';
 import type { WorkTask } from '../core/index.js';
+import type { TurnCheckpoints } from './turn-rewind.js';
 
 export const TASK_FRAME_BYTES = 16384;
 export const FACT_KINDS = [
@@ -49,7 +50,7 @@ export class TaskContext {
   /** Interactive sessions only: AGENTS.md guidance loaded automatically (project-instructions.ts). */
   instructions?: ProjectInstructions;
   /** Interactive sessions only: a folder checkpoint before every turn (turn-rewind.ts). */
-  checkpoints?: import('./turn-rewind.js').TurnCheckpoints;
+  checkpoints?: TurnCheckpoints;
   constructor(
     readonly store: Store,
     readonly artifacts: Artifacts,

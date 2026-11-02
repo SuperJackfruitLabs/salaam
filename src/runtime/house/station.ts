@@ -33,14 +33,20 @@ function registerBoard(h: House): void {
         const deadline = Date.now() + 90_000;
         while (read.state === 'pending') {
           if (signal?.aborted) throw Error('Board read cancelled');
-          if (Date.now() > deadline)
+          if (Date.now() > deadline) {
+            const details: { read_id: string; state: string; ok: boolean | undefined } = {
+              read_id: read.id,
+              state: 'timeout',
+              ok: false,
+            };
             return {
               content: [
                 { type: 'text', text: 'The board did not answer in time; carry on without it.' },
               ],
-              details: { read_id: read.id, state: 'timeout', ok: false as boolean | undefined },
+              details,
               isError: true,
             };
+          }
           await new Promise((r) => setTimeout(r, 500));
           read = await bridge<Read>('board.status', { read_id: read.id });
         }

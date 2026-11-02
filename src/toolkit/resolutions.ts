@@ -486,7 +486,9 @@ export class ToolkitResolutions {
               )
               .run(id),
           );
-        } catch {}
+        } catch {
+          // The original error, rethrown below, is what the caller needs.
+        }
       }
       throw error;
     } finally {

@@ -81,7 +81,7 @@ async function replayMessage(
         typeof part.text === 'string' &&
         (message.role !== 'user' || includeUsers)
       )
-        await text(ctx, c.id, String(message.role), part.text, entryId, partIndex);
+        await text(ctx, c.id, message.role, part.text, entryId, partIndex);
       if (part.type === 'toolCall' && !c.liveTools.has(String(part.id))) {
         c.liveTools.add(String(part.id));
         await update(ctx, c.id, {

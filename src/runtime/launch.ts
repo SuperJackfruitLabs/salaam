@@ -176,7 +176,7 @@ export function workerEnv(
     LANG: process.env.LANG ?? 'en_US.UTF-8',
     PI_CODING_AGENT_DIR: join(workerDir, 'agent'),
     SALAAM_WORKER_CONFIG: JSON.stringify(config),
-    ...(route.connection?.configuration ?? {}),
+    ...route.connection?.configuration,
   };
 }
 

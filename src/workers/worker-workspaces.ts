@@ -236,7 +236,7 @@ export class WorkerWorkspaces {
       parent,
       String(row.mutation_key),
       String(row.patch_digest),
-      Number(row.before_revision),
+      row.before_revision,
       before,
       after,
     );
@@ -333,15 +333,18 @@ export class WorkerWorkspaces {
     return row;
   }
   inspect(id: string): unknown {
-    const row = this.row(id),
-      workspace = this.workspaces.get(String(row.parent_session)),
-      after = JSON.parse(this.artifacts.read(String(row.after_artifact))) as WorkspaceTree;
+    const row = this.row(id);
+    // Throws when the parent's workspace is unavailable; the receipt is not shown then.
+    this.workspaces.get(String(row.parent_session));
+    const after = JSON.parse(this.artifacts.read(String(row.after_artifact))) as WorkspaceTree;
     let current = false;
     try {
       current =
         row.state === 'applied' &&
         this.workspaces.verify(String(row.parent_session)).digest === digest(after);
-    } catch {}
+    } catch {
+      // An unverifiable workspace is reported as not current.
+    }
     return { ...row, after_digest: digest(after), current, verified_success: false };
   }
   reconcile(id: string): void {

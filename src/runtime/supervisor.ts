@@ -26,7 +26,7 @@ import {
   processIdentity,
 } from '../core/index.js';
 import type { CredentialStore } from '@earendil-works/pi-ai';
-import { PiProcess, PiCommandError } from './pi.js';
+import { PiProcess } from './pi.js';
 import type { Store } from '../store/index.js';
 import type { ManagedWork } from '../execution/index.js';
 import type { McpWork } from '../mcp/index.js';
@@ -607,7 +607,7 @@ export class Supervisor extends EventEmitter {
       .prepare('SELECT checks FROM task_steps WHERE attempt_id=?')
       .get(attempt) as { checks?: string } | undefined;
     try {
-      const checks = row?.checks ? JSON.parse(String(row.checks)) : [];
+      const checks = row?.checks ? JSON.parse(row.checks) : [];
       return Array.isArray(checks) && checks.length > 0;
     } catch {
       return false;
@@ -956,7 +956,9 @@ export class Supervisor extends EventEmitter {
         this.store.db
           .prepare("UPDATE workers SET state='exited' WHERE session_id=? AND epoch=?")
           .run(w.id, w.epoch);
-      } catch {}
+      } catch {
+        // The store may already be closed; the process is gone either way.
+      }
   }
   async close(): Promise<void> {
     clearInterval(this.monitor);

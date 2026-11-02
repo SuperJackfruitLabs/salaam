@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DockerHarnessBoundary } from './container.js';
+import type { DockerHarnessBoundary } from './container.js';
 import { HarnessRpc } from './rpc.js';
 
 /** Real readiness, not an advertised upstream capability. Runs without credentials or model traffic. */

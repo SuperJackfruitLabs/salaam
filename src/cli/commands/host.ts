@@ -135,7 +135,9 @@ export async function hostCommand(ctx: CliContext): Promise<boolean> {
       let supervisor: unknown = null;
       try {
         supervisor = JSON.parse(readFileSync(join(m.state, 'host/status.json'), 'utf8'));
-      } catch {}
+      } catch {
+        // No readable status yet: the supervisor reads as null.
+      }
       console.log(
         JSON.stringify(
           {

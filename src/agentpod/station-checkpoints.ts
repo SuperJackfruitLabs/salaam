@@ -59,7 +59,7 @@ export class StationCheckpoints {
           tree: String(result.tree_digest),
           sha256: typeof result.sha256 === 'string' ? result.sha256 : null,
           attempt: String(r.attempt_id),
-        } as Patch & { attempt: string };
+        };
       });
   }
   list(task: WorkTask): StationCheckpoint[] {

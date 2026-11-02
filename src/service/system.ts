@@ -68,7 +68,7 @@ export class SystemController {
     send(res, 200, { stopping: true });
     setImmediate(() => {
       void this.s.close().catch(() => {
-        console.error('Salaam stopped with a persistence error');
+        process.stderr.write('Salaam stopped with a persistence error\n');
         process.exitCode = 1;
       });
     });
@@ -92,6 +92,8 @@ export class SystemController {
     return {
       pid: process.pid,
       host_manifest_digest: s.hostManifestDigest,
+      // process.connected is undefined, not false, without an IPC channel.
+      // oxlint-disable-next-line typescript/no-unnecessary-boolean-literal-compare
       host_supervisor_connected: s.hostManifestDigest ? process.connected === true : null,
       host_receipt: s.hostReceipt,
       runtime_node: realpathSync(process.execPath),

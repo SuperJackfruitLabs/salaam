@@ -172,7 +172,7 @@ export function executionEvidence(
         'kind',
         stationHasChecks,
       ),
-    ].sort((a, b) => String(a.source + ':' + a.id).localeCompare(String(b.source + ':' + b.id))),
+    ].sort((a, b) => (a.source + ':' + a.id).localeCompare(b.source + ':' + b.id)),
   );
   for (const tool of tools) {
     if (tool.attempt_id !== null) attemptOwner(tool.attempt_id!, tool.session_id!);

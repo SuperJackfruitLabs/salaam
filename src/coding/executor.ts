@@ -137,7 +137,7 @@ assert.equal(fs.readFileSync('/sys/fs/cgroup/pids.max','utf8').trim(),'32');asse
 assert.equal(fs.readFileSync('/source/canary','utf8'),'readonly-input');assert.throws(()=>fs.writeFileSync('/source/canary','bad'));assert.throws(()=>fs.writeFileSync('/root-write','bad'));
 assert.throws(()=>fs.readFileSync(${JSON.stringify(join(dir, 'credential'))}));for(const name of ['ANTHROPIC_API_KEY','SALAAM_WORKER_CONFIG','SSH_AUTH_SOCK','DOCKER_HOST'])assert.equal(process.env[name],undefined);
 assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.statSync('/var/run/docker.sock'));fs.writeFileSync('proof-write','bounded-private-copy');console.log('coding-boundary-ok');`;
-      const command = 'node -e ' + "'" + program.replaceAll("'", "'\\''") + "'";
+      const command = "node -e '" + program.replaceAll("'", "'\\''") + "'";
       const exec = await this.exec(id, run, command, '.');
       await this.launch(exec);
       let status = { running: true, exit: null as number | null };

@@ -92,7 +92,9 @@ export class HarnessProtocol {
       void this.rpc.close();
       try {
         this.hooks.failed?.(error as Error);
-      } catch {}
+      } catch {
+        // The original error is rethrown below.
+      }
       throw error;
     }
     this.checkpoint = next;

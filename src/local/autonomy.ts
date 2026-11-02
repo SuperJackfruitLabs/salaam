@@ -123,9 +123,7 @@ export function validatePermissions(value: unknown): {
   return {
     mode: input.mode as PermissionMode,
     paths: [...paths].sort(),
-    ...(input.access === 'full' || input.access === 'yolo'
-      ? { access: input.access as SessionAccess }
-      : {}),
+    ...(input.access === 'full' || input.access === 'yolo' ? { access: input.access } : {}),
   };
 }
 export function configurePermissions(

@@ -59,9 +59,10 @@ function registerWebSearch(h: House): void {
           };
         } catch (error) {
           if (!(error instanceof ServiceError)) throw error;
+          const details: Record<string, unknown> = { code: error.code };
           return {
             content: [{ type: 'text' as const, text: error.message }],
-            details: { code: error.code } as Record<string, unknown>,
+            details,
             isError: true,
           };
         }
@@ -84,6 +85,7 @@ function registerWebFetch(h: House): void {
         type Page = { ok: boolean; text?: string; error?: string; url?: string };
         try {
           const page = await bridge<Page>('web.fetch', { tool_call_id: toolCallId, args: params });
+          const details: Record<string, unknown> = { ok: page.ok, url: page.url };
           return {
             content: [
               {
@@ -91,14 +93,15 @@ function registerWebFetch(h: House): void {
                 text: page.ok ? (page.text ?? '') : (page.error ?? 'Refused'),
               },
             ],
-            details: { ok: page.ok, url: page.url } as Record<string, unknown>,
+            details,
             isError: !page.ok,
           };
         } catch (error) {
           if (!(error instanceof ServiceError)) throw error;
+          const details: Record<string, unknown> = { code: error.code };
           return {
             content: [{ type: 'text' as const, text: error.message }],
-            details: { code: error.code } as Record<string, unknown>,
+            details,
             isError: true,
           };
         }

@@ -99,7 +99,7 @@ export function adjacent(s: Schedule, after: number, direction: 1 | -1 = 1): num
   }
   const [year, month, day] = local(after, s.timezone),
     [hour, minute] = s.time.split(':').map(Number);
-  const base = Date.UTC(year!, month! - 1, day!);
+  const base = Date.UTC(year!, month! - 1, day);
   for (let d = 0; d < 5; d++) {
     const dayBase = base + d * direction * 86400000,
       naive = dayBase + hour! * 3600000 + minute! * 60000;
@@ -107,13 +107,13 @@ export function adjacent(s: Schedule, after: number, direction: 1 | -1 = 1): num
     for (let h = -36; h <= 36; h += 6) {
       const sample = naive + h * 3600000,
         p = local(sample, s.timezone);
-      offsets.add(Date.UTC(p[0]!, p[1]! - 1, p[2]!, p[3]!, p[4]!, p[5]!) - sample);
+      offsets.add(Date.UTC(p[0]!, p[1]! - 1, p[2], p[3], p[4], p[5]) - sample);
     }
     const candidates = [...offsets]
       .map((offset) => naive - offset)
       .filter((ms) => {
         const p = local(ms, s.timezone);
-        return Date.UTC(p[0]!, p[1]! - 1, p[2]!, p[3]!, p[4]!) === naive;
+        return Date.UTC(p[0]!, p[1]! - 1, p[2], p[3], p[4]) === naive;
       })
       .sort((a, b) => a - b);
     const selected = s.fold === 'first' ? candidates[0] : candidates.at(-1);

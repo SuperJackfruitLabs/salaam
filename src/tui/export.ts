@@ -22,7 +22,7 @@ export async function conversationExport(socket: string, id: string): Promise<st
         bytes += Buffer.byteLength(chunk.text);
         if (bytes > 32 * 1024 * 1024)
           throw new Error('Export exceeds 32 MiB; no file was written.');
-        if (chunk.next_offset !== null && chunk.next_offset <= part!)
+        if (chunk.next_offset !== null && chunk.next_offset <= part)
           throw new Error('Invalid history pagination');
         part = chunk.next_offset;
       } while (part !== null);
@@ -32,7 +32,7 @@ export async function conversationExport(socket: string, id: string): Promise<st
       );
       entries.push(`## Entry ${entry.entry_id}\n\n${fence}json\n${text}\n${fence}`);
     }
-    if (page.next_offset !== null && page.next_offset <= offset!)
+    if (page.next_offset !== null && page.next_offset <= offset)
       throw new Error('Invalid history pagination');
     offset = page.next_offset;
   } while (offset !== null);

@@ -143,7 +143,7 @@ export class TaskBudget {
       this.deny(task.session_id, 'Provider payload exceeds declared per-request token bounds');
     const reservation = this.store.db
       .prepare('SELECT * FROM task_reservations WHERE attempt_id=? AND task_id=?')
-      .get(attempt!, task.id) as
+      .get(attempt, task.id) as
       { remaining_requests: number; remaining_tokens: number } | undefined;
     if (reservation) {
       if (reservation.remaining_requests < 1 || reservation.remaining_tokens < charge)
@@ -152,7 +152,7 @@ export class TaskBudget {
         .prepare(
           'UPDATE task_reservations SET remaining_requests=remaining_requests-1,remaining_tokens=remaining_tokens-? WHERE attempt_id=?',
         )
-        .run(charge, attempt!);
+        .run(charge, attempt);
       this.store.db
         .prepare(
           'UPDATE task_runtime SET requests_spent=requests_spent+1,reserved_requests=reserved_requests-1,token_units=token_units+?,reserved_tokens=reserved_tokens-? WHERE task_id=?',

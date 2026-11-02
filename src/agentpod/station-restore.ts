@@ -216,7 +216,7 @@ async function restoreWrite(
   );
   let result: Record<string, unknown>;
   try {
-    result = (await deps.helper(args)) as Record<string, unknown>;
+    result = await deps.helper(args);
   } catch (error) {
     const definite = error instanceof StationFilesDefiniteFailure;
     deps.store.transaction(() =>
@@ -227,7 +227,7 @@ async function restoreWrite(
         .run(
           definite ? 'failed' : 'outcome_unknown',
           canonical({
-            code: definite ? (error as ServiceError).code : 'station_execution_unconfirmed',
+            code: definite ? error.code : 'station_execution_unconfirmed',
           }),
           id,
           n,

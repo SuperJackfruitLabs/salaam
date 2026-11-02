@@ -127,7 +127,9 @@ export class ToolkitMcp {
     this.ready = false;
     try {
       this.failed();
-    } catch {}
+    } catch {
+      // A failing observer must not stop the close below.
+    }
     void this.close().catch(() => {});
   }
   private usable(): void {

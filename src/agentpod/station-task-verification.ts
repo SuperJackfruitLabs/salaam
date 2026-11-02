@@ -81,7 +81,7 @@ export class StationTaskVerification {
     this.stopping = true;
   }
   async drain(): Promise<void> {
-    await Promise.all([...this.jobs.values()]);
+    await Promise.all(this.jobs.values());
   }
   constructor(
     readonly store: Store,
@@ -185,7 +185,7 @@ export class StationTaskVerification {
         .run(observed.tree_digest, id);
       const prepared = this.station.prepareTaskCheck(
         id,
-        configured!.command,
+        configured.command,
         String(observed.tree_digest),
       );
       this.bind(id, prepared.id);
@@ -392,7 +392,7 @@ export class StationTaskVerification {
         !call.result_json
       )
         this.fail();
-      const result = JSON.parse(call.result_json!);
+      const result = JSON.parse(call.result_json);
       const unit = this.store.db
         .prepare('SELECT * FROM station_units WHERE call_id=?')
         .get(call.id);

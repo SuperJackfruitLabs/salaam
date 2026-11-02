@@ -155,7 +155,7 @@ export class StationSystemd {
         '--property=Id,LoadState,Description,InvocationID,ControlGroup,ExecMainPID,ActiveState,SubState,ExecMainCode,ExecMainStatus',
       ]));
     } catch (error) {
-      stdout = String((error as { stdout?: string }).stdout ?? '');
+      stdout = String((error as { stdout?: string | Buffer }).stdout ?? '');
       if (!stdout.includes('LoadState=not-found\n')) stationUnavailable();
     }
     const v = Object.fromEntries(

@@ -434,7 +434,7 @@ export class ToolkitAdmission {
           protocol_version: '2025-06-18',
           limits: limits as unknown as StdioLaunch['limits'],
         },
-        profile_digest: m.profile_digest as string,
+        profile_digest: m.profile_digest,
         manifest_digest: manifest.sha256,
         state_dir: m.state_dir as string,
       };

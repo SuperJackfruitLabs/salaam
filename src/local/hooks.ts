@@ -144,7 +144,7 @@ export function parseHooks(text: string): { config: HookConfig; problems: string
         }
         kept.push({
           command: hook.command,
-          ...(hook.timeout !== undefined ? { timeout: hook.timeout as number } : {}),
+          ...(hook.timeout !== undefined ? { timeout: hook.timeout } : {}),
         });
       }
       if (kept.length)

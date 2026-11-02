@@ -459,7 +459,7 @@ export class A2AInbound {
     let rpcId: unknown = null;
     try {
       if (this.stopping) throw Error('A2A service is stopping');
-      const token = String(req.headers.authorization ?? '').replace(/^Bearer /, ''),
+      const token = (req.headers.authorization ?? '').replace(/^Bearer /, ''),
         grants = this.read().grants;
       let found: A2AInboundGrant | undefined;
       for (const g of grants) if (equalToken(token, this.token(g))) found = g;

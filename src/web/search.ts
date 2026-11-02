@@ -87,7 +87,7 @@ export class WebSearch {
         headers: { accept: 'application/json', ...o?.headers },
       });
       if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-      return JSON.parse(r.body) as any;
+      return JSON.parse(r.body);
     };
     const add = (name: string, run: Search, intervalMs = 1000) =>
       this.backends.set(name, { name, run, intervalMs });
@@ -160,7 +160,7 @@ export class WebSearch {
       });
       if (r.status === 404) return [];
       if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-      const info = (JSON.parse(r.body) as any).info ?? {};
+      const info = JSON.parse(r.body).info ?? {};
       return [
         {
           title: `${clean(info.name, 200)} ${clean(info.version, 40)}`.trim(),
@@ -281,6 +281,8 @@ export class WebSearch {
     kind?: SearchKind;
     limit?: number;
   }): Promise<SearchOutcome> {
+    // The query arrives from a model's tool call; the conversion guards a non-string.
+    // oxlint-disable-next-line typescript/no-unnecessary-type-conversion
     const query = String(input.query ?? '')
       .trim()
       .slice(0, 300);
@@ -320,7 +322,7 @@ export class WebSearch {
           backend: name,
           ok: false,
           ms: Date.now() - started,
-          error: String((error as Error).message ?? error).slice(0, 200),
+          error: String((error as { message?: unknown }).message ?? error).slice(0, 200),
         });
       }
     }
@@ -359,7 +361,7 @@ export function loadWebSearchConfig(
       throw new Error(`${label} needs exactly one of key_env or key_file (never the key itself)`);
     if (hasEnv) {
       const v = env[p.key_env as string];
-      if (!v) throw new Error(`${label}: ${p.key_env} is not set`);
+      if (!v) throw new Error(`${label}: ${String(p.key_env)} is not set`);
       return v.trim();
     }
     const file = p.key_file as string;

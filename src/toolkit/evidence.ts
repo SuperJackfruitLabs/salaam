@@ -175,7 +175,7 @@ export function committedToolkitResolutionEvidence(
     } else if (receipt.resolution_id !== undefined || receipt.resolution_stop_digest !== undefined)
       invalid();
     return {
-      resolution_id: String(row.id),
+      resolution_id: row.id,
       call_revision: c.revision,
       request_digest: c.request_digest,
       source: 'operator-attestation' as const,

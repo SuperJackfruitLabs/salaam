@@ -396,7 +396,7 @@ export const DANGER_RULES: DangerRule[] = [
     test: (a) =>
       has(a, '-T', '--upload-file', '-F', '--form') ||
       a.some((x, i) => /^(-d|--data.*)$/.test(x) && a[i + 1]?.startsWith('@')) ||
-      a.some((x) => /^-d@/.test(x)),
+      a.some((x) => x.startsWith('-d@')),
     category: 'network',
     why: 'uploads a local file',
   },

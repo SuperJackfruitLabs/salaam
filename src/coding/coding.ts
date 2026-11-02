@@ -12,7 +12,8 @@ import { join, dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { commandTerminal, digest, ServiceError, string, integer } from '../core/index.js';
 import type { Store, Artifacts } from '../store/index.js';
-import { Workspaces, readTree, filePath } from './workspaces.js';
+import type { Workspaces } from './workspaces.js';
+import { readTree, filePath } from './workspaces.js';
 import type { WorkspaceTree } from '../core/index.js';
 import { COMMAND_LIMITS, type ExecutionBackend } from './executor.js';
 
@@ -260,7 +261,9 @@ export class CodingWork {
             resume_state: run.resume_state ?? run.state,
             error: 'Executor or persistence control failed',
           });
-        } catch {}
+        } catch {
+          // The run or the store may be gone; the failure below is reported either way.
+        }
         this.failed(session, error as Error);
       })
       .finally(() => this.jobs.delete(id));

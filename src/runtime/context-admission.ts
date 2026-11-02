@@ -81,7 +81,7 @@ function relative(path: unknown): string {
       )
   )
     invalid('Use relative workspace paths without private credential or Git directories');
-  return path as string;
+  return path;
 }
 function selection(value: unknown): ContextSelection {
   const s = object(value);
@@ -297,7 +297,7 @@ export class ContextAdmission {
           kind: 'skill',
           skill_id: sid,
           bundle_digest: expected,
-          sha256: files[entry]!.sha256,
+          sha256: files[entry].sha256,
           text: utf8(read(cwd, path + '/' + entry)),
         });
       }

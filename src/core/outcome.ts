@@ -61,7 +61,7 @@ export function parseAcpFailure(value: unknown): AcpFailure | undefined {
   ] as const)
     if (
       v[key] !== undefined &&
-      (typeof v[key] !== 'string' || !(v[key] as string).length || (v[key] as string).length > max)
+      (typeof v[key] !== 'string' || !v[key].length || v[key].length > max)
     )
       return;
   for (const key of ['sessionId', 'attemptId'])
@@ -297,7 +297,9 @@ function toolArgs(input: unknown): Record<string, unknown> {
     const value = typeof input === 'string' ? JSON.parse(input) : input;
     if (value && typeof value === 'object' && !Array.isArray(value))
       return value as Record<string, unknown>;
-  } catch {}
+  } catch {
+    // Unparseable arguments read as none.
+  }
   return {};
 }
 
@@ -354,7 +356,9 @@ function clippedArgs(input: unknown): Record<string, unknown> {
     if (m) {
       try {
         out[key] = JSON.parse(`"${m[1]}"`);
-      } catch {}
+      } catch {
+        // A malformed escape leaves the field out.
+      }
     }
   }
   // A clipped patch is a long one, so a write: a delete (content null) is short and never clipped.
@@ -405,7 +409,9 @@ export function toolMetadata(
   try {
     const value = typeof input === 'string' ? JSON.parse(input) : input;
     if (value && typeof value === 'object' && !Array.isArray(value)) args = value;
-  } catch {}
+  } catch {
+    // Unparseable arguments read as none.
+  }
   const action = String(args.action ?? '');
   const kind =
     name === 'salaam_board'

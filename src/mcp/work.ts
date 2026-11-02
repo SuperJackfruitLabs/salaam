@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Store, Artifacts } from '../store/index.js';
 import type { ManagedWork } from '../execution/index.js';
-import { McpAdmission } from './admission.js';
+import type { McpAdmission } from './admission.js';
 import { ManagedHttpMcp, McpHttpFailure, McpInputFailure, type McpReturnedResult } from './http.js';
 import {
   mcpAssignment,

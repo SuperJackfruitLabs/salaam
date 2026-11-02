@@ -86,7 +86,7 @@ export function workDecision(value: unknown): WorkDecision {
       uuid(v[k]),
     ) ||
     !['binding_digest', 'operation_digest'].every(
-      (k) => typeof v[k] === 'string' && /^[a-f0-9]{64}$/.test(v[k] as string),
+      (k) => typeof v[k] === 'string' && /^[a-f0-9]{64}$/.test(v[k]),
     ) ||
     !['plan_revision', 'approval_revision', 'expires_at'].every(
       (k) => Number.isSafeInteger(v[k]) && Number(v[k]) > 0,

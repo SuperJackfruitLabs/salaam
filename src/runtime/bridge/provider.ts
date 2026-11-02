@@ -128,8 +128,8 @@ export class ProviderHandlers {
       id,
       w.attempt,
       string(body.source_key, 'source_key', 256),
-      String(body.provider),
-      String(body.model),
+      body.provider,
+      body.model,
       { input: Buffer.byteLength(JSON.stringify(body.payload)), output: route.max_tokens },
     );
     this.s.store.transaction(() => {

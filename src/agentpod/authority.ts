@@ -18,7 +18,6 @@ import {
   ServiceError,
   object,
   integer,
-  type Session,
   agentpodBinding,
   AGENTPOD_LEASE_MS,
   type AgentPodBinding,
@@ -699,7 +698,9 @@ export class AgentPodAuthority {
     try {
       this.assert(row);
       authorized = true;
-    } catch {}
+    } catch {
+      // Not authorized: `authorized` stays false.
+    }
     const continued = this.store.db
       .prepare(
         "SELECT json_extract(payload,'$.continued_from') AS source FROM events WHERE session_id=? AND kind='agentpod.admitted' LIMIT 1",

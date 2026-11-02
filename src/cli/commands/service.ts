@@ -170,7 +170,9 @@ export async function serviceStartCommand(ctx: CliContext): Promise<boolean> {
       | undefined;
     try {
       health = await call(socket, '/v1/health');
-    } catch {}
+    } catch {
+      // An unreachable service reads as no health.
+    }
     if (health) {
       if (
         (health.agentpod_config ?? null) !== (agentpodConfig ? resolve(agentpodConfig) : null) ||

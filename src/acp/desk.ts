@@ -165,7 +165,9 @@ export async function ensureDeskService(state: string): Promise<void> {
   try {
     await call(socket, '/v1/health');
     return;
-  } catch {}
+  } catch {
+    // No service answered: start one below.
+  }
   await promisify(execFile)(
     process.execPath,
     [join(ROOT, 'bin/salaam.mjs'), 'service', 'start', '--state', state, '--provider', 'offline'],

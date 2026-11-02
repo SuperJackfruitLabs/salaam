@@ -259,7 +259,7 @@ async function handle(ctx: AcpContext, line: string): Promise<void> {
           data: { 'salaam.dev/failure': acpFailure(error) },
         },
       });
-    else console.error('ACP notification rejected:', (error as Error).message);
+    else process.stderr.write(`ACP notification rejected: ${(error as Error).message}\n`);
   }
 }
 
@@ -271,7 +271,7 @@ function readInput(ctx: AcpContext): Promise<void> {
     process.stdin.on('data', (chunk: string) => {
       buffer += chunk;
       if (Buffer.byteLength(buffer) > INPUT_LIMIT) {
-        console.error('ACP input exceeds 1 MiB');
+        process.stderr.write('ACP input exceeds 1 MiB\n');
         process.stdin.destroy();
         resolve();
         return;

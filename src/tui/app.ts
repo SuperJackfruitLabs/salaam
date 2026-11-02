@@ -26,7 +26,7 @@ import {
   turnKey,
   turnKeyAction,
 } from './turn-keys.js';
-import { join, resolve, basename } from 'node:path';
+import { join, basename } from 'node:path';
 import {
   mkdtempSync,
   writeFileSync,

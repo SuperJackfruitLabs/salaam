@@ -332,7 +332,7 @@ export class TaskDriver {
           .prepare(
             'UPDATE task_compactions SET skip_reason=? WHERE task_id=? AND step_id=? AND plan_revision=? AND epoch=?',
           )
-          .run(work.error!, task.id, stepId, task.plan_revision, epoch);
+          .run(work.error, task.id, stepId, task.plan_revision, epoch);
         this.store.event(task.session_id, 'work_task.compaction_skipped', {
           task_id: task.id,
           step_id: stepId,

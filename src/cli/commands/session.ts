@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { call, type SessionSnapshot } from '../../core/index.js';
 import { acquireControl, Outbox } from '../../tui/index.js';
 import type { CliContext } from './context.js';
+import type { SessionRevocation } from '../../store/index.js';
 
 export const ARTIFACTS_HELP = `salaam artifacts put SESSION_ID --text TEXT [--request-id ID] [--takeover]
 
@@ -77,7 +78,7 @@ export async function recordCommand(ctx: CliContext): Promise<boolean> {
       group === 'compactions'
         ? await call<{ session_id: string }>(socket, `/v1/compactions/${id}`)
         : null;
-    const session = work?.session_id ?? id!;
+    const session = work?.session_id ?? id;
     const client_id = randomUUID();
     const lease = await acquireControl(socket, session, client_id, args.includes('--takeover'));
     const request_id = option('--request-id') ?? randomUUID();
@@ -93,7 +94,7 @@ export async function recordCommand(ctx: CliContext): Promise<boolean> {
             }
           : undefined;
       if (
-        !['compactions', 'artifacts'].includes(group!) &&
+        !['compactions', 'artifacts'].includes(group) &&
         (!Number.isSafeInteger(expected) || expected < 0)
       )
         throw new Error('Supply the reviewed --task-version from task inspect');
@@ -160,10 +161,7 @@ export async function sessionRevokeCommand(ctx: CliContext): Promise<boolean> {
     const reason = option('--reason');
     if (!reason) throw new Error('Supply --reason');
     const request_id = option('--request-id') ?? randomUUID();
-    const saved = await call<import('../../store/index.js').SessionRevocation | null>(
-      socket,
-      `/v1/sessions/${id}/revocation`,
-    );
+    const saved = await call<SessionRevocation | null>(socket, `/v1/sessions/${id}/revocation`);
     if (saved?.request_id === request_id && saved.session_id === id) {
       if (saved.reason !== reason) throw new Error('Request ID already binds a different reason');
       console.log(JSON.stringify(saved, null, 2));

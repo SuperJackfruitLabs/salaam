@@ -109,7 +109,7 @@ function registerOperatorMcp(h: House): void {
           });
           return {
             content: [{ type: 'text', text: JSON.stringify(result) }],
-            details: { catalog: result as unknown, server: params.server, tool: params.tool },
+            details: { catalog: result, server: params.server, tool: params.tool },
           };
         }
         const result = await bridge<{
@@ -124,7 +124,7 @@ function registerOperatorMcp(h: House): void {
           content: result.content.length
             ? result.content
             : [{ type: 'text', text: 'MCP tool returned no content' }],
-          details: { catalog: undefined as unknown, server: params.server, tool: params.tool },
+          details: { catalog: undefined, server: params.server, tool: params.tool },
           isError: result.is_error,
         };
       },

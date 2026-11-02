@@ -29,12 +29,14 @@ export class Dispatcher {
     setImmediate(() => {
       if (this.paused || this.active.has(id)) return;
       const run = (async () => {
-        while (!this.paused && (await this.supervisor.dispatchNext(id))) {}
+        while (!this.paused && (await this.supervisor.dispatchNext(id))) {
+          // Each call dispatches one turn; the loop runs until none is ready.
+        }
       })()
         .catch((error) => {
           // Persistence failure leaves the durable dispatch boundary intact.
           // Recovery will interrupt it; never retry it from an in-memory catch.
-          console.error('Prompt dispatch stopped:', (error as Error).message);
+          process.stderr.write(`Prompt dispatch stopped: ${(error as Error).message}\n`);
         })
         .finally(() => this.active.delete(id));
       this.active.set(id, run);

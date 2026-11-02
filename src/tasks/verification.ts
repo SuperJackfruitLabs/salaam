@@ -8,13 +8,7 @@ import type { StationBinding } from '../runtime/index.js';
 import type { TaskBudget } from './budget.js';
 import type { CodingWork } from '../coding/index.js';
 import { readTree, type Workspaces } from '../coding/index.js';
-import {
-  canonical,
-  commandTerminal,
-  digest,
-  ServiceError,
-  type Controller,
-} from '../core/index.js';
+import { canonical, commandTerminal, digest, ServiceError } from '../core/index.js';
 
 export interface StationCheckEvidence {
   version: 1;
@@ -472,7 +466,7 @@ export class TaskVerification {
     this.assertIdle(current);
     this.store.db
       .prepare("UPDATE task_steps SET state='completed',review=? WHERE id=?")
-      .run('Verified by receipts: ' + receipts.map((r) => r!.id).join(', '), stepId);
+      .run('Verified by receipts: ' + receipts.map((r) => r.id).join(', '), stepId);
     this.store.db
       .prepare(
         "UPDATE durable_tasks SET state='verifying',reason='Step verified; bounded progression may continue',revision=revision+1 WHERE id=?",
@@ -484,7 +478,7 @@ export class TaskVerification {
     this.store.event(task.session_id, 'work_task.step_verified', {
       task_id: task.id,
       step_id: stepId,
-      check_ids: receipts.map((r) => r!.id),
+      check_ids: receipts.map((r) => r.id),
       verified: true,
     });
   }

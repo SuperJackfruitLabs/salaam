@@ -25,6 +25,15 @@
       }
     ],
     "no-console": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "ignoreRestSiblings": true,
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
     "no-control-regex": "off",
     "no-unmodified-loop-condition": "off"
   },

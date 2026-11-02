@@ -72,7 +72,7 @@ export class TurnCheckpoints {
       };
       this.store.transaction(() => this.store.event(id, 'checkpoint.captured', event));
     } catch (error) {
-      const reason = String((error as Error).message ?? error).slice(0, 500);
+      const reason = String((error as { message?: unknown }).message ?? error).slice(0, 500);
       this.store.transaction(() =>
         this.store.event(id, 'checkpoint.skipped', { attempt_id: attempt, reason }),
       );

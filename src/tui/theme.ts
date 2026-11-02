@@ -81,7 +81,9 @@ export function humanTool(tool: string, input?: string): string {
     const args = JSON.parse(input ?? '{}');
     action = args.action ?? '';
     path = args.path ? ' · ' + safeText(args.path) : '';
-  } catch {}
+  } catch {
+    // Unparseable arguments show no action or path.
+  }
   const names: Record<string, string> = {
     salaam_probe: 'Inspect session',
     salaam_review: 'Request approval',

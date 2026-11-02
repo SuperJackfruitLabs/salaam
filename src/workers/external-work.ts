@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Store, Artifacts } from '../store/index.js';
-import type { WorkTask, WorkspaceTree } from '../core/index.js';
+import type { WorkTask } from '../core/index.js';
 import type { ManagedWork } from '../execution/index.js';
 import type { ExternalBackend, ExternalCheckpoint } from './external-runtime.js';
 import {
@@ -139,7 +139,9 @@ export class ExternalWork {
       this.failed.add(child.id);
       try {
         this.failControl(child.child_session, error);
-      } catch {}
+      } catch {
+        // One child's failure must not stop the rest being failed.
+      }
     }
   }
   private binding(child: ChildTask): WorkerBinding {
@@ -182,7 +184,7 @@ export class ExternalWork {
     const input = this.store.db
       .prepare('SELECT text FROM submissions WHERE attempt_id=?')
       .get(child.child_attempt);
-    if (!input || this.artifacts.read(b.input_artifact!) !== input.text)
+    if (!input || this.artifacts.read(b.input_artifact) !== input.text)
       throw new ServiceError('worker_binding_changed', 'External prompt artifact changed');
     if (
       !task ||
@@ -670,7 +672,9 @@ export class ExternalWork {
           .get(id) as unknown as ChildTask);
       try {
         await this.cancel(child);
-      } catch {}
+      } catch {
+        // Closing is best effort per child; the remaining work is still awaited below.
+      }
     }
     await Promise.allSettled(this.active.values());
     await this.backend?.close?.();

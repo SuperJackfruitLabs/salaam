@@ -9,7 +9,8 @@ import {
   type SelectItem,
 } from '@earendil-works/pi-tui';
 import type { Approval, Operation } from '../core/index.js';
-import { SalaamTheme, safeText } from './theme.js';
+import type { SalaamTheme } from './theme.js';
+import { safeText } from './theme.js';
 
 function framed(theme: SalaamTheme, title: string, lines: string[], width: number): string[] {
   const inner = Math.max(1, width - 4);
@@ -352,16 +353,15 @@ export class ApprovalModal implements Component, Focusable {
       ...safeText(op.value)
         .split('\n')
         .flatMap((line) => wrapTextWithAnsi(diffInk(line), inner)),
-      ...[
-        ...(this.showDetails
-          ? [
-              '',
-              `Approval ${a.id} · revision ${a.revision} · worker epoch ${a.worker_epoch}`,
-              `Digest ${a.operation_digest}`,
-              `Target version ${safeText(op.target_version)} · expires ${new Date(a.expires_at).toISOString()}`,
-            ]
-          : []),
-      ].flatMap((line) => wrapTextWithAnsi(t.ink(line), inner)),
+      ...(this.showDetails
+        ? [
+            '',
+            `Approval ${a.id} · revision ${a.revision} · worker epoch ${a.worker_epoch}`,
+            `Digest ${a.operation_digest}`,
+            `Target version ${safeText(op.target_version)} · expires ${new Date(a.expires_at).toISOString()}`,
+          ]
+        : []
+      ).flatMap((line) => wrapTextWithAnsi(t.ink(line), inner)),
     ];
     const current = this.current();
     this.stale =

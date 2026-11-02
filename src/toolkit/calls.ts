@@ -395,7 +395,9 @@ export class ToolkitCalls {
         this.options.resources.fence(resourceId);
         try {
           this.unknown(id);
-        } catch {}
+        } catch {
+          // The original error, rethrown below, is what the caller needs.
+        }
       }
       throw error;
     }

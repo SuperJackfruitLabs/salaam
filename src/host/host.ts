@@ -17,7 +17,6 @@ import {
   closeSync,
   renameSync,
   existsSync,
-  statSync,
   realpathSync,
   constants,
   fstatSync,

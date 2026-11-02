@@ -20,7 +20,7 @@ export function approvals(ctx: PanelContext): void {
       const reviewed = await ctx.client.review(approval);
       // Desk sessions can approve for the session or always; strict work only ever approves once.
       const rules = await ctx.client.approvalRules().catch(() => ({ applies: false }));
-      const onceOnly = rules.applies ? onceOnlyReason(String(reviewed.operation.value)) : undefined;
+      const onceOnly = rules.applies ? onceOnlyReason(reviewed.operation.value) : undefined;
       showApproval(
         ctx,
         reviewed.approval,
@@ -215,7 +215,7 @@ This exact request will be approved without asking in every desk session on this
       },
       offerRules,
       onceOnly,
-      { desk, reason: approvalReason(String(operation.value), ctx.view.mode?.mode) },
+      { desk, reason: approvalReason(operation.value, ctx.view.mode?.mode) },
     ),
     86,
   );
