@@ -20,8 +20,9 @@ export interface StdioLaunch {
   };
 }
 export interface StdioLifecycle {
-  /** Synchronous durable intent before OS spawn; a Promise cannot admit startup. */
-  starting(): void;
+  /** Synchronous durable intent before OS spawn; a Promise cannot admit startup. Called
+   * unbound. */
+  starting: () => void;
   /** Synchronous actual PID persistence before SDK initialization/tool delivery. */
   spawned(pid: number): void;
   /** Immediate control fence, including when persisting a failure is impossible. */

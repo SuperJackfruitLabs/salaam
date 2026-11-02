@@ -23,6 +23,8 @@ export function installProviderTransport() {
   globalThis.fetch = (input, init) =>
     scope.getStore()?.fetch(input, init) ??
     Promise.reject(new Error('Unadmitted worker network request'));
+  // The original method, kept to be called with each client as this.
+  // oxlint-disable-next-line typescript/unbound-method
   const send = BedrockRuntimeClient.prototype.send;
   BedrockRuntimeClient.prototype.send = function (
     this: BedrockRuntimeClient,

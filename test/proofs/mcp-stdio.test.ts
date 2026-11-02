@@ -102,6 +102,8 @@ test('a denied pre-send grant never hands a tool call to the child', async () =>
 });
 
 test('an asynchronous guard cannot admit tool delivery before its authority check settles', async () => {
+  // The guard is async on purpose: the test proves an async guard is refused.
+  // oxlint-disable-next-line typescript/no-misused-promises
   const f = fixture('normal', async () => {});
   await f.connect();
   await expect(

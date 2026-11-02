@@ -181,40 +181,43 @@ const handler = {
   },
 };
 const transport = new JsonRpcTransportHandler(handler),
-  server = createServer(async (req, res) => {
-    try {
-      const actual = Buffer.from(String(req.headers.authorization ?? '')),
-        expected = Buffer.from('Bearer ' + config.token);
-      if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-        res.writeHead(401);
-        res.end();
-        return;
+  server = createServer((req, res) => {
+    // A rejection stays unhandled, as it was when this handler was async.
+    void (async () => {
+      try {
+        const actual = Buffer.from(String(req.headers.authorization ?? '')),
+          expected = Buffer.from('Bearer ' + config.token);
+        if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+          res.writeHead(401);
+          res.end();
+          return;
+        }
+        if (req.method === 'GET' && req.url === '/.well-known/agent-card.json') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(card()));
+          return;
+        }
+        if (req.method !== 'POST' || req.url !== '/a2a' || req.headers['a2a-version'] !== '1.0')
+          throw Error('Unconfigured wire endpoint');
+        let size = 0;
+        const chunks = [];
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 262144) throw Error('Peer request bound');
+          chunks.push(Buffer.from(chunk));
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const result = await transport.handle(
+          body,
+          new ServerCallContext({ requestedVersion: '1.0', tenant: config.tenant }),
+        );
+        res.writeHead(200, { 'content-type': 'application/json', 'A2A-Version': '1.0' });
+        res.end(JSON.stringify(result));
+      } catch {
+        if (!res.headersSent) res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Rejected independent acceptance request' }));
       }
-      if (req.method === 'GET' && req.url === '/.well-known/agent-card.json') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(card()));
-        return;
-      }
-      if (req.method !== 'POST' || req.url !== '/a2a' || req.headers['a2a-version'] !== '1.0')
-        throw Error('Unconfigured wire endpoint');
-      let size = 0;
-      const chunks = [];
-      for await (const chunk of req) {
-        size += chunk.length;
-        if (size > 262144) throw Error('Peer request bound');
-        chunks.push(Buffer.from(chunk));
-      }
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      const result = await transport.handle(
-        body,
-        new ServerCallContext({ requestedVersion: '1.0', tenant: config.tenant }),
-      );
-      res.writeHead(200, { 'content-type': 'application/json', 'A2A-Version': '1.0' });
-      res.end(JSON.stringify(result));
-    } catch {
-      if (!res.headersSent) res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Rejected independent acceptance request' }));
-    }
+    })();
   });
 function card() {
   return AgentCard.toJSON(

@@ -139,6 +139,8 @@ test('an asynchronous private check cannot create even a prepared process resour
   const { f, launch, spec, resources } = await setup();
   try {
     expect(() =>
+      // The check is async on purpose: the test proves an async check is refused.
+      // oxlint-disable-next-line typescript/no-misused-promises
       resources.transport(spec, launch, async () => {
         throw Error('asynchronous check is not authority');
       }),

@@ -66,7 +66,7 @@ test('an interactive session sends AGENTS.md to the model without review, and an
     expect(f.service.tasks.admitted!.inspect(id).state).toBe('empty');
   } finally {
     await client.leave().catch(() => {});
-    f.close();
+    void f.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

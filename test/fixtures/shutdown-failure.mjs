@@ -14,7 +14,7 @@ const service = await SalaamService.open({
       launch.env,
     );
     workerStopped = false;
-    pi.closed.then(() => {
+    void pi.closed.then(() => {
       workerStopped = true;
     });
     return pi;

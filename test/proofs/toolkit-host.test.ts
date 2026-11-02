@@ -243,10 +243,14 @@ test('normal CLI cold startup applies schema4 native tools before actual Pi and 
         // Linux identities are opaque boot/start/executable/argv hashes. Compare
         // the identity captured from this test's successful private host startup;
         // never treat that hash as a printable argv or signal a replacement PID.
+        // Failing here, even over the body's own failure, is deliberate: a changed supervisor
+        // must never be signalled.
+        // oxlint-disable-next-line no-unsafe-finally
         if (identity !== supervisorIdentity) throw Error('Owned host supervisor identity changed');
         try {
           process.kill(supervisor, 'SIGTERM');
         } catch (e) {
+          // oxlint-disable-next-line no-unsafe-finally
           if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e;
         }
         await until(() => processIdentity(supervisor!) !== identity, Boolean, 10000);

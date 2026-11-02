@@ -31,7 +31,7 @@ test('an interactive session switches model and thinking between turns on the sa
     );
   } finally {
     await client.leave().catch(() => {});
-    f.close();
+    void f.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -46,7 +46,7 @@ test('strict sessions cannot switch route', async () => {
     );
     expect(f.service.tasks.instructions!.applies(session.id)).toBe(false);
   } finally {
-    f.close();
+    void f.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

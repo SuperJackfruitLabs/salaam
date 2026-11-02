@@ -12,8 +12,9 @@ export interface ExternalCheckpoint {
 
 export interface ExternalHooks {
   failed(error: Error): void;
-  modelRequest(id: string, bytes: number, output: number): void;
-  checkpoint(value: ExternalCheckpoint): undefined;
+  /** Called unbound, like checkpoint. */
+  modelRequest: (id: string, bytes: number, output: number) => void;
+  checkpoint: (value: ExternalCheckpoint) => undefined;
   receipt(value: unknown): undefined;
   permission(method: string, params: Record<string, unknown>): Promise<'approve' | 'deny'>;
   toolResult(id: string, success: boolean, receipt: unknown): void;

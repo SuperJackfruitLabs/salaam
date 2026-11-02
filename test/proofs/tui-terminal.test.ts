@@ -21,32 +21,35 @@ test('an observer frame can precede its held snapshot without approving unseen w
     release = done;
   });
   const upstreams = new Set<ReturnType<typeof request>>();
-  const proxy = createServer(async (req, res) => {
-    if (!snapshotHeld && req.method === 'GET' && req.url?.endsWith('/snapshot')) {
-      snapshotHeld = true;
-      await gate;
-    }
-    if (res.destroyed) return;
-    const upstream = request(
-      {
-        socketPath: f.service.socket,
-        path: req.url,
-        method: req.method,
-        headers: req.headers,
-        agent: false,
-      },
-      (reply) => {
-        res.writeHead(reply.statusCode ?? 500, reply.headers);
-        reply.pipe(res);
-      },
-    );
-    upstreams.add(upstream);
-    upstream.on('error', () => res.destroy());
-    res.once('close', () => {
-      upstreams.delete(upstream);
-      upstream.destroy();
-    });
-    req.pipe(upstream);
+  const proxy = createServer((req, res) => {
+    // A rejection stays unhandled, as it was when this handler was async.
+    void (async () => {
+      if (!snapshotHeld && req.method === 'GET' && req.url?.endsWith('/snapshot')) {
+        snapshotHeld = true;
+        await gate;
+      }
+      if (res.destroyed) return;
+      const upstream = request(
+        {
+          socketPath: f.service.socket,
+          path: req.url,
+          method: req.method,
+          headers: req.headers,
+          agent: false,
+        },
+        (reply) => {
+          res.writeHead(reply.statusCode ?? 500, reply.headers);
+          reply.pipe(res);
+        },
+      );
+      upstreams.add(upstream);
+      upstream.on('error', () => res.destroy());
+      res.once('close', () => {
+        upstreams.delete(upstream);
+        upstream.destroy();
+      });
+      req.pipe(upstream);
+    })();
   });
   try {
     await new Promise<void>((done) => proxy.listen(join(state, 'operator.sock'), done));
