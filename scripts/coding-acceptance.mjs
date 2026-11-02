@@ -12,6 +12,7 @@ import { digest } from '../dist/src/core/protocol.js';
 import { readTree } from '../dist/src/coding/workspaces.js';
 import { commandTerminal } from '../dist/src/coding/coding.js';
 import { providerRoute } from '../dist/src/providers/config.js';
+import { hashTree } from '../dist/src/core/config.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const option = (name) => {
@@ -44,18 +45,8 @@ const report = {
   operator: { platform: process.platform, arch: process.arch, node: process.version },
   fixture_version: fixtures.version,
   fixture_digest: hash(readFileSync(fixturePath)),
-  compiled_digest: digest(
-    [
-      'coding/coding',
-      'coding/executor',
-      'coding/workspaces',
-      'runtime/supervisor',
-      'runtime/house-extension',
-      'service/service',
-      'core/protocol',
-      'core/config',
-    ].map((name) => readFileSync(join(root, `dist/src/${name}.js`), 'utf8')),
-  ),
+  // The whole build: code the run exercises lives in many module files.
+  compiled_digest: hashTree(join(root, 'dist/src')),
   tasks: [],
   success: false,
   live_requested: live,
