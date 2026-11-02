@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, readFileSync, writeFileSync, rmSync } from '
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { ListToolsResultSchema, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import { ManagedStdioTransport } from '../../src/mcp-stdio.js';
+import { ManagedStdioTransport } from '../../src/mcp/stdio.js';
 
 const roots: string[] = [];
 const active: ManagedStdioTransport[] = [];

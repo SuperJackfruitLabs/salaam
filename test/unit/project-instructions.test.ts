@@ -1,15 +1,15 @@
 import { afterEach, expect, test } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
-import { providerRoute } from '../../src/provider-config.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
+import { providerRoute } from '../../src/providers/config.js';
 import {
   discoverInstructions,
   INSTRUCTION_FILE_BYTES,
   ProjectInstructions,
-} from '../../src/project-instructions.js';
+} from '../../src/runtime/project-instructions.js';
 
 const roots: string[] = [];
 afterEach(() => {

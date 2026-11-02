@@ -1,11 +1,15 @@
 import { expect, test, vi } from 'vitest';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import type { EffectConnector, EffectInput, EffectReceipt } from '../../src/effect-connector.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import type {
+  EffectConnector,
+  EffectInput,
+  EffectReceipt,
+} from '../../src/execution/effect-connector.js';
 import { until } from '../helpers.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Outbox } from '../../src/attach.js';
+import { Outbox } from '../../src/tui/attach.js';
 import { randomUUID } from 'node:crypto';
 
 function setup(connector?: EffectConnector) {

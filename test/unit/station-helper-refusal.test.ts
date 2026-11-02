@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { definiteHelperRefusal } from '../../src/station-work.js';
+import { definiteHelperRefusal } from '../../src/agentpod/station-work.js';
 
 // Fix 2: the helper refuses a request it cannot decode before it executes anything
 // (station_request_invalid, written as exactly {version, ok, code}). That changed nothing, so the

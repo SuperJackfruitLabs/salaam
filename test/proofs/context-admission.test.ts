@@ -2,10 +2,10 @@ import { expect, test } from 'vitest';
 import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { ROOT } from '../../src/config.js';
-import { call } from '../../src/transport.js';
-import { SalaamService } from '../../src/service.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { ROOT } from '../../src/core/config.js';
+import { call } from '../../src/core/transport.js';
+import { SalaamService } from '../../src/service/service.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 

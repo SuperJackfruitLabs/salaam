@@ -1,11 +1,11 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
 import { ready, control, until, fake } from '../helpers.js';
-import { readTree } from '../../src/workspaces.js';
-import { digest, type Session, type SessionSnapshot } from '../../src/protocol.js';
+import { readTree } from '../../src/coding/workspaces.js';
+import { digest, type Session, type SessionSnapshot } from '../../src/core/protocol.js';
 
 test('real Pi earns file readiness, reads and patches the owned copy through the bridge', async () => {
   const dir = mkdtempSync('/tmp/sal-coding-'),

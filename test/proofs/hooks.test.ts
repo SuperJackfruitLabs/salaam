@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
+import { OperatorClient } from '../../src/tui/client.js';
 
 // Phase 4b through the real service: a PreToolUse hook blocks before any approval exists, a hook's
 // "allow" never approves, a repository's hooks run only once trusted, and UserPromptSubmit can stop

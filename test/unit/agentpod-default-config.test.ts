@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { defaultAgentPodConfig } from '../../src/agentpod-default-config.js';
+import { defaultAgentPodConfig } from '../../src/agentpod/default-config.js';
 
 describe('default AgentPod pins', () => {
   it('uses the per-user pins file when it exists', () => {
@@ -17,7 +17,7 @@ describe('default AgentPod pins', () => {
     expect(defaultAgentPodConfig({ HOME: '/home/u' }, () => false)).toBeUndefined();
   });
   it('is what service start falls back to', () => {
-    const cli = readFileSync(new URL('../../src/cli.ts', import.meta.url), 'utf8');
+    const cli = readFileSync(new URL('../../src/cli/cli.ts', import.meta.url), 'utf8');
     expect(cli).toMatch(
       /option\('--agentpod-config'\)\s*\?\?\s*defaultAgentPodConfig\(process\.env, existsSync\)/,
     );

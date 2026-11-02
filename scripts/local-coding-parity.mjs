@@ -11,13 +11,13 @@ import {
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { strict as assert } from 'node:assert';
-import { SalaamService } from '../dist/src/service.js';
-import { OperatorClient } from '../dist/src/tui-client.js';
-import { PiProcess } from '../dist/src/pi.js';
-import { ROOT, PI_CLI } from '../dist/src/config.js';
-import { providerRoute, DEFAULT_CLAUDE_MODEL } from '../dist/src/provider-config.js';
-import { resolveProviderAuth } from '../dist/src/provider-auth.js';
-import { digest } from '../dist/src/protocol.js';
+import { SalaamService } from '../dist/src/service/service.js';
+import { OperatorClient } from '../dist/src/tui/client.js';
+import { PiProcess } from '../dist/src/runtime/pi.js';
+import { ROOT, PI_CLI } from '../dist/src/core/config.js';
+import { providerRoute, DEFAULT_CLAUDE_MODEL } from '../dist/src/providers/config.js';
+import { resolveProviderAuth } from '../dist/src/providers/auth.js';
+import { digest } from '../dist/src/core/protocol.js';
 if (!process.argv.includes('--run'))
   throw new Error('Use --run to authorize live provider requests on synthetic fixtures');
 const route = providerRoute('anthropic', DEFAULT_CLAUDE_MODEL, 4096);

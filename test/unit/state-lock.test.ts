@@ -4,12 +4,12 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { acquireStateLock } from '../../src/state-lock.js';
-import { ROOT } from '../../src/config.js';
+import { acquireStateLock } from '../../src/core/state-lock.js';
+import { ROOT } from '../../src/core/config.js';
 
 test('a second service cannot lock state; process death releases the OS lock', async () => {
   const dir = mkdtempSync('/tmp/sal-lock-');
-  const module = pathToFileURL(join(ROOT, 'dist/src/state-lock.js')).href;
+  const module = pathToFileURL(join(ROOT, 'dist/src/core/state-lock.js')).href;
   const child = spawn(
     process.execPath,
     [

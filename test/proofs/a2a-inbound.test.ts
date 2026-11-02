@@ -13,9 +13,9 @@ import {
 import { ClientFactory, JsonRpcTransportFactory } from '@a2a-js/sdk/client';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
-import { A2AInbound, type A2AInboundGrant } from '../../src/a2a-inbound.js';
+import { ROOT } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
+import { A2AInbound, type A2AInboundGrant } from '../../src/a2a/inbound.js';
 
 test('official SDK peer submits through an explicit grant; duplicate/restarted requests retain one native child and task', async () => {
   const { f, g, connect, message } = await inboundFixture();

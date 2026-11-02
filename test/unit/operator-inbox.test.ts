@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { call } from '../../src/transport.js';
+import { call } from '../../src/core/transport.js';
 import { client } from '../acp-helpers.js';
-import { acquireControl } from '../../src/attach.js';
+import { acquireControl } from '../../src/tui/attach.js';
 test('shared inbox survives restart and acknowledgement never decides approval; changed revisions reopen attention', async () => {
   const f = await taskFixture();
   try {

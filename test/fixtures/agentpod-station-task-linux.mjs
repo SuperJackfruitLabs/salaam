@@ -20,17 +20,17 @@ import {
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { SalaamService } from '../../dist/src/service.js';
+import { SalaamService } from '../../dist/src/service/service.js';
 import {
   stationRuntimeFingerprint,
   stationWorkspaceIdentity,
   readStationConfig,
-} from '../../dist/src/station-config.js';
-import { providerRoute } from '../../dist/src/provider-config.js';
-import { mcpCatalogDigest, mcpToolDigest } from '../../dist/src/mcp-http.js';
+} from '../../dist/src/agentpod/station-config.js';
+import { providerRoute } from '../../dist/src/providers/config.js';
+import { mcpCatalogDigest, mcpToolDigest } from '../../dist/src/mcp/http.js';
 import corpus from './agentpod-mcp-v1.json' with { type: 'json' };
-import { digest } from '../../dist/src/protocol.js';
-import { call as transportCall } from '../../dist/src/transport.js';
+import { digest } from '../../dist/src/core/protocol.js';
+import { call as transportCall } from '../../dist/src/core/transport.js';
 // Actual 50k-file verification performs bounded native observations; this is not a cached status read.
 const call = (socket, path, body) => transportCall(socket, path, body, undefined, 120000);
 

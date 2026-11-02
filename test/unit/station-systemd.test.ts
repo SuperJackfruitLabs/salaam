@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
-import { StationSystemd } from '../../src/station-systemd.js';
-import type { StationConfig } from '../../src/station-config.js';
+import { StationSystemd } from '../../src/agentpod/station-systemd.js';
+import type { StationConfig } from '../../src/agentpod/station-config.js';
 const id = 'a'.repeat(64),
   context = 'b'.repeat(64),
   invocation = 'c'.repeat(32);

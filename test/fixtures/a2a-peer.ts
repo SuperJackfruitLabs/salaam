@@ -8,8 +8,8 @@ import {
   ServerCallContext,
   type A2ARequestHandler,
 } from '@a2a-js/sdk/server';
-import { digest } from '../../src/protocol.js';
-import type { A2APeer } from '../../src/a2a-peer.js';
+import { digest } from '../../src/core/protocol.js';
+import type { A2APeer } from '../../src/a2a/peer.js';
 
 /** Actual pinned official SDK wire serialization; no live model or peer-product claim. */
 export async function sdkPeer() {

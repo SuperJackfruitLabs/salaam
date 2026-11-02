@@ -1,9 +1,9 @@
 import { test, expect, vi } from 'vitest';
-import { SalaamApp } from '../../src/tui.js';
-import { ChoiceModal, ConfirmModal } from '../../src/tui-modals.js';
-import { rewindSummary } from '../../src/tui-review.js';
-import type { SessionSnapshot } from '../../src/protocol.js';
-import type { ChangeReview, RewindReview, TurnCheckpoint } from '../../src/turn-rewind.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import { ChoiceModal, ConfirmModal } from '../../src/tui/modals.js';
+import { rewindSummary } from '../../src/tui/review.js';
+import type { SessionSnapshot } from '../../src/core/protocol.js';
+import type { ChangeReview, RewindReview, TurnCheckpoint } from '../../src/runtime/turn-rewind.js';
 
 const point = (turn: number, text: string): TurnCheckpoint => ({
   turn,

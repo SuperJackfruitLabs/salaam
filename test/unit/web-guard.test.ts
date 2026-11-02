@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { guardedRequest, isPublicAddress } from '../../src/web-guard.js';
+import { guardedRequest, isPublicAddress } from '../../src/web/guard.js';
 
 // Web search and fetch run in the daemon, outside the command sandbox, so they must never reach
 // this machine, the LAN or a cloud metadata service — whatever a URL or its DNS says.

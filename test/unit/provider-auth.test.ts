@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync, chmodSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { ProviderCredentialStore } from '../../src/provider-auth.js';
+import { ProviderCredentialStore } from '../../src/providers/auth.js';
 
 test('provider credentials are private, scoped, atomic and serialized through refresh', async () => {
   const dir = mkdtempSync('/tmp/sal-provider-auth-');
@@ -65,7 +65,7 @@ test('unsafe credential files and directory symlinks fail closed', async () => {
 });
 
 test('OAuth installation identity is stable and private', async () => {
-  const { providerDeviceId } = await import('../../src/provider-auth.js');
+  const { providerDeviceId } = await import('../../src/providers/auth.js');
   const dir = mkdtempSync('/tmp/sal-provider-id-');
   try {
     const id = providerDeviceId(dir);
@@ -80,7 +80,7 @@ test('OAuth installation identity is stable and private', async () => {
 test('credential refresh locks serialize separate CLI and daemon processes', async () => {
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
-  const { ROOT } = await import('../../src/config.js');
+  const { ROOT } = await import('../../src/core/config.js');
   const dir = mkdtempSync('/tmp/sal-provider-process-auth-');
   try {
     const store = new ProviderCredentialStore(dir);
@@ -109,7 +109,7 @@ test('CLI provider setup, metadata status and logout use an isolated credential 
   const { spawn, execFile } = await import('node:child_process');
   const { once } = await import('node:events');
   const { promisify } = await import('node:util');
-  const { ROOT } = await import('../../src/config.js');
+  const { ROOT } = await import('../../src/core/config.js');
   const { existsSync } = await import('node:fs');
   const home = mkdtempSync('/tmp/sal-cli-provider-home-');
   const env = {

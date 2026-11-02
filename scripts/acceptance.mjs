@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { bundleDigest } from '../dist/src/config.js';
+import { bundleDigest } from '../dist/src/core/config.js';
 import { acceptancePlan, sourceIdentity, proofs, portfolios, hash } from './ci-plan.mjs';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const plan = acceptancePlan(process.argv.slice(2)),
@@ -73,6 +73,7 @@ try {
   if (plan.baseline) {
     await execute('format', 'npm', ['run', 'format:check']);
     await execute('types', 'npm', ['run', 'check']);
+    await execute('lint', 'npm', ['run', 'lint']);
     await execute('pin', 'npm', ['run', 'verify:pi']);
     const full = join(dir, 'full-suite.json');
     await execute('full-suite', 'npm', ['test', '--', '--reporter=json', '--outputFile=' + full]);

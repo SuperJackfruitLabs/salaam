@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyCommand, DANGER_RULES } from '../../src/command-danger.js';
+import { classifyCommand, DANGER_RULES } from '../../src/local/command-danger.js';
 
 // Operator ruling 2026-10-31: full access runs commands without asking, except the ones this check
 // calls dangerous. The corpus is the contract: bypass attempts must ask, ordinary dev work must not.

@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 import { normalizeContext } from '@earendil-works/pi-ai';
-import { PI_PROVIDERS, providerRoute } from '../../src/provider-config.js';
-import { materialize, generationOptions } from '../../src/provider-model.js';
-import { validateProviderPayload } from '../../src/provider-payload.js';
+import { providerRoute } from '../../src/providers/config.js';
+import { PI_PROVIDERS } from '../../src/core/provider-catalog.js';
+import { materialize, generationOptions } from '../../src/providers/model.js';
+import { validateProviderPayload } from '../../src/providers/payload.js';
 
 test('every pinned Pi provider and chat model is addressable without network discovery', () => {
   expect(PI_PROVIDERS).toHaveLength(42);

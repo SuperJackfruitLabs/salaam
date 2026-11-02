@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { Store } from '../../src/store.js';
-import { pickerSummary } from '../../src/session-pick.js';
+import { Store } from '../../src/store/store.js';
+import { pickerSummary } from '../../src/service/picker-summary.js';
 
 // Trial polish C (2026-10-31): the session list says what you last asked and when, for desk
 // sessions only; board and station sessions list as before.
@@ -39,8 +39,8 @@ test('a desk session lists its newest prompt and when its transcript last change
 
 // Live pass 2026-11-01: a !command was the latest prompt, and the picker showed the fixed instruction.
 test('a !command prompt shows in the picker as typed', async () => {
-  const { pickerSummary } = await import('../../src/session-pick.js');
-  const { shellPassthrough } = await import('../../src/shell-passthrough.js');
+  const { pickerSummary } = await import('../../src/service/picker-summary.js');
+  const { shellPassthrough } = await import('../../src/local/shell-passthrough.js');
   const summary = pickerSummary(
     { id: 's', capabilities: ['local-coding-reviewed'], pi_session_file: null },
     { lastPrompt: () => shellPassthrough('!git status')! },

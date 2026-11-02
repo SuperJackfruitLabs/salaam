@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest';
-import { ApprovalModal, approvalReason } from '../../src/tui-modals.js';
-import { toolLine, progressLine, activityVerb } from '../../src/tui-activity.js';
-import { SalaamTheme } from '../../src/tui-theme.js';
-import type { Approval, Operation } from '../../src/protocol.js';
+import { ApprovalModal, approvalReason } from '../../src/tui/modals.js';
+import { toolLine, progressLine, activityVerb } from '../../src/tui/activity.js';
+import { SalaamTheme } from '../../src/tui/theme.js';
+import type { Approval, Operation } from '../../src/core/protocol.js';
 
 // Trial polish track A: approvals open on Approve once, can be denied with a reason, say why they
 // ask, and show desk edits as a diff without a read-to-the-end gate; tool calls read as one line.

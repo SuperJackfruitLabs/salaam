@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
+import { Store } from '../../src/store/store.js';
 
 test('v19 upgrade preserves immutable receipts and history without inventing verified outcomes', () => {
   const dir = mkdtempSync('/tmp/sal-outcome-migration-'),

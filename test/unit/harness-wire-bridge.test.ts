@@ -1,9 +1,9 @@
 import { test, expect } from 'vitest';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import { AnthropicHarnessGateway } from '../../src/harness-model-gateway.js';
-import { HarnessWireBridge } from '../../src/harness-wire-bridge.js';
-import type { GatewayRequest } from '../../src/harness-container.js';
+import { AnthropicHarnessGateway } from '../../src/harness/model-gateway.js';
+import { HarnessWireBridge } from '../../src/harness/wire-bridge.js';
+import type { GatewayRequest } from '../../src/harness/container.js';
 const token = 'wire-fixture-token-'.repeat(4);
 function fixture(
   protocol: 'google' | 'responses',

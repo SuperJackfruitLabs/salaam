@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { mkdtempSync } from 'node:fs';
-import { Store } from '../../src/store.js';
-import { AgentProfiles } from '../../src/agent-profiles.js';
+import { Store } from '../../src/store/store.js';
+import { AgentProfiles } from '../../src/runtime/agent-profiles.js';
 
 // Item 8: the task critic's narrow authority. Only the built-in salaam/reviewer, only when the
 // caller's authorize (the plan declares a critic) holds; no operator controller is involved.

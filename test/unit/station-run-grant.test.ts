@@ -1,10 +1,10 @@
 import { test, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { Store } from '../../src/store.js';
-import { ManagedWork } from '../../src/managed.js';
-import { StationWork } from '../../src/station-work.js';
-import { RunGrants } from '../../src/run-grants.js';
-import { digest } from '../../src/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import { RunGrants } from '../../src/tasks/run-grants.js';
+import { digest } from '../../src/core/protocol.js';
 
 // "Approve for this run": a later covered write is answered by the run's grant, journaled with it.
 function fixture() {

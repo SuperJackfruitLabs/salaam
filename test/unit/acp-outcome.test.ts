@@ -8,10 +8,10 @@ import {
   parseAcpFailure,
   providerRefusalEvent,
   planUpdate,
-} from '../../src/acp-outcome.js';
+} from '../../src/core/outcome.js';
 import corpus from '../fixtures/agentpod-acp-v1.json' with { type: 'json' };
-import { ServiceError } from '../../src/protocol.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
+import { ServiceError } from '../../src/core/protocol.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
 
 for (const sample of corpus.failures)
   test(`shared ACP corpus: ${sample.name}`, () => {
@@ -212,7 +212,7 @@ test('a title never carries a secret from a URL, a control character, or more th
 });
 
 test('a failed tool names itself, and only a plain identifier is echoed', async () => {
-  const { toolFailureMessage } = await import('../../src/supervisor.js');
+  const { toolFailureMessage } = await import('../../src/runtime/turn-outcome.js');
   expect(toolFailureMessage('salaam_station')).toBe('Tool execution failed (tool salaam_station)');
   for (const bad of [undefined, 7, '', 'x'.repeat(65), 'rm -rf /', 'a\nb'])
     expect(toolFailureMessage(bad)).toBe('Tool execution failed');

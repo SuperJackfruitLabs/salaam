@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { taskFixture, checkedPlan } from '../task-helpers.js';
 import { until } from '../helpers.js';
-import { ROOT } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
-import { readTree } from '../../src/workspaces.js';
-import type { TeamAssignment } from '../../src/team-work.js';
+import { ROOT } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
+import { readTree } from '../../src/coding/workspaces.js';
+import type { TeamAssignment } from '../../src/tasks/team-work.js';
 
 async function setup(conflict = false) {
   const f = await taskFixture({

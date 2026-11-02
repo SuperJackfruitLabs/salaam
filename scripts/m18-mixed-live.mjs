@@ -4,9 +4,9 @@ import { promisify } from 'node:util';
 import { join, resolve, dirname, basename } from 'node:path';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
-import { ROOT } from '../dist/src/config.js';
-import { digest } from '../dist/src/protocol.js';
-import { hostDigests } from '../dist/src/host.js';
+import { ROOT } from '../dist/src/core/config.js';
+import { digest } from '../dist/src/core/protocol.js';
+import { hostDigests } from '../dist/src/core/config.js';
 import { LiveAcceptanceBudget } from './live-acceptance-budget.mjs';
 import { AcceptanceChannel, AcceptanceModels } from './m18-host-channel.mjs';
 const exec = promisify(execFile),

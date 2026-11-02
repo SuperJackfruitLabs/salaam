@@ -4,8 +4,8 @@ import { promisify } from 'node:util';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sdkPeer } from '../fixtures/a2a-peer.js';
-import { ROOT } from '../../src/config.js';
-import { digest } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { digest } from '../../src/core/protocol.js';
 
 test('operator CLI creates credentials without exposing/overwriting them and discovers/pins only the configured peer', async () => {
   const f = await sdkPeer(),

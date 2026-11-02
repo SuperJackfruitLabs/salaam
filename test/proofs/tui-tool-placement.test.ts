@@ -2,9 +2,9 @@ import { test, expect } from 'vitest';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, until, ready } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { DocumentView } from '../../src/tui-view.js';
-import { SalaamTheme } from '../../src/tui-theme.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { DocumentView } from '../../src/tui/view.js';
+import { SalaamTheme } from '../../src/tui/theme.js';
 
 /** One approved local command turn through the real service. */
 async function command(

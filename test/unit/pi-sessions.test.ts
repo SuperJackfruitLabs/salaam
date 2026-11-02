@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { forkPiSession } from '../../src/pi-sessions.js';
+import { forkPiSession } from '../../src/runtime/pi-sessions.js';
 
 function source() {
   const dir = realpathSync(mkdtempSync('/tmp/sal-pi-fork-'));

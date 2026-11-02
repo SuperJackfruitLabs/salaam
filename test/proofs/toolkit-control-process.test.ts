@@ -9,8 +9,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { ToolkitControlProcess } from '../../src/toolkit-control-process.js';
-import type { StdioProcessLaunch } from '../../src/mcp-stdio.js';
+import { ToolkitControlProcess } from '../../src/toolkit/control-process.js';
+import type { StdioProcessLaunch } from '../../src/mcp/stdio.js';
 
 function fixture(mode = 'normal') {
   const dir = realpathSync(mkdtempSync('/tmp/stkcp-')),

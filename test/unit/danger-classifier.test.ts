@@ -5,7 +5,7 @@ import {
   loadDangerClassifierConfig,
   parseVerdict,
   redactCommand,
-} from '../../src/danger-classifier.js';
+} from '../../src/local/danger-classifier.js';
 
 const reply = (text: string) => async () =>
   new Response(JSON.stringify({ content: [{ type: 'text', text }] }), { status: 200 });
@@ -174,7 +174,7 @@ describe('what is sent', () => {
 // listing options refused to start the service ("unknown field default").
 it('the service CLI accepts a config that lists several reviewers', async () => {
   const { readFileSync } = await import('node:fs');
-  const cli = readFileSync(new URL('../../src/cli.ts', import.meta.url), 'utf8');
+  const cli = readFileSync(new URL('../../src/cli/cli.ts', import.meta.url), 'utf8');
   expect(cli).not.toMatch(/loadDangerClassifierConfig\(/);
   expect(cli).toMatch(/loadDangerClassifierOptions\(\s*JSON\.parse/);
 });

@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, ready } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { call } from '../../src/transport.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { call } from '../../src/core/transport.js';
 
 // Phase 4c (operator rulings 2026-10-31): the small-model command reviewer is off unless the service is
 // given a config; turning it off for a session needs control of that session.

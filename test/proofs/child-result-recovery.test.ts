@@ -6,11 +6,11 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fixture, create, ready, until, control } from '../helpers.js';
 import { submit } from '../managed-helpers.js';
-import { ROOT } from '../../src/config.js';
-import { PiProcess } from '../../src/pi.js';
-import { SalaamService } from '../../src/service.js';
-import { call } from '../../src/transport.js';
-import type { ChildTask, Session } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { PiProcess } from '../../src/runtime/pi.js';
+import { SalaamService } from '../../src/service/service.js';
+import { call } from '../../src/core/transport.js';
+import type { ChildTask, Session } from '../../src/core/protocol.js';
 
 const extensionPath = join(ROOT, 'test/fixtures/child-extension.mjs');
 async function stop(child: ChildProcess) {

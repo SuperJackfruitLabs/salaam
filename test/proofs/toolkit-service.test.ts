@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { call as request } from '../../src/transport.js';
+import { call as request } from '../../src/core/transport.js';
 import { toolkitServiceFixture } from '../toolkit-service-helpers.js';
 import { ready, until } from '../helpers.js';
 

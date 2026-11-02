@@ -4,12 +4,12 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { ToolkitResources } from '../../src/toolkit-resources.js';
-import { digest } from '../../src/protocol.js';
-import { Store } from '../../src/store.js';
-import { AgentPodAuthority } from '../../src/agentpod-authority.js';
+import { ToolkitResources } from '../../src/toolkit/resources.js';
+import { digest } from '../../src/core/protocol.js';
+import { Store } from '../../src/store/store.js';
+import { AgentPodAuthority } from '../../src/agentpod/authority.js';
 import { mcpServiceFixture } from '../mcp-service-helpers.js';
-import type { StdioLaunch } from '../../src/mcp-stdio.js';
+import type { StdioLaunch } from '../../src/mcp/stdio.js';
 
 async function setup() {
   const f = await mcpServiceFixture();

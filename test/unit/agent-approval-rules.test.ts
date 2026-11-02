@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { AgentPodAuthority } from '../../src/agentpod-authority.js';
+import { Store } from '../../src/store/store.js';
+import { AgentPodAuthority } from '../../src/agentpod/authority.js';
 
 // Approval scopes B part 2: an agent's standing "Always allow" rules are pinned at admission and
 // checked again at every renewal. Operator ruling 2026-10-28: a renewal also ADDS a rule the hub

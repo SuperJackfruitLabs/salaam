@@ -3,8 +3,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, expect } from 'vitest';
-import { SalaamApp } from '../../src/tui.js';
-import type { SessionSnapshot } from '../../src/protocol.js';
+import { SalaamApp } from '../../src/tui/app.js';
+import type { SessionSnapshot } from '../../src/core/protocol.js';
 
 // Phase 4a: /commit, /branch and /pr become instructions to the model; git runs only through the
 // session's own command approvals. /diff opens the per-file review in coding sessions.

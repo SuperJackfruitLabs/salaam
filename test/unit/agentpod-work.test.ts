@@ -2,31 +2,31 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync, readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { AgentPodAuthority } from '../../src/agentpod-authority.js';
-import { ManagedWork } from '../../src/managed.js';
-import { AgentPodWorkDecisions } from '../../src/agentpod-work-decisions.js';
-import { AgentPodWork } from '../../src/agentpod-work.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { TaskContext } from '../../src/task-context.js';
-import { TaskWork } from '../../src/task-work.js';
-import { TaskDriver } from '../../src/task-driver.js';
-import { TaskBudget } from '../../src/task-budget.js';
-import { TaskVerification } from '../../src/task-verification.js';
-import { Workspaces } from '../../src/workspaces.js';
-import { CodingWork } from '../../src/coding.js';
+import { Store } from '../../src/store/store.js';
+import { AgentPodAuthority } from '../../src/agentpod/authority.js';
+import { ManagedWork } from '../../src/execution/managed.js';
+import { AgentPodWorkDecisions } from '../../src/agentpod/work-decisions.js';
+import { AgentPodWork } from '../../src/agentpod/work.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { TaskContext } from '../../src/runtime/task-context.js';
+import { TaskWork } from '../../src/tasks/work.js';
+import { TaskDriver } from '../../src/tasks/driver.js';
+import { TaskBudget } from '../../src/tasks/budget.js';
+import { TaskVerification } from '../../src/tasks/verification.js';
+import { Workspaces } from '../../src/coding/workspaces.js';
+import { CodingWork } from '../../src/coding/coding.js';
 import { TaskFixtureBackend } from '../fixtures/task-backend.mjs';
-import { canonical, digest, textDigest } from '../../src/protocol.js';
-import { OFFLINE_ROUTE } from '../../src/provider-config.js';
-import { configurePermissions } from '../../src/autonomy.js';
+import { canonical, digest, textDigest } from '../../src/core/protocol.js';
+import { OFFLINE_ROUTE } from '../../src/core/provider-route.js';
+import { configurePermissions } from '../../src/local/autonomy.js';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { workTraceHeader } from '../../src/execution-trace.js';
-import { planUpdate } from '../../src/acp-outcome.js';
-import { readinessFingerprint } from '../../src/readiness-fingerprint.js';
-import { ChildWork } from '../../src/children.js';
-import { StationWork } from '../../src/station-work.js';
-import type { Supervisor } from '../../src/supervisor.js';
+import { workTraceHeader } from '../../src/execution/trace.js';
+import { planUpdate } from '../../src/core/outcome.js';
+import { readinessFingerprint } from '../../src/core/readiness-fingerprint.js';
+import { ChildWork } from '../../src/workers/children.js';
+import { StationWork } from '../../src/agentpod/station-work.js';
+import type { Supervisor } from '../../src/runtime/supervisor.js';
 
 const executionSchema = JSON.parse(
   readFileSync(new URL('../fixtures/execution-evidence-v1.schema.json', import.meta.url), 'utf8'),
@@ -4414,7 +4414,7 @@ test('work status shows a paused fetch host on the card, and the run goes on', a
 });
 
 // 429: past three rate-limited attempts the task stops with a block the recovery can prove.
-import { RATE_LIMIT_STOP, RateLimitRetries } from '../../src/rate-limit-retries.js';
+import { RATE_LIMIT_STOP, RateLimitRetries } from '../../src/providers/rate-limit-retries.js';
 function rateLimitStopFixture() {
   const f = fixture();
   const admitted = f.run();
@@ -5048,7 +5048,7 @@ test('work status lists pending board reads, and only the owner of this run answ
   const f = fixture();
   try {
     f.run();
-    const { BoardReads } = await import('../../src/board-reads.js');
+    const { BoardReads } = await import('../../src/runtime/board-reads.js');
     const read = new BoardReads(f.store).request(f.session, 'call-br', { action: 'card' });
     const status = (await f.work.status(f.binding, settlementDriver(f))) as unknown as {
       board_reads?: unknown[];
@@ -5083,7 +5083,7 @@ test('work status lists pending board reads, and only the owner of this run answ
 // SALAAM_WRITE_FIXTURES=1.
 test('the board-read fixture is what Salaam emits in work status and accepts in work-read', async () => {
   const { readFileSync, writeFileSync } = await import('node:fs');
-  const { BoardReads, BOARD_READ_MAX_BYTES } = await import('../../src/board-reads.js');
+  const { BoardReads, BOARD_READ_MAX_BYTES } = await import('../../src/runtime/board-reads.js');
   const f = fixture();
   try {
     f.run();

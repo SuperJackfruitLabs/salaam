@@ -6,9 +6,9 @@ import {
   SLASH_COMMANDS,
   SLASH_COMPLETIONS,
   slashHelp,
-} from '../../src/tui-commands.js';
-import { writeConversationExport } from '../../src/tui-export.js';
-import { providerRoute } from '../../src/provider-config.js';
+} from '../../src/core/slash-commands.js';
+import { writeConversationExport } from '../../src/tui/export.js';
+import { providerRoute } from '../../src/providers/config.js';
 
 test('all commands and aliases share argument parsing, help and completion', () => {
   const names = SLASH_COMPLETIONS.map((c) => c.name);

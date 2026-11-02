@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { adjacent, dueSlots, schedule } from '../../src/schedules.js';
+import { adjacent, dueSlots, schedule } from '../../src/tasks/schedules.js';
 const daily = (time: string, fold = 'first') =>
   schedule({
     kind: 'daily',

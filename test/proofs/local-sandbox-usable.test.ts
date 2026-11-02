@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chooseLocalSandbox, sandboxArgv, seatbeltArgv } from '../../src/command-sandbox.js';
-import { gitIdentityEnv } from '../../src/git-helpers.js';
+import { chooseLocalSandbox, sandboxArgv, seatbeltArgv } from '../../src/local/command-sandbox.js';
+import { gitIdentityEnv } from '../../src/local/git-helpers.js';
 
 // Phase 1 proof (operator, 2026-10-31): on this host's own sandbox, git works inside the
 // workspace and a toolchain outside it is readable only when the operator allowed it. Every host

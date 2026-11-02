@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
-import { cancelChoices, turnKeyAction, queuedItems } from '../../src/tui-turn-keys.js';
-import { ConfirmModal } from '../../src/tui-modals.js';
+import { cancelChoices, turnKeyAction, queuedItems } from '../../src/tui/turn-keys.js';
+import { ConfirmModal } from '../../src/tui/modals.js';
 
 // Phase 2c (operator plan 2026-10-31). The tmux pass found Esc did nothing, typing during a turn only
 // queued, and /cancel opened on the queued item with "Keep current state" as the default.

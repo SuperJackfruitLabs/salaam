@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
-import { Store } from '../../src/store.js';
-import { Artifacts } from '../../src/artifacts.js';
-import { StationWork, StationFilesDefiniteFailure } from '../../src/station-work.js';
+import { Store } from '../../src/store/store.js';
+import { Artifacts } from '../../src/store/artifacts.js';
+import { StationWork, StationFilesDefiniteFailure } from '../../src/agentpod/station-work.js';
 
 // Item 11b: restoring files writes each one through the protected helper, exactly as planned,
 // chaining the expected tree, with a receipt per file; it never starts on a changed workspace.

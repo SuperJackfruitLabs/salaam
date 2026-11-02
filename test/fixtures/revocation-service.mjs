@@ -1,5 +1,5 @@
-import { SalaamService } from '../../dist/src/service.js';
-import { ROOT } from '../../dist/src/config.js';
+import { SalaamService } from '../../dist/src/service/service.js';
+import { ROOT } from '../../dist/src/core/config.js';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 

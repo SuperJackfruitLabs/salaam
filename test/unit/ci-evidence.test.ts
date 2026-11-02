@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 
 const planUrl = pathToFileURL(join(ROOT, 'scripts/ci-plan.mjs')).href;
 const evidenceUrl = pathToFileURL(join(ROOT, 'scripts/ci-evidence.mjs')).href;
@@ -88,7 +88,7 @@ function fixture(profile = 'full') {
         commands: [],
         tests: 1,
       };
-      const labels = plan.baseline ? ['format', 'types', 'pin', 'full-suite'] : [];
+      const labels = plan.baseline ? ['format', 'types', 'lint', 'pin', 'full-suite'] : [];
       for (const [group, field] of [
         ['operators', 'operator'],
         ['tasks', 'task'],

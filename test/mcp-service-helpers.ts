@@ -5,20 +5,20 @@ import { join, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { SalaamService } from '../src/service.js';
-import { PiProcess } from '../src/pi.js';
-import { call } from '../src/transport.js';
-import { digest } from '../src/protocol.js';
-import { mcpCatalogDigest, mcpToolDigest } from '../src/mcp-http.js';
-import { mcpProfile } from '../src/mcp-protocol.js';
-import { providerRoute } from '../src/provider-config.js';
-import { ROOT } from '../src/config.js';
+import { SalaamService } from '../src/service/service.js';
+import { PiProcess } from '../src/runtime/pi.js';
+import { call } from '../src/core/transport.js';
+import { digest } from '../src/core/protocol.js';
+import { mcpCatalogDigest, mcpToolDigest } from '../src/mcp/http.js';
+import { mcpProfile } from '../src/mcp/protocol.js';
+import { providerRoute } from '../src/providers/config.js';
+import { ROOT } from '../src/core/config.js';
 import corpus from './fixtures/agentpod-mcp-v1.json' with { type: 'json' };
 
 export async function mcpServiceFixture(
   options: {
     liveFixture?: boolean;
-    serviceOptions?: Partial<import('../src/service.js').ServiceOptions>;
+    serviceOptions?: Partial<import('../src/service/service.js').ServiceOptions>;
   } = {},
 ) {
   const dir = realpathSync(mkdtempSync('/tmp/smsp-')),

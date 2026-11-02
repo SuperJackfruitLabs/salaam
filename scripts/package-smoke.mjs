@@ -57,9 +57,9 @@ try {
   assert(listing.includes('package/npm-shrinkwrap.json'));
   for (const name of ['package.json', 'package-lock.json', 'codex-pins.json'])
     assert(listing.includes('package/harness-runtime/' + name));
-  assert(listing.includes('package/src/host.ts'));
-  assert(listing.includes('package/dist/src/house-extension.js'));
-  assert(listing.includes('package/dist/src/local-edit-helper.js'));
+  assert(listing.includes('package/src/host/host.ts'));
+  assert(listing.includes('package/dist/src/runtime/house-extension.js'));
+  assert(listing.includes('package/dist/src/local/edit-helper.js'));
   assert(
     !listing.some((p) =>
       /^package\/(?:\.state|\.git|test|landing|docs-site|credentials|\.env)(?:\/|$)/.test(p),
@@ -90,8 +90,8 @@ try {
   assert.equal(await run(sal, '--version'), `salaam ${pkg.version}\n`);
   assert.equal(await run(sal, '--help'), await run(salaam, '--help'));
   // Imports below come exclusively from the installed package, outside the source checkout.
-  const { call } = await import(pathToFileURL(join(installed, 'dist/src/transport.js')));
-  const { hostDigests } = await import(pathToFileURL(join(installed, 'dist/src/host.js')));
+  const { call } = await import(pathToFileURL(join(installed, 'dist/src/core/transport.js')));
+  const { hostDigests } = await import(pathToFileURL(join(installed, 'dist/src/core/config.js')));
   assert.match(hostDigests().pi_bundle_digest, /^[a-f0-9]{64}$/);
   const start = async () => {
     service = spawn(salaam, ['service', 'start', '--foreground', '--state', state], {

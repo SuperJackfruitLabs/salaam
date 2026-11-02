@@ -6,12 +6,12 @@ import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'nod
 import { dirname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { Store } from '../../src/store.js';
-import { digest } from '../../src/protocol.js';
-import { mcpCatalogDigest, mcpToolDigest } from '../../src/mcp-http.js';
-import { mcpProfile } from '../../src/mcp-protocol.js';
+import { Store } from '../../src/store/store.js';
+import { digest } from '../../src/core/protocol.js';
+import { mcpCatalogDigest, mcpToolDigest } from '../../src/mcp/http.js';
+import { mcpProfile } from '../../src/mcp/protocol.js';
 import corpus from '../fixtures/agentpod-mcp-v1.json' with { type: 'json' };
-import { ROOT } from '../../src/config.js';
+import { ROOT } from '../../src/core/config.js';
 import { until } from '../helpers.js';
 
 const tools = ['library_search', 'fixture_mutate'].map((name) => ({

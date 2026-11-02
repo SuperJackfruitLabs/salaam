@@ -5,8 +5,8 @@ import {
   BrokerRelay,
   inSandboxRelaySource,
   COMMAND_NETWORK_PORT,
-} from '../../src/command-network.js';
-import { sandboxArgv, seatbeltProfile } from '../../src/command-sandbox.js';
+} from '../../src/local/command-network.js';
+import { sandboxArgv, seatbeltProfile } from '../../src/local/command-sandbox.js';
 import { fakeBroker, helloServer } from '../helpers/fake-broker.js';
 
 // Network allowlist for local commands (operator rulings 2026-10-30): the command reaches the

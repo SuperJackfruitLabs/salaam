@@ -2,8 +2,8 @@ import { expect, test } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, sandboxFallback, until } from '../helpers.js';
-import { OperatorClient } from '../../src/tui-client.js';
-import { ROOT } from '../../src/config.js';
+import { OperatorClient } from '../../src/tui/client.js';
+import { ROOT } from '../../src/core/config.js';
 
 async function turn(f: Awaited<ReturnType<typeof fixture>>, client: OperatorClient, text: string) {
   const request = await client.submit(text);

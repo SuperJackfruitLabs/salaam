@@ -5,10 +5,10 @@ import { mkdtempSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { ROOT } from '../../src/config.js';
-import { A2AHttp, type A2APeer } from '../../src/a2a-peer.js';
-import { A2AInvocation, type A2ACheckpoint } from '../../src/a2a-protocol.js';
-import { digest } from '../../src/protocol.js';
+import { ROOT } from '../../src/core/config.js';
+import { A2AHttp, type A2APeer } from '../../src/a2a/peer.js';
+import { A2AInvocation, type A2ACheckpoint } from '../../src/a2a/protocol.js';
+import { digest } from '../../src/core/protocol.js';
 import { until } from '../helpers.js';
 
 async function fixture(stage: 'before_model' | 'after_model', failModel = false) {

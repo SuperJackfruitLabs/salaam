@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { extractReadable, renderFetched } from '../../src/web-fetch.js';
+import { extractReadable, renderFetched } from '../../src/web/fetch.js';
 
 test('readable text keeps headings, paragraphs, links and code, and drops scripts and chrome', () => {
   const html = `<!doctype html><html><head><title>The Page</title><style>.x{}</style>

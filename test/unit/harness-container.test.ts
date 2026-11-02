@@ -2,8 +2,8 @@ import { test, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DockerHarnessBoundary, HARNESS_IMAGE } from '../../src/harness-container.js';
-import type { EngineRequest } from '../../src/execution-boundary.js';
+import { DockerHarnessBoundary, HARNESS_IMAGE } from '../../src/harness/container.js';
+import type { EngineRequest } from '../../src/execution/boundary.js';
 
 function fixture() {
   const dir = realpathSync(mkdtempSync('/tmp/sal-harness-config-')),

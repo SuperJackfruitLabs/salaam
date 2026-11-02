@@ -1,10 +1,10 @@
-import { call } from '../../dist/src/transport.js';
+import { call } from '../../dist/src/core/transport.js';
 import {
   CAPABILITIES,
   workerCapabilities,
   textDigest,
   workerTools,
-} from '../../dist/src/protocol.js';
+} from '../../dist/src/core/protocol.js';
 const c = JSON.parse(process.env.SALAAM_WORKER_CONFIG);
 const mode = process.env.SALAAM_TEST_SCENARIO ?? 'ready';
 const bridge = (method, body = {}, token = c.token) =>

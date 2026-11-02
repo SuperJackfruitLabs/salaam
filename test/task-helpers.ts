@@ -1,12 +1,12 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { SalaamService, type ServiceOptions } from '../src/service.js';
-import type { ExecutionBackend } from '../src/coding-executor.js';
-import type { WorkTask } from '../src/task-work.js';
-import { call } from '../src/transport.js';
+import { SalaamService, type ServiceOptions } from '../src/service/service.js';
+import type { ExecutionBackend } from '../src/coding/executor.js';
+import type { WorkTask } from '../src/core/records.js';
+import { call } from '../src/core/transport.js';
 import { control, create, ready, until } from './helpers.js';
-import { ServiceError } from '../src/protocol.js';
+import { ServiceError } from '../src/core/protocol.js';
 
 import { TaskFixtureBackend } from './fixtures/task-backend.mjs';
 export { TaskFixtureBackend };
