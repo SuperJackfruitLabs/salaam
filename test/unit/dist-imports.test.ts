@@ -7,7 +7,7 @@ import { expect, test } from 'vitest';
 // Every such path must name a source file, and every name imported from it must be exported.
 
 const ROOT = join(import.meta.dirname, '../..');
-const ROOTS = ['scripts', 'bin', 'test/fixtures', 'test/acceptance', 'harness-runtime'];
+const ROOTS = ['scripts', 'bin', 'deploy', 'test/fixtures', 'test/acceptance', 'harness-runtime'];
 
 function files(dir: string): string[] {
   if (!existsSync(dir)) return [];
