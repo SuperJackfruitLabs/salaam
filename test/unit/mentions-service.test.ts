@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { call } from '../../src/core/transport.js';
@@ -198,6 +198,12 @@ test('every other route keeps the 1 MiB body limit', async () => {
     Readable.from([Buffer.from(JSON.stringify({ padding: 'x'.repeat(1_100_000) }))]) as never;
   await expect(readJson(body())).rejects.toMatchObject({ code: 'body_too_large' });
   await expect(readJson(body(), 2 * 1024 * 1024)).resolves.toHaveProperty('padding');
-  const service = readFileSync(new URL('../../src/service/service.ts', import.meta.url), 'utf8');
+  // The service module's controllers: the submission route is the only one with a larger limit.
+  const dir = new URL('../../src/service/', import.meta.url);
+  const service = readdirSync(dir)
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => readFileSync(new URL(name, dir), 'utf8'))
+    .join('\n');
   expect(service.match(/readJson\(req, SUBMISSION_BODY_LIMIT\)/g)).toHaveLength(1);
+  expect(service.match(/readJson\(req, /g)).toHaveLength(1);
 });

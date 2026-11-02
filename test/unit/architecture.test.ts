@@ -12,7 +12,6 @@ const SIZE_LIMIT = 1000;
 /** Files over SIZE_LIMIT and the most lines each may have. Lower these; never raise them. */
 const OVERSIZE: Record<string, number> = {
   'agentpod/work.ts': 3928,
-  'service/service.ts': 3577,
   'tui/app.ts': 3262,
   'runtime/supervisor.ts': 2054,
   'cli/cli.ts': 1924,
