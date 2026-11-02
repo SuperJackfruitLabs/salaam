@@ -57,7 +57,7 @@ OPT=/opt/salaam
 if compgen -G "/etc/salaam/stations/*/bind.json" >/dev/null && [ -x "$OPT/node/bin/node" ]; then
   rel=$OPT/releases/$sha
   echo "== launcher release ${sha:0:12}"
-  if [ ! -f "$rel/dist/src/cli.js" ]; then
+  if [ ! -f "$rel/dist/src/cli/cli.js" ]; then
     rm -rf "$rel.tmp" && mkdir -p "$rel.tmp"
     git -C "$repo" archive "$sha" | tar -x -C "$rel.tmp"
     (cd "$rel.tmp" && PATH="$OPT/node/bin:/usr/bin:/bin" npm ci --ignore-scripts --no-audit --no-fund >/dev/null &&
