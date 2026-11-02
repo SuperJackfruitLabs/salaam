@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { digest, canonical, ServiceError } from '../core/index.js';
-import { a2aIdentity, a2aObject, type A2AObject } from './peer.js';
+import { digest, canonical, oneOf, ServiceError } from '../core/index.js';
+import { a2aIdentity, a2aObject, type A2AArtifact, type A2AObject, type A2ATask } from './peer.js';
 
-export interface A2ACheckpoint {
+export type A2ACheckpoint = {
   schema_version: 1;
   dialect: 'a2a';
   run_id?: string;
@@ -18,11 +18,11 @@ export interface A2ACheckpoint {
   prompt_digest: string;
   cancel_requested: boolean;
   cancel_state?: 'intent' | 'dispatching' | 'acknowledged' | 'unsupported';
-  result: A2AObject | null;
+  result: A2ATask | null;
   disclosure: { path: string; digest: string; bytes: number }[];
   progress?: { remote_state: string | null; artifact_ids: string[] };
   artifact_receipts?: { id: string; content_digest: string; upstream_ids: string[] }[];
-}
+};
 export interface A2ARpc {
   rpc(method: 'SendMessage' | 'GetTask' | 'CancelTask', params: A2AObject): Promise<A2AObject>;
 }
@@ -32,32 +32,33 @@ export const A2A_TERMINAL = new Set([
   'TASK_STATE_CANCELED',
   'TASK_STATE_REJECTED',
 ]);
-const STATES = new Set([
+const STATES = new Set<unknown>([
   ...A2A_TERMINAL,
   'TASK_STATE_SUBMITTED',
   'TASK_STATE_WORKING',
   'TASK_STATE_INPUT_REQUIRED',
   'TASK_STATE_AUTH_REQUIRED',
 ]);
-export function a2aTask(value: unknown): A2AObject {
-  const task = a2aObject(value);
+const isState = (value: unknown): value is string => STATES.has(value);
+export function a2aTask(value: unknown): A2ATask {
+  const task = a2aObject<A2ATask>(value);
   a2aIdentity(task.id);
   a2aIdentity(task.contextId);
-  const status = a2aObject(task.status);
+  const status = a2aObject<A2ATask['status']>(task.status);
   if (!STATES.has(status.state) || canonical(task).length > 524288)
     throw new ServiceError('a2a_task', 'Unsupported task state or size');
   const artifacts = task.artifacts ?? [],
     ids = new Set<string>();
   if (!Array.isArray(artifacts) || artifacts.length > 64) throw Error('Unbounded remote artifacts');
   for (const artifact of artifacts) {
-    const id = a2aIdentity(a2aObject(artifact).artifactId);
+    const id = a2aIdentity(a2aObject<A2AArtifact>(artifact).artifactId);
     if (ids.has(id)) throw Error('Duplicate remote artifact identity');
     ids.add(id);
     validateParts(artifact.parts);
   }
   // Remote URIs are never fetched, even if authenticated or advertised as files.
   for (const message of task.history ?? []) {
-    if (!['ROLE_AGENT', 'ROLE_USER'].includes(message.role))
+    if (!oneOf(['ROLE_AGENT', 'ROLE_USER'], message.role))
       throw Error('Unknown remote message role');
     validateParts(message.parts);
   }
@@ -84,7 +85,7 @@ export function validateParts(value: unknown): void {
     if (canonical(p).length > 131072) throw Error('Remote part exceeds bound');
   }
 }
-function terminalContent(task: A2AObject): unknown {
+function terminalContent(task: A2ATask): unknown {
   return {
     id: task.id,
     contextId: task.contextId,
@@ -98,7 +99,7 @@ function terminalContent(task: A2AObject): unknown {
           }
         : null,
     },
-    artifacts: (task.artifacts ?? []).map(({ artifactId: _, ...content }: A2AObject) => content),
+    artifacts: (task.artifacts ?? []).map(({ artifactId: _, ...content }) => content),
     metadata: task.metadata ?? null,
   };
 }
@@ -138,7 +139,7 @@ export class A2AInvocation {
     }
     this.cp = next;
   }
-  private accept(value: unknown): A2AObject {
+  private accept(value: unknown): A2ATask {
     const task = a2aTask(value);
     if (
       (this.cp.task_id && task.id !== this.cp.task_id) ||
@@ -150,7 +151,7 @@ export class A2AInvocation {
       digest(terminalContent(task)) !== digest(terminalContent(this.cp.result!))
     )
       throw Error('Conflicting remote terminal snapshot');
-    const artifact_receipts = (task.artifacts ?? []).map((artifact: A2AObject, index: number) => {
+    const artifact_receipts = (task.artifacts ?? []).map((artifact, index) => {
       const { artifactId, ...content } = artifact,
         content_digest = digest(content),
         id = digest({ task_id: task.id, index, content_digest });
@@ -158,9 +159,7 @@ export class A2AInvocation {
       return {
         id,
         content_digest,
-        upstream_ids: [...new Set([...(old?.upstream_ids ?? []), artifactId])].slice(
-          -8,
-        ) as string[],
+        upstream_ids: [...new Set([...(old?.upstream_ids ?? []), artifactId])].slice(-8),
       };
     });
     this.update({
@@ -172,7 +171,7 @@ export class A2AInvocation {
     });
     return task;
   }
-  async dispatch(text: string, data: A2AObject): Promise<A2AObject> {
+  async dispatch(text: string, data: A2AObject): Promise<A2ATask> {
     if (
       this.cp.state !== 'prepared' ||
       this.cp.cancel_requested ||
@@ -201,7 +200,7 @@ export class A2AInvocation {
       throw e;
     }
   }
-  async inspect(): Promise<A2AObject> {
+  async inspect(): Promise<A2ATask> {
     if (!this.cp.task_id || !this.cp.context_id || this.broken)
       throw Error('Remote acceptance identity is unknown; prompt will not be resent');
     const result = await this.rpc.rpc('GetTask', { id: this.cp.task_id, historyLength: 0 });
@@ -213,7 +212,12 @@ export class A2AInvocation {
       keys = Object.keys(event);
     if (keys.length !== 1 || !['task', 'statusUpdate', 'artifactUpdate'].includes(keys[0]!))
       throw new ServiceError('a2a_identity', 'Unsupported stream payload');
-    const value = a2aObject(event[keys[0]!]);
+    const value = a2aObject<
+      A2AObject & {
+        status?: { state?: unknown };
+        artifact: { artifactId?: unknown; parts?: unknown };
+      }
+    >(event[keys[0]!]);
     if (
       (keys[0] === 'task' ? value.id : value.taskId) !== this.cp.task_id ||
       value.contextId !== this.cp.context_id
@@ -223,16 +227,15 @@ export class A2AInvocation {
     if (keys[0] === 'task') {
       const task = a2aTask(value);
       progress.remote_state = task.status.state;
-      progress.artifact_ids = task.artifacts?.map((a: A2AObject) => a.artifactId) ?? [];
+      progress.artifact_ids = task.artifacts?.map((a) => a.artifactId) ?? [];
     } else if (keys[0] === 'statusUpdate') {
-      if (!STATES.has(value.status?.state))
-        throw new ServiceError('a2a_identity', 'Unknown stream state');
-      progress.remote_state = value.status.state;
+      const state = value.status?.state;
+      if (!isState(state)) throw new ServiceError('a2a_identity', 'Unknown stream state');
+      progress.remote_state = state;
     } else {
-      a2aIdentity(value.artifact?.artifactId);
+      const artifactId = a2aIdentity(value.artifact?.artifactId);
       validateParts(value.artifact.parts);
-      if (!progress.artifact_ids.includes(value.artifact.artifactId))
-        progress.artifact_ids.push(value.artifact.artifactId);
+      if (!progress.artifact_ids.includes(artifactId)) progress.artifact_ids.push(artifactId);
       if (progress.artifact_ids.length > 64)
         throw new ServiceError('a2a_identity', 'Unbounded stream artifacts');
     }

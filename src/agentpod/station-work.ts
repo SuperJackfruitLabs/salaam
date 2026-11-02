@@ -230,7 +230,7 @@ export class StationWork {
     request: Record<string, unknown>,
     id?: string,
     verificationGuard?: () => void,
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     return runStationHelper(this.helperDeps(), request, id, verificationGuard);
   }
   private stopHelper(id: string): Promise<void> {
@@ -242,7 +242,7 @@ export class StationWork {
     sourceCall: string | { task_check_id: string },
     validate: (inspection: string) => void,
     request: Record<string, unknown> = { action: 'inspect' },
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     const check =
       typeof sourceCall === 'string'
         ? null

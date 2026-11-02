@@ -155,12 +155,25 @@ function checkedRequest(value: unknown, action: string) {
   }
   return r;
 }
+/** What observe returns: each requested setting, read or with the reason it was not. */
+type Observation = { values: Record<string, unknown>[] };
 /** Existing AgentPod config.manage v1 wire shapes; no daemon is started here. */
+export function hostConfiguration(
+  path: string,
+  action: 'observe',
+  value: unknown,
+): Promise<Observation>;
+export function hostConfiguration(path: string, action: 'plan', value: unknown): Promise<Plan>;
+export function hostConfiguration(
+  path: string,
+  action: string,
+  value: unknown,
+): Promise<Observation | Plan | Receipt>;
 export async function hostConfiguration(
   path: string,
   action: string,
   value: unknown,
-): Promise<any> {
+): Promise<Observation | Plan | Receipt> {
   if (!['observe', 'plan', 'apply', 'inspect'].includes(action))
     throw Error('Unknown configuration action');
   if (

@@ -279,7 +279,7 @@ export class HarnessProtocol {
     if (identity(thread?.id) !== this.checkpoint.session_id)
       throw new ServiceError('harness_identity', 'Returned thread belongs to another worker');
     if (this.checkpoint.turn_id && Array.isArray(thread.turns)) {
-      const turn = thread.turns.find((t: any) => t.id === this.checkpoint.turn_id) as
+      const turn = thread.turns.find((t: { id?: unknown }) => t.id === this.checkpoint.turn_id) as
         RpcObject | undefined;
       if (turn && ['completed', 'failed', 'interrupted'].includes(String(turn.status)))
         this.save({ state: 'terminal', result: { turn } });

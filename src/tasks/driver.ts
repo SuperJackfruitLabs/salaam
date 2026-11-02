@@ -5,14 +5,20 @@ import { randomUUID } from 'node:crypto';
 import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
 import type { WorkTask } from '../core/index.js';
-import type { TaskBudget } from './budget.js';
-import type { TaskVerification } from './verification.js';
+import type { TaskBudget, TaskRuntime } from './budget.js';
+import type { TaskVerification, VerificationView } from './verification.js';
 import type { Supervisor } from '../runtime/index.js';
 import type { ChildWork } from '../workers/index.js';
 import type { CodingWork } from '../coding/index.js';
 import { canonical, commandTerminal, ServiceError, type Controller } from '../core/index.js';
 
 /** Persisted, operator-bounded progression. Unknown attempts/commands never become retries. */
+/** A task as its view shows it: the task, its runtime row and its verification. */
+export type TaskView = WorkTask & {
+  runtime: TaskRuntime;
+  verification: VerificationView;
+};
+
 export class TaskDriver {
   private timer?: NodeJS.Timeout;
   awaitingAuthorityRenewal?: (session: string) => boolean;
@@ -600,9 +606,7 @@ export class TaskDriver {
       }
     }
   }
-  async viewAsync(
-    id: string,
-  ): Promise<WorkTask & { runtime: Record<string, any>; verification: any }> {
+  async viewAsync(id: string): Promise<TaskView> {
     const result = this.view(id);
     if (!this.verification.station) return result;
     result.verification = await this.verification.viewAsync(this.tasks.get(id));
@@ -616,10 +620,10 @@ export class TaskDriver {
     }
     return result;
   }
-  view(id: string): WorkTask & { runtime: Record<string, any>; verification: any } {
+  view(id: string): TaskView {
     const task = this.tasks.get(id),
       runtime = this.budget.state(id),
-      verification = this.verification.view(task) as any;
+      verification = this.verification.view(task);
     let state = task.state,
       reason = task.reason;
     if (task.state !== 'cancelled' && verification.completion && !verification.completion.fresh) {

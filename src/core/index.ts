@@ -51,6 +51,7 @@ export {
   integer,
   type Manifest,
   object,
+  oneOf,
   type Operation,
   type OperationState,
   PROTOCOL_VERSION,

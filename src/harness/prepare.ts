@@ -1,3 +1,4 @@
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
   mkdtempSync,
   mkdirSync,
@@ -71,7 +72,7 @@ export async function prepareHarnessRuntime(
       hash = createHash('sha512');
     let size = 0;
     await pipeline(
-      Readable.fromWeb(response.body as any),
+      Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
       new Transform({
         transform(chunk: Buffer, _encoding, done) {
           size += chunk.length;

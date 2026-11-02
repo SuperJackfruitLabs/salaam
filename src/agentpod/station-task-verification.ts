@@ -61,7 +61,7 @@ export class StationTaskVerification {
     session: string,
     validate: (inspection?: string) => void,
     request?: Record<string, unknown>,
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     const owned = new Set<string>();
     try {
       return await this.station.verificationTree(
@@ -182,7 +182,7 @@ export class StationTaskVerification {
       validate();
       this.store.db
         .prepare('UPDATE task_checks SET workspace_digest=? WHERE id=?')
-        .run(observed.tree_digest, id);
+        .run(String(observed.tree_digest), id);
       const prepared = this.station.prepareTaskCheck(
         id,
         configured.command,

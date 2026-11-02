@@ -41,13 +41,13 @@ export async function liveTree(deps: StationRestoreDeps): Promise<LiveTree> {
       let offset: number | null = 0,
         found = false;
       while (offset !== null && !found) {
-        const page: Record<string, any> = await deps.helper({
+        const page: Record<string, unknown> = await deps.helper({
           action: 'search',
           query: path,
           offset,
         });
         found = (page.entries as { path: string }[]).some((e) => e.path === path);
-        offset = page.next_offset ?? null;
+        offset = (page.next_offset as number | null | undefined) ?? null;
       }
       if (!found) return { state: 'absent' };
       try {

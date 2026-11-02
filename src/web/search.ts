@@ -68,6 +68,35 @@ const clean = (s: unknown, max = 400) =>
     .slice(0, max);
 const q = encodeURIComponent;
 
+// Search APIs' result records, with the fields read from them. Every value is checked or
+// converted where it is used; the shapes only name what each API documents.
+type WikipediaHit = { title?: unknown; snippet?: unknown };
+type StackExchangeHit = { title?: unknown; link?: unknown; score?: number; is_answered?: boolean };
+type GitHubHit = {
+  full_name?: unknown;
+  html_url?: unknown;
+  description?: unknown;
+  stargazers_count?: number;
+};
+type NpmHit = {
+  package?: { name?: string; version?: unknown; description?: unknown; links?: { npm?: unknown } };
+};
+type HackerNewsHit = {
+  title?: unknown;
+  story_title?: unknown;
+  url?: unknown;
+  objectID?: string;
+  points?: number;
+};
+type ProviderHit = {
+  title?: unknown;
+  url?: unknown;
+  content?: unknown;
+  description?: unknown;
+  text?: unknown;
+  summary?: unknown;
+};
+
 export class WebSearch {
   private readonly transport: Transport;
   private readonly providers: Provider[];
@@ -98,7 +127,7 @@ export class WebSearch {
             `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=${n}&srsearch=${q(s)}`,
           )
         ).query?.search ?? []
-      ).map((h: any) => ({
+      ).map((h: WikipediaHit) => ({
         title: clean(h.title, 200),
         url:
           'https://en.wikipedia.org/wiki/' + encodeURIComponent(String(h.title).replace(/ /g, '_')),
@@ -113,7 +142,7 @@ export class WebSearch {
             `https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&pagesize=${n}&q=${q(s)}`,
           )
         ).items ?? []
-      ).map((h: any) => ({
+      ).map((h: StackExchangeHit) => ({
         title: clean(h.title, 200),
         url: String(h.link),
         snippet: `score ${h.score ?? 0}${h.is_answered ? ', answered' : ''}`,
@@ -132,7 +161,7 @@ export class WebSearch {
               },
             })
           ).items ?? []
-        ).map((h: any) => ({
+        ).map((h: GitHubHit) => ({
           title: clean(h.full_name, 200),
           url: String(h.html_url),
           snippet: `${clean(h.description)} (${h.stargazers_count ?? 0} stars)`.trim(),
@@ -144,8 +173,10 @@ export class WebSearch {
     add('npm', async (s, n) =>
       (
         (await json(`https://registry.npmjs.org/-/v1/search?size=${n}&text=${q(s)}`)).objects ?? []
-      ).map((o: any) => ({
+      ).map((o: NpmHit) => ({
         title: `${clean(o.package?.name, 200)}@${clean(o.package?.version, 40)}`,
+        // The API's own value, whatever its type, is shown as text.
+        // oxlint-disable-next-line typescript/no-base-to-string
         url: String(o.package?.links?.npm ?? `https://www.npmjs.com/package/${o.package?.name}`),
         snippet: clean(o.package?.description),
         source: 'npm',
@@ -195,8 +226,10 @@ export class WebSearch {
       (
         (await json(`https://hn.algolia.com/api/v1/search?hitsPerPage=${n}&query=${q(s)}`)).hits ??
         []
-      ).map((h: any) => ({
+      ).map((h: HackerNewsHit) => ({
         title: clean(h.title ?? h.story_title, 200),
+        // The API's own value, whatever its type, is shown as text.
+        // oxlint-disable-next-line typescript/no-base-to-string
         url: String(h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`),
         snippet: `${h.points ?? 0} points on Hacker News`,
         source: 'hackernews',
@@ -209,7 +242,7 @@ export class WebSearch {
         add(name, async (s, n) =>
           ((await json(`${p.url.replace(/\/+$/, '')}/search?format=json&q=${q(s)}`)).results ?? [])
             .slice(0, n)
-            .map((h: any) => ({
+            .map((h: ProviderHit) => ({
               title: clean(h.title, 200),
               url: String(h.url),
               snippet: clean(h.content),
@@ -224,7 +257,7 @@ export class WebSearch {
                 headers: { 'x-subscription-token': p.key },
               })
             ).web?.results ?? []
-          ).map((h: any) => ({
+          ).map((h: ProviderHit) => ({
             title: clean(h.title, 200),
             url: String(h.url),
             snippet: clean(h.description),
@@ -241,7 +274,7 @@ export class WebSearch {
                 body: JSON.stringify({ query: s, max_results: n }),
               })
             ).results ?? []
-          ).map((h: any) => ({
+          ).map((h: ProviderHit) => ({
             title: clean(h.title, 200),
             url: String(h.url),
             snippet: clean(h.content),
@@ -258,7 +291,7 @@ export class WebSearch {
                 body: JSON.stringify({ query: s, numResults: n }),
               })
             ).results ?? []
-          ).map((h: any) => ({
+          ).map((h: ProviderHit) => ({
             title: clean(h.title, 200),
             url: String(h.url),
             snippet: clean(h.text ?? h.summary),
@@ -360,8 +393,8 @@ export function loadWebSearchConfig(
     if ('key' in p || (!hasEnv && !hasFile) || (hasEnv && hasFile))
       throw new Error(`${label} needs exactly one of key_env or key_file (never the key itself)`);
     if (hasEnv) {
-      const v = env[p.key_env as string];
-      if (!v) throw new Error(`${label}: ${String(p.key_env)} is not set`);
+      const v = env[hasEnv];
+      if (!v) throw new Error(`${label}: ${hasEnv} is not set`);
       return v.trim();
     }
     const file = p.key_file as string;

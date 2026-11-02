@@ -39,7 +39,10 @@ export async function workersCommand(ctx: CliContext): Promise<boolean> {
   if (group === 'workers') {
     if (!id) throw new Error('Supply a child or integration receipt ID');
     if (verb === 'proposal' || verb === 'integration') {
-      const result = await call<any>(
+      const result = await call<{
+        changes: { path: string; before: unknown; after: unknown }[];
+        diff: string[];
+      }>(
         socket,
         verb === 'proposal'
           ? `/v1/workers/${id}/proposal?offset=${Number(option('--offset') ?? 0)}`
@@ -51,7 +54,7 @@ export async function workersCommand(ctx: CliContext): Promise<boolean> {
           JSON.stringify(
             {
               ...metadata,
-              files: changes.map((c: any) => ({
+              files: changes.map((c) => ({
                 path: c.path,
                 before_hash: digest(c.before),
                 after_hash: digest(c.after),

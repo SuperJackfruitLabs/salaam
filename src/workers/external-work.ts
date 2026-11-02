@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { Store, Artifacts } from '../store/index.js';
 import type { WorkTask } from '../core/index.js';
 import type { ManagedWork } from '../execution/index.js';
@@ -26,6 +27,14 @@ export interface ExternalBudget {
   check(session: string): void;
 }
 /** External invocations extend existing child attempts and task-step claims, never a second scheduler. */
+/** An external_runs row as SQLite returns it, with the text columns its readers parse. */
+export type ExternalRunRow = Record<string, SQLOutputValue> & {
+  state: string;
+  checkpoint: string | null;
+  receipt: string | null;
+  result: string | null;
+};
+
 export class ExternalWork {
   private paused = false;
   private active = new Map<string, Promise<void>>();
@@ -97,8 +106,9 @@ export class ExternalWork {
       throw new ServiceError('runtime_unavailable', 'Runtime configuration is unavailable');
     this.backend.validate(runtime);
   }
-  row(child: string): Record<string, any> {
-    const row = this.store.db.prepare('SELECT * FROM external_runs WHERE child_id=?').get(child);
+  row(child: string): ExternalRunRow {
+    const row = this.store.db.prepare('SELECT * FROM external_runs WHERE child_id=?').get(child) as
+      ExternalRunRow | undefined;
     if (!row) throw new ServiceError('not_found', 'External worker not found', 404);
     return row;
   }

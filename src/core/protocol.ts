@@ -309,6 +309,10 @@ export function object(value: unknown): Record<string, unknown> {
     throw new ServiceError('invalid_body', 'Expected an object', 400);
   return value as Record<string, unknown>;
 }
+/** Whether a value is one of the given strings; a value of any other type never is. */
+export function oneOf<T extends string>(names: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (names as readonly string[]).includes(value);
+}
 export function string(value: unknown, name: string, max = 4096): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > max)
     throw new ServiceError('invalid_field', `Invalid ${name}`, 400);

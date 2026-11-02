@@ -11,6 +11,22 @@ export interface AnthropicHarnessPolicy {
   fetch?: typeof fetch;
 }
 /** Text/custom-tool-only Anthropic gateway. The caller owns durable root admission and usage reconciliation. */
+// The Anthropic Messages request as the gateway reads it: every field is checked before it
+// is admitted, and the request is forwarded as it arrived apart from the bounded max_tokens.
+type MessagesTool = { type?: unknown; name?: unknown; input_schema?: unknown };
+type MessagesMessage = { role: string; content?: unknown };
+type ContentBlock = { type?: unknown; text?: unknown; content?: unknown };
+type MessagesBody = {
+  model?: unknown;
+  max_tokens: number;
+  messages: MessagesMessage[];
+  mcp_servers?: unknown;
+  container?: unknown;
+  tools?: (MessagesTool | null)[];
+  system?: unknown;
+  thinking?: { type?: unknown; budget_tokens: number };
+};
+
 export class AnthropicHarnessGateway {
   constructor(readonly policy: AnthropicHarnessPolicy) {
     if (
@@ -40,7 +56,7 @@ export class AnthropicHarnessGateway {
         'harness_gateway_scope',
         'Gateway route is outside its admitted scope',
       );
-    let body: Record<string, any>;
+    let body: MessagesBody;
     try {
       body = JSON.parse(request.body.toString('utf8'));
     } catch {
@@ -57,7 +73,8 @@ export class AnthropicHarnessGateway {
       body.mcp_servers ||
       body.container ||
       body.tools?.some(
-        (t: any) => !t || t.type !== undefined || typeof t.name !== 'string' || !t.input_schema,
+        (t: MessagesTool | null) =>
+          !t || t.type !== undefined || typeof t.name !== 'string' || !t.input_schema,
       )
     )
       throw new ServiceError(
@@ -68,7 +85,7 @@ export class AnthropicHarnessGateway {
       typeof blocks === 'string' ||
       (Array.isArray(blocks) &&
         blocks.every(
-          (b: any) =>
+          (b: ContentBlock | null) =>
             b &&
             typeof b === 'object' &&
             ((b.type === 'text' && typeof b.text === 'string') ||
@@ -80,7 +97,8 @@ export class AnthropicHarnessGateway {
         ));
     if (
       body.messages.some(
-        (m: any) => !m || !['user', 'assistant'].includes(m.role) || !content(m.content, m.role),
+        (m: MessagesMessage | null) =>
+          !m || !['user', 'assistant'].includes(m.role) || !content(m.content, m.role),
       ) ||
       (body.system !== undefined && !content(body.system, 'system'))
     )

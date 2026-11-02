@@ -11,7 +11,7 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP, BlockList } from 'node:net';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
-import { digest, ServiceError } from '../core/index.js';
+import { digest, oneOf, ServiceError } from '../core/index.js';
 import { repositoryPath } from '../workers/index.js';
 
 export const A2A_PIN = {
@@ -20,8 +20,29 @@ export const A2A_PIN = {
   sdk: '1.0.1',
   transport: 'JSONRPC',
 } as const;
-export type A2AObject = Record<string, any>;
-export interface A2APeer {
+export type A2AObject = Record<string, unknown>;
+// A2A 1.0 records as Salaam reads them. Every field is still checked where it is used; these
+// only name the shapes the protocol defines.
+export type A2AMessage = {
+  messageId?: unknown;
+  role?: unknown;
+  parts?: unknown;
+  metadata?: A2AObject;
+  taskId?: unknown;
+  contextId?: unknown;
+  referenceTaskIds?: unknown[];
+  extensions?: unknown[];
+};
+export type A2AArtifact = { artifactId: string; parts?: unknown; [field: string]: unknown };
+export type A2ATask = {
+  id: string;
+  contextId: string;
+  status: { state: string; message?: A2AMessage };
+  artifacts?: A2AArtifact[];
+  history?: A2AMessage[];
+  metadata?: A2AObject;
+};
+export type A2APeer = {
   id: string;
   endpoint: string;
   card_url: string;
@@ -36,14 +57,18 @@ export interface A2APeer {
   retention: 'volatile' | 'durable' | 'unknown';
   cancel: boolean;
   streaming: boolean;
-}
+};
 const fail = (message: string): never => {
   throw new ServiceError('a2a_contract', message);
 };
-export function a2aObject(value: unknown): A2AObject {
+/** A JSON object, read as the A2A record its caller names. This is the parse boundary: the
+ * caller checks each field it reads, and T only names the shape it expects. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+export function a2aObject<T extends A2AObject = A2AObject>(value: unknown): T {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return fail('Expected an A2A object');
-  return value;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return value as T;
 }
 export function a2aIdentity(value: unknown): string {
   if (
@@ -133,16 +158,16 @@ export function validatePeer(value: unknown): A2APeer {
   if (typeof p.tenant !== 'string' || p.tenant.length > 256 || /[\x00-\x1f\x7f]/.test(p.tenant))
     return fail('Invalid tenant');
   for (const key of ['card_digest', 'credential_digest'])
-    if (!/^[a-f0-9]{64}$/.test(p[key])) return fail('Expected reviewed SHA-256 digest');
+    if (!/^[a-f0-9]{64}$/.test(String(p[key]))) return fail('Expected reviewed SHA-256 digest');
   if (
     typeof p.local !== 'boolean' ||
     typeof p.cancel !== 'boolean' ||
     typeof p.streaming !== 'boolean' ||
-    !['volatile', 'durable', 'unknown'].includes(p.retention)
+    !oneOf(['volatile', 'durable', 'unknown'], p.retention)
   )
     return fail('Explicit peer capability and retention policy required');
-  const endpoint = new URL(p.endpoint),
-    card = new URL(p.card_url);
+  const endpoint = new URL(String(p.endpoint)),
+    card = new URL(String(p.card_url));
   for (const u of [endpoint, card]) {
     if (
       u.username ||
@@ -195,13 +220,14 @@ export function validatePeer(value: unknown): A2APeer {
   if (!Array.isArray(p.files) || p.files.length > 64 || new Set(p.files).size !== p.files.length)
     return fail('Bound explicit disclosure paths');
   for (const path of p.files) repositoryPath(path);
-  peerCredential(p as A2APeer);
-  return structuredClone(p) as A2APeer;
+  const peer = p as A2APeer;
+  peerCredential(peer);
+  return structuredClone(peer);
 }
 /** No redirects, DNS fallback, cookies, inherited proxy or provider credentials. */
 export class A2AHttp {
   constructor(readonly peer: A2APeer) {}
-  async request(url: string, body?: unknown): Promise<A2AObject> {
+  async request<T extends A2AObject = A2AObject>(url: string, body?: unknown): Promise<T> {
     const p = validatePeer(this.peer),
       u = new URL(url);
     if (url !== p.endpoint && url !== p.card_url) return fail('Unconfigured A2A destination');
@@ -253,7 +279,7 @@ export class A2AHttp {
           response.on('error', reject);
           response.on('end', () => {
             try {
-              resolve(a2aObject(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
+              resolve(a2aObject<T>(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
             } catch (e) {
               reject(e);
             }
@@ -286,7 +312,12 @@ export class A2AHttp {
       !Array.isArray(card.supportedInterfaces) ||
       !card.supportedInterfaces.length ||
       card.supportedInterfaces.some(
-        (i: any) =>
+        (i: {
+          url?: unknown;
+          protocolBinding?: unknown;
+          protocolVersion?: unknown;
+          tenant?: unknown;
+        }) =>
           i.url !== this.peer.endpoint ||
           i.protocolBinding !== 'JSONRPC' ||
           i.protocolVersion !== '1.0' ||
@@ -294,7 +325,10 @@ export class A2AHttp {
       )
     )
       return fail('Agent Card interface differs from configured peer/version/tenant');
-    if (!Array.isArray(card.skills) || !card.skills.some((s: any) => s.id === this.peer.skill))
+    if (
+      !Array.isArray(card.skills) ||
+      !card.skills.some((s: { id?: unknown }) => s.id === this.peer.skill)
+    )
       return fail('Configured peer skill is absent');
     const caps = a2aObject(card.capabilities);
     if (this.peer.streaming && caps.streaming !== true) return fail('Streaming capability changed');
@@ -379,15 +413,21 @@ export class A2AHttp {
                 if (event.jsonrpc !== '2.0' || event.id !== id)
                   throw new ServiceError('a2a_identity', 'Unowned stream response');
                 if (event.error) throw Error('Peer stream operation failed');
-                const result = a2aObject(event.result);
+                const result = a2aObject<{
+                  statusUpdate?: { status?: { state?: unknown } };
+                  task?: { status?: { state?: unknown } };
+                }>(event.result);
                 consume(result);
                 if (
-                  [
-                    'TASK_STATE_COMPLETED',
-                    'TASK_STATE_FAILED',
-                    'TASK_STATE_CANCELED',
-                    'TASK_STATE_REJECTED',
-                  ].includes(result.statusUpdate?.status?.state ?? result.task?.status?.state)
+                  oneOf(
+                    [
+                      'TASK_STATE_COMPLETED',
+                      'TASK_STATE_FAILED',
+                      'TASK_STATE_CANCELED',
+                      'TASK_STATE_REJECTED',
+                    ],
+                    result.statusUpdate?.status?.state ?? result.task?.status?.state,
+                  )
                 )
                   terminalSeen = true;
               }
@@ -422,12 +462,15 @@ export class A2AHttp {
     params: A2AObject,
   ): Promise<A2AObject> {
     const id = randomUUID(),
-      response = await this.request(this.peer.endpoint, {
-        jsonrpc: '2.0',
-        id,
-        method,
-        params: { ...params, tenant: this.peer.tenant },
-      });
+      response = await this.request<A2AObject & { error?: { code?: unknown } }>(
+        this.peer.endpoint,
+        {
+          jsonrpc: '2.0',
+          id,
+          method,
+          params: { ...params, tenant: this.peer.tenant },
+        },
+      );
     if (
       response.jsonrpc !== '2.0' ||
       response.id !== id ||

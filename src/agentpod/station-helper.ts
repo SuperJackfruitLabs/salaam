@@ -69,7 +69,7 @@ export function runStationHelper(
   request: Record<string, unknown>,
   id?: string,
   verificationGuard?: () => void,
-): Promise<Record<string, any>> {
+): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   if (id) deps.files.set(id, controller);
   if (id)
@@ -182,7 +182,7 @@ function helperClosed(
   code: number | null,
   request: Record<string, unknown>,
   id: string | undefined,
-): Record<string, any> {
+): Record<string, unknown> {
   if (id) {
     const c = deps.get(id);
     const exited =

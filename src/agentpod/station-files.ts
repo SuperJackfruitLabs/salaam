@@ -6,7 +6,7 @@ import { stationHash } from './station-config.js';
 export function stationFileResult(
   request: Record<string, unknown>,
   value: unknown,
-): Record<string, any> {
+): Record<string, unknown> {
   const v = object(value),
     hash = /^[a-f0-9]{64}$/;
   const bad = (): never => {

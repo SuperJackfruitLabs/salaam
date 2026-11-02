@@ -1,7 +1,16 @@
+import type { SQLOutputValue } from 'node:sqlite';
 import type { Store } from '../store/index.js';
 import type { TaskWork } from './work.js';
 import type { WorkTask } from '../core/index.js';
 import { ServiceError } from '../core/index.js';
+
+/** A task_runtime row: every column as SQLite returns it, with the text ones a caller reads. */
+export type TaskRuntimeRow = Record<string, SQLOutputValue> & { blocked_reason: string | null };
+/** A task's runtime row with its invocation spend. */
+export type TaskRuntime = TaskRuntimeRow & {
+  invocations_spent: number;
+  external_model_usage: 'unknown' | 'none';
+};
 
 export class TaskBudgetError extends ServiceError {
   constructor(
@@ -48,8 +57,10 @@ export class TaskBudget {
       .get(session) as { parent_session: string } | undefined;
     return child ? this.tasks.forSession(child.parent_session) : null;
   }
-  state(id: string): Record<string, any> {
-    const runtime = this.store.db.prepare('SELECT * FROM task_runtime WHERE task_id=?').get(id)!;
+  state(id: string): TaskRuntime {
+    const runtime = this.store.db
+      .prepare('SELECT * FROM task_runtime WHERE task_id=?')
+      .get(id) as TaskRuntimeRow;
     const n = Number(
       this.store.db.prepare('SELECT count(*) AS n FROM task_invocations WHERE task_id=?').get(id)!
         .n,
@@ -113,7 +124,7 @@ export class TaskBudget {
     if (!task) return;
     this.store.jobGrantCheck?.(task.session_id);
     const r = this.state(task.id);
-    if (r.blocked_reason) this.deny(task.session_id, String(r.blocked_reason));
+    if (r.blocked_reason) this.deny(task.session_id, r.blocked_reason);
     if (r.started_at !== null && Date.now() - Number(r.started_at) >= task.limits.runtime_ms)
       this.deny(task.session_id, 'Task runtime limit reached');
     if (this.active(task) > task.limits.concurrency)

@@ -1,17 +1,42 @@
 import { randomUUID } from 'node:crypto';
 import type { AnthropicHarnessGateway } from './model-gateway.js';
 import type { GatewayRequest, GatewayResponse } from './container.js';
-import { ServiceError } from '../core/index.js';
+import { oneOf, ServiceError } from '../core/index.js';
 
-type Json = Record<string, any>;
+type Json = Record<string, unknown>;
 function invalid(): never {
   throw new ServiceError(
     'harness_wire_unsupported',
     'Payload exceeds the admitted text/custom-tool wire subset',
   );
 }
-const object = (value: unknown): Json =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value : invalid();
+/** A JSON object, read as the named wire record its caller expects. This is the parse boundary:
+ * the caller checks each field it reads, and T only names the shape it expects. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+const object = <T extends Json = Json>(value: unknown): T =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as T) : invalid();
+type WireRequest = Json & {
+  generationConfig?: { maxOutputTokens?: number };
+  max_output_tokens?: number;
+};
+type Usage = { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
+type OutputItem =
+  | {
+      id: string;
+      type: 'message';
+      status: string;
+      role: string;
+      content: [{ type: string; text: string; annotations: unknown[] }];
+    }
+  | {
+      id: string;
+      type: 'function_call';
+      status: string;
+      call_id: string;
+      name: string;
+      arguments: string;
+    };
 const list = (value: unknown): Json[] =>
   Array.isArray(value) && value.length <= 512 ? value.map(object) : invalid();
 const text = (value: unknown): string => (typeof value === 'string' ? value : invalid());
@@ -19,7 +44,7 @@ const id = (value: unknown): string =>
   typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : invalid();
 interface Transcript {
   system: string[];
-  messages: Json[];
+  messages: { role: string; content: Json[] }[];
   tools: Json[];
 }
 /** Explicit protocol translation to the operator-declared Claude backend, never a Google/OpenAI account claim. */
@@ -71,7 +96,7 @@ export class HarnessWireBridge {
         });
       }
     for (const [position, message] of list(body.contents).entries()) {
-      if (!['user', 'model'].includes(message.role)) invalid();
+      if (!oneOf(['user', 'model'], message.role)) invalid();
       const parts: Json[] = [];
       for (const [index, part] of list(message.parts).entries()) {
         if (typeof part.text === 'string') {
@@ -124,7 +149,7 @@ export class HarnessWireBridge {
       pending = new Set<string>();
     if (body.instructions !== undefined) t.system.push(text(body.instructions));
     for (const tool of list(body.tools ?? [])) {
-      if (tool.type !== 'function' || !this.wire.tools.includes(tool.name)) continue;
+      if (tool.type !== 'function' || !oneOf(this.wire.tools, tool.name)) continue;
       t.tools.push({
         name: this.tool(tool.name),
         description: typeof tool.description === 'string' ? tool.description : '',
@@ -133,12 +158,12 @@ export class HarnessWireBridge {
     }
     for (const item of list(body.input)) {
       if (item.type === 'message' || item.role) {
-        if (!['user', 'assistant', 'system', 'developer'].includes(item.role)) invalid();
+        if (!oneOf(['user', 'assistant', 'system', 'developer'], item.role)) invalid();
         const parts =
           typeof item.content === 'string'
             ? [{ text: item.content }]
             : list(item.content).map((p) => {
-                if (!['input_text', 'output_text'].includes(p.type)) invalid();
+                if (!oneOf(['input_text', 'output_text'], p.type)) invalid();
                 return { text: text(p.text) };
               });
         if (['system', 'developer'].includes(item.role))
@@ -187,7 +212,7 @@ export class HarnessWireBridge {
         ? '/v1beta/models/' + this.wire.model + ':streamGenerateContent?alt=sse'
         : '/v1/responses';
     if (request.path !== expected) invalid();
-    let raw: Json;
+    let raw: WireRequest;
     try {
       raw = object(JSON.parse(request.body.toString('utf8')));
     } catch {
@@ -245,7 +270,7 @@ export class HarnessWireBridge {
     }
     const response = object(JSON.parse(bytes.toString('utf8'))),
       content = list(response.content),
-      usage = object(response.usage ?? {});
+      usage = object<Usage>(response.usage ?? {});
     for (const part of content)
       if (part.type === 'tool_use') {
         this.tool(part.name);
@@ -254,7 +279,7 @@ export class HarnessWireBridge {
           name: this.tool(part.name),
           arguments: structuredClone(object(part.input)),
         });
-      } else if (!['text', 'thinking', 'redacted_thinking'].includes(part.type)) invalid();
+      } else if (!oneOf(['text', 'thinking', 'redacted_thinking'], part.type)) invalid();
     if (this.wire.protocol === 'google') {
       const parts = content.flatMap<Json>((p) =>
         p.type === 'text'
@@ -286,7 +311,7 @@ export class HarnessWireBridge {
       };
     }
     const responseId = 'resp_' + randomUUID().replaceAll('-', ''),
-      output: Json[] = content.flatMap<Json>((p) =>
+      output: OutputItem[] = content.flatMap<OutputItem>((p) =>
         p.type === 'text'
           ? [
               {

@@ -5,6 +5,26 @@ import { readHost, hostMcp, hostToolkit } from './host.js';
 import { readAgentPodPins } from '../agentpod/index.js';
 import { acquireStateLock, canonical, digest, ServiceError, call } from '../core/index.js';
 
+/** The fields of the daemon's health reply that host startup compares with its manifest. */
+interface HostHealth {
+  service?: unknown;
+  host_manifest_digest?: unknown;
+  runtime_node?: unknown;
+  agentpod_pins_digest?: unknown;
+  managed_mcp?: unknown;
+  managed_toolkit?: unknown;
+  station_execution?: unknown;
+  strict_work?: unknown;
+  provider_route?: unknown;
+  host_supervisor_connected?: unknown;
+  host_receipt?: { manifest_digest?: unknown; state?: unknown } | null;
+  job_execution?: {
+    control_error?: unknown;
+    schedule_control_error?: unknown;
+    inbox_control_error?: unknown;
+  } | null;
+}
+
 /** This is node-owned startup, not a station lifecycle grant or a work admission. */
 export async function startHost(path: string) {
   let m = readHost(path);
@@ -31,7 +51,7 @@ export async function startHost(path: string) {
     const current = readHost(path);
     if (digest(current) !== expected) throw Error('Host manifest changed during startup');
     const probe = async () => {
-      let h: Record<string, any>;
+      let h: HostHealth;
       try {
         h = await call(join(m.state, 'operator.sock'), '/v1/health', undefined, undefined, 2000);
       } catch {
@@ -143,7 +163,7 @@ export async function startHostUnit(
   const socket = join(state, 'operator.sock'),
     deadline = Date.now() + (options.timeoutMs ?? 20000);
   const ready = async () => {
-    let h: Record<string, any>;
+    let h: HostHealth;
     try {
       h = await call(socket, '/v1/health', undefined, undefined, 2000);
     } catch {
@@ -160,7 +180,7 @@ export async function startHostUnit(
       h.job_execution?.inbox_control_error
     )
       throw Error('Reviewed host controls are not ready');
-    return h.host_receipt as Record<string, unknown>;
+    return h.host_receipt;
   };
   let receipt = await ready();
   if (receipt) return receipt;

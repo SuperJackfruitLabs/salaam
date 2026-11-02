@@ -347,7 +347,7 @@ function parseDecision(stdout: string): {
 } {
   const text = stdout.trim();
   if (!text.startsWith('{')) return { json: false };
-  let value: Record<string, any>;
+  let value: Record<string, unknown>;
   try {
     value = JSON.parse(text);
   } catch {

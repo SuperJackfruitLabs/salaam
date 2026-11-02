@@ -1,5 +1,5 @@
 import { isAbsolute, resolve, sep } from 'node:path';
-import { ServiceError } from './protocol.js';
+import { oneOf, ServiceError } from './protocol.js';
 import type { ProviderRoute } from './provider-route.js';
 import type { FailureKind, AcpFailure, AttemptOutcome } from './records.js';
 
@@ -84,21 +84,22 @@ export function credentialStrings(value: unknown): string[] {
   return value && typeof value === 'object' ? Object.values(value).flatMap(credentialStrings) : [];
 }
 export function providerRefusalEvent(api: string, value: unknown): boolean {
-  const r = (v: unknown): Record<string, any> =>
-    v && typeof v === 'object' ? (v as Record<string, any>) : {};
+  const r = (v: unknown): Record<string, unknown> =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const e = r(value);
   if (api === 'anthropic-messages') return r(e.delta).stop_reason === 'refusal';
   if (api === 'google-generative-ai' || api === 'google-vertex')
     return (
       Array.isArray(e.candidates) &&
       e.candidates.some((c: unknown) =>
-        ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'].includes(
+        oneOf(
+          ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'],
           r(c).finishReason,
         ),
       )
     );
   if (api === 'bedrock-converse-stream')
-    return ['guardrail_intervened', 'content_filtered'].includes(r(e.messageStop).stopReason);
+    return oneOf(['guardrail_intervened', 'content_filtered'], r(e.messageStop).stopReason);
   if (api === 'openai-completions')
     return (
       Array.isArray(e.choices) &&
@@ -106,16 +107,17 @@ export function providerRefusalEvent(api: string, value: unknown): boolean {
         (c: unknown) => r(c).finish_reason === 'content_filter' || !!r(r(c).delta).refusal,
       )
     );
-  if (['openai-responses', 'azure-openai-responses', 'openai-codex-responses'].includes(api))
+  if (['openai-responses', 'azure-openai-responses', 'openai-codex-responses'].includes(api)) {
+    const output = r(e.response).output;
     return (
-      ['response.refusal.delta', 'response.refusal.done'].includes(e.type) ||
-      (Array.isArray(r(e.response).output) &&
-        r(e.response).output.some(
-          (o: unknown) =>
-            Array.isArray(r(o).content) &&
-            r(o).content.some((p: unknown) => r(p).type === 'refusal'),
-        ))
+      oneOf(['response.refusal.delta', 'response.refusal.done'], e.type) ||
+      (Array.isArray(output) &&
+        output.some((o: unknown) => {
+          const content = r(o).content;
+          return Array.isArray(content) && content.some((p: unknown) => r(p).type === 'refusal');
+        }))
     );
+  }
   return false;
 }
 export function redactFailureText(value: string, secrets: string[] = []): string {

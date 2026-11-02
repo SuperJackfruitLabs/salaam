@@ -178,7 +178,7 @@ export class A2ABackend implements ExternalBackend {
     let invocation = this.active.get(run);
     if (!invocation) {
       const record = a2aObject(receipt);
-      const cp = a2aObject(record.checkpoint ?? record) as A2ACheckpoint,
+      const cp = a2aObject<A2ACheckpoint>(record.checkpoint ?? record),
         p = this.peers.find((p) => p.id === runtime.id)!;
       if (cp.run_id !== run) throw Error('Remote cleanup receipt belongs to another local run');
       invocation = new A2AInvocation(

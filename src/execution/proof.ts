@@ -57,7 +57,9 @@ function save(path: string, value: unknown): void {
 export async function proveExecutionBoundary(options: BoundaryProofOptions): Promise<boolean> {
   const reportPath = resolve(options.report);
   const run = randomUUID();
-  const report: Record<string, any> = {
+  const report: Record<string, unknown> & {
+    checks: { name: string; passed: boolean; detail?: unknown }[];
+  } = {
     schema: 1,
     operator: { platform: process.platform, arch: process.arch, node: process.version },
     run_id: run,
@@ -207,9 +209,11 @@ export async function proveExecutionBoundary(options: BoundaryProofOptions): Pro
     try {
       orphan = await new Promise<string>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Orphan helper timed out')), 10_000);
-        helper.once('message', (value: any) => {
+        helper.once('message', (value: unknown) => {
           clearTimeout(timer);
-          if (/^[a-f0-9]{64}$/.test(value?.id)) resolve(value.id);
+          const id =
+            value !== null && typeof value === 'object' && 'id' in value ? value.id : undefined;
+          if (/^[a-f0-9]{64}$/.test(String(id))) resolve(id as string);
           else reject(new Error('Invalid helper identity'));
         });
         helper.once('error', (error) => {

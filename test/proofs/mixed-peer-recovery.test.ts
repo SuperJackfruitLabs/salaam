@@ -159,7 +159,7 @@ for (const stage of ['before_model', 'after_model'] as const)
         expect(original.models).toBe(1);
       } else {
         expect(task.status.state).toBe('TASK_STATE_FAILED');
-        expect(task.metadata.outcome_unknown).toBe(true);
+        expect(task.metadata?.outcome_unknown).toBe(true);
         expect(original.models).toBe(0);
       }
       await expect(recovered.dispatch(text, data)).rejects.toThrow('cannot dispatch');

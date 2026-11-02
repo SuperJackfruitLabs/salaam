@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   canonical,
   digest,
+  oneOf,
   ServiceError,
   type ChildTask,
   POLICY_DIGEST,
@@ -14,8 +15,12 @@ import {
   a2aObject,
   equalToken,
   privateJSON,
+  type A2AArtifact,
+  type A2AMessage,
   type A2AObject,
+  type A2ATask,
 } from './peer.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import { A2A_TERMINAL, validateParts } from './protocol.js';
 import type { Store, Artifacts } from '../store/index.js';
 import type { Workspaces } from '../coding/index.js';
@@ -46,12 +51,27 @@ export interface A2AInboundGrant {
   credential_digest: string;
   client?: 'openclaw-2026.10.5';
 }
-interface InboundConfig {
+type InboundConfig = {
   schema: 1;
   host: '127.0.0.1';
   port: number;
   grants: A2AInboundGrant[];
-}
+};
+/** An a2a_inbound row as SQLite returns it, with the text columns a snapshot reads. */
+type InboundRow = Record<string, SQLOutputValue> & { context_id: string; child_id: string };
+/** A task snapshot as Salaam serves it: its artifacts are always listed. */
+type InboundTask = A2ATask & { artifacts: A2AArtifact[] };
+/** Request parameters as the inbound handler reads them; each field is checked where used. */
+type InboundParams = A2AObject & {
+  message?: unknown;
+  configuration?: { acceptedOutputModes?: unknown; returnImmediately?: unknown };
+};
+/** The agent card Salaam serves for one grant: exactly one JSON-RPC interface. */
+type InboundCard = A2AObject & {
+  supportedInterfaces: [
+    { url: string; protocolBinding: string; protocolVersion: string; tenant: string },
+  ];
+};
 /** Explicit one-use grants over operator-prepared native analysis assignments. */
 export class A2AInbound {
   readonly server: Server;
@@ -98,7 +118,7 @@ export class A2AInbound {
     return v.token;
   }
   private read(): InboundConfig {
-    const c = a2aObject(privateJSON(this.path));
+    const c = a2aObject<A2AObject & { port: number }>(privateJSON(this.path));
     if (
       Object.keys(c).sort().join(',') !== 'grants,host,port,schema' ||
       c.schema !== 1 ||
@@ -204,18 +224,18 @@ export class A2AInbound {
     if (digest(this.binding(g.assignment_id)) !== g.binding_digest)
       throw Error('Operator-prepared peer binding changed; renew the grant');
   }
-  private owner(peer: string, tenant: string, id: string): A2AObject {
+  private owner(peer: string, tenant: string, id: string): InboundRow {
     const row = this.service.store.db
       .prepare('SELECT * FROM a2a_inbound WHERE id=? AND peer=? AND tenant=?')
-      .get(id, peer, tenant);
+      .get(id, peer, tenant) as InboundRow | undefined;
     if (!row) throw new ServiceError('a2a_not_found', 'Task is not owned by this peer/tenant', 404);
     return row;
   }
-  accept(g: A2AInboundGrant, params: A2AObject): A2AObject {
+  accept(g: A2AInboundGrant, params: InboundParams): InboundTask {
     if ((params.tenant ?? '') !== g.tenant) throw Error('Wrong peer tenant');
     if (Object.keys(params).some((k) => !['message', 'configuration', 'tenant'].includes(k)))
       throw Error('Unknown inbound request field');
-    const message = a2aObject(params.message),
+    const message = a2aObject<A2AMessage>(params.message),
       id = a2aIdentity(message.messageId);
     if (
       message.role !== 'ROLE_USER' ||
@@ -310,7 +330,7 @@ export class A2AInbound {
     });
     return this.snapshot(g, taskId);
   }
-  snapshot(g: A2AInboundGrant, id: string): A2AObject {
+  snapshot(g: A2AInboundGrant, id: string): InboundTask {
     const row = this.owner(g.peer, g.tenant, id),
       s = this.service;
     const child = s.store.db
@@ -324,7 +344,7 @@ export class A2AInbound {
           : child.state === 'accepted'
             ? 'TASK_STATE_WORKING'
             : 'TASK_STATE_FAILED';
-    const task: A2AObject = { id, contextId: row.context_id, status: { state }, artifacts: [] };
+    const task: InboundTask = { id, contextId: row.context_id, status: { state }, artifacts: [] };
     if (state === 'TASK_STATE_COMPLETED') {
       const result = s.children.consume(child.parent_session, child.id, child.result_id!) as {
         result: { text?: string; report?: string };
@@ -351,7 +371,7 @@ export class A2AInbound {
     }
     return task;
   }
-  async cancel(g: A2AInboundGrant, id: string): Promise<A2AObject> {
+  async cancel(g: A2AInboundGrant, id: string): Promise<InboundTask> {
     const row = this.owner(g.peer, g.tenant, id),
       s = this.service;
     if (A2A_TERMINAL.has(this.snapshot(g, id).status.state)) return this.snapshot(g, id);
@@ -371,7 +391,7 @@ export class A2AInbound {
     await s.taskDriver.stopCancelled(t.id);
     return this.snapshot(g, id);
   }
-  card(g: A2AInboundGrant): A2AObject {
+  card(g: A2AInboundGrant): InboundCard {
     const address = this.server.address();
     if (!address || typeof address === 'string') throw Error('A2A listener is unavailable');
     return {
@@ -509,9 +529,9 @@ export class A2AInbound {
         Object.keys(body).some((k) => !['jsonrpc', 'id', 'method', 'params'].includes(k))
       )
         throw Error('Invalid JSON-RPC envelope');
-      const p = a2aObject(body.params);
+      const p = a2aObject<InboundParams>(body.params);
       if (bridge) {
-        if (!['SendMessage', 'GetTask'].includes(body.method))
+        if (!oneOf(['SendMessage', 'GetTask'], body.method))
           throw new ServiceError(
             'a2a_method',
             'Named adapter supports SendMessage and GetTask only',
@@ -520,10 +540,10 @@ export class A2AInbound {
         if (!Object.hasOwn(p, 'tenant')) p.tenant = g.tenant;
       }
       if ((p.tenant ?? '') !== g.tenant) throw Error('Wrong tenant');
-      let result: A2AObject;
-      if (['SendMessage', 'SendStreamingMessage'].includes(body.method))
+      let result: A2AObject & { task?: InboundTask };
+      if (oneOf(['SendMessage', 'SendStreamingMessage'], body.method))
         result = { task: this.accept(g, p) };
-      else if (['GetTask', 'CancelTask', 'SubscribeToTask'].includes(body.method)) {
+      else if (oneOf(['GetTask', 'CancelTask', 'SubscribeToTask'], body.method)) {
         if (Object.keys(p).some((k) => !['id', 'tenant', 'historyLength'].includes(k)))
           throw Error('Unknown task lookup field');
         const id = a2aIdentity(p.id);
@@ -531,15 +551,18 @@ export class A2AInbound {
       } else throw new ServiceError('a2a_method', 'Method is unsupported', 400);
       if (body.method === 'SendMessage' && p.configuration?.returnImmediately !== true) {
         const end = Date.now() + 30000;
+        // SendMessage's result is always { task }.
+        let sent = result as { task: InboundTask };
         while (
-          !A2A_TERMINAL.has(result.task.status.state) &&
+          !A2A_TERMINAL.has(sent.task.status.state) &&
           Date.now() < end &&
           !res.destroyed &&
           !this.stopping
         ) {
           await new Promise((r) => setTimeout(r, 100));
-          result = { task: this.snapshot(g, result.task.id) };
+          sent = { task: this.snapshot(g, sent.task.id) };
         }
+        result = sent;
       }
       if (body.method === 'SendStreamingMessage' || body.method === 'SubscribeToTask') {
         await this.stream(req, res, g, String(result.task?.id ?? result.id), rpcId);

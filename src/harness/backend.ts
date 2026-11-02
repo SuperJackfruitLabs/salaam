@@ -85,6 +85,18 @@ interface Pin {
   requests: number;
 }
 /** Host-owned registry and fixed launch templates. No project-controlled commands, inherited env or real keys enter containers. */
+// The fields of a harness's permission requests and events that the backend reads. ACP
+// sends a toolCall; Codex's app server sends an itemId and cwd. Either may be absent.
+type PermissionParams = Record<string, unknown> & {
+  toolCall: { toolCallId: string; rawInput?: unknown; title?: unknown };
+  itemId: string;
+  cwd?: unknown;
+};
+type HarnessEvent = {
+  update: { sessionUpdate?: unknown; status: string; toolCallId: string };
+  item: { type: string; id: string; status?: unknown; exitCode?: unknown };
+};
+
 export class DockerHarnessBackend implements ExternalBackend {
   private pins: Pin[];
   private fileDigest: string;
@@ -400,7 +412,7 @@ export class DockerHarnessBackend implements ExternalBackend {
       if (bridge) return bridge.request(request);
       const body = JSON.parse(request.body.toString());
       if (Array.isArray(body.tools))
-        body.tools = body.tools.filter((t: any) => tools.includes(t.name));
+        body.tools = body.tools.filter((t: { name: string }) => tools.includes(t.name));
       return gateway.request({ ...request, body: Buffer.from(JSON.stringify(body)) });
     });
     const checkpoint: HarnessCheckpoint = {
@@ -424,7 +436,7 @@ export class DockerHarnessBackend implements ExternalBackend {
         save: hooks.checkpoint,
         permission: async (owned) => {
           await checkBoundary();
-          const params = owned.params as any,
+          const params = owned.params as PermissionParams,
             call = params.toolCall,
             known = intents.get(codex ? params.itemId : call?.toolCallId);
           let scope:
@@ -465,7 +477,7 @@ export class DockerHarnessBackend implements ExternalBackend {
           return decision;
         },
         event: (method, params) => {
-          const p = params as any;
+          const p = params as HarnessEvent;
           if (
             !codex &&
             method === 'session/update' &&

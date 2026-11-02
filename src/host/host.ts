@@ -858,7 +858,14 @@ export async function runHost(path: string): Promise<void> {
           return;
         }
         checking = true;
-        void call<any>(join(m.state, 'operator.sock'), '/v1/health')
+        void call<{
+          service?: unknown;
+          job_execution: {
+            control_error?: unknown;
+            schedule_control_error?: unknown;
+            inbox_control_error?: unknown;
+          };
+        }>(join(m.state, 'operator.sock'), '/v1/health')
           .then((h) => {
             healthy =
               h.service === 'healthy' &&

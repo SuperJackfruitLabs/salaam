@@ -159,7 +159,7 @@ export async function a2aCommand(ctx: CliContext): Promise<boolean> {
   if (group === 'a2a' && verb === 'peers') {
     console.log(
       JSON.stringify(
-        (await call<any[]>(socket, '/v1/harnesses')).filter((r) => r.kind === 'a2a'),
+        (await call<{ kind: string }[]>(socket, '/v1/harnesses')).filter((r) => r.kind === 'a2a'),
         null,
         2,
       ),

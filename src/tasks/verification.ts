@@ -42,6 +42,12 @@ export interface StationVerification {
     consume: (evidence: StationCheckEvidence[], deliverables: unknown[]) => T,
   ): Promise<T>;
 }
+/** A task's checks, each with its freshness, and its completion record if one exists. */
+export type VerificationView = {
+  checks: (CheckReceipt & { fresh: boolean })[];
+  completion: (Record<string, unknown> & { fresh: boolean }) | null;
+};
+
 export class TaskVerification {
   station?: StationVerification;
   installStation(create: (verification: TaskVerification) => StationVerification): void {
@@ -568,12 +574,9 @@ export class TaskVerification {
         this.finishRecorded(id, request, expected, null, authorize, { evidence, deliverables }),
     );
   }
-  async viewAsync(task: WorkTask): Promise<unknown> {
+  async viewAsync(task: WorkTask): Promise<VerificationView> {
     if (!this.station) return this.view(task);
-    const view = this.view(task) as {
-      checks: (CheckReceipt & { fresh: boolean })[];
-      completion: Record<string, unknown> | null;
-    };
+    const view = this.view(task);
     for (const check of view.checks) check.fresh = await this.freshAsync(check);
     if (view.completion?.state === 'succeeded') {
       try {
@@ -733,7 +736,7 @@ export class TaskVerification {
     });
     return this.tasks.get(id);
   }
-  view(task: WorkTask): unknown {
+  view(task: WorkTask): VerificationView {
     const completion = this.store.db
       .prepare('SELECT * FROM task_completions WHERE task_id=?')
       .get(task.id);

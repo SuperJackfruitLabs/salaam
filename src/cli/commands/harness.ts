@@ -85,7 +85,10 @@ export async function externalCommand(ctx: CliContext): Promise<boolean> {
       return true;
     }
     if (!id) throw Error('Supply an external CHILD_ID');
-    const current = await call<any>(socket, `/v1/harnesses/${id}`);
+    const current = await call<{ child: { parent_session: string } }>(
+      socket,
+      `/v1/harnesses/${id}`,
+    );
     if (verb === 'inspect') {
       console.log(JSON.stringify(current, null, 2));
       return true;
