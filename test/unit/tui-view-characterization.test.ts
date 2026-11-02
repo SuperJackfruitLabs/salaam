@@ -1,4 +1,10 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+
+// Colour depth is detected from the terminal's environment when the theme loads; pin truecolor so
+// the snapshot is the same on every machine (CI sets neither COLORTERM nor TERM_PROGRAM).
+vi.hoisted(() => {
+  process.env.COLORTERM = 'truecolor';
+});
 import { DocumentView, type ViewModel, type ViewTab } from '../../src/tui/view.js';
 import { OperatorClient } from '../../src/tui/client.js';
 import { SalaamTheme } from '../../src/tui/theme.js';
