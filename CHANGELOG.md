@@ -6,6 +6,18 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+The code is reorganised into modules with enforced boundaries, and checked by a linter. Nothing
+you use changes: commands, keys, HTTP routes, ACP messages and the state database are as before.
+
+### Changed
+
+- `src/` is 20 modules, each imported only through its `index.ts`, layered so imports point one
+  way; no file is over 1,000 lines. See `docs/contributor/code-structure.md`.
+- `npm run lint` runs type-aware oxlint in CI; existing findings may fall but never rise.
+- Host digests change value: `source_digest` and `build_digest` hash every file under `src/` and
+  `dist/src/` again, and the Pi bundle digest now also covers the persona file the house
+  extension loads.
+
 ### Fixed
 
 - A plain `salaam` session (read-only, no commands) refused pasted images with "Only a local

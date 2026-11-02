@@ -1,7 +1,33 @@
 # Modularity and code-quality plan
 
-Status: proposed 2026-11-02. Ships as one release (0.0.7); phases merge to main one PR at a
-time, and nothing is tagged until the last phase is done.
+Status: done 2026-11-02, for 0.0.7, in one PR ([#115](https://github.com/SuperJackfruitLabs/salaam/pull/115)).
+The structure and rules it produced are described in [code-structure.md](code-structure.md); this
+page keeps the plan and the starting measurements.
+
+## Outcome
+
+| Measure                                                      | Before                   | After                                                                           |
+| ------------------------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------- |
+| Layout                                                       | 167 files flat in `src/` | 333 files in 20 modules, each with an `index.ts`                                |
+| Largest import cycle                                         | 89 files                 | 5 (inside `store`); no cycle between modules                                    |
+| Files over 1,000 lines                                       | 12 (largest 3,924)       | none (largest 977)                                                              |
+| `service.handle`, `supervisor.bridge`, `tui.runSlashCommand` | 2,465 / 784 / 594 lines  | a route table and controllers, one handler per request kind, a command registry |
+| Linter                                                       | none                     | oxlint, type-aware, with a ratchet: 4,695 findings at the start, 3,997 now      |
+| `any` in `src/`                                              | 72 (src)                 | 0                                                                               |
+| Empty `catch` without a reason in `src/`                     | 29                       | 0                                                                               |
+| Floating or misused promises (whole repo)                    | 20                       | 0                                                                               |
+
+Behaviour was held by characterization tests committed against the old code before each split
+(routes and their fallthrough, the Pi launch argv and env, bridge answers, house extension
+registrations, failure-rule evidence, the state schema and SQL statement order, local command
+launches, slash commands, rendered tabs, CLI help), plus the existing 3,100 unit tests and 554
+proof tests with the real Pi. Two before-and-after comparisons ran the old and new builds side by
+side: 6,631 HTTP requests and 162 CLI invocations, all identical.
+
+Regressions the move caused and the checks found, each now guarded by a test: the host source
+and build digests stopped covering nested files; the docs-required workflow watched the old file
+names; scripts imported moved symbols by path; the runtime pack parsed a moved schema constant;
+the tools-user edit helper path.
 
 ## Where the code is today
 
