@@ -24,6 +24,8 @@ if (!destination || !/^[a-f0-9]{64}$/.test(packageSha ?? ''))
     'Usage: node scripts/private-runtime-pack.mjs NODE.tar.xz PACKAGE.tgz REVIEWED_PACKAGE_SHA256 OUTPUT.tar.gz',
   );
 const pin = JSON.parse(readFileSync(new URL('./runtime-pin.json', import.meta.url)));
+/** The newest state schema the packaged Store opens (src/store/schema.ts). */
+const newestSchema = (source) => /const NEWEST_SCHEMA = (\d+);/.exec(source)?.[1];
 if (
   hash(readFileSync(nodeArchive)) !== pin.node.sha256 ||
   hash(readFileSync(packageArchive)) !== packageSha
@@ -85,11 +87,11 @@ try {
   );
   if (pkg.engines.node !== pin.node.version) throw Error('Package Node pin mismatch');
   if (pkg.packageManager !== `npm@${pin.npm}`) throw Error('Package npm pin mismatch');
-  const storeSource = readFileSync(
-    join(stage, 'app/node_modules/@superjackfruitlabs/salaam/src/store/store.ts'),
+  const schemaSource = readFileSync(
+    join(stage, 'app/node_modules/@superjackfruitlabs/salaam/src/store/schema.ts'),
     'utf8',
   );
-  const schemaMaximum = Number(/if \(version > (\d+)\)/.exec(storeSource)?.[1]);
+  const schemaMaximum = Number(newestSchema(schemaSource));
   if (schemaMaximum !== pin.state_schema.max)
     throw Error('Runtime state-schema pin disagrees with packaged Store');
   for (const name of ['inventory.mjs', 'activate.mjs'])
