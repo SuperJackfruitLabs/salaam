@@ -1,0 +1,1959 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a bubblewrap host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, in a bubblewrap sandbox (workspace-write): it can write only inside this workspace, and has no network.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": "bubblewrap 0.11.1",
+        "kind": "bwrap",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/bwrap",
+          "--unshare-user",
+          "--unshare-pid",
+          "--unshare-ipc",
+          "--unshare-uts",
+          "--unshare-net",
+          "--die-with-parent",
+          "--new-session",
+          "--tmpfs",
+          "/",
+          "--ro-bind",
+          "/usr",
+          "/usr",
+          "--ro-bind",
+          "/etc/ssl",
+          "/etc/ssl",
+          "--ro-bind-try",
+          "/lib",
+          "/lib",
+          "--ro-bind-try",
+          "/lib64",
+          "/lib64",
+          "--ro-bind-try",
+          "/lib32",
+          "/lib32",
+          "--ro-bind-try",
+          "/bin",
+          "/bin",
+          "--ro-bind-try",
+          "/sbin",
+          "/sbin",
+          "--ro-bind-try",
+          "/etc/alternatives",
+          "/etc/alternatives",
+          "--proc",
+          "/proc",
+          "--dev",
+          "/dev",
+          "--tmpfs",
+          "/tmp",
+          "--bind",
+          "<root>",
+          "<root>",
+          "--remount-ro",
+          "/",
+          "--chdir",
+          "<root>",
+          "--",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 9,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "output": "stand-in
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-bwrap-workspace-write",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "bwrap",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, in a bubblewrap sandbox (workspace-write): it can write only inside this workspace, and has no network.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": "bubblewrap 0.11.1",
+        "kind": "bwrap",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/bwrap",
+          "--unshare-user",
+          "--unshare-pid",
+          "--unshare-ipc",
+          "--unshare-uts",
+          "--unshare-net",
+          "--die-with-parent",
+          "--new-session",
+          "--tmpfs",
+          "/",
+          "--ro-bind",
+          "/usr",
+          "/usr",
+          "--ro-bind",
+          "/etc/ssl",
+          "/etc/ssl",
+          "--ro-bind-try",
+          "/lib",
+          "/lib",
+          "--ro-bind-try",
+          "/lib64",
+          "/lib64",
+          "--ro-bind-try",
+          "/lib32",
+          "/lib32",
+          "--ro-bind-try",
+          "/bin",
+          "/bin",
+          "--ro-bind-try",
+          "/sbin",
+          "/sbin",
+          "--ro-bind-try",
+          "/etc/alternatives",
+          "/etc/alternatives",
+          "--proc",
+          "/proc",
+          "--dev",
+          "/dev",
+          "--tmpfs",
+          "/tmp",
+          "--bind",
+          "<root>",
+          "<root>",
+          "--remount-ro",
+          "/",
+          "--chdir",
+          "<root>",
+          "--",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-bwrap-workspace-write",
+      "output": "stand-in
+",
+      "sandbox": "bwrap",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/bwrap",
+          "--unshare-user",
+          "--unshare-pid",
+          "--unshare-ipc",
+          "--unshare-uts",
+          "--unshare-net",
+          "--die-with-parent",
+          "--new-session",
+          "--tmpfs",
+          "/",
+          "--ro-bind",
+          "/usr",
+          "/usr",
+          "--ro-bind",
+          "/etc/ssl",
+          "/etc/ssl",
+          "--ro-bind-try",
+          "/lib",
+          "/lib",
+          "--ro-bind-try",
+          "/lib64",
+          "/lib64",
+          "--ro-bind-try",
+          "/lib32",
+          "/lib32",
+          "--ro-bind-try",
+          "/bin",
+          "/bin",
+          "--ro-bind-try",
+          "/sbin",
+          "/sbin",
+          "--ro-bind-try",
+          "/etc/alternatives",
+          "/etc/alternatives",
+          "--proc",
+          "/proc",
+          "--dev",
+          "/dev",
+          "--tmpfs",
+          "/tmp",
+          "--bind",
+          "<root>",
+          "<root>",
+          "--remount-ro",
+          "/",
+          "--chdir",
+          "<root>",
+          "--",
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "stand-in
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "error": "Error: On Linux the command sandbox has its own network namespace, so a server it starts cannot be reached from the host. Ask for full access for this command, or run the server yourself.",
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed for this one command, at its own request: it can read and change any file your user can and reach the network.
+Directory: <root>
+Timeout: 30000 ms
+Outside the sandbox: needs the keychain. This one command runs without the OS sandbox; the session stays sandboxed. This always asks, except in YOLO or your own rule
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "outside_sandbox": "needs the keychain",
+      "sandbox": {
+        "bwrap": "bubblewrap 0.11.1",
+        "kind": "bwrap",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "bubblewrap",
+}
+`;
+
+exports[`a full access host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, unsandboxed: the operator chose full access. May access files and network beyond this workspace.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "full-access",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 3,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "output": "bg
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-no-os-sandbox",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "none",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, unsandboxed: the operator chose full access. May access files and network beyond this workspace.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "full-access",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "hi
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "{"a":1}<root>
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "approval": "Runs as your local user, unsandboxed: the operator chose full access. May access files and network beyond this workspace.
+Directory: <root>
+Timeout: 30000 ms
+Command:
+echo serve",
+    "args": {
+      "action": "command",
+      "command": "echo serve",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo serve",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "serve
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed: the operator chose full access. May access files and network beyond this workspace.
+Directory: <root>
+Timeout: 30000 ms
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "no sandbox",
+}
+`;
+
+exports[`a seatbelt broker without socket host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and network: through the broker allowlist (hosts set by the stk policy), nothing direct. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+        "network": "broker",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow network-outbound (remote tcp "localhost:<port>"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "HTTPS_PROXY": "http://127.0.0.1:<port>",
+          "HTTP_PROXY": "http://127.0.0.1:<port>",
+          "LANG": "en_US.UTF-8",
+          "NO_PROXY": "localhost,127.0.0.1",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+          "http_proxy": "http://127.0.0.1:<port>",
+          "https_proxy": "http://127.0.0.1:<port>",
+          "no_proxy": "localhost,127.0.0.1",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 9,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "network": {
+          "broker": "available",
+          "connections": [],
+        },
+        "output": "stand-in
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "network": "through the broker allowlist",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "seatbelt",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and network: through the broker allowlist (hosts set by the stk policy), nothing direct. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+        "network": "broker",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow network-outbound (remote tcp "localhost:<port>"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "HTTPS_PROXY": "http://127.0.0.1:<port>",
+          "HTTP_PROXY": "http://127.0.0.1:<port>",
+          "LANG": "en_US.UTF-8",
+          "NO_PROXY": "localhost,127.0.0.1",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+          "http_proxy": "http://127.0.0.1:<port>",
+          "https_proxy": "http://127.0.0.1:<port>",
+          "no_proxy": "localhost,127.0.0.1",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "network": {
+        "broker": "available",
+        "connections": [],
+      },
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-hook-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-hook-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-hook-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "stand-in
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and network: through the broker allowlist (hosts set by the stk policy), nothing direct. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 30000 ms
+May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule
+Command:
+echo serve",
+    "args": {
+      "action": "command",
+      "command": "echo serve",
+      "listen": true,
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+        "network": "broker",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow network-bind (local ip "localhost:*"))
+(allow network-inbound (local ip "localhost:*"))
+(allow network-outbound (remote tcp "localhost:<port>"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo serve",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "HTTPS_PROXY": "http://127.0.0.1:<port>",
+          "HTTP_PROXY": "http://127.0.0.1:<port>",
+          "LANG": "en_US.UTF-8",
+          "NO_PROXY": "localhost,127.0.0.1",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+          "http_proxy": "http://127.0.0.1:<port>",
+          "https_proxy": "http://127.0.0.1:<port>",
+          "no_proxy": "localhost,127.0.0.1",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "network": {
+        "broker": "available",
+        "connections": [],
+      },
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed for this one command, at its own request: it can read and change any file your user can and reach the network.
+Directory: <root>
+Timeout: 30000 ms
+Outside the sandbox: needs the keychain. This one command runs without the OS sandbox; the session stays sandboxed. This always asks, except in YOLO or your own rule
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "outside_sandbox": "needs the keychain",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "Seatbelt",
+}
+`;
+
+exports[`a seatbelt host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 9,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "output": "stand-in
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "seatbelt",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-hook-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-hook-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-hook-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "stand-in
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (workspace-write): it can write only inside this workspace, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 30000 ms
+May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule
+Command:
+echo serve",
+    "args": {
+      "action": "command",
+      "command": "echo serve",
+      "listen": true,
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow network-bind (local ip "localhost:*"))
+(allow network-inbound (local ip "localhost:*"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo serve",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-workspace-write",
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed for this one command, at its own request: it can read and change any file your user can and reach the network.
+Directory: <root>
+Timeout: 30000 ms
+Outside the sandbox: needs the keychain. This one command runs without the OS sandbox; the session stays sandboxed. This always asks, except in YOLO or your own rule
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "outside_sandbox": "needs the keychain",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "Seatbelt",
+}
+`;
+
+exports[`a seatbelt read-only host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (read-only): it can read this workspace but write nothing, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "read-only",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 9,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "output": "stand-in
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-seatbelt-read-only",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "seatbelt",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (read-only): it can read this workspace but write nothing, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "read-only",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-read-only",
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-hook-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<tmp>/salaam-hook-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-hook-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "stand-in
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "approval": "Runs as your local user, in a Seatbelt sandbox (read-only): it can read this workspace but write nothing, and has no network. It can also read 1 operator-allowed path outside the workspace.
+Directory: <root>
+Timeout: 30000 ms
+May listen: this command may accept network connections. macOS cannot limit listening to localhost, so a server bound to 0.0.0.0 is reachable from your network. This always asks, except in YOLO or your own rule
+Command:
+echo serve",
+    "args": {
+      "action": "command",
+      "command": "echo serve",
+      "listen": true,
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "read-only",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/nonexistent/sandbox-exec",
+          "-p",
+          "(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-read-metadata)
+(allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library/Apple") (subpath "/Library/Developer/CommandLineTools") (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (subpath "/dev") (subpath "<root>") (subpath "<tmp>/salaam-cmd-<x>") (subpath "/opt/shared"))
+(allow file-write* (subpath "<tmp>/salaam-cmd-<x>") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/zero") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/tty") (regex #"^/dev/fd/"))",
+          "/usr/bin/env",
+          "TMPDIR=<tmp>/salaam-cmd-<x>/",
+          "GIT_CONFIG_GLOBAL=/dev/null",
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo serve",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "GIT_AUTHOR_EMAIL": "fixture@example.com",
+          "GIT_AUTHOR_NAME": "Fixture",
+          "GIT_COMMITTER_EMAIL": "fixture@example.com",
+          "GIT_COMMITTER_NAME": "Fixture",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-seatbelt-read-only",
+      "output": "stand-in
+",
+      "sandbox": "seatbelt",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed for this one command, at its own request: it can read and change any file your user can and reach the network.
+Directory: <root>
+Timeout: 30000 ms
+Outside the sandbox: needs the keychain. This one command runs without the OS sandbox; the session stays sandboxed. This always asks, except in YOLO or your own rule
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "outside_sandbox": "needs the keychain",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "seatbelt",
+        "level": "full-access",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "Seatbelt",
+}
+`;
+
+exports[`a unsandboxed by operator host launches each kind of command the same way 1`] = `
+{
+  "background": {
+    "approval": "Runs as your local user, unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.
+Directory: <root>
+Runs in the background until stopped (at most 2 h); the last 64 KiB of output is kept
+Command:
+echo bg; sleep 5",
+    "args": {
+      "action": "command",
+      "background": true,
+      "command": "echo bg; sleep 5",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 7200000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo bg; sleep 5",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [
+      {
+        "bytes": 3,
+        "command": "echo bg; sleep 5",
+        "ended_at": "<time>",
+        "exit_code": null,
+        "id": "task_<x>",
+        "output": "bg
+",
+        "pid": "<n>",
+        "started_at": "<time>",
+        "state": "stopped",
+        "task": {
+          "exit_code": null,
+          "id": "task_<x>",
+          "state": "stopped",
+        },
+        "truncated": false,
+      },
+    ],
+    "view": {
+      "background": true,
+      "isolation": "local-user-no-os-sandbox",
+      "note": "Read its output with salaam_tasks; it keeps running after this turn.",
+      "sandbox": "none",
+      "state": "running",
+      "task_id": "task_<x>",
+    },
+  },
+  "command": {
+    "approval": "Runs as your local user, unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.
+Directory: <root>
+Timeout: 5000 ms
+Command:
+echo hi",
+    "args": {
+      "action": "command",
+      "command": "echo hi",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 5000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo hi",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "hi
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "hook": {
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "cat; echo "$SALAAM_PROJECT_DIR"",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "CLAUDE_PROJECT_DIR": "<root>",
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "SALAAM_PROJECT_DIR": "<root>",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "result": {
+      "code": 0,
+      "stderr": "",
+      "stdout": "{"a":1}<root>
+",
+      "timedOut": false,
+      "truncated": false,
+    },
+  },
+  "listen": {
+    "approval": "Runs as your local user, unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.
+Directory: <root>
+Timeout: 30000 ms
+Command:
+echo serve",
+    "args": {
+      "action": "command",
+      "command": "echo serve",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo serve",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "serve
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "outside": {
+    "approval": "Runs as your local user, unsandboxed: this host has no usable command sandbox, so the command may access files and network beyond this workspace.
+Directory: <root>
+Timeout: 30000 ms
+Command:
+echo out",
+    "args": {
+      "action": "command",
+      "command": "echo out",
+      "sandbox": {
+        "bwrap": null,
+        "kind": "none",
+        "level": "workspace-write",
+      },
+      "timeout_ms": 30000,
+    },
+    "launched": [
+      {
+        "argv": [
+          "/bin/sh",
+          "-c",
+          "IFS= read -r salaam_start_gate || exit 125
+exec 0</dev/null
+echo out",
+        ],
+        "cwd": "<root>",
+        "detached": true,
+        "env": {
+          "HOME": "<home>",
+          "LANG": "en_US.UTF-8",
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+          "TMPDIR": "/tmp",
+        },
+        "stdio": [
+          "pipe",
+          "pipe",
+          "pipe",
+        ],
+      },
+    ],
+    "tasks": [],
+    "view": {
+      "error": null,
+      "exit_code": 0,
+      "isolation": "local-user-no-os-sandbox",
+      "output": "out
+",
+      "sandbox": "none",
+      "state": "succeeded",
+      "tool_uid": "<n>",
+    },
+  },
+  "status": "no sandbox",
+}
+`;
