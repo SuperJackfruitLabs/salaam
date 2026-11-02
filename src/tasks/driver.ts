@@ -10,8 +10,7 @@ import type { TaskVerification } from './verification.js';
 import type { Supervisor } from '../runtime/index.js';
 import type { ChildWork } from '../workers/index.js';
 import type { CodingWork } from '../coding/index.js';
-import { commandTerminal } from '../coding/index.js';
-import { canonical, ServiceError, type Controller } from '../core/index.js';
+import { canonical, commandTerminal, ServiceError, type Controller } from '../core/index.js';
 
 /** Persisted, operator-bounded progression. Unknown attempts/commands never become retries. */
 export class TaskDriver {

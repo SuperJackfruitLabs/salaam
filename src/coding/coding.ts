@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { digest, ServiceError, string, integer } from '../core/index.js';
+import { commandTerminal, digest, ServiceError, string, integer } from '../core/index.js';
 import type { Store, Artifacts } from '../store/index.js';
 import { Workspaces, readTree, filePath } from './workspaces.js';
 import type { WorkspaceTree } from '../core/index.js';
@@ -42,10 +42,6 @@ export interface CommandRun {
   deadline: number;
   cancelled: number;
 }
-export const commandTerminal = (state: string): boolean =>
-  ['succeeded', 'failed', 'cancelled', 'timed_out', 'output_limited', 'interrupted'].includes(
-    state,
-  );
 export class CodingWork {
   private jobs = new Map<string, Promise<void>>();
   private closing = false;

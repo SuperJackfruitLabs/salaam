@@ -43,7 +43,6 @@ export {
   Hooks,
   type HookSource,
 } from './hooks.js';
-export { shellPassthrough, typedText } from './shell-passthrough.js';
 export { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
 export { applyUndo, reconcileUndo, reviewUndo, type UndoReview } from './undo.js';
 export { readLocalWorkspace } from './workspace.js';

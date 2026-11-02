@@ -11,12 +11,9 @@ const SIZE_LIMIT = 1000;
 
 /** Files over SIZE_LIMIT and the most lines each may have. Lower these; never raise them. */
 const OVERSIZE: Record<string, number> = {
-  'tui/app.ts': 3262,
-  'cli/cli.ts': 1924,
   'local/coding.ts': 1363,
   'store/store.ts': 1341,
   'acp/server.ts': 1240,
-  'tui/view.ts': 1169,
   'execution/managed.ts': 1004,
 };
 /** Files in the largest import cycle. Lower it; never raise it. */

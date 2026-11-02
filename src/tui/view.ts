@@ -1,80 +1,30 @@
 import { Markdown, wrapTextWithAnsi, visibleWidth, type Component } from '@earendil-works/pi-tui';
 import { basename } from 'node:path';
-import { SalaamTheme, safeText, shortId, humanTool } from './theme.js';
-import { typedText } from '../local/index.js';
-import {
-  instructionsLabel,
-  sessionFailure,
-  usageCost,
-  usageInput,
-  type OperatorClient,
-} from './client.js';
-import type { WorkspaceChange } from '../workers/index.js';
-import { workspaceDiff } from '../workers/index.js';
-import { commandTerminal } from '../coding/index.js';
+import { safeText, shortId, type SalaamTheme } from './theme.js';
+import { instructionsLabel, sessionFailure, usageCost, usageInput } from './client.js';
+import { commandTerminal } from '../core/index.js';
 import { interactiveCoding, runningAttempt } from './turn-keys.js';
-import { backgroundNote, changeCounts } from './review.js';
-import { activityVerb, progressLine, toolLine, type ToolLine } from './activity.js';
+import { activityVerb, progressLine } from './activity.js';
+import { modelLabel, toolLines, type ViewModel, type ViewTab } from './view-model.js';
+import type { DocumentBlocks } from './sections/blocks.js';
+import {
+  commandLines,
+  localCommandLines,
+  reviewLines,
+  workspaceLines,
+} from './sections/changes.js';
+import { contextLines } from './sections/context.js';
+import { conversationLines, welcome } from './sections/conversation.js';
 
-export type ViewTab = 'conversation' | 'changes' | 'commands' | 'context';
-export interface DiffPage {
-  revision: number;
-  digest: string;
-  changes: WorkspaceChange[];
-  next_offset: number | null;
-}
-export interface ViewModel {
-  client: OperatorClient;
-  theme: SalaamTheme;
-  tab: ViewTab;
-  rows(): number;
-  bodyRows(): number;
-  diff?: DiffPage;
-  diffOffset: number;
-  log?: { id: string; text: string; offset: number; complete: boolean };
-  busy: boolean;
-  continuation?: string;
-  /** The Changes tab of a local coding session (tui-review.ts). */
-  review?: import('./review.js').ReviewView;
-  /** Phase 2b: the session's mode, its access (full access or YOLO) and where commands run. */
-  mode?: { mode: string; access?: 'full' | 'yolo'; sandbox?: string };
-  /** Trial polish #9: every tool call with its full recorded output, not the compact lines. */
-  transcript?: boolean;
-  /** When the running turn was first seen, for the progress line's elapsed seconds. */
-  turn?: { attempt: string; since: number };
-}
-/** The session's tool calls, oldest first, each as one compact line. */
-export function toolLines(
-  view: ViewModel,
-): (ToolLine & { parent?: string; key: string; output?: string })[] {
-  const calls = new Map<
-    string,
-    {
-      tool: string;
-      input?: string;
-      finished?: { failed?: boolean; output?: string };
-      parent?: string;
-    }
-  >();
-  for (const event of view.client.activity) {
-    const p = event.payload;
-    const key = p.attempt_id + ':' + p.tool_call_id;
-    const before = calls.get(key);
-    calls.set(key, {
-      tool: p.tool,
-      input: event.kind === 'tool.started' ? p.input : before?.input,
-      finished:
-        event.kind === 'tool.finished' ? { failed: p.failed, output: p.output } : before?.finished,
-      parent: p.parent_tool_call_id ? p.attempt_id + ':' + p.parent_tool_call_id : before?.parent,
-    });
-  }
-  return [...calls.entries()].map(([key, c]) => {
-    const line = toolLine(c.tool, c.input, c.finished);
-    // A command's recorded result is JSON; the transcript shows its output as text.
-    return { key, parent: c.parent, output: line.full ?? c.finished?.output, ...line };
-  });
-}
-/** How the status line names a mode. */
+export {
+  modelLabel,
+  toolLines,
+  type DiffPage,
+  type ViewModel,
+  type ViewTab,
+} from './view-model.js';
+/** Rendered lines past this are cut from the top of the document. */
+const MAX_DOCUMENT_LINES = 3000;
 export function modeLabel(mode: string): string {
   return (
     {
@@ -86,20 +36,6 @@ export function modeLabel(mode: string): string {
     }[mode] ?? mode
   );
 }
-export function modelLabel(client: OperatorClient): string {
-  const route = client.snapshot?.provider_route ?? client.health?.provider_route;
-  if (!route) return 'Connect your workspace';
-  if (['offline', 'salaam-proof'].includes(route.provider)) return 'Offline demo';
-  const warning =
-    (client.snapshot?.provider_capabilities ?? client.health?.provider_capabilities)
-      ?.output_token_cap === false
-      ? ' · no output cap'
-      : '';
-  return (
-    route.model.replace('claude-sonnet-', 'Claude Sonnet ').replace(/(\d)-(\d)$/, '$1.$2') + warning
-  );
-}
-/** 950 → "950", 12_400 → "12.4k", 2_300_000 → "2.3M". */
 export function compactTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '') + 'k';
@@ -258,13 +194,13 @@ export function status(view: ViewModel, width: number): string[] {
     ),
   ];
 }
-export class DocumentView implements Component {
+export class DocumentView implements Component, DocumentBlocks {
   private cache = new Map<string, { text: string; theme: SalaamTheme; markdown: Markdown }>();
   constructor(readonly view: ViewModel) {}
   invalidate(): void {
     this.cache.clear();
   }
-  private prose(id: string, text: string, width: number): string[] {
+  prose(id: string, text: string, width: number): string[] {
     const t = this.view.theme,
       clean = safeText(text);
     let cached = this.cache.get(id);
@@ -278,376 +214,38 @@ export class DocumentView implements Component {
     }
     return cached.markdown.render(Math.max(1, width));
   }
-  /** Per-file review of what changed in the folder since the review base. */
-  private reviewLines(width: number): string[] {
-    const t = this.view.theme,
-      review = this.view.review,
-      lines = this.title('CHANGES SINCE REVIEW', width);
-    if (!review) return [...lines, ...this.text('Loading changes…', width)];
-    if (!review.data)
-      return [
-        ...lines,
-        ...this.text(
-          'Changes appear here after the first turn starts; each turn is checkpointed.',
-          width,
-        ),
-      ];
-    const note = backgroundNote(review.data.background_running);
-    if (note) lines.push(...this.text(note, width));
-    if (!review.data.files.length)
-      return [
-        ...lines,
-        ...this.text('Nothing to review: the folder matches what you accepted.', width),
-      ];
-    review.data.files.forEach((change, i) => {
-      const mark = i === review.file ? '▸ ' : '  ';
-      lines.push(
-        t.line(
-          mark +
-            safeText(change.path) +
-            '  ' +
-            t.ink(change.status + ' · ' + changeCounts(change), 'muted'),
-          width,
-        ),
-      );
-    });
-    lines.push(t.fill('', width));
-    const file = review.data.files[review.file]!;
-    const hunks = review.hunks ?? [];
-    lines.push(
-      ...this.title(
-        safeText(file.path) +
-          (review.hunk >= 0 ? ` · hunk ${review.hunk + 1} of ${hunks.length}` : ' · whole file'),
-        width,
-      ),
-    );
-    if (!hunks.length) lines.push(...this.text('No text diff to show for this file.', width));
-    hunks.forEach((hunk, i) => {
-      const selected = i === review.hunk;
-      lines.push(
-        ...t
-          .highlight(safeText(hunk.text).replace(/\n$/, ''), 'diff')
-          .flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 4)))
-          .map((line) => t.line((selected ? '┃ ' : review.hunk >= 0 ? '  ' : '') + line, width)),
-      );
-    });
-    lines.push(
-      t.fill('', width),
-      t.line(
-        t.key('alt+←/→', 'file') +
-          '   ' +
-          t.key('alt+↑/↓', 'hunk') +
-          '   ' +
-          t.key('a', 'accept') +
-          '   ' +
-          t.key('r', 'revert') +
-          '   ' +
-          t.key('i', 'instruct'),
-        width,
-      ),
-      ...this.text(
-        'a/r/i work while the message box is empty. Accept marks a change reviewed; revert writes the reviewed base back. /rewind returns to before any turn.',
-        width,
-      ),
-    );
-    return lines;
-  }
-  private title(label: string, width: number, role: 'jade' | 'amber' | 'muted' = 'jade'): string[] {
+  title(label: string, width: number, role: 'jade' | 'amber' | 'muted' = 'jade'): string[] {
     const t = this.view.theme;
     return [t.line(t.ink(label, role, true), width)];
   }
-  private text(text: string, width: number): string[] {
+  text(text: string, width: number): string[] {
     const t = this.view.theme;
     return wrapTextWithAnsi(t.ink(safeText(text)), Math.max(1, width - 4)).map((line) =>
       t.line(line, width),
     );
   }
-  private welcome(width: number): string[] {
-    const { theme: t, client: c } = this.view;
-    const center = (text: string) =>
-      t.fill(' '.repeat(Math.max(2, Math.floor((width - visibleWidth(text)) / 2))) + text, width);
-    return [
-      ...Array.from({ length: Math.max(1, Math.min(4, Math.floor(this.view.rows() / 8))) }, () =>
-        t.fill('', width),
-      ),
-      center(t.ink('◒', 'jade')),
-      t.fill('', width),
-      center(t.ink('S A L A A M', 'jade', true)),
-      center(t.ink('Your work. A little more peaceful.', 'muted')),
-      t.fill('', width),
-      t.rule(width),
-      t.fill('', width),
-      ...this.text(
-        c.snapshot
-          ? c.snapshot.capabilities.includes('local-workspace-read')
-            ? c.snapshot.capabilities.includes('local-coding-reviewed')
-              ? 'Describe a change. Review edits and commands, then check the result.'
-              : 'Explore this project. Ask about its files, decisions, or code.'
-            : 'Build something thoughtful. Fix something stubborn. Explore an idea.'
-          : 'A durable workspace that stays with you, in this terminal or over SSH.',
-        width,
-      ),
-      t.fill('', width),
-      t.line(t.key('ctrl+n', 'new session') + '     ' + t.key('ctrl+p', 'recent sessions'), width),
-      t.line(t.key('ctrl+k', 'all actions') + '      ' + t.key('alt+g', 'review changes'), width),
-      ...(c.snapshot
-        ? [
-            t.fill('', width),
-            t.line(
-              t.ink(
-                c.workspace
-                  ? 'Owned coding workspace · guarded edits'
-                  : c.snapshot.capabilities.includes('local-workspace-read')
-                    ? c.snapshot.capabilities.includes('local-coding-reviewed')
-                      ? 'Local coding · reviewed edits · commands ' +
-                        (this.view.mode?.sandbox
-                          ? '· ' + this.view.mode.sandbox
-                          : 'run as your user')
-                      : 'Local workspace · read, list and search · /coding for edits and commands'
-                    : 'Conversation session · coding tools are off',
-                'muted',
-              ),
-              width,
-            ),
-          ]
-        : []),
-    ];
-  }
-  /** Compact lines for tool calls (with their output in the full transcript), children indented. */
-  private toolBlock(
-    calls: ReturnType<typeof toolLines>,
-    byKey: Map<string, ReturnType<typeof toolLines>[number]>,
-    width: number,
-  ): string[] {
-    const t = this.view.theme,
-      lines: string[] = [],
-      shown = this.view.transcript ? calls : calls.slice(-8);
-    if (shown.length < calls.length)
-      lines.push(
-        t.line(
-          t.ink(`  … ${calls.length - shown.length} earlier calls · ctrl+x shows all`, 'muted'),
-          width,
-        ),
-      );
-    for (const call of shown) {
-      let depth = 0,
-        parent = call.parent;
-      const visited = new Set<string>();
-      while (parent && !visited.has(parent) && depth < 4) {
-        visited.add(parent);
-        depth++;
-        parent = byKey.get(parent)?.parent;
-      }
-      const indent = depth ? '  '.repeat(depth) + '└─ ' : '';
-      lines.push(
-        t.line(
-          t.ink(
-            call.state === 'running' ? '◌ ' : call.state === 'failed' ? '× ' : '✓ ',
-            call.state === 'failed' ? 'red' : call.state === 'running' ? 'amber' : 'jade',
-          ) + t.ink(indent + call.label),
-          width,
-        ),
-      );
-      const detail = this.view.transcript
-        ? call.output
-          ? safeText(call.output).split('\n').slice(0, 40)
-          : []
-        : call.tail;
-      for (const tail of detail)
-        lines.push(...this.text('  ' + ' '.repeat(indent.length) + '│ ' + tail, width));
-    }
-    return lines;
-  }
   render(width: number): string[] {
     const { client: c, theme: t, tab } = this.view;
     if (!c.snapshot) {
-      const welcome = this.welcome(width);
-      while (welcome.length < this.view.bodyRows()) welcome.push(t.fill('', width));
-      return welcome;
+      const page = welcome(this, width);
+      while (page.length < this.view.bodyRows()) page.push(t.fill('', width));
+      return page;
     }
     let lines: string[] = [];
     if (tab === 'conversation') {
-      if (c.snapshot.work_task)
-        lines.push(
-          ...this.title('TASK · ' + c.snapshot.work_task.state.toUpperCase(), width),
-          ...this.text(c.snapshot.work_task.objective, width),
-          ...this.text(
-            'Inspect the saved plan in Context. Ctrl+K → Task actions controls explicit or bounded work.',
-            width,
-          ),
-          t.fill('', width),
-        );
       if (!c.snapshot.work_task && !c.snapshot.messages.length && !c.snapshot.submissions.length) {
-        lines = this.welcome(width);
+        lines = welcome(this, width);
         while (lines.length < this.view.bodyRows()) lines.push(t.fill('', width));
         return lines;
       }
-      if (c.snapshot.history_truncated)
-        lines.push(
-          ...this.text(
-            'Recent conversation · earlier history is available through the history command.',
-            width,
-          ),
-          t.fill('', width),
-        );
-      const ids = new Set(c.snapshot.messages.map((m) => m.entry_id));
-      // Each turn's tool calls sit where they ran: before the message that followed them.
-      const calls = toolLines(this.view),
-        byKey = new Map(calls.map((l) => [l.key, l])),
-        groups = new Map<string, typeof calls>(),
-        rootOf = new Map<string, string>(),
-        placed = new Set<string>();
-      for (const call of calls) {
-        let root = call.key;
-        const visited = new Set<string>();
-        while (byKey.get(root)?.parent && !visited.has(root) && visited.size < 8) {
-          visited.add(root);
-          root = byKey.get(root)!.parent!;
-        }
-        groups.set(root, [...(groups.get(root) ?? []), call]);
-        rootOf.set(root.slice(root.indexOf(':') + 1), root);
-      }
-      for (const message of c.snapshot.messages) {
-        const before = (message.tool_calls ?? [])
-          .map((id) => rootOf.get(id))
-          .filter((root): root is string => !!root && !placed.has(root));
-        if (before.length) {
-          for (const root of before) placed.add(root);
-          lines.push(
-            ...this.toolBlock(
-              before.flatMap((root) => groups.get(root)!),
-              byKey,
-              width,
-            ),
-            t.fill('', width),
-          );
-        }
-        lines.push(
-          ...this.title(
-            message.role === 'user' ? 'YOU' : 'SALAAM',
-            width,
-            message.role === 'user' ? 'muted' : 'jade',
-          ),
-        );
-        lines.push(
-          ...this.prose(
-            message.entry_id,
-            message.role === 'user' ? typedText(message.text) : message.text,
-            width - 4,
-          ).map((line) => t.line(line, width)),
-          ...(message.truncated
-            ? this.text(
-                'Message preview truncated. Read its full history entry to inspect all content.',
-                width,
-              )
-            : []),
-          t.fill('', width),
-        );
-      }
-      for (const submission of [...c.snapshot.submissions]
-        .reverse()
-        .filter((s) => ['accepted', 'dispatching', 'running'].includes(s.state))) {
-        lines.push(
-          ...this.title(
-            submission.state === 'accepted' ? 'YOU · queued' : 'YOU · in progress',
-            width,
-            'muted',
-          ),
-          ...this.text(typedText(submission.text), width),
-          t.fill('', width),
-        );
-      }
-      // Calls not placed before a message: the turn still running, or ones history no longer shows.
-      const rest = [...groups.entries()].filter(([root]) => !placed.has(root));
-      if (rest.length) {
-        lines.push(
-          ...this.title(
-            this.view.transcript
-              ? 'TRANSCRIPT · every tool call'
-              : 'TOOLS · ctrl+x for the full transcript',
-            width,
-            'muted',
-          ),
-          ...this.toolBlock(
-            rest.flatMap(([, group]) => group),
-            byKey,
-            width,
-          ),
-          t.fill('', width),
-        );
-      }
-      if (c.preview)
-        lines.push(
-          ...this.title('SALAAM · writing', width),
-          ...this.prose('live-preview', c.preview.text, width - 4).map((line) =>
-            t.line(line, width),
-          ),
-          ...(c.preview.truncated
-            ? this.text('Live preview limited; the final message will replace it.', width)
-            : []),
-          t.fill('', width),
-        );
-      for (const approval of c.snapshot.approvals.filter((a) => a.state === 'pending')) {
-        const op = c.snapshot.operations.find((o) => o.id === approval.operation_id);
-        lines.push(
-          t.rule(width),
-          ...this.title('!  Approval needed', width, 'amber'),
-          ...this.text(op?.target ?? approval.id, width),
-          ...this.text('ctrl+o reviews the exact request before a decision.', width),
-          t.rule(width),
-          t.fill('', width),
-        );
-      }
-      const interrupted = c.snapshot.attempts.find(
-        (a) => a.state === 'interrupted' && !a.resolved_by,
-      );
-      if (interrupted)
-        lines.push(
-          ...this.title('Work was interrupted', width, 'amber'),
-          ...this.text(
-            'The previous instruction was not replayed. Choose Continue interrupted work from ctrl+k, then enter a new instruction.',
-            width,
-          ),
-        );
+      const conversation = conversationLines(this, c.snapshot, width);
+      lines.push(...conversation.lines);
       for (const key of this.cache.keys())
-        if (key !== 'live-preview' && !ids.has(key)) this.cache.delete(key);
+        if (key !== 'live-preview' && !conversation.messages.has(key)) this.cache.delete(key);
     } else if (tab === 'changes' && c.snapshot.capabilities.includes('local-coding-reviewed')) {
-      lines.push(...this.reviewLines(width));
+      lines.push(...reviewLines(this, width));
     } else if (tab === 'commands' && c.snapshot.capabilities.includes('local-coding-reviewed')) {
-      const operations = c.snapshot.operations.filter(
-        (op) => op.kind === 'workspace' && op.target.startsWith('Local command:'),
-      );
-      lines.push(...this.title('LOCAL COMMAND RESULTS', width));
-      if (!operations.length)
-        lines.push(
-          ...this.text(
-            'Commands appear here with their recorded exit status and output. ' +
-              (this.view.mode?.sandbox
-                ? 'Where commands run: ' + this.view.mode.sandbox + '.'
-                : 'Commands run as your local user.'),
-            width,
-          ),
-        );
-      for (const op of operations.slice().reverse()) {
-        lines.push(
-          t.rule(width),
-          ...this.title(
-            shortId(op.id) + ' · ' + op.state,
-            width,
-            op.state === 'succeeded' ? 'jade' : 'amber',
-          ),
-          ...this.text(op.value, width),
-        );
-        if (op.receipt)
-          lines.push(...this.title('RECORDED RESULT', width), ...this.text(op.receipt, width));
-        if (op.error) lines.push(...this.text(op.error, width));
-      }
-      lines.push(
-        ...this.text(
-          'Ctrl+O reviews pending approvals. Cancel current work from Ctrl+K stops the active foreground command. These are saved operation records, not a live Git diff.',
-          width,
-        ),
-      );
+      lines.push(...localCommandLines(this, c.snapshot, width));
     } else if (tab === 'changes') {
       const failed = sessionFailure(c.snapshot);
       if (failed && !c.workspace) return this.text(failed, width);
@@ -656,433 +254,19 @@ export class DocumentView implements Component {
           'This session has no coding workspace. Create a coding session to review guarded edits.',
           width,
         );
-      lines.push(
-        ...this.title('WORKSPACE CHANGES', width),
-        ...this.text('Original checkout: ' + c.workspace.source, width),
-        ...this.text(
-          'Workspace ' +
-            shortId(c.workspace.id) +
-            ' · revision ' +
-            c.workspace.revision +
-            ' · ' +
-            shortId(c.workspace.digest),
-          width,
-        ),
-        t.fill('', width),
-      );
-      if (!this.view.diff) lines.push(...this.text('Loading the checked diff…', width));
-      else if (!this.view.diff.changes.length)
-        lines.push(...this.text('No changes yet. Your original checkout is unchanged.', width));
-      else
-        for (const change of this.view.diff.changes) {
-          lines.push(...this.title(safeText(change.path), width));
-          const patch = workspaceDiff(change);
-          const painted = t
-            .highlight(patch, 'diff')
-            .flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 4)))
-            .map((line) => t.line(line, width));
-          lines.push(
-            ...painted,
-            t.fill('', width),
-            t.line(
-              t.key('alt+left', 'previous file') + '    ' + t.key('alt+right', 'next file'),
-              width,
-            ),
-          );
-        }
-      if (c.workspace.observed_digest !== c.workspace.digest)
-        lines.push(
-          ...this.title('Human edits detected', width, 'amber'),
-          ...this.text('Review and refresh the exact observed workspace before continuing.', width),
-        );
+      lines.push(...workspaceLines(this, c.workspace, width));
     } else if (tab === 'commands') {
-      lines.push(...this.title('COMMANDS', width));
-      if (!c.commands.length)
-        lines.push(
-          ...this.text(
-            c.health?.execution?.commands
-              ? 'Commands will appear here with their actual exit status and captured revision.'
-              : 'Command execution is off for this service.',
-            width,
-          ),
-        );
-      for (const run of [...c.commands].reverse()) {
-        const role =
-          run.state === 'succeeded'
-            ? 'jade'
-            : ['running', 'accepted'].includes(run.state)
-              ? 'amber'
-              : run.state === 'failed' || run.state === 'outcome_unknown'
-                ? 'red'
-                : 'muted';
-        lines.push(
-          t.line(
-            t.ink(
-              run.state === 'succeeded' ? '✓ ' : commandTerminal(run.state) ? '· ' : '◌ ',
-              role,
-            ) + t.ink(safeText(run.command)),
-            width,
-          ),
-          t.line(
-            t.ink(
-              '  ' +
-                run.state +
-                ' · ' +
-                shortId(run.id) +
-                ' · r' +
-                run.workspace_revision +
-                (run.exit_code === null ? '' : ' · exit ' + run.exit_code),
-              'muted',
-            ),
-            width,
-          ),
-        );
-        if (run.error) lines.push(...this.text(run.error, width));
-        lines.push(t.fill('', width));
-      }
-      if (this.view.log) {
-        lines.push(
-          t.rule(width),
-          ...this.title('OUTPUT · ' + shortId(this.view.log.id), width),
-          ...this.text(this.view.log.text || '(No captured output yet.)', width),
-          ...this.text(
-            this.view.log.complete
-              ? 'End of captured output.'
-              : 'Live output · byte offset ' + this.view.log.offset,
-            width,
-          ),
-        );
-      }
-      lines.push(
-        t.fill('', width),
-        ...this.text('ctrl+k → Command logs or Cancel a command', width),
-      );
+      lines.push(...commandLines(this, width));
     } else {
-      lines.push(
-        ...this.title('SESSION CONTEXT', width),
-        ...this.text('Session ' + c.snapshot.id, width),
-        ...this.text('Worker epoch ' + c.snapshot.epoch + ' · ' + c.snapshot.state, width),
-        ...this.text('Provider ' + modelLabel(c), width),
-        t.fill('', width),
-      );
-      if (c.snapshot.inbox?.length) {
-        lines.push(...this.title('OPERATOR INBOX · ' + c.snapshot.inbox.length, width));
-        for (const item of c.snapshot.inbox)
-          lines.push(
-            ...this.text(item.kind + ' · ' + item.id + ' · revision ' + item.revision, width),
-            ...this.text(item.detail, width),
-          );
-        lines.push(
-          ...this.text(
-            'Ctrl+K → Operator inbox to inspect or acknowledge. Acknowledgement never approves work.',
-            width,
-          ),
-        );
-      }
-      if (c.workspace)
-        lines.push(
-          ...this.title('OWNED WORKSPACE', width),
-          ...this.text(c.workspace.id, width),
-          ...this.text('Revision ' + c.workspace.revision + ' · ' + c.workspace.digest, width),
-          ...this.text('Current root: ' + c.workspace.root, width),
-          t.fill('', width),
-        );
-      if (c.snapshot.recurring_occurrence) {
-        const r = c.snapshot.recurring_occurrence;
-        lines.push(
-          ...this.title('RECURRING OCCURRENCE', width),
-          ...this.text('Definition ' + r.job_id + ' · occurrence ' + r.id, width),
-          ...this.text(
-            'Key ' + r.occurrence_key + ' · schedule revision ' + r.schedule_revision,
-            width,
-          ),
-        );
-      }
-      if (c.snapshot.job) {
-        const job = c.snapshot.job;
-        lines.push(
-          ...this.title('ONE-SHOT JOB · ' + job.state.toUpperCase(), width),
-          ...this.text(job.name + ' · ' + job.id, width),
-          ...this.text('Binding ' + job.binding_digest, width),
-          ...this.text(
-            job.occurrence
-              ? 'Occurrence ' + job.occurrence.id + ' · ' + job.occurrence.occurrence_key
-              : 'No occurrence admitted',
-            width,
-          ),
-          ...this.text(job.reason, width),
-        );
-      }
-      const team = c.snapshot.team as
-        | {
-            assignments: {
-              id: string;
-              profile_id: string;
-              generation: number;
-              step_state: string;
-              stale: boolean;
-              runtime?: { id: string; provider_route?: { provider: string; model: string } } | null;
-              execution?: {
-                state: string;
-                stopped: boolean;
-                stop_scope?: string;
-                peer?: {
-                  peer_id: string;
-                  task_id: string | null;
-                  cancel_state: string | null;
-                  remote_state: string | null;
-                } | null;
-              } | null;
-            }[];
-            messages: {
-              id: string;
-              sender: string;
-              recipient: string;
-              delivered_at: number | null;
-              acknowledged_at: number | null;
-            }[];
-          }
-        | undefined;
-      if (team?.assignments.length) {
-        lines.push(...this.title('TEAM BOARD', width));
-        for (const a of team.assignments) {
-          lines.push(
-            ...this.text(
-              `${shortId(a.id)} · ${a.profile_id} · claim ${a.generation} · ${a.step_state}${a.stale ? ' · stale plan' : ''}`,
-              width,
-            ),
-          );
-          if (a.runtime)
-            lines.push(
-              ...this.text(a.runtime.id + ' · invocation budget · model usage unknown', width),
-            );
-          if (a.execution?.peer)
-            lines.push(
-              ...this.text(
-                'Peer ' +
-                  a.execution.peer.peer_id +
-                  ' · task ' +
-                  (a.execution.peer.task_id ?? 'acceptance unknown'),
-                width,
-              ),
-              ...this.text(
-                (a.execution.peer.remote_state ?? 'remote state unknown') +
-                  ' · ' +
-                  (a.execution.peer.cancel_state ?? 'no cancel requested'),
-                width,
-              ),
-            );
-          if (a.runtime?.provider_route)
-            lines.push(
-              ...this.text(
-                'Backend ' +
-                  a.runtime.provider_route.provider +
-                  '/' +
-                  a.runtime.provider_route.model,
-                width,
-              ),
-            );
-          if (a.execution)
-            lines.push(
-              ...this.text(
-                a.execution.state +
-                  ' · ' +
-                  (a.execution.stop_scope === 'never-dispatched'
-                    ? 'not dispatched'
-                    : a.execution.stop_scope === 'remote-terminal-receipt'
-                      ? a.execution.stopped
-                        ? 'remote terminal receipt'
-                        : 'remote stop unconfirmed'
-                      : a.execution.stopped
-                        ? 'stop confirmed'
-                        : 'stop unconfirmed'),
-                width,
-              ),
-            );
-        }
-        lines.push(
-          ...this.text(
-            'Messages are passive. Starting or continuing work requires a separate grant.',
-            width,
-          ),
-        );
-        for (const m of team.messages)
-          lines.push(
-            ...this.text(
-              `${shortId(m.id)} · ${m.sender === 'operator' ? 'operator' : shortId(m.sender)} → ${shortId(m.recipient)} · ${m.acknowledged_at ? 'acknowledged' : m.delivered_at ? 'delivered' : 'stored'}`,
-              width,
-            ),
-          );
-      }
-      const task = c.snapshot.work_task;
-      if (task) {
-        lines.push(
-          ...this.title('DURABLE TASK · ' + task.state.toUpperCase(), width),
-          ...this.text(
-            task.id + ' · revision ' + task.revision + ' · plan ' + task.plan_revision,
-            width,
-          ),
-          ...this.text(task.objective, width),
-          ...this.text(task.reason, width),
-        );
-        if (task.runtime)
-          lines.push(
-            ...this.text(
-              'Requests ' +
-                task.runtime.requests_spent +
-                ' spent + ' +
-                task.runtime.reserved_requests +
-                ' reserved / ' +
-                task.limits.requests,
-              width,
-            ),
-            ...this.text(
-              task.limits.token_units === null
-                ? 'Token budget disabled · ' +
-                    (task.limits.output_token_bound === null
-                      ? 'no task output-token bound'
-                      : 'output bound ' + task.limits.output_token_bound)
-                : 'Declared token units ' +
-                    task.runtime.token_units +
-                    ' + ' +
-                    task.runtime.reserved_tokens +
-                    ' reserved / ' +
-                    task.limits.token_units,
-              width,
-            ),
-            ...this.text(
-              'Bounded progression ' +
-                (task.runtime.auto_enabled
-                  ? 'enabled · ' + task.runtime.remaining_steps + ' new steps remain'
-                  : 'paused') +
-                (task.runtime.auto_error ? ' · ' + task.runtime.auto_error : ''),
-              width,
-            ),
-          );
-        if (task.verification) {
-          const verification = task.verification as {
-            checks?: {
-              id: string;
-              check_key: string;
-              state: string;
-              fresh: boolean;
-              workspace_revision: number;
-            }[];
-            completion?: { state: string; fresh: boolean } | null;
-          };
-          lines.push(...this.title('VERIFICATION', width));
-          for (const check of verification.checks ?? [])
-            lines.push(
-              ...this.text(
-                `${check.check_key} · ${check.state} · ${check.fresh ? 'current' : 'historical'} · r${check.workspace_revision} · ${shortId(check.id)}`,
-                width,
-              ),
-            );
-          if (verification.completion)
-            lines.push(
-              ...this.text(
-                `Task ${verification.completion.state} · ${verification.completion.fresh ? 'current verification' : 'verification needs refresh'}`,
-                width,
-              ),
-            );
-          lines.push(...this.text('Ctrl+K → Inspect task for complete check receipts.', width));
-        }
-        for (const constraint of task.constraints)
-          lines.push(...this.text('Constraint: ' + constraint, width));
-        for (const step of task.steps)
-          lines.push(
-            ...this.title(step.key + ' · ' + step.state, width, 'muted'),
-            ...this.text(step.title, width),
-            ...this.text(step.instruction, width),
-            ...this.text(
-              'Step ' + step.id + (step.attempt_id ? ' · attempt ' + step.attempt_id : ''),
-              width,
-            ),
-            ...this.text('Depends on: ' + (step.depends_on.join(', ') || 'none'), width),
-            ...(step.review ? this.text('Operator review: ' + step.review, width) : []),
-          );
-        lines.push(
-          ...this.text(
-            'Ctrl+K → Task actions · receipts bind the exact workspace revision.',
-            width,
-          ),
-          t.fill('', width),
-        );
-      }
-      lines.push(...this.title('TASK FACTS', width));
-      const facts = c.facts.filter((f) => !(f as { superseded_by?: string }).superseded_by);
-      if (!facts.length)
-        lines.push(...this.text('No explicit task facts have been recorded.', width));
-      for (const fact of facts)
-        lines.push(
-          ...this.title(fact.kind.toUpperCase(), width, 'muted'),
-          ...this.prose(fact.id, fact.text, width - 4).map((line) => t.line(line, width)),
-          t.fill('', width),
-        );
-      lines.push(...this.title('CHILD WORK', width));
-      for (const agent of c.snapshot.agents ?? [])
-        lines.push(
-          ...this.text(
-            `${agent.profile_id} · revision ${agent.revision} · ${agent.state} · ${agent.route.provider}/${agent.route.model} · ${agent.tools.join(', ')}`,
-            width,
-          ),
-        );
-      if (!c.snapshot.children.length)
-        lines.push(...this.text('No child work in this session.', width));
-      for (const child of c.snapshot.children)
-        lines.push(
-          ...this.text(
-            '└─ ' +
-              shortId(child.id) +
-              ' · ' +
-              child.state +
-              (child.result_id ? ' · result ' + shortId(child.result_id) : '') +
-              (child.acknowledged ? ' · acknowledged' : ''),
-            width,
-          ),
-          ...(child.worker
-            ? this.text(
-                `${child.worker.binding.profile.id} · ${child.worker.binding.runtime} · generation ${child.worker.generation} · ${child.worker.dispatch_state} · ${child.worker.binding.bounds.scope === 'model-requests' ? child.worker.binding.bounds.requests + ' model requests' : child.worker.binding.bounds.invocations + ' invocation · internal model usage unknown'}`,
-                width,
-              )
-            : []),
-          ...(child.worker?.binding.isolation
-            ? this.text(
-                `Private draft ${shortId(child.worker.binding.isolation.workspace_id)} · execution ${child.worker.binding.isolation.execution.evidence} · root integration requires a reviewed proposal digest`,
-                width,
-              )
-            : []),
-        );
-      lines.push(t.fill('', width), ...this.title('USAGE', width));
-      if (c.usage)
-        lines.push(
-          ...this.text(
-            `${c.usage.observations} provider observations · ${c.usage.unknown_observations} unknown`,
-            width,
-          ),
-          ...this.text(
-            `Recorded tokens: ${usageInput(c.usage)} input (${c.usage.known_cache_read ?? 0} cache reads, ${c.usage.known_cache_write ?? 0} cache writes) · ${c.usage.known_output} output`,
-            width,
-          ),
-          ...this.text(
-            `Recorded cost $${c.usage.known_cost.toFixed(4)} · estimated $${c.usage.estimated_cost.toFixed(4)}`,
-            width,
-          ),
-        );
-      if (c.health?.execution?.backend)
-        lines.push(
-          t.fill('', width),
-          ...this.title('EXECUTION', width),
-          ...this.text(JSON.stringify(c.health.execution.backend, null, 2), width),
-        );
+      lines.push(...contextLines(this, c.snapshot, width));
     }
-    if (lines.length > 3000)
+    if (lines.length > MAX_DOCUMENT_LINES)
       lines = [
         ...this.text(
           'Showing the latest 3,000 rendered lines. Full content remains in session history and artifacts.',
           width,
         ),
-        ...lines.slice(-2999),
+        ...lines.slice(-(MAX_DOCUMENT_LINES - 1)),
       ];
     while (lines.length < this.view.bodyRows()) lines.push(t.fill('', width));
     return lines;

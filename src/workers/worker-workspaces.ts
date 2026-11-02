@@ -3,9 +3,8 @@ import type { Store, Artifacts } from '../store/index.js';
 import { readTree, type Workspaces } from '../coding/index.js';
 import type { WorkspaceTree, WorkerBinding } from '../core/index.js';
 import { repositoryPath, type RepositorySnapshots } from './repository-snapshots.js';
-import { canonical, digest, ServiceError, type ChildTask } from '../core/index.js';
+import { canonical, digest, ServiceError, workspaceDiff, type ChildTask } from '../core/index.js';
 import type { CodingWork } from '../coding/index.js';
-import { workspaceDiff } from './workspace-diff.js';
 
 /** The child ledger members a draft workspace checks. Child dispatch implements it. */
 export interface DraftChildren {

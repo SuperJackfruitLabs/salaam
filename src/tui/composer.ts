@@ -121,4 +121,4 @@ export function searchPrompt(query: string, match: string | undefined): string {
  * model to run exactly this command through salaam_local, so it takes the same approval path,
  * session mode, sandbox and danger check as any model command. Returns undefined for other text.
  */
-export { shellPassthrough } from '../local/index.js';
+export { shellPassthrough } from '../core/index.js';

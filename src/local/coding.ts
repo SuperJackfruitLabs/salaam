@@ -18,12 +18,12 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { classifyCommand, type DangerVerdict } from './command-danger.js';
 import { gitIdentityEnv, publishesToRemote } from './git-helpers.js';
-import { boundShellCommand } from './shell-passthrough.js';
 import type { ClassifierReview } from './danger-classifier.js';
 import { join } from 'node:path';
 import type { Store } from '../store/index.js';
 import type { ManagedWork } from '../execution/index.js';
 import {
+  boundShellCommand,
   digest,
   object,
   string,

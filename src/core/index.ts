@@ -34,6 +34,7 @@ export {
   toolMetadata,
   toolTitle,
 } from './outcome.js';
+export { commandTerminal } from './command-state.js';
 export { groupExists, processIdentity, processStart } from './process-identity.js';
 export {
   type Approval,
@@ -103,6 +104,7 @@ export {
   SLASH_COMPLETIONS,
   slashHelp,
 } from './slash-commands.js';
+export { boundShellCommand, shellPassthrough, typedText } from './shell-passthrough.js';
 export { acquireStateLock } from './state-lock.js';
 export { call, readJson } from './transport.js';
 export {
@@ -117,3 +119,4 @@ export {
   type WorkerBinding,
   type WorkerBoundaryView,
 } from './worker-binding.js';
+export { type WorkspaceChange, workspaceDiff } from './workspace-diff.js';

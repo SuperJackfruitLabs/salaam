@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import { typedText } from '../local/index.js';
+import { typedText } from '../core/index.js';
 
 /** What the picker shows for a desk session: its newest prompt (at most 200 characters) and when
  * its transcript last changed. Board and station sessions get nothing extra. */

@@ -17,7 +17,7 @@ describe('default AgentPod pins', () => {
     expect(defaultAgentPodConfig({ HOME: '/home/u' }, () => false)).toBeUndefined();
   });
   it('is what service start falls back to', () => {
-    const cli = readFileSync(new URL('../../src/cli/cli.ts', import.meta.url), 'utf8');
+    const cli = readFileSync(new URL('../../src/cli/commands/service.ts', import.meta.url), 'utf8');
     expect(cli).toMatch(
       /option\('--agentpod-config'\)\s*\?\?\s*defaultAgentPodConfig\(process\.env, existsSync\)/,
     );

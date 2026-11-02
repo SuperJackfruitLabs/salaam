@@ -44,7 +44,8 @@
         "test/**",
         "src/cli/cli.ts",
         "src/cli/help.ts",
-        "src/cli/mcp-commands.ts"
+        "src/cli/mcp-commands.ts",
+        "src/cli/commands/**"
       ],
       "rules": {
         "no-console": "off"

@@ -7,8 +7,14 @@ import type { WorkTask, CheckReceipt } from '../core/index.js';
 import type { StationBinding } from '../runtime/index.js';
 import type { TaskBudget } from './budget.js';
 import type { CodingWork } from '../coding/index.js';
-import { commandTerminal, readTree, type Workspaces } from '../coding/index.js';
-import { canonical, digest, ServiceError, type Controller } from '../core/index.js';
+import { readTree, type Workspaces } from '../coding/index.js';
+import {
+  canonical,
+  commandTerminal,
+  digest,
+  ServiceError,
+  type Controller,
+} from '../core/index.js';
 
 export interface StationCheckEvidence {
   version: 1;

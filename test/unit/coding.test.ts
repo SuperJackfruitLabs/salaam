@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { Store } from '../../src/store/store.js';
 import { Artifacts } from '../../src/store/artifacts.js';
 import { Workspaces } from '../../src/coding/workspaces.js';
-import { CodingWork, commandTerminal } from '../../src/coding/coding.js';
+import { CodingWork } from '../../src/coding/coding.js';
+import { commandTerminal } from '../../src/core/command-state.js';
 import type { ExecutionBackend } from '../../src/coding/executor.js';
 import { until } from '../helpers.js';
 
