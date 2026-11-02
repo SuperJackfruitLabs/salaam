@@ -513,7 +513,7 @@ export class ChildWork {
     const children = this.store.db
       .prepare('SELECT * FROM child_tasks WHERE parent_session=?')
       .all(this.store.attempt(attempt).session_id) as unknown as ChildTask[];
-    for (const child of children.filter((child) => this.store.cancelled(child.child_attempt)))
+    for (const child of children.filter((c) => this.store.cancelled(c.child_attempt)))
       for (const run of this.supervisor.coding?.list(child.child_session) ?? [])
         if (
           ![

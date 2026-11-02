@@ -694,8 +694,8 @@ export class SalaamService {
       this.release();
       throw error;
     }
-    this.closed = new Promise((resolve) => {
-      this.resolveClosed = resolve;
+    this.closed = new Promise((done) => {
+      this.resolveClosed = done;
     });
     const routes = controllers(this);
     this.operatorRouter = new Router(
@@ -853,12 +853,12 @@ export class SalaamService {
   private async listen(server: Server, path: string): Promise<void> {
     // The exclusive state lock is held before removing a stale socket.
     if (existsSync(path)) unlinkSync(path);
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((done, reject) => {
       server.once('error', reject);
       server.listen(path, () => {
         server.off('error', reject);
         chmodSync(path, 0o600);
-        resolve();
+        done();
       });
     });
   }
@@ -915,12 +915,12 @@ export class SalaamService {
       Promise.all(
         [this.operator, this.bridgeServer].map(
           (server) =>
-            new Promise<void>((resolve, reject) => {
+            new Promise<void>((done, reject) => {
               if (!server.listening) {
-                resolve();
+                done();
                 return;
               }
-              server.close((error) => (error ? reject(error) : resolve()));
+              server.close((error) => (error ? reject(error) : done()));
               server.closeAllConnections();
             }),
         ),

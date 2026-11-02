@@ -162,7 +162,7 @@ export class A2AInbound {
     return structuredClone(c) as InboundConfig;
   }
   private grant(peer: string, tenant: string): A2AInboundGrant {
-    const g = this.read().grants.find((g) => g.peer === peer && g.tenant === tenant);
+    const g = this.read().grants.find((grant) => grant.peer === peer && grant.tenant === tenant);
     if (!g) throw new ServiceError('a2a_forbidden', 'Peer/tenant has no current grant', 403);
     return g;
   }
@@ -181,7 +181,7 @@ export class A2AInbound {
       s.external.assignment(a.id) ||
       !['reviewer', 'explorer', 'integrator'].includes(grant.profile.role ?? '') ||
       grant.profile.tools.some(
-        (t) => !['salaam_probe', 'salaam_repository', 'salaam_findings'].includes(t),
+        (tool) => !['salaam_probe', 'salaam_repository', 'salaam_findings'].includes(tool),
       )
     )
       throw Error('Inbound grants require a dedicated single-step native analysis assignment');

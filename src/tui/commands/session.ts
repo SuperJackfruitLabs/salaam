@@ -190,12 +190,12 @@ const copy: SlashCommand = {
       throw new Error(
         'Clipboard copying is currently supported on macOS; use /export on this platform.',
       );
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((done, reject) => {
       const child = spawn('/usr/bin/pbcopy', [], { stdio: ['pipe', 'ignore', 'pipe'] });
       child.on('error', reject);
       child.stdin.on('error', reject);
       child.on('close', (code) =>
-        code === 0 ? resolve() : reject(new Error('Clipboard copy failed.')),
+        code === 0 ? done() : reject(new Error('Clipboard copy failed.')),
       );
       child.stdin.end(last.text);
     });

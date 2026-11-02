@@ -104,17 +104,17 @@ export async function proveExecutionBoundary(options: BoundaryProofOptions): Pro
       const socket = join(secretDir, name);
       const server = createServer((connection) => connection.end('host-control-canary'));
       servers.push(server);
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((done, reject) => {
         server.once('error', reject);
-        server.listen(socket, resolve);
+        server.listen(socket, done);
       });
       chmodSync(socket, 0o666);
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((done, reject) => {
         const client = createConnection(socket);
         client.once('error', reject);
         client.once('data', (value) => {
           client.destroy();
-          if (value.toString() === 'host-control-canary') resolve();
+          if (value.toString() === 'host-control-canary') done();
           else reject(new Error('Socket canary unavailable'));
         });
       });
@@ -207,13 +207,13 @@ export async function proveExecutionBoundary(options: BoundaryProofOptions): Pro
     });
     let orphan: string;
     try {
-      orphan = await new Promise<string>((resolve, reject) => {
+      orphan = await new Promise<string>((done, reject) => {
         const timer = setTimeout(() => reject(new Error('Orphan helper timed out')), 10_000);
         helper.once('message', (value: unknown) => {
           clearTimeout(timer);
           const id =
             value !== null && typeof value === 'object' && 'id' in value ? value.id : undefined;
-          if (/^[a-f0-9]{64}$/.test(String(id))) resolve(id as string);
+          if (/^[a-f0-9]{64}$/.test(String(id))) done(id as string);
           else reject(new Error('Invalid helper identity'));
         });
         helper.once('error', (error) => {
@@ -226,12 +226,12 @@ export async function proveExecutionBoundary(options: BoundaryProofOptions): Pro
         });
       });
     } finally {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((done) => {
         if (helper.exitCode !== null || helper.signalCode !== null) {
-          resolve();
+          done();
           return;
         }
-        helper.once('exit', () => resolve());
+        helper.once('exit', () => done());
         helper.kill('SIGKILL');
       });
     }
@@ -260,8 +260,7 @@ export async function proveExecutionBoundary(options: BoundaryProofOptions): Pro
         report.status = 'failed';
       }
     }
-    for (const server of servers)
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+    for (const server of servers) await new Promise<void>((done) => server.close(() => done()));
     // If the engine is unavailable, retain the canaries/workspace for explicit reconciliation.
     if (dir && (!broker || report.cleanup_confirmed)) rmSync(dir, { recursive: true, force: true });
     else if (dir) report.retained_scratch = dir;

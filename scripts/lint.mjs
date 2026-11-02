@@ -2,7 +2,8 @@
 // Type-aware lint with a ratchet. Rules with existing findings are counted in
 // scripts/lint-baseline.json; a count may fall but never rise, and a rule missing from the
 // baseline must be clean, and an improvement must be locked in. `npm run lint -- --update` lowers the baseline after a cleanup and
-// refuses to raise it.
+// refuses to raise it; a rule that reaches zero leaves the baseline and must then stay clean.
+// SRC_CLEAN rules must have no findings in src/ at all, whatever the baseline allows elsewhere.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -30,6 +31,33 @@ const findings = report.diagnostics;
 const counts = {};
 for (const finding of findings) counts[finding.code] = (counts[finding.code] ?? 0) + 1;
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+
+// Rules src/ must stay clean of whatever the baseline allows elsewhere (tests, scripts).
+const SRC_CLEAN = new Set([
+  'eslint(no-console)',
+  'eslint(no-empty)',
+  'eslint(no-unused-vars)',
+  'eslint(no-useless-concat)',
+  'typescript(consistent-type-imports)',
+  'typescript(no-explicit-any)',
+  'typescript(no-unnecessary-boolean-literal-compare)',
+  'typescript(no-unnecessary-type-assertion)',
+  'typescript(no-unnecessary-type-conversion)',
+  'typescript(restrict-template-expressions)',
+  'typescript(unbound-method)',
+  'unicorn(no-useless-fallback-in-spread)',
+  'unicorn(no-useless-spread)',
+  'unicorn(prefer-string-starts-ends-with)',
+]);
+const unclean = findings.filter((f) => SRC_CLEAN.has(f.code) && f.filename.startsWith('src/'));
+if (unclean.length) {
+  for (const f of unclean.slice(0, 40)) {
+    const at = f.labels?.[0]?.span;
+    console.error(`${f.code}: ${f.filename}${at ? ':' + at.line : ''}  ${f.message}`);
+  }
+  console.error(`lint: ${unclean.length} findings in src/ for rules src/ must keep clean`);
+  process.exit(1);
+}
 
 const raised = Object.entries(counts).filter(([rule, n]) => n > (baseline[rule] ?? 0));
 if (raised.length) {

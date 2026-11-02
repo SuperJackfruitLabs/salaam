@@ -149,12 +149,10 @@ export function validateClaudePayload(
   if (last.role !== 'user' || text !== frame)
     throw new Error('Required task context missing from Claude payload');
   if (!Array.isArray(payload.tools)) throw new Error('Claude tool inventory missing');
-  const names = payload.tools.map((value) => String(object(value).name)).toSorted();
+  const names = payload.tools.map((tool) => String(object(tool).name)).toSorted();
   if (
     canonical(names) !== canonical([...tools].toSorted()) ||
-    payload.tools.some(
-      (value) => object(value).type !== undefined && object(value).type !== 'custom',
-    )
+    payload.tools.some((tool) => object(tool).type !== undefined && object(tool).type !== 'custom')
   )
     throw new Error('Unapproved Claude tool inventory');
   // No server-side tools, model fallbacks or provider-managed agents may bypass Salaam.

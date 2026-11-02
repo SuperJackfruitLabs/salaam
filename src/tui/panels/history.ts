@@ -67,7 +67,7 @@ export function tools(ctx: PanelContext): void {
       description: shortId(event.payload.attempt_id) + ' · ' + event.payload.tool_call_id,
     })),
     (value) => {
-      const event = events.find((event) => String(event.seq) === value)!;
+      const event = events.find((e) => String(e.seq) === value)!;
       const p = event.payload;
       const outcome = ctx.client.activity.find(
         (other) =>

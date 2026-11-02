@@ -1,7 +1,7 @@
 {
   "eslint(no-empty)": 17,
   "eslint(no-new)": 3,
-  "eslint(no-shadow)": 110,
+  "eslint(no-shadow)": 83,
   "eslint(no-underscore-dangle)": 39,
   "eslint(no-unused-expressions)": 3,
   "eslint(no-unused-vars)": 41,

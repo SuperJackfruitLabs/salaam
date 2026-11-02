@@ -64,7 +64,7 @@ export class A2ABackend implements ExternalBackend {
     return this.ready ? this.peers.map((p) => this.descriptor(p)) : [];
   }
   validate(runtime: ExternalRuntime): void {
-    const p = this.read().find((p) => p.id === runtime.id);
+    const p = this.read().find((peer) => peer.id === runtime.id);
     if (!this.ready || !p || canonical(this.descriptor(p)) !== canonical(runtime))
       throw Error('A2A peer/config/credential/build admission changed');
   }
@@ -94,7 +94,7 @@ export class A2ABackend implements ExternalBackend {
     hooks.assertActive();
     if (this.active.has(run) || this.trees.has(run))
       throw Error('A2A invocation cannot be replayed');
-    const p = this.peers.find((p) => p.id === binding.external!.id)!,
+    const p = this.peers.find((peer) => peer.id === binding.external!.id)!,
       http = new A2AHttp(p);
     const files: Record<string, string> = Object.create(null),
       disclosure: A2ACheckpoint['disclosure'] = [];
@@ -179,7 +179,7 @@ export class A2ABackend implements ExternalBackend {
     if (!invocation) {
       const record = a2aObject(receipt);
       const cp = a2aObject<A2ACheckpoint>(record.checkpoint ?? record),
-        p = this.peers.find((p) => p.id === runtime.id)!;
+        p = this.peers.find((peer) => peer.id === runtime.id)!;
       if (cp.run_id !== run) throw Error('Remote cleanup receipt belongs to another local run');
       invocation = new A2AInvocation(
         { id: p.id, tenant: p.tenant, digest: digest(p), cancel: p.cancel, skill: p.skill },
@@ -217,7 +217,7 @@ export class ExternalBackends implements ExternalBackend {
     return this.backends.flatMap((b) => b.runtimes());
   }
   private owner(runtime: ExternalRuntime): ExternalBackend {
-    const b = this.backends.find((b) => b.runtimes().some((r) => r.id === runtime.id));
+    const b = this.backends.find((backend) => backend.runtimes().some((r) => r.id === runtime.id));
     if (!b) throw Error('Runtime is unavailable');
     return b;
   }

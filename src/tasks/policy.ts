@@ -107,7 +107,7 @@ export function taskPolicy(value: Record<string, unknown>): TaskPolicy {
     completion_gate = { critic, hooks: hooks.map((v) => check(v, hookKeys, 'Hook')) };
     if (
       requiredChecks({ acceptance, completion_gate }).length !==
-      new Set(requiredChecks({ acceptance, completion_gate }).map((c) => c.key)).size
+      new Set(requiredChecks({ acceptance, completion_gate }).map((required) => required.key)).size
     )
       throw new ServiceError('invalid_plan', 'A hook collides with an acceptance check', 400);
   }

@@ -181,7 +181,7 @@ function passedChecks(
     )
       fail();
     const e = JSON.parse(artifacts.read(String(check.artifact_id)));
-    const c = calls.find((c) => c.id === e.call_id);
+    const c = calls.find((call) => call.id === e.call_id);
     if (
       e.version !== 1 ||
       e.backend !== 'linux-systemd-station-v1' ||

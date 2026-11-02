@@ -180,14 +180,14 @@ export class Outbox {
   }
   private enqueueCommand(record: Pending): Pending {
     const records = this.records();
-    const prior = records.find((prior) => prior.request_id === record.request_id);
+    const prior = records.find((r) => r.request_id === record.request_id);
     if (prior) {
       if (canonical({ ...prior, created_at: 0 }) !== canonical({ ...record, created_at: 0 }))
         throw new Error('Pending request ID already binds different input');
       return prior;
     }
     record.created_at = records.reduce(
-      (latest, prior) => Math.max(latest, prior.created_at + 1),
+      (latest, r) => Math.max(latest, r.created_at + 1),
       Date.now(),
     );
     this.save(record);
@@ -393,16 +393,16 @@ export async function attach(
   for (const attempt of snapshot.attempts.filter((a) => !['completed', 'failed'].includes(a.state)))
     output(`[${attempt.id}: ${attempt.state}${attempt.resolved_by ? ', continued' : ''}]`);
   for (const approval of snapshot.approvals.filter((a) => a.state === 'pending')) {
-    const op = snapshot.operations.find((op) => op.id === approval.operation_id);
+    const op = snapshot.operations.find((o) => o.id === approval.operation_id);
     output(
       `[approval ${approval.id}] ${safe(op?.target ?? '')} ${safe(op?.value ?? '')}${op?.value_truncated ? ' [truncated; inspect full operation]' : ''} version=${safe(op?.target_version ?? '')} digest=${approval.operation_digest} revision=${approval.revision}`,
     );
   }
-  for (const child of snapshot.children.filter((child) => child.result_id && !child.acknowledged))
+  for (const child of snapshot.children.filter((c) => c.result_id && !c.acknowledged))
     output(
       `[child result ${child.id} result=${child.result_id} state=${child.state}; available until acknowledged]`,
     );
-  for (const op of snapshot.operations.filter((op) => op.state === 'outcome_unknown'))
+  for (const op of snapshot.operations.filter((o) => o.state === 'outcome_unknown'))
     output(`[operation ${op.id}: outcome_unknown; inspect and reconcile before continuing]`);
   output(
     `Attached to ${id} (${controller ? 'controller' : 'observer'}). Ctrl-D or Ctrl-C detaches. :help lists decision and cancel commands.`,

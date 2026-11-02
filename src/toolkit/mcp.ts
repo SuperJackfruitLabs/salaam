@@ -243,8 +243,8 @@ export class ToolkitMcp {
     this.usable();
     if (category === undefined) {
       if (action !== undefined) throw new McpInputFailure();
-      return [...new Set(this.review.actions.map((r) => r.category))].map((category) => ({
-        category,
+      return [...new Set(this.review.actions.map((r) => r.category))].map((name) => ({
+        category: name,
         kind: 'native',
       }));
     }
