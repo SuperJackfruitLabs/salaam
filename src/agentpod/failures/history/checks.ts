@@ -1,9 +1,9 @@
 // The station of the historical read-only check: every task check passed on the station it was
 // bound to, with its unit's stop proof, and every other station call is a stopped read of a
 // proven tree (or the one boundary write).
-import { canonical, digest } from '../../../core/index.js';
+import { canonical, digest, oneOf } from '../../../core/index.js';
 import { requiredChecks } from '../../../tasks/index.js';
-import type { Row } from '../rule.js';
+import type { Json, Row } from '../rule.js';
 import {
   stopProof,
   type AppliedPatch,
@@ -15,8 +15,8 @@ import {
 /** What a passed check proved: its call, the tree it checked and the configuration it ran in. */
 export interface CheckProof {
   call: Row;
-  tree: string;
-  config: string;
+  tree: unknown;
+  config: unknown;
 }
 
 /** The task's checks and the station's calls, units and observations, with each check's proof. */
@@ -98,11 +98,13 @@ function boundCheck(h: History, journal: CheckJournal, check: Row) {
       call &&
       configured?.cwd === '.' &&
       (check.step_id === null ||
-        task.steps.some((s) => s.id === check.step_id && s.checks?.includes(check.check_key))),
+        task.steps.some(
+          (s) => s.id === check.step_id && !!s.checks && oneOf(s.checks, check.check_key),
+        )),
   );
   const c = call!,
     args = JSON.parse(String(c.args_json)),
-    station = bound.station;
+    station = bound.station as Json | undefined;
   require(
     bound.version === 1 &&
       bound.check_id === check.id &&
@@ -270,11 +272,11 @@ function stationCall(
       call.root_digest === root &&
       call.operation_id === null &&
       call.state === 'returned' &&
-      ['read', 'check'].includes(call.kind) &&
+      oneOf(['read', 'check'], call.kind) &&
       call.helper_state === 'stopped' &&
       call.helper_stop_json &&
       call.helper_identity &&
-      call.helper_pid > 0 &&
+      Number(call.helper_pid) > 0 &&
       call.input_digest === digest(JSON.parse(String(call.args_json))),
   );
   const stop = JSON.parse(String(call.helper_stop_json));

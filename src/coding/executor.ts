@@ -7,7 +7,12 @@ import {
   inspectBoundary,
   engineJson,
   decodeLogs,
+  type ContainerCreateConfig,
+  type EngineContainer,
+  type EngineImage,
+  type EngineInfo,
   type EngineRequest,
+  type EngineVersion,
 } from '../execution/index.js';
 import { digest, ServiceError } from '../core/index.js';
 
@@ -49,7 +54,7 @@ export class DockerCodingExecutor implements ExecutionBackend {
   private imageId = '';
   private env: string[] = [];
   constructor(private readonly engine: EngineRequest) {}
-  private config(source: string, run: string): any {
+  private config(source: string, run: string): ContainerCreateConfig {
     const config = boundaryConfig(source, run, 'timeout');
     config.Image = CODING_IMAGE;
     config.Env = this.env;
@@ -67,8 +72,8 @@ export class DockerCodingExecutor implements ExecutionBackend {
   }
   async prepare(scratchRoot: string): Promise<Record<string, unknown>> {
     this.profileDigest = '';
-    const version = engineJson(await this.engine('GET', '/version')),
-      info = engineJson(await this.engine('GET', '/info'));
+    const version = engineJson<EngineVersion>(await this.engine('GET', '/version')),
+      info = engineJson<EngineInfo>(await this.engine('GET', '/info'));
     if (
       version.Os !== 'linux' ||
       !['amd64', 'arm64'].includes(version.Arch) ||
@@ -82,7 +87,7 @@ export class DockerCodingExecutor implements ExecutionBackend {
         'Required Linux executor controls are unavailable',
         503,
       );
-    const image = engineJson(
+    const image = engineJson<EngineImage>(
       await this.engine('GET', `/images/${encodeURIComponent(CODING_IMAGE)}/json`),
     );
     const refs = [
@@ -166,9 +171,9 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
       rmSync(dir, { recursive: true, force: true });
     }
   }
-  private async owned(id: string, run: string): Promise<any> {
+  private async owned(id: string, run: string): Promise<EngineContainer> {
     if (!validId(id)) throw new Error('Invalid executor identity');
-    const actual = engineJson(await this.engine('GET', `/containers/${id}/json`));
+    const actual = engineJson<EngineContainer>(await this.engine('GET', `/containers/${id}/json`));
     if (
       actual.Id !== id ||
       actual.Config.Labels['salaam.command.run'] !== run ||
@@ -179,8 +184,8 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
   }
   async create(source: string, run: string): Promise<string> {
     if (!this.profileDigest) throw new Error('Unproven executor');
-    const info = engineJson(await this.engine('GET', '/info')),
-      version = engineJson(await this.engine('GET', '/version'));
+    const info = engineJson<EngineInfo>(await this.engine('GET', '/info')),
+      version = engineJson<EngineVersion>(await this.engine('GET', '/version'));
     if (
       info.ID !== this.engineId ||
       version.Version !== this.evidence.engine_version ||
@@ -195,7 +200,7 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
         503,
       );
     const config = this.config(source, run),
-      result = engineJson(
+      result = engineJson<{ Id: string }>(
         await this.engine('POST', `/containers/create?name=salaam-command-${run}`, config),
         [201],
       );
@@ -221,7 +226,7 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
   }
   async exec(id: string, run: string, command: string, cwd: string): Promise<string> {
     await this.owned(id, run);
-    const result = engineJson(
+    const result = engineJson<{ Id: string }>(
       await this.engine('POST', `/containers/${id}/exec`, {
         User: '65532:65532',
         AttachStdout: false,
@@ -258,7 +263,12 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
   ): Promise<{ running: boolean; exit: number | null }> {
     await this.owned(id, run);
     if (!validId(exec)) throw new Error('Invalid exec identity');
-    const actual = engineJson(await this.engine('GET', `/exec/${exec}/json`));
+    const actual = engineJson<{
+      ContainerID?: unknown;
+      ID?: unknown;
+      Running: boolean;
+      ExitCode: number;
+    }>(await this.engine('GET', `/exec/${exec}/json`));
     if (actual.ContainerID !== id || actual.ID !== exec) throw new Error('Execution owner changed');
     return {
       running: actual.Running,
@@ -267,7 +277,7 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
   }
   async logs(id: string, run: string): Promise<{ content: string; bytes: number }> {
     await this.owned(id, run);
-    const result = engineJson(
+    const result = engineJson<{ Id: string }>(
       await this.engine('POST', `/containers/${id}/exec`, {
         User: '65532:65532',
         AttachStdout: true,
@@ -288,7 +298,9 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
     );
     if (reply.status !== 200) throw new Error('Command logs unavailable');
     const output = decodeLogs(reply.body, 100_000);
-    const status = engineJson(await this.engine('GET', `/exec/${result.Id}/json`));
+    const status = engineJson<{ Running?: unknown; ExitCode?: unknown }>(
+      await this.engine('GET', `/exec/${result.Id}/json`),
+    );
     if (status.Running || status.ExitCode !== 0) throw new Error('Command log read failed');
     const value = JSON.parse(output);
     if (
@@ -303,14 +315,14 @@ assert.deepEqual(fs.readdirSync('/sys/class/net'),['lo']);assert.throws(()=>fs.s
   async cleanup(run: string): Promise<void> {
     const filters = encodeURIComponent(JSON.stringify({ label: [`salaam.command.run=${run}`] }));
     const path = `/containers/json?all=1&filters=${filters}`;
-    const rows = engineJson(await this.engine('GET', path));
+    const rows = engineJson<{ Id: string }[]>(await this.engine('GET', path));
     if (!Array.isArray(rows)) throw new Error('Invalid cleanup inventory');
     for (const row of rows) {
       await this.owned(row.Id, run);
       if ((await this.engine('DELETE', `/containers/${row.Id}?force=1&v=1`)).status !== 204)
         throw new Error('Command cleanup failed');
     }
-    if (engineJson(await this.engine('GET', path)).length)
+    if (engineJson<unknown[]>(await this.engine('GET', path)).length)
       throw new Error('Command cleanup unconfirmed');
   }
 }

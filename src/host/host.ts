@@ -159,38 +159,38 @@ export function hostLocalSandbox(
     ...(dangerClassifier ? { danger_classifier: dangerClassifier } : {}),
   };
 }
+/** The manifest's local sandbox section; only some manifest schemas have one. */
+function localSandbox(m: HostManifest): HostLocalSandbox | undefined {
+  return (m as { local_sandbox?: HostLocalSandbox }).local_sandbox;
+}
 /** The read-only paths outside the workspace the reviewed manifest lets local commands read. */
 export function hostReadPaths(m: HostManifest): string[] {
-  const r = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.read_paths;
+  const r = localSandbox(m)?.read_paths;
   return Array.isArray(r) ? r.filter((p): p is string => typeof p === 'string') : [];
 }
 /** Whether the reviewed manifest lets an interactive session choose full access (Phase 2b). */
 export function hostAllowsFullAccessSessions(m: HostManifest): boolean {
-  return (
-    (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.full_access_sessions === 'allow'
-  );
+  return localSandbox(m)?.full_access_sessions === 'allow';
 }
 /** Whether the reviewed manifest lets a desk session choose YOLO. */
 export function hostAllowsYoloSessions(m: HostManifest): boolean {
-  return (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.yolo_sessions === 'allow';
+  return localSandbox(m)?.yolo_sessions === 'allow';
 }
 /** The command reviewer a host service may run: a reviewed config and optional pin, or none
  * ({ pin: 'off' }). Absent means forbidden: hosts get no reviewer without the operator. */
 export function hostDangerClassifier(m: HostManifest): { config?: string; pin?: string } {
-  const d = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier;
+  const d = localSandbox(m)?.danger_classifier;
   if (!d || d.mode !== 'config') return { pin: 'off' };
   return { config: d.config, ...(d.pin ? { pin: d.pin } : {}) };
 }
 /** The broker socket local commands reach the network through, or null for no network. */
 export function hostCommandNetwork(m: HostManifest): { socket: string } | null {
-  const n = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.command_network;
+  const n = localSandbox(m)?.command_network;
   return n?.mode === 'broker' && typeof n.socket === 'string' ? { socket: n.socket } : null;
 }
 /** Whether the reviewed manifest lets local commands run unsandboxed on a host without a sandbox. */
 export function hostAllowsUnsandboxed(m: HostManifest): boolean {
-  return (
-    (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.unsandboxed_commands === 'allow'
-  );
+  return localSandbox(m)?.unsandboxed_commands === 'allow';
 }
 export interface OperatorAccess {
   group: string;
@@ -215,9 +215,9 @@ export function resolveOperatorGroup(group: unknown): OperatorAccess {
 }
 /** One minute to one day: long enough for a person to answer, short enough to free the station. */
 function approvalTtl(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 60000 || (value as number) > 86400000)
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 60000 || value > 86400000)
     throw Error('approval_ttl_ms must be an integer from 60000 to 86400000');
-  return value as number;
+  return value;
 }
 export function hostApprovalTtlMs(m: HostManifest): number | undefined {
   return m.schema === 6 ? m.approval_ttl_ms : undefined;
@@ -660,13 +660,13 @@ export function readHost(path: string): HostManifest {
             hostReadPaths(m),
             hostAllowsFullAccessSessions(m),
             hostAllowsYoloSessions(m),
-            (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier,
+            localSandbox(m)?.danger_classifier,
           ),
         )
     )
       throw Error('Host command sandbox changed; run host plan again');
     {
-      const d = (m as { local_sandbox?: HostLocalSandbox }).local_sandbox?.danger_classifier;
+      const d = localSandbox(m)?.danger_classifier;
       if (d?.mode === 'config' && reviewerDigest(d.config) !== d.digest)
         throw Error('Host command reviewer config changed; run host plan again');
     }

@@ -54,9 +54,9 @@ function cancelledPatchCall(h: History, expiry: Expiry): Row {
       op.operation_digest === offered.operation_digest &&
       operationBinding(op as unknown as Operation) === op.operation_digest &&
       approval.state === (expiry.invalidated ? 'invalidated' : 'expired') &&
-      approval.revision === offered.approval_revision + 1 &&
+      approval.revision === (offered.approval_revision as number) + 1 &&
       approval.expires_at === offered.expires_at &&
-      (expiry.invalidated || approval.expires_at <= Date.now()) &&
+      (expiry.invalidated || Number(approval.expires_at) <= Date.now()) &&
       approval.decision === null &&
       approval.decided_by === null &&
       approval.worker_epoch === op.worker_epoch &&
@@ -87,7 +87,7 @@ function cancelledPatchCall(h: History, expiry: Expiry): Row {
       call.helper_pid === null &&
       call.helper_identity === null &&
       call.helper_stop_json === null &&
-      !store.db.prepare('SELECT 1 FROM station_units WHERE call_id=?').get(String(call.id)),
+      !store.db.prepare('SELECT 1 FROM station_units WHERE call_id=?').get(call.id),
   );
   require(patchArgsBind(op, call, args, root));
   return call;

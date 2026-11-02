@@ -4,7 +4,10 @@
 import { canonical, digest, ServiceError, type WorkTask } from '../../core/index.js';
 import type { Artifacts } from '../../store/index.js';
 import { requiredChecks } from '../../tasks/index.js';
-import type { Row, RuleStore } from './rule.js';
+import type { Json, Row, RuleStore } from './rule.js';
+
+/** A completion's saved evidence, after its diff and checks are found. */
+type CompletionEvidence = Json & { diff: Json; checks: unknown[] };
 
 /** What the abandonment check reads through. */
 export interface LocalSuccessDeps {
@@ -80,7 +83,7 @@ function completionEvidence(
   journal: SuccessJournal,
   task: WorkTask,
   rootDigest: string,
-): Row {
+): CompletionEvidence {
   const artifacts = deps.verification.artifacts;
   const { completion } = journal;
   const evidence = JSON.parse(artifacts.read(String(completion!.artifact_id)));
@@ -105,7 +108,7 @@ function completionEvidence(
 function appliedWrite(
   store: RuleStore,
   journal: SuccessJournal,
-  evidence: Row,
+  evidence: CompletionEvidence,
   rootDigest: string,
 ): Row | undefined {
   const { attempts, operations, calls } = journal;
@@ -163,7 +166,7 @@ function passedChecks(
   deps: LocalSuccessDeps,
   journal: SuccessJournal,
   task: WorkTask,
-  evidence: Row,
+  evidence: CompletionEvidence,
   rootDigest: string,
 ): Row[] {
   const artifacts = deps.verification.artifacts;

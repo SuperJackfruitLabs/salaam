@@ -60,7 +60,7 @@ function atomic(path: string, data: string) {
 }
 function manifestInput(value: unknown) {
   const m = object(value);
-  if (![2, 3, 4, 5, 6].includes(m.schema as number) || m.mode !== 'agentpod')
+  if (!([2, 3, 4, 5, 6] as unknown[]).includes(m.schema) || m.mode !== 'agentpod')
     throw Error('Only reviewed AgentPod host manifests can be managed');
   const provider = object(m.provider);
   return {

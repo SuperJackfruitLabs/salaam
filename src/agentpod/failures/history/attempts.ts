@@ -1,7 +1,7 @@
 // The attempts of the historical read-only check: the root session and its children, every
 // attempt completed (or the one expired write's, cancelled), each model request granted,
 // dispatched and receipted exactly once, and each root attempt bound to its plan step.
-import { canonical, digest } from '../../../core/index.js';
+import { canonical, digest, oneOf } from '../../../core/index.js';
 import type { Row } from '../rule.js';
 import { HISTORY_SESSION_LIMIT, type History, type HistoryRun, type Unapplied } from './context.js';
 
@@ -113,7 +113,8 @@ function attemptGrants(h: History, children: Row[], a: Row, journal: ModelJourna
       receipts.length === grants.length &&
       grants.length === dispatched.length &&
       budget.spent_requests === receipts.length &&
-      budget.spent_requests + budget.reserved_requests <= budget.limit_requests &&
+      budget.spent_requests + (budget.reserved_requests as number) <=
+        (budget.limit_requests as number) &&
       budget.reserved_requests ===
         children.filter((c) => c.parent_attempt === a.id).reduce((n, c) => n + Number(c.budget), 0),
   );
@@ -127,7 +128,7 @@ function attemptGrants(h: History, children: Row[], a: Row, journal: ModelJourna
     const receipt = receipts.find((u) => u.source_key === p.source_key);
     require(
       receipt &&
-        ['known', 'estimated'].includes(receipt.status) &&
+        oneOf(['known', 'estimated'], receipt.status) &&
         receipt.payload_digest &&
         receipt.provider === route!.provider &&
         receipt.model === route!.model &&

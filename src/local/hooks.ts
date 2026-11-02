@@ -386,7 +386,8 @@ function isLink(path: string): boolean {
   }
 }
 function short(command: string): string {
-  const line = command.split('\n')[0]!;
+  // split always returns at least one part.
+  const [line = ''] = command.split('\n');
   return line.length > 60 ? line.slice(0, 57) + '…' : line;
 }
 function truncate(text: string, max: number): string {

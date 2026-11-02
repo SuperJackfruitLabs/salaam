@@ -1,6 +1,6 @@
 import { canonical } from '../../core/index.js';
 import { noLedgeredEffects } from './ledgers.js';
-import type { FailureRule, Row, RuleStore } from './rule.js';
+import type { FailureRule, Json, Row, RuleStore } from './rule.js';
 import type { WorkTask } from '../../core/index.js';
 
 /** An expired decision offer and the run it was offered in. */
@@ -81,7 +81,7 @@ export class MultiOfferReviewExpiry implements FailureRule<ExpiredOffers> {
     events: Row[],
     requested: Row,
     ops: Row[],
-  ): Row[] | null {
+  ): Json[] | null {
     const of = (e: Row) => JSON.parse(String(e.payload));
     // The invalidations the revocation made: the contiguous block of invalidated approvals and
     // their cancelled operations that ends at the revocation's own cancel request.
@@ -92,7 +92,7 @@ export class MultiOfferReviewExpiry implements FailureRule<ExpiredOffers> {
       if (e.kind !== 'approval.invalidated') break;
       block.add(String(of(e).approval_id));
     }
-    const offers: Row[] = [];
+    const offers: Json[] = [];
     for (const op of ops) {
       const approvals = this.store.db
         .prepare('SELECT * FROM approvals WHERE operation_id=?')

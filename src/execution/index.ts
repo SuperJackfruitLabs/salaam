@@ -2,10 +2,17 @@
 export {
   BoundaryBroker,
   boundaryConfig,
+  type ContainerCreateConfig,
+  type CreateMount,
   decodeLogs,
+  type EngineContainer,
+  type EngineImage,
+  type EngineInfo,
+  type EngineMount,
   engineJson,
   engineRequest,
   type EngineRequest,
+  type EngineVersion,
   EXECUTION_STATUS,
   inspectBoundary,
 } from './boundary.js';

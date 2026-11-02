@@ -2,9 +2,50 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { realpathSync, lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { engineJson, type EngineRequest } from '../execution/index.js';
+import {
+  engineJson,
+  type EngineContainer,
+  type EngineImage,
+  type EngineInfo,
+  type EngineMount,
+  type EngineRequest,
+} from '../execution/index.js';
 import { digest, ServiceError } from '../core/index.js';
 import type { HarnessLaunch } from './rpc.js';
+
+/** A bind mount as mount() declares it. */
+type HarnessMount = {
+  Type: string;
+  Source: string;
+  Target: string;
+  ReadOnly: boolean;
+  BindOptions: { Propagation: string };
+};
+/** The container fields a configuration digest covers. */
+type HarnessConfigFields = {
+  Image?: unknown;
+  User?: unknown;
+  Env: string[];
+  Entrypoint?: unknown;
+  Cmd?: unknown;
+  WorkingDir?: unknown;
+  Tty?: unknown;
+  OpenStdin?: unknown;
+  StdinOnce?: unknown;
+  Labels?: unknown;
+};
+/** A create request as config() writes it: no Config or Mounts of its own. */
+type HarnessCreate = Record<string, unknown> &
+  HarnessConfigFields & {
+    Config?: undefined;
+    Mounts?: undefined;
+    HostConfig: Record<string, unknown> & {
+      SecurityOpt: string[];
+      RestartPolicy: { Name: string };
+      LogConfig: { Type: string };
+      Mounts: HarnessMount[];
+    };
+  };
 
 const OWNER = 'salaam.harness.run',
   PROFILE = 'salaam.harness.profile';
@@ -73,8 +114,9 @@ export class DockerHarnessBoundary {
       boot: BOOT,
     });
   }
-  private configuration(c: any): string {
-    const config = c.Config ?? c,
+  /** One digest over a create request and over the engine's report of the container it made. */
+  private configuration(c: EngineContainer | HarnessCreate): string {
+    const config = (c.Config ?? c) as HarnessConfigFields,
       host = c.HostConfig;
     const fields = [
       'NetworkMode',
@@ -102,14 +144,14 @@ export class DockerHarnessBoundary {
       .sort();
     effective.RestartPolicy = { Name: host.RestartPolicy?.Name };
     const mounts = c.Mounts
-      ? c.Mounts.map((m: any) => ({
+      ? c.Mounts.map((m: EngineMount) => ({
           source: m.Source,
           target: m.Destination,
           read_only: !m.RW,
           type: m.Type,
           propagation: m.Propagation,
         }))
-      : host.Mounts.map((m: any) => ({
+      : (host.Mounts as HarnessMount[]).map((m) => ({
           source: m.Source,
           target: m.Target,
           read_only: m.ReadOnly,
@@ -128,11 +170,11 @@ export class DockerHarnessBoundary {
       stdin_once: config.StdinOnce,
       labels: config.Labels,
       host: effective,
-      mounts: mounts.sort((a: any, b: any) => a.target.localeCompare(b.target)),
+      mounts: mounts.sort((a, b) => a.target.localeCompare(b.target)),
       logs: host.LogConfig?.Type,
     });
   }
-  private mount(source: string, target: string, readOnly: boolean) {
+  private mount(source: string, target: string, readOnly: boolean): HarnessMount {
     if (
       !isAbsolute(source) ||
       /[\0\r\n,]/.test(source) ||
@@ -151,11 +193,11 @@ export class DockerHarnessBoundary {
   private config(
     run: string,
     gateway: boolean,
-    mounts: unknown[],
+    mounts: HarnessMount[],
     args: string[],
     env: string[],
     network: string,
-  ): any {
+  ): HarnessCreate {
     return {
       Image: HARNESS_IMAGE,
       User: this.user,
@@ -245,18 +287,18 @@ export class DockerHarnessBoundary {
       )
     )
       throw new ServiceError('harness_launch_denied', 'Unsupported prepared harness launch');
-    const info = engineJson(await this.engine('GET', '/info'));
+    const info = engineJson<EngineInfo>(await this.engine('GET', '/info'));
     if (
       info.ID !== this.engineId ||
       info.CgroupVersion !== '2' ||
       !info.SecurityOptions?.includes('name=seccomp,profile=builtin')
     )
       throw new ServiceError('harness_engine_changed', 'Proven engine changed');
-    const image = engineJson(
+    const image = engineJson<EngineImage>(
       await this.engine('GET', `/images/${encodeURIComponent(HARNESS_IMAGE)}/json`),
     );
     if (
-      !image.RepoDigests?.some((r: string) =>
+      !image.RepoDigests?.some((r) =>
         [
           HARNESS_IMAGE,
           HARNESS_IMAGE.replace('docker.io/', ''),
@@ -269,7 +311,7 @@ export class DockerHarnessBoundary {
     this.imageEnv = image.Config.Env;
     const gatewayConfig = this.config(run, true, [], ['-e', GATEWAY], [], 'none');
     const gateway = String(
-      engineJson(
+      engineJson<{ Id?: unknown }>(
         await this.engine(
           'POST',
           '/containers/create?name=salaam-harness-' + run + '-gateway',
@@ -293,7 +335,7 @@ export class DockerHarnessBoundary {
         'container:' + gateway,
       );
       harness = String(
-        engineJson(
+        engineJson<{ Id?: unknown }>(
           await this.engine(
             'POST',
             '/containers/create?name=salaam-harness-' + run + '-worker',
@@ -308,7 +350,7 @@ export class DockerHarnessBoundary {
         harness,
         profile_digest: this.profileDigest,
         engine_id: this.engineId,
-        image_id: image.Id as string,
+        image_id: image.Id,
         gateway_config: this.configuration(gatewayConfig),
         harness_config: this.configuration(config),
       };
@@ -320,10 +362,10 @@ export class DockerHarnessBoundary {
       throw error;
     }
   }
-  private async owned(id: string, run: string, kind: string): Promise<any> {
+  private async owned(id: string, run: string, kind: string): Promise<EngineContainer> {
     if (!/^[a-f0-9]{64}$/.test(id))
       throw new ServiceError('harness_container_changed', 'Invalid container identity');
-    const c = engineJson(await this.engine('GET', `/containers/${id}/json`));
+    const c = engineJson<EngineContainer>(await this.engine('GET', `/containers/${id}/json`));
     const h = c.HostConfig;
     if (
       c.Config.Labels?.[OWNER] !== run ||
@@ -342,7 +384,7 @@ export class DockerHarnessBoundary {
     return c;
   }
   async assert(receipt: HarnessContainers): Promise<void> {
-    const info = engineJson(await this.engine('GET', '/info'));
+    const info = engineJson<EngineInfo>(await this.engine('GET', '/info'));
     if (
       info.ID !== this.engineId ||
       info.CgroupVersion !== '2' ||
@@ -365,7 +407,7 @@ export class DockerHarnessBoundary {
       g.Mounts.length !== 0 ||
       h.Mounts.length !== 3 ||
       h.Mounts.some(
-        (m: any) =>
+        (m) =>
           !['/workspace', '/runtime', '/home/agent'].includes(m.Destination) ||
           m.Type !== 'bind' ||
           (m.Destination === '/runtime' && m.RW),
@@ -502,7 +544,7 @@ export class DockerHarnessBoundary {
     return this.launch(receipt.harness, dialect);
   }
   async cleanup(receipt: HarnessContainers): Promise<void> {
-    const info = engineJson(await this.engine('GET', '/info'));
+    const info = engineJson<EngineInfo>(await this.engine('GET', '/info'));
     if (info.ID !== this.engineId)
       throw new ServiceError(
         'harness_engine_changed',
@@ -524,14 +566,14 @@ export class DockerHarnessBoundary {
   /** Lost create replies are reconciled by deterministic names and exact owner/profile labels. */
   async cleanupRun(run: string): Promise<void> {
     if (!/^[0-9a-f-]{36}$/.test(run)) throw Error('Invalid owned harness run');
-    const info = engineJson(await this.engine('GET', '/info'));
+    const info = engineJson<EngineInfo>(await this.engine('GET', '/info'));
     if (info.ID !== this.engineId)
       throw new ServiceError('harness_engine_changed', 'Cannot reconcile on a changed engine');
     for (const kind of ['worker', 'gateway'] as const) {
       const name = 'salaam-harness-' + run + '-' + kind;
       const found = await this.engine('GET', '/containers/' + name + '/json');
       if (found.status === 404) continue;
-      const data = engineJson(found);
+      const data = engineJson<{ Id?: unknown }>(found);
       await this.owned(String(data.Id), run, kind);
       const removed = await this.engine('DELETE', '/containers/' + data.Id + '?force=true');
       if (![204, 404].includes(removed.status))

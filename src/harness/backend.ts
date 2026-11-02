@@ -14,7 +14,7 @@ import { join, relative, dirname, isAbsolute } from 'node:path';
 import { DockerHarnessBoundary, type HarnessContainers } from './container.js';
 import type { DockerCodingExecutor } from '../coding/index.js';
 import { readTree, validateTree } from '../coding/index.js';
-import { engineRequest, engineJson } from '../execution/index.js';
+import { engineRequest, engineJson, type EngineInfo } from '../execution/index.js';
 import { HarnessProtocol, type HarnessCheckpoint } from './protocol.js';
 import {
   HARNESS_TARGETS,
@@ -365,7 +365,7 @@ export class DockerHarnessBackend implements ExternalBackend {
       try {
         hooks.assertActive();
         await this.boundary!.assert(receipt);
-        const info = engineJson(await engineRequest(this.socket)('GET', '/info'));
+        const info = engineJson<EngineInfo>(await engineRequest(this.socket)('GET', '/info'));
         const identity = binding.external!.execution_identity;
         if (info.ServerVersion !== identity.version || info.KernelVersion !== identity.kernel)
           throw Error('Harness engine version or kernel changed');

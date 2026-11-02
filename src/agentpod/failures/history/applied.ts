@@ -9,15 +9,15 @@ import {
   type Operation,
 } from '../../../core/index.js';
 import { operationBinding } from '../../../execution/index.js';
-import type { Row } from '../rule.js';
+import type { Json, Row } from '../rule.js';
 import { patchArgsBind, type Applied, type AppliedPatch, type History } from './context.js';
 
 /** The applied write's call, its parsed arguments, receipt and result. */
 interface PatchRecord {
   c: Row;
-  args: Row;
-  effect: Row;
-  result: Row;
+  args: Json;
+  effect: Json;
+  result: Json;
 }
 
 /** The write's call and the tree change it made. */
@@ -76,9 +76,9 @@ function appliedPatchCall(h: History, applied: Applied): PatchRecord {
       c.configuration_digest === originalVerification.configuration_digest &&
       c.task_check_id === null &&
       c.helper_state === 'stopped' &&
-      c.helper_pid > 0 &&
+      Number(c.helper_pid) > 0 &&
       c.helper_identity &&
-      !store.db.prepare('SELECT 1 FROM station_units WHERE call_id=?').get(String(c.id)),
+      !store.db.prepare('SELECT 1 FROM station_units WHERE call_id=?').get(c.id),
   );
   require(
     canonical(stop) ===
@@ -105,9 +105,9 @@ function appliedPatchResult(h: History, applied: Applied, patch: PatchRecord): v
       result.files === 1 &&
       result.path === args.path &&
       result.before_tree_digest === args.expected_tree &&
-      /^[a-f0-9]{64}$/.test(result.tree_digest) &&
-      /^[a-f0-9]{64}$/.test(result.root_identity) &&
-      result.sha256 === (args.content === null ? null : textDigest(args.content)),
+      /^[a-f0-9]{64}$/.test(String(result.tree_digest)) &&
+      /^[a-f0-9]{64}$/.test(String(result.root_identity)) &&
+      result.sha256 === (args.content === null ? null : textDigest(args.content as string)),
   );
   require(
     canonical(effect) ===

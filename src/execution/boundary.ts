@@ -94,6 +94,78 @@ export type EngineRequest = (
   maxBytes?: number,
 ) => Promise<EngineReply>;
 
+// Docker Engine API records as Salaam reads them. Each field is still checked where it is used;
+// these only name the shapes the engine documents.
+export type EngineVersion = {
+  Os?: unknown;
+  Arch: string;
+  Version?: unknown;
+  KernelVersion?: unknown;
+  ApiVersion?: unknown;
+  ServerVersion?: unknown;
+  Components?: { Name?: unknown; Version?: unknown }[];
+};
+export type EngineInfo = {
+  ID: string;
+  CgroupVersion?: unknown;
+  DefaultRuntime?: unknown;
+  SecurityOptions?: string[];
+  Warnings?: unknown[] | null;
+  ServerVersion?: unknown;
+  KernelVersion?: unknown;
+};
+export type EngineImage = {
+  Id: string;
+  RepoDigests?: string[];
+  Config: { Volumes?: Record<string, unknown> | null; Env: string[] };
+};
+export type EngineMount = {
+  Type?: unknown;
+  Source?: unknown;
+  Destination: string;
+  RW?: unknown;
+  Propagation?: unknown;
+};
+export type EngineContainer = {
+  Id?: unknown;
+  Image?: unknown;
+  State: { Status?: unknown; Running?: unknown };
+  Config: Record<string, unknown> & {
+    Env: string[];
+    Labels: Record<string, string | undefined>;
+    Volumes?: Record<string, unknown> | null;
+  };
+  HostConfig: Record<string, unknown> & {
+    SecurityOpt?: string[];
+    RestartPolicy?: { Name?: unknown };
+    LogConfig?: { Type?: unknown };
+  };
+  Mounts: EngineMount[];
+};
+/** A bind mount as a create request declares it. */
+export type CreateMount = {
+  Type: string;
+  Source: string;
+  Target: string;
+  ReadOnly: boolean;
+  BindOptions: Record<string, unknown>;
+};
+/** A container create request: the fields the executor adjusts, and the rest as written. */
+export type ContainerCreateConfig = Record<string, unknown> & {
+  Image: string;
+  Env: string[];
+  Entrypoint: string[];
+  Cmd: string[];
+  WorkingDir: string;
+  Labels: Record<string, string>;
+  HostConfig: Record<string, unknown> & {
+    Mounts: [CreateMount, ...CreateMount[]];
+    Memory: number;
+    MemorySwap: number;
+    Tmpfs: Record<string, string>;
+  };
+};
+
 export class BoundaryError extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -143,7 +215,10 @@ export function engineRequest(socket: string): EngineRequest {
     });
 }
 
-function json(reply: EngineReply, statuses = [200]): any {
+/** An engine reply's JSON body, read as the engine record its caller names. This is the parse
+ * boundary: the caller checks each field it reads, and T only names the shape it expects. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+function json<T = unknown>(reply: EngineReply, statuses = [200]): T {
   if (!statuses.includes(reply.status)) throw new BoundaryError('execution_backend_rejected');
   try {
     return JSON.parse(reply.body.toString());
@@ -163,7 +238,7 @@ function fixedConfig(
   run: string,
   probe: BoundaryProbe,
   profileDigest: string,
-): any {
+): ContainerCreateConfig {
   if (!runPattern.test(run) || !Object.hasOwn(BOUNDARY_PROBES, probe))
     throw new BoundaryError('execution_invalid_probe');
   // Only the spike's freshly allocated disposable directory is accepted by its caller.
@@ -222,7 +297,11 @@ function fixedConfig(
   };
 }
 
-export function boundaryConfig(workspace: string, run: string, probe: BoundaryProbe): any {
+export function boundaryConfig(
+  workspace: string,
+  run: string,
+  probe: BoundaryProbe,
+): ContainerCreateConfig {
   return fixedConfig(workspace, run, probe, BOUNDARY_DIGEST);
 }
 export const BOUNDARY_DIGEST = digest({
@@ -241,7 +320,11 @@ function boundaryConfigForDigest(): unknown {
 }
 
 /** Validate the daemon's effective configuration, before starting any payload. */
-export function inspectBoundary(actual: any, expected: any, imageId: string): void {
+export function inspectBoundary(
+  actual: EngineContainer,
+  expected: ContainerCreateConfig,
+  imageId: string,
+): void {
   requireProfile(actual.Image === imageId && actual.State?.Status === 'created', 'image-or-state');
   const c = actual.Config;
   const h = actual.HostConfig;
@@ -265,7 +348,10 @@ export function inspectBoundary(actual: any, expected: any, imageId: string): vo
     // Docker omits the false ReadOnly zero value from HostConfig.Mounts.
     const value =
       key === 'Mounts' && Array.isArray(h.Mounts)
-        ? h.Mounts.map((mount: any) => ({ ...mount, ReadOnly: mount.ReadOnly ?? false }))
+        ? h.Mounts.map((mount: Record<string, unknown>) => ({
+            ...mount,
+            ReadOnly: mount.ReadOnly ?? false,
+          }))
         : h[key];
     requireProfile(same(value, expected.HostConfig[key]), 'HostConfig.' + key);
   }
@@ -285,9 +371,9 @@ export function inspectBoundary(actual: any, expected: any, imageId: string): vo
   for (const key of ['PidMode', 'UTSMode', 'UsernsMode', 'CgroupParent']) requireProfile(!h[key]);
   requireProfile(!h.PublishAllPorts && !h.OomKillDisable);
   requireProfile(actual.Mounts?.length === expected.HostConfig.Mounts.length);
-  for (let index = 0; index < actual.Mounts.length; index++) {
-    const mount = actual.Mounts[index],
-      wanted = expected.HostConfig.Mounts[index];
+  for (const [index, mount] of actual.Mounts.entries()) {
+    // Both lists were just checked to have this many mounts.
+    const wanted = expected.HostConfig.Mounts[index]!;
     requireProfile(
       mount.Type === 'bind' &&
         mount.Source === wanted.Source &&
@@ -319,7 +405,7 @@ export function decodeLogs(body: Buffer, limit: number = BOUNDARY_PROFILE.output
 
 export class BoundaryBroker {
   private imageId: string | undefined;
-  private readonly created = new Map<string, any>();
+  private readonly created = new Map<string, ContainerCreateConfig>();
   constructor(
     readonly run: string,
     private readonly engine: EngineRequest,
@@ -330,13 +416,13 @@ export class BoundaryBroker {
   async prepare(): Promise<Record<string, unknown>> {
     this.imageId = undefined;
     this.created.clear();
-    const version = json(await this.engine('GET', '/version'));
-    const info = json(await this.engine('GET', '/info'));
+    const version = json<EngineVersion>(await this.engine('GET', '/version'));
+    const info = json<EngineInfo>(await this.engine('GET', '/info'));
     requireProfile(version.Os === 'linux' && ['arm64', 'amd64'].includes(version.Arch));
     requireProfile(info.CgroupVersion === '2' && info.DefaultRuntime === 'runc');
     requireProfile(info.SecurityOptions?.includes('name=seccomp,profile=builtin'));
     requireProfile(!info.Warnings?.length);
-    const image = json(
+    const image = json<EngineImage>(
       await this.engine('GET', `/images/${encodeURIComponent(BOUNDARY_IMAGE)}/json`),
     );
     const references = [
@@ -350,7 +436,7 @@ export class BoundaryBroker {
     this.imageId = image.Id;
     return {
       engine_version: version.Version,
-      runtime_versions: version.Components?.map((component: any) => ({
+      runtime_versions: version.Components?.map((component) => ({
         name: component.Name,
         version: component.Version,
       })),
@@ -372,7 +458,7 @@ export class BoundaryBroker {
     if (!statSync(source).isDirectory()) throw new BoundaryError('execution_invalid_workspace');
     const expected = boundaryConfig(source, this.run, probe);
     // A lost create response is ambiguous. The caller's finally block reconciles by run label.
-    const result = json(
+    const result = json<{ Id: string }>(
       await this.engine(
         'POST',
         `/containers/create?name=salaam-boundary-${this.run}-${probe}`,
@@ -382,7 +468,7 @@ export class BoundaryBroker {
     );
     if (!idPattern.test(result.Id)) throw new BoundaryError('execution_backend_invalid_response');
     inspectBoundary(
-      json(await this.engine('GET', `/containers/${result.Id}/json`)),
+      json<EngineContainer>(await this.engine('GET', `/containers/${result.Id}/json`)),
       expected,
       this.imageId,
     );
@@ -390,9 +476,9 @@ export class BoundaryBroker {
     return result.Id;
   }
 
-  private async owned(id: string, cleanup = false): Promise<any> {
+  private async owned(id: string, cleanup = false): Promise<EngineContainer> {
     if (!idPattern.test(id)) throw new BoundaryError('execution_invalid_id');
-    const actual = json(await this.engine('GET', `/containers/${id}/json`));
+    const actual = json<EngineContainer>(await this.engine('GET', `/containers/${id}/json`));
     requireProfile(
       actual.Id === id &&
         actual.Config?.Labels?.[OWNER] === this.run &&
@@ -414,7 +500,7 @@ export class BoundaryBroker {
 
   async wait(id: string, wallMs: number = BOUNDARY_PROFILE.wallMs): Promise<number> {
     await this.owned(id);
-    const result = json(
+    const result = json<{ StatusCode: number; Error?: { Message?: unknown } }>(
       await this.engine('POST', `/containers/${id}/wait?condition=not-running`, undefined, wallMs),
     );
     if (!Number.isSafeInteger(result.StatusCode) || result.Error?.Message)
@@ -434,7 +520,7 @@ export class BoundaryBroker {
       JSON.stringify({ label: [`${OWNER}=${this.run}`, PROFILE] }),
     );
     const path = `/containers/json?all=1&filters=${filters}`;
-    const containers = json(await this.engine('GET', path));
+    const containers = json<{ Id: string }[]>(await this.engine('GET', path));
     if (!Array.isArray(containers)) throw new BoundaryError('execution_backend_invalid_response');
     const removed: string[] = [];
     for (const container of containers) {
@@ -445,7 +531,7 @@ export class BoundaryBroker {
       removed.push(container.Id);
       this.created.delete(container.Id);
     }
-    if (json(await this.engine('GET', path)).length !== 0)
+    if (json<unknown[]>(await this.engine('GET', path)).length !== 0)
       throw new BoundaryError('execution_cleanup_unconfirmed');
     return removed;
   }

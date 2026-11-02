@@ -161,7 +161,7 @@ function checkChild(
       canonical(b.capabilities) === canonical(NATIVE_CAPABILITIES) &&
       b.bounds?.scope === 'model-requests' &&
       b.bounds.requests === child.budget &&
-      canonical(b.route) === canonical(store.providerRoute(child.child_session)),
+      canonical(b.route) === canonical(store.providerRoute(String(child.child_session))),
   );
   const prompt = artifact(b.input_artifact, child.child_session, false);
   const submission = store.db

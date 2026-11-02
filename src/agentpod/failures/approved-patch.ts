@@ -2,7 +2,7 @@
 // call with its own receipt, in an attempt the declared per-request token bound interrupted (or
 // whose runtime limit later expired). It records no evidence of its own beyond the run's rows.
 import { canonical, digest, type AgentPodBinding, type WorkTask } from '../../core/index.js';
-import type { Row, RuleStore } from './rule.js';
+import type { Json, Row, RuleStore } from './rule.js';
 
 /** The stop reason the token bound control records. */
 export const TOKEN_BOUND_STOP = 'Provider payload exceeds declared per-request token bounds';
@@ -20,7 +20,7 @@ export interface ApprovedPatchRun {
   readonly op: Row | undefined;
   readonly call: Row | undefined;
   readonly approval: Row | undefined;
-  readonly effect: Row | null;
+  readonly effect: Json | null;
   readonly originalBlock: Row | undefined;
   readonly runtimeExpired: boolean;
 }
@@ -69,7 +69,7 @@ export function exactApprovedPatch(store: RuleStore, run: ApprovedPatchRun): boo
     effect.configuration_digest !== call.configuration_digest ||
     effect.input_digest !== call.input_digest ||
     canonical(effect.result) !== canonical(JSON.parse(String(call.result_json))) ||
-    effect.result?.ok !== true ||
+    (effect.result as Json | undefined)?.ok !== true ||
     task.steps.filter((s) => s.attempt_id === attempt.id && s.state === 'interrupted').length !==
       1 ||
     task.steps.some((s) => !['pending', 'interrupted'].includes(s.state)) ||

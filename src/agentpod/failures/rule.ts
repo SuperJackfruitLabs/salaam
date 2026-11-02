@@ -3,10 +3,13 @@
 // asks its rules in a fixed order and takes the first that matches; the order is part of what
 // the evidence digest means, so it lives in one ordered list per call site.
 import type { AgentPodBinding, WorkTask } from '../../core/index.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { Store } from '../../store/index.js';
 
 /** A journal row as SQLite returns it, read field by field. */
-export type Row = Record<string, any>;
+export type Row = Record<string, SQLOutputValue>;
+/** A JSON document saved in the journal (an artifact, a receipt or a payload), read field by field. */
+export type Json = Record<string, unknown>;
 
 /** The journal a rule reads. */
 export type RuleStore = Pick<Store, 'db'>;

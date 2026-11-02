@@ -146,7 +146,7 @@ function toolStart(h: History, journal: ToolJournal, start: Row): void {
 function mcpStart(h: History, journal: ToolJournal, start: Row, p: Row): void {
   const { require, session, root } = h;
   const { mcp, assigned } = journal;
-  const input = JSON.parse(p.input);
+  const input = JSON.parse(String(p.input));
   const call =
     input.action === 'call' &&
     mcp.some(
@@ -181,7 +181,7 @@ function mcpStart(h: History, journal: ToolJournal, start: Row, p: Row): void {
             c.session_id === start.session_id &&
             c.attempt_id === p.attempt_id &&
             c.tool_call_id === p.tool_call_id &&
-            canonical(JSON.parse(p.input)) ===
+            canonical(JSON.parse(String(p.input))) ===
               canonical({
                 action: 'call',
                 server: c.server_name,
@@ -198,7 +198,7 @@ function spawnStart(h: History, journal: ToolJournal, start: Row, p: Row): void 
   const { run, matchedChildren } = journal;
   const { children } = run;
   require(start.session_id === session);
-  const input = JSON.parse(p.input),
+  const input = JSON.parse(String(p.input)),
     authority = input.authority ?? ['salaam_probe'],
     budget = input.budget ?? 2;
   require(!input.profile && canonical(authority) === canonical(['salaam_probe']));
@@ -223,7 +223,7 @@ function childToolStart(h: History, journal: ToolJournal, start: Row, p: Row): v
   const { run } = journal;
   const { children } = run;
   require(start.session_id === session);
-  const input = JSON.parse(p.input);
+  const input = JSON.parse(String(p.input));
   if (p.tool === 'inspect_child')
     require(
       canonical(input) ===
@@ -242,7 +242,7 @@ function childToolStart(h: History, journal: ToolJournal, start: Row, p: Row): v
 function probeStart(h: History, p: Row): void {
   const { require } = h;
   require(p.tool === 'salaam_probe');
-  const input = JSON.parse(p.input);
+  const input = JSON.parse(String(p.input));
   require(
     Object.keys(input).every((k) => k === 'nested') &&
       (input.nested === undefined || typeof input.nested === 'boolean'),

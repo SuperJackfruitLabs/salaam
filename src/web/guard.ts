@@ -41,7 +41,8 @@ for (const [net, bits] of [
 
 /** True only for globally routable unicast addresses. */
 export function isPublicAddress(address: string): boolean {
-  const bare = address.replace(/^\[|\]$/g, '').split('%')[0]!;
+  // split always returns at least one part.
+  const [bare = ''] = address.replace(/^\[|\]$/g, '').split('%');
   const family = isIP(bare);
   if (!family) return false;
   if (family === 6) {

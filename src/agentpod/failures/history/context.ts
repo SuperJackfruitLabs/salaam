@@ -4,7 +4,7 @@
 import { canonical, digest, type AgentPodBinding, type WorkTask } from '../../../core/index.js';
 import type { SQLInputValue } from 'node:sqlite';
 import type { Artifacts, Store } from '../../../store/index.js';
-import type { Row } from '../rule.js';
+import type { Json, Row } from '../rule.js';
 
 /** The most rows one historical query may return; more is not a history this check can close. */
 export const HISTORY_ROW_LIMIT = 256;
@@ -43,7 +43,7 @@ export interface Unapplied {
 /** The applied write's station call and the tree change it made, settled at an event seq. */
 export interface AppliedPatch {
   call: Row;
-  transition: { before: string; after: string; settled: number };
+  transition: { before: unknown; after: unknown; settled: number };
 }
 
 /** The root session, its children's sessions (`marks` binds them) and all their attempts. */
@@ -63,15 +63,19 @@ export interface History {
   readonly root: string;
   /** The run's agentpod_work row, and the verification binding it was admitted with. */
   readonly original: Row;
-  readonly originalVerification: Row;
+  readonly originalVerification: Json;
   /** Every row read through rows(), by key, in the order read. */
   readonly audit: Record<string, unknown>;
   /** Every artifact row read through artifact(), in the order read. */
   readonly artifactAudit: Row[];
   readonly require: (condition: unknown) => void;
-  readonly rows: (key: string, sql: string, ...args: SQLInputValue[]) => Row[];
+  /** Its arguments are journal values, bound as SQLite reads them. */
+  readonly rows: (key: string, sql: string, ...args: unknown[]) => Row[];
   /** The artifact's parsed JSON (or its text), after its row and byte count are checked. */
-  readonly artifact: (id: unknown, owner: string, json?: boolean) => any;
+  readonly artifact: {
+    (id: unknown, owner: unknown, json: false): string;
+    (id: unknown, owner: unknown, json?: true): Json;
+  };
 }
 
 /** The history's shared state, after the run's own agentpod_work row is found. */
@@ -85,14 +89,14 @@ export function openHistory(
     if (!condition) throw new Error('Incomplete historical read-only evidence');
   };
   const audit: Record<string, unknown> = {};
-  const rows = (key: string, sql: string, ...args: SQLInputValue[]): Row[] => {
-    const result = deps.store.db.prepare(sql).all(...args);
+  const rows = (key: string, sql: string, ...args: unknown[]): Row[] => {
+    const result = deps.store.db.prepare(sql).all(...(args as SQLInputValue[]));
     require(result.length <= HISTORY_ROW_LIMIT);
     audit[key] = result;
     return result;
   };
   const artifactAudit: Row[] = [];
-  const artifact = (id: unknown, owner: string, json = true) => {
+  const artifact = (id: unknown, owner: unknown, json = true) => {
     require(typeof id === 'string');
     const row = deps.store.db.prepare('SELECT * FROM artifacts WHERE id=?').get(String(id));
     require(row && row.session_id === owner);
@@ -132,8 +136,8 @@ export function patchArgsBind(op: Row, call: Row, args: Row, root: string): bool
     args.action === 'patch' &&
     Object.keys(args).toSorted().join(',') === 'action,content,expected_hash,expected_tree,path' &&
     typeof args.path === 'string' &&
-    /^[a-f0-9]{64}$/.test(args.expected_tree) &&
-    (args.expected_hash === null || /^[a-f0-9]{64}$/.test(args.expected_hash)) &&
+    /^[a-f0-9]{64}$/.test(String(args.expected_tree)) &&
+    (args.expected_hash === null || /^[a-f0-9]{64}$/.test(String(args.expected_hash))) &&
     (args.content === null || typeof args.content === 'string') &&
     call.input_digest === digest(args) &&
     op.value === canonical(args) &&
@@ -162,7 +166,7 @@ export function stopProof(h: History, unit: Row): Row {
   h.require(
     stop.version === 1 &&
       stop.observed_empty === true &&
-      stop.unit === `salaam-station-${unit.id}.service` &&
+      stop.unit === `salaam-station-${String(unit.id)}.service` &&
       stop.cgroup === `/system.slice/${stop.unit}` &&
       /^[a-f0-9]{32}$/.test(stop.invocation),
   );
