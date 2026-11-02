@@ -6,8 +6,11 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
-The code is reorganised into modules with enforced boundaries, and checked by a linter. Nothing
-you use changes: commands, keys, HTTP routes, ACP messages and the state database are as before.
+## [0.0.7] - 2026-11-02
+
+Pasted images now work in every local session, and the code is reorganised into modules with
+enforced boundaries and checked by a linter. Otherwise nothing you use changes: commands, keys,
+HTTP routes, ACP messages and the state database are as before.
 
 ### Changed
 
