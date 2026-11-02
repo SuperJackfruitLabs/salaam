@@ -99,6 +99,33 @@ export function bundleDigest(): string {
     policy: POLICY_DIGEST,
     lock: textDigest(readFileSync(lockPath, 'utf8')),
     house: textDigest(readFileSync(HOUSE_EXTENSION, 'utf8')),
+    house_context: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/context.js'), 'utf8'),
+    ),
+    house_managed: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/managed.js'), 'utf8'),
+    ),
+    house_station: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/station.js'), 'utf8'),
+    ),
+    house_integrations: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/integrations.js'), 'utf8'),
+    ),
+    house_children: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/children.js'), 'utf8'),
+    ),
+    house_specialists: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/specialists.js'), 'utf8'),
+    ),
+    house_desk: textDigest(readFileSync(join(ROOT, 'dist/src/runtime/house/desk.js'), 'utf8')),
+    house_prompts: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/prompts.js'), 'utf8'),
+    ),
+    house_coding: textDigest(readFileSync(join(ROOT, 'dist/src/runtime/house/coding.js'), 'utf8')),
+    house_turn: textDigest(readFileSync(join(ROOT, 'dist/src/runtime/house/turn.js'), 'utf8')),
+    house_proof_provider: textDigest(
+      readFileSync(join(ROOT, 'dist/src/runtime/house/proof-provider.js'), 'utf8'),
+    ),
     provider_usage: textDigest(readFileSync(join(ROOT, 'dist/src/providers/usage.js'), 'utf8')),
     provider_model: textDigest(readFileSync(join(ROOT, 'dist/src/providers/model.js'), 'utf8')),
     live_provider: textDigest(

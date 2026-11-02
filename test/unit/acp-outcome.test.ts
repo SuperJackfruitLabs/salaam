@@ -212,7 +212,7 @@ test('a title never carries a secret from a URL, a control character, or more th
 });
 
 test('a failed tool names itself, and only a plain identifier is echoed', async () => {
-  const { toolFailureMessage } = await import('../../src/runtime/supervisor.js');
+  const { toolFailureMessage } = await import('../../src/runtime/turn-outcome.js');
   expect(toolFailureMessage('salaam_station')).toBe('Tool execution failed (tool salaam_station)');
   for (const bad of [undefined, 7, '', 'x'.repeat(65), 'rm -rf /', 'a\nb'])
     expect(toolFailureMessage(bad)).toBe('Tool execution failed');

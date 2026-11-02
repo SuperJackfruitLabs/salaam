@@ -13,10 +13,8 @@ const SIZE_LIMIT = 1000;
 const OVERSIZE: Record<string, number> = {
   'agentpod/work.ts': 3928,
   'tui/app.ts': 3262,
-  'runtime/supervisor.ts': 2054,
   'cli/cli.ts': 1924,
   'agentpod/station-work.ts': 1541,
-  'runtime/house-extension.ts': 1420,
   'local/coding.ts': 1363,
   'store/store.ts': 1341,
   'acp/server.ts': 1240,
