@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert';
 import { DatabaseSync } from 'node:sqlite';
 import { SalaamService } from '../dist/src/service/service.js';
 import { ROOT } from '../dist/src/core/config.js';
-import { hostDigests } from '../dist/src/host/host.js';
+import { hostDigests } from '../dist/src/core/config.js';
 import { digest } from '../dist/src/core/protocol.js';
 import { providerRoute, DEFAULT_CLAUDE_MODEL } from '../dist/src/providers/config.js';
 import { call } from '../dist/src/core/transport.js';

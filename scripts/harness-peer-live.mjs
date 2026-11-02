@@ -15,7 +15,7 @@ import { providerRoute } from '../dist/src/providers/config.js';
 import { SalaamService } from '../dist/src/service/service.js';
 import { call } from '../dist/src/core/transport.js';
 import { ROOT } from '../dist/src/core/config.js';
-import { hostDigests } from '../dist/src/host/host.js';
+import { hostDigests } from '../dist/src/core/config.js';
 import { digest } from '../dist/src/core/protocol.js';
 import { LiveAcceptanceBudget } from './live-acceptance-budget.mjs';
 

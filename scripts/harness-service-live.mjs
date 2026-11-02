@@ -6,7 +6,7 @@ import { SalaamService } from '../dist/src/service/service.js';
 import { harnessRuntimeDigest } from '../dist/src/harness/backend.js';
 import { HARNESS_TARGETS } from '../dist/src/core/harness-targets.js';
 import { ROOT } from '../dist/src/core/config.js';
-import { hostDigests } from '../dist/src/host/host.js';
+import { hostDigests } from '../dist/src/core/config.js';
 import { digest } from '../dist/src/core/protocol.js';
 import { call } from '../dist/src/core/transport.js';
 import { readTree } from '../dist/src/coding/workspaces.js';

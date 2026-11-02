@@ -91,7 +91,7 @@ try {
   assert.equal(await run(sal, '--help'), await run(salaam, '--help'));
   // Imports below come exclusively from the installed package, outside the source checkout.
   const { call } = await import(pathToFileURL(join(installed, 'dist/src/core/transport.js')));
-  const { hostDigests } = await import(pathToFileURL(join(installed, 'dist/src/host/host.js')));
+  const { hostDigests } = await import(pathToFileURL(join(installed, 'dist/src/core/config.js')));
   assert.match(hostDigests().pi_bundle_digest, /^[a-f0-9]{64}$/);
   const start = async () => {
     service = spawn(salaam, ['service', 'start', '--foreground', '--state', state], {

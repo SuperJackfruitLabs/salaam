@@ -185,7 +185,7 @@ testIf(linux)(
       expect(edit.call.state).toBe('succeeded');
       expect(edit.result).toMatchObject({ applied: ['new.txt'], tool_uid: 4242 });
       expect(readFileSync(join(f.root, 'new.txt'), 'utf8')).toBe('hello');
-      expect(readFileSync(fl.log, 'utf8')).toMatch(/local-edit-helper\.js /);
+      expect(readFileSync(fl.log, 'utf8')).toMatch(/local\/edit-helper\.js /);
       // A timeout kills the tool's own process group through the launcher.
       const slow = await f.run('slow', { action: 'command', command: 'sleep 30', timeout_ms: 200 });
       expect(slow.call.state).toBe('timed_out');

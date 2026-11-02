@@ -87,7 +87,7 @@ const { SalaamService } = await import(pathToFileURL(join(pkg, 'dist/src/service
     pathToFileURL(join(pkg, 'dist/src/providers/auth.js'))
   ),
   { call } = await import(pathToFileURL(join(pkg, 'dist/src/core/transport.js'))),
-  { hostDigests } = await import(pathToFileURL(join(pkg, 'dist/src/host/host.js')));
+  { hostDigests } = await import(pathToFileURL(join(pkg, 'dist/src/core/config.js')));
 const { HarnessProtocol } = await import(pathToFileURL(join(pkg, 'dist/src/harness/protocol.js')));
 const originalPermission = HarnessProtocol.prototype.permission;
 HarnessProtocol.prototype.permission = async function (method, params) {
