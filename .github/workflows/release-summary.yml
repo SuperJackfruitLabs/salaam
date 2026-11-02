@@ -1,17 +1,31 @@
-# Adds a Claude summary to an existing GitHub release, after the tag. It is a stepping stone to
-# the shared release workflow (estate release/), which writes the summary at tag time.
+# Adds a Claude summary to an existing GitHub release. release.yml calls it after each release;
+# it can also be run by hand for an older one. It is a stepping stone to the shared release
+# workflow (estate release/), which writes the summary at tag time.
 # The release itself is never changed except for its notes, and a failed summary leaves it as is.
 name: release-summary
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      previous_tag:
+        type: string
+        required: false
+        default: ''
+    secrets:
+      RELEASE_SUMMARY_API_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
         description: Release tag to summarise, e.g. v0.0.4
         required: true
       previous_tag:
-        description: The tag before it (exact, not detected)
-        required: true
+        description: The tag before it; empty means the previous version tag
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -21,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ inputs.tag }}
-      PREV: ${{ inputs.previous_tag }}
+      PREV_INPUT: ${{ inputs.previous_tag }}
       PRODUCT: Salaam
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -31,6 +45,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      - name: Find the tag before this one
+        run: node scripts/previous-tag.mjs "$TAG" "$PREV_INPUT" >> "$GITHUB_ENV"
       - name: Gather the release material
         run: |
           set -eu

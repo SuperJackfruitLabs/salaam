@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ROOT } from '../../src/core/config.js';
 
 // GitHub refuses to start a workflow whose called job asks for a permission the caller does not
@@ -54,4 +55,29 @@ test('release.yml grants every permission the ci.yml jobs it calls ask for', () 
       if (LEVEL[granted!.grants.get(scope) ?? 'none']! < LEVEL[level]!)
         missing.push(`ci.yml:${block.line} ${scope}: ${level}`);
   expect(missing).toEqual([]);
+});
+
+test('a release writes its summary: release.yml calls release-summary after the release exists', () => {
+  const release = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8');
+  const job = release.slice(release.indexOf('\n  summary:\n'));
+  expect(job.length, 'release.yml has a summary job').toBeGreaterThan(20);
+  expect(job).toContain('uses: ./.github/workflows/release-summary.yml');
+  expect(job).toMatch(/needs: \[[^\]]*github-release[^\]]*\]/);
+  expect(job).toContain("needs.github-release.result == 'success'");
+  expect(job).toContain('contents: write');
+  expect(job).toContain('secrets: inherit');
+  const summary = readFileSync(join(ROOT, '.github/workflows/release-summary.yml'), 'utf8');
+  expect(summary).toMatch(/^ {2}workflow_call:/m);
+  expect(summary).toContain('node scripts/previous-tag.mjs');
+});
+
+test('the summary compares a release with the version before it', async () => {
+  // An untyped script module; the assertions below check what it returns.
+  const { previousTag } = await import(pathToFileURL(join(ROOT, 'scripts/previous-tag.mjs')).href);
+  const tags = ['v0.0.5', 'v0.0.6', 'v0.0.7', 'v0.0.8-rc.1', 'v0.0.8-rc.2', 'v0.0.10', 'junk', ''];
+  expect(previousTag('v0.0.8', tags)).toBe('v0.0.7');
+  expect(previousTag('v0.0.8-rc.2', tags)).toBe('v0.0.8-rc.1');
+  expect(previousTag('v0.0.8-rc.1', tags)).toBe('v0.0.7');
+  expect(previousTag('v0.0.11', tags)).toBe('v0.0.10');
+  expect(previousTag('v0.0.5', tags)).toBeNull();
 });
