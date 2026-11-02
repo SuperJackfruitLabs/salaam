@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSync, readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -27,6 +27,17 @@ import { readinessFingerprint } from '../../src/core/readiness-fingerprint.js';
 import { ChildWork } from '../../src/workers/children.js';
 import { StationWork } from '../../src/agentpod/station-work.js';
 import type { Supervisor } from '../../src/runtime/supervisor.js';
+import { characterizeEvidence } from '../agentpod-evidence-recorder.js';
+
+vi.mock('../../src/core/index.js', async (importOriginal) => {
+  const { recordingCore } = await import('../agentpod-evidence-recorder.js');
+  return recordingCore(await importOriginal());
+});
+vi.mock('node:crypto', async (importOriginal) => {
+  const { countingCrypto } = await import('../agentpod-evidence-recorder.js');
+  return countingCrypto(await importOriginal());
+});
+characterizeEvidence();
 
 const executionSchema = JSON.parse(
   readFileSync(new URL('../fixtures/execution-evidence-v1.schema.json', import.meta.url), 'utf8'),
