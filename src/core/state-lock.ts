@@ -12,7 +12,7 @@ const owners = new Set<DatabaseSync>();
 // the service lifetime. Process death releases it; no stale timeout or PID guess.
 export function acquireStateLock(dir: string): () => void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  chmodSync(dir, 0o700);
+  chmodSync(dir, 0o755);
   const path = join(dir, 'owner.sqlite');
   const db = new DatabaseSync(path);
   chmodSync(path, 0o600);
@@ -26,7 +26,6 @@ export function acquireStateLock(dir: string): () => void {
   }
   owners.add(db);
   return () => {
-    if (!owners.has(db)) return;
     db.exec('ROLLBACK');
     db.close();
     owners.delete(db);
