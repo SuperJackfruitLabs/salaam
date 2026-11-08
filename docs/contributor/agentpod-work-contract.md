@@ -114,6 +114,19 @@ atomically; replay returns that receipt without granting another permission or
 executing the operation. Actual execution still consumes its original permission.
 The canonical decision fixture is mirrored from AgentPod.
 
+An offer may carry a `detail` that tells the person what they approve: a summary, the
+agent's one-line reason (or null), the operation digest, and up to 16 files as
+`{path, change, bytes, preview, preview_truncated}`. `change` is `create`, `edit` or
+`delete`; `bytes` is the new content's UTF-8 size, null for a delete; `preview` is the
+first 1,200 characters of that content, null when there is none. `preview_truncated` is
+true when the preview does not show all of what will be written: the content is longer
+than 1,200 characters, or it exists but could not be read for a preview. It is false when
+the preview is the whole content (exactly 1,200 characters included) and for a delete,
+which writes nothing. Workspace writes carry text, so there is no binary case today; a
+future binary write would give a null preview and `preview_truncated: true`. Offers saved
+before the field existed lack it and still validate; every new offer carries it. Readers
+use this flag rather than comparing `bytes` with the preview's length.
+
 `work-completion` never caches a freshness claim: each request awaits protected
 check, tree, and deliverable observations, then rechecks task revision, authority,
 resource closure and the saved completion artifact. Its stable receipt includes

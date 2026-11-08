@@ -31,6 +31,11 @@ export interface WorkDecisionDetail {
     change: 'create' | 'edit' | 'delete';
     bytes: number | null;
     preview: string | null;
+    /** True when the preview does not show all of the new content: it was cut at 1200
+     * characters, or the content could not be read for a preview. False when the preview is
+     * the whole content, and for a delete (nothing is written). Offers saved before this field
+     * existed lack it; the builder always sets it. */
+    preview_truncated?: boolean;
   }[];
   digest: string;
 }
@@ -146,6 +151,7 @@ export function workDecisionAnswer(value: unknown): WorkDecisionAnswer {
   return v as unknown as WorkDecisionAnswer;
 }
 
+const FILE_KEYS = ['path', 'change', 'bytes', 'preview'];
 function workDecisionDetail(value: unknown): WorkDecisionDetail {
   const d = object(value);
   keys(d, ['version', 'summary', 'reason', 'files', 'digest']);
@@ -161,8 +167,10 @@ function workDecisionDetail(value: unknown): WorkDecisionDetail {
     fail();
   for (const f of d.files as unknown[]) {
     const file = object(f);
-    keys(file, ['path', 'change', 'bytes', 'preview']);
+    // preview_truncated is optional only so an offer saved before it existed still validates.
+    keys(file, [...FILE_KEYS, ...('preview_truncated' in file ? ['preview_truncated'] : [])]);
     if (
+      ('preview_truncated' in file && typeof file.preview_truncated !== 'boolean') ||
       !text(file.path, 512) ||
       !['create', 'edit', 'delete'].includes(String(file.change)) ||
       (file.bytes !== null && (!Number.isSafeInteger(file.bytes) || Number(file.bytes) < 0)) ||

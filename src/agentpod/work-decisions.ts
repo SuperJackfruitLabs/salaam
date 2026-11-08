@@ -192,9 +192,10 @@ export class AgentPodWorkDecisions {
   }
 }
 
+const PREVIEW_MAX = 1200;
 /** Readable approvals: what a person approves, from the operation's own canonical arguments only.
- * A workspace write names its file, the change, its size, a short preview and the agent's one-line
- * reason; anything else names its kind and target. The digest still binds the exact operation. */
+ * A workspace write names its file, the change, its size, a short preview (with whether it was
+ * cut) and the agent's one-line reason; anything else names its kind and target. The digest still binds the exact operation. */
 export function approvalDetail(op: {
   kind: string;
   action_key: string;
@@ -229,7 +230,10 @@ export function approvalDetail(op: {
         path: path.slice(0, 512),
         change,
         bytes: content === null ? null : Buffer.byteLength(content),
-        preview: content === null ? null : content.slice(0, 1200),
+        preview: content === null ? null : content.slice(0, PREVIEW_MAX),
+        // Said outright so no reader infers it from bytes: true when the person cannot see all of
+        // what will be written (cut, or content unreadable); false for a whole preview or a delete.
+        preview_truncated: content === null ? change !== 'delete' : content.length > PREVIEW_MAX,
       },
     ],
   };
