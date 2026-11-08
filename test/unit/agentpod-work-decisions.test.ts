@@ -161,6 +161,7 @@ test('a workspace write reads as a plain-words approval: create, edit and delete
         change: 'create',
         bytes: Buffer.byteLength(content),
         preview: content.slice(0, 1200),
+        preview_truncated: true,
       },
     ],
     digest: digest64,
@@ -176,7 +177,12 @@ test('a workspace write reads as a plain-words approval: create, edit and delete
   );
   expect(edited.summary).toBe('Edit a.md in the workspace');
   expect(edited.reason).toBeNull();
-  expect(edited.files[0]).toMatchObject({ change: 'edit', bytes: 3, preview: 'new' });
+  expect(edited.files[0]).toMatchObject({
+    change: 'edit',
+    bytes: 3,
+    preview: 'new',
+    preview_truncated: false,
+  });
   const deleted = approvalDetail(
     op({
       action: 'patch',
@@ -187,7 +193,36 @@ test('a workspace write reads as a plain-words approval: create, edit and delete
     }),
   );
   expect(deleted.summary).toBe('Delete old.md in the workspace');
-  expect(deleted.files[0]).toMatchObject({ change: 'delete', bytes: null, preview: null });
+  expect(deleted.files[0]).toMatchObject({
+    change: 'delete',
+    bytes: null,
+    preview: null,
+    preview_truncated: false,
+  });
+});
+// Charter 2026-11-07 decision 3: the offer says outright whether the preview is the whole file.
+const writtenFile = (content: unknown) =>
+  approvalDetail(
+    op({ action: 'patch', path: 'a.md', expected_hash: null, content, expected_tree: digest64 }),
+  ).files[0];
+test('preview_truncated is false up to exactly 1200 characters and true past it', () => {
+  expect(writtenFile('short')).toMatchObject({ preview: 'short', preview_truncated: false });
+  expect(writtenFile('')).toMatchObject({ preview: '', preview_truncated: false });
+  expect(writtenFile('x'.repeat(1199))).toMatchObject({ preview_truncated: false });
+  expect(writtenFile('x'.repeat(1200))).toMatchObject({
+    preview: 'x'.repeat(1200),
+    preview_truncated: false,
+  });
+  expect(writtenFile('x'.repeat(1201))).toMatchObject({
+    preview: 'x'.repeat(1200),
+    preview_truncated: true,
+  });
+  // A write whose content cannot be read gives no preview, so the person has not seen it all.
+  expect(writtenFile(42)).toMatchObject({
+    change: 'create',
+    preview: null,
+    preview_truncated: true,
+  });
 });
 test('a reason is one line of at most 300 characters, and a review reads as one', () => {
   const long = approvalDetail(
@@ -214,11 +249,19 @@ test('the decision schema accepts a detail and refuses a malformed one', () => {
     }),
   );
   expect(workDecision({ ...corpus.decision, detail }).detail).toEqual(detail);
+  // An offer saved before preview_truncated existed is still read back.
+  const legacy = Object.fromEntries(
+    Object.entries(detail.files[0] ?? {}).filter(([k]) => k !== 'preview_truncated'),
+  );
+  const saved = { ...detail, files: [legacy] };
+  expect(workDecision({ ...corpus.decision, detail: saved }).detail).toEqual(saved);
   for (const bad of [
     { ...detail, version: 2 },
     { ...detail, digest: 'x' },
     { ...detail, extra: true },
     { ...detail, files: [{ ...detail.files[0], change: 'rename' }] },
+    { ...detail, files: [{ ...detail.files[0], preview_truncated: 'no' }] },
+    { ...detail, files: [{ ...detail.files[0], extra: true }] },
     { ...detail, summary: '' },
   ])
     expect(() => workDecision({ ...corpus.decision, detail: bad })).toThrow();

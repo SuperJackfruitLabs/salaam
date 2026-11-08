@@ -6,6 +6,13 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+### Added
+
+- A strict work decision's approval detail now says per file whether its preview is the whole
+  content: `preview_truncated` is true when the preview was cut at 1,200 characters or the
+  content could not be read for one, and false for a whole preview or a delete. Consumers that
+  check `files[]` keys exactly must accept the field before upgrading Salaam.
+
 ## [0.0.7] - 2026-11-02
 
 Pasted images now work in every local session, and the code is reorganised into modules with
