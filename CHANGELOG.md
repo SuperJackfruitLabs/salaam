@@ -6,6 +6,11 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-11-09
+
+A strict work decision now tells the board whether each file's preview is complete. Upgrade the
+board (SuperPipeline) that reads these decisions first. Nothing else you use changes.
+
 ### Added
 
 - A strict work decision's approval detail now says per file whether its preview is the whole
