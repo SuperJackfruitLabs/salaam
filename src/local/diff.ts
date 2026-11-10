@@ -1,18 +1,23 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-const exec = promisify(execFile);
-/** Read-only Git views: disable repository diff drivers, textconv and fsmonitor execution. */
-export async function localDiff(cwd: string): Promise<string> {
-  const git = async (args: string[]) =>
-    (
-      await exec('git', ['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
-        cwd,
-        timeout: 10000,
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_CONFIG_NOSYSTEM: '1' },
-      })
-    ).stdout;
-  const options = ['--no-ext-diff', '--no-textconv', '--no-color'];
+import { hostGit, HOST_GIT_DIFF_OPTIONS } from './host-git.js';
+
+/** Runs one read-only git command in the workspace and resolves to its stdout. */
+export type GitReader = (args: string[]) => Promise<string>;
+
+/** Git on the host, hardened (host-git.ts). Content filters named by attributes can still run here,
+ * so a sandboxed session reads its diff through LocalCoding.diff instead, inside its sandbox. */
+export const hostGitReader =
+  (cwd: string): GitReader =>
+  (args) =>
+    hostGit(args, {
+      cwd,
+      timeout: 10000,
+      maxBuffer: 1024 * 1024,
+      gitEnv: { GIT_CONFIG_NOSYSTEM: '1' },
+    });
+
+/** Read-only Git views: no external diff, textconv, fsmonitor, hooks or pager. */
+export async function localDiff(cwd: string, git: GitReader = hostGitReader(cwd)): Promise<string> {
+  const options = [...HOST_GIT_DIFF_OPTIONS, '--no-color'];
   const [unstaged, staged, untracked] = await Promise.all([
     git(['diff', ...options]),
     git(['diff', '--cached', ...options]),

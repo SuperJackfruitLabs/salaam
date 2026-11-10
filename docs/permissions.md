@@ -27,7 +27,9 @@ check** still stops commands that could do real harm and asks, saying why. It re
 plain commands joined by `&&`, `||`, `;` and `|`, looks inside `sudo`, `env`,
 `timeout`, `xargs`, `find -exec` and `sh -c`, and treats anything it cannot read as
 dangerous: substitutions, heredocs, piping into a shell, and writes outside the
-project.
+project. Changing git config (`git config` with a value, `--unset` or `--edit`) and
+writing a repository's `.git/config`, hooks or `info` folder also ask, since git runs
+programs those name. Auto mode asks for the same commands.
 
 `/full-access` again turns it off. A host can forbid it
 (`allow_full_access_sessions`).

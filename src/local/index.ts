@@ -24,7 +24,6 @@ export {
   type SandboxLevel,
 } from './command-sandbox.js';
 export { DangerClassifier, loadDangerClassifierOptions } from './danger-classifier.js';
-export { localDiff } from './diff.js';
 export { type LocalEdit } from './edits.js';
 export {
   branchInstruction,
@@ -43,6 +42,7 @@ export {
   Hooks,
   type HookSource,
 } from './hooks.js';
+export { hostGitSync } from './host-git.js';
 export { probeToolsUser, serviceToolIdentity, type ToolIdentity } from './tool-identity.js';
 export { applyUndo, reconcileUndo, reviewUndo, type UndoReview } from './undo.js';
 export { readLocalWorkspace } from './workspace.js';

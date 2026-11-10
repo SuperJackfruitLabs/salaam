@@ -1,8 +1,8 @@
 import { COMMAND_NETWORK_PORT, inSandboxRelaySource } from './command-network.js';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { ServiceError } from '../core/index.js';
 
 /**
@@ -130,6 +130,155 @@ export function findBwrap(candidates = ['/usr/bin/bwrap', '/bin/bwrap']): Bwrap 
   return null;
 }
 
+/**
+ * The workspace repository's control files: what git reads to decide which programs to run
+ * (config and what redirects it, hooks, attributes and excludes). A sandboxed command may write
+ * the rest of `.git` (commit, branch, checkout, stash), but not these, so it cannot leave a
+ * `core.fsmonitor`, a hook or a filter for git to run later outside the sandbox. Found when the
+ * command starts:
+ * - `entry`: `<root>/.git` itself, kept in place (no rename, delete or replace);
+ * - for the repository's git dir (`.git`, or where a `.git` file points when that is inside the
+ *   workspace), each submodule git dir under `modules/` and each linked worktree under
+ *   `worktrees/`: `config`, `config.worktree`, `commondir` (files) and `hooks`, `info` (folders).
+ * `exists` says whether the path was there. A repository the command creates later, or one in a
+ * subfolder, is not covered here; Salaam's own git calls are hardened for that (host-git.ts).
+ */
+export interface GitControlPath {
+  path: string;
+  dir: boolean;
+  exists: boolean;
+}
+const GIT_CONTROL_FILES = ['config', 'config.worktree', 'commondir'];
+const GIT_CONTROL_DIRS = ['hooks', 'info'];
+/** At most this many protected paths, so a workspace with thousands of submodules stays usable. */
+const GIT_CONTROL_LIMIT = 256;
+function isDir(p: string): boolean {
+  try {
+    return lstatSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+export function gitControlPaths(root: string): {
+  entry: GitControlPath | null;
+  paths: GitControlPath[];
+} {
+  let real: string;
+  try {
+    real = realpathSync(root);
+  } catch {
+    return { entry: null, paths: [] };
+  }
+  const entryPath = join(real, '.git');
+  let stat;
+  try {
+    stat = lstatSync(entryPath);
+  } catch {
+    return { entry: null, paths: [] };
+  }
+  const entry = { path: entryPath, dir: stat.isDirectory(), exists: true };
+  const inside = (p: string) => p.startsWith(real + sep);
+  const paths: GitControlPath[] = [];
+  const seen = new Set<string>();
+  const add = (path: string, dir: boolean) => {
+    if (paths.length < GIT_CONTROL_LIMIT) paths.push({ path, dir, exists: existsSync(path) });
+  };
+  /** Where a pointer file (`gitdir: x` in .git, a `commondir`) leads, if it stays inside. */
+  const follow = (file: string, base: string, prefix: string): string | null => {
+    try {
+      const text = readFileSync(file, 'utf8').trim();
+      const target = realpathSync(
+        resolve(base, text.startsWith(prefix) ? text.slice(prefix.length).trim() : text),
+      );
+      return inside(target) && isDir(target) ? target : null;
+    } catch {
+      return null;
+    }
+  };
+  const gitDir = (dir: string, depth: number): void => {
+    if (seen.has(dir) || depth > 8) return;
+    seen.add(dir);
+    for (const f of GIT_CONTROL_FILES) add(join(dir, f), false);
+    for (const d of GIT_CONTROL_DIRS) add(join(dir, d), true);
+    const common = existsSync(join(dir, 'commondir'))
+      ? follow(join(dir, 'commondir'), dir, '')
+      : null;
+    if (common) gitDir(common, depth + 1);
+    // Submodule git dirs; a submodule's name may hold slashes, so look below until a HEAD.
+    const modules = (at: string, level: number): void => {
+      if (level > 4) return;
+      let names: string[];
+      try {
+        names = readdirSync(at);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        const sub = join(at, name);
+        if (!isDir(sub)) continue;
+        if (existsSync(join(sub, 'HEAD'))) gitDir(sub, depth + 1);
+        else modules(sub, level + 1);
+      }
+    };
+    modules(join(dir, 'modules'), 0);
+    let worktrees: string[] = [];
+    try {
+      worktrees = readdirSync(join(dir, 'worktrees'));
+    } catch {
+      /* no linked worktrees */
+    }
+    for (const w of worktrees) {
+      const wt = join(dir, 'worktrees', w);
+      if (!isDir(wt)) continue;
+      add(join(wt, 'config.worktree'), false);
+      add(join(wt, 'commondir'), false);
+    }
+  };
+  if (entry.dir) gitDir(entryPath, 0);
+  else if (stat.isFile()) {
+    const target = follow(entryPath, real, 'gitdir:');
+    if (target) gitDir(target, 0);
+  }
+  return { entry, paths };
+}
+
+/** bubblewrap arguments that keep the git control files read-only (see gitControlPaths). `.git`
+ * is bound onto itself so it is a mount point that cannot be renamed or removed; each control file
+ * or folder is bound read-only over itself. A missing `hooks` or `info` folder gets a read-only
+ * empty tmpfs (bubblewrap creates the empty folder for the mount, as `git init` would); a missing
+ * control file is left alone, since a mount point would have to be created as an empty file and
+ * an empty `commondir` breaks git. */
+function bwrapGitControl(root: string): string[] {
+  const { entry, paths } = gitControlPaths(root);
+  if (!entry) return [];
+  return [
+    ...(entry.dir ? ['--bind', entry.path, entry.path] : ['--ro-bind', entry.path, entry.path]),
+    ...paths.flatMap((p) =>
+      p.exists
+        ? ['--ro-bind', p.path, p.path]
+        : p.dir
+          ? ['--tmpfs', p.path, '--remount-ro', p.path]
+          : [],
+    ),
+  ];
+}
+
+const sbplGitPath = (p: string) => sbplPath(p, 'git path');
+/** Seatbelt rules that refuse writes to the git control files (see gitControlPaths), present or
+ * not: a path rule needs no file to exist. Later rules win in a profile, so these follow the
+ * workspace's allow. */
+function seatbeltGitControl(root: string): string[] {
+  const { entry, paths } = gitControlPaths(root);
+  if (!entry) return [];
+  const rules = [
+    `(literal ${sbplGitPath(entry.path)})`,
+    ...paths.map((p) =>
+      p.dir ? `(subpath ${sbplGitPath(p.path)})` : `(literal ${sbplGitPath(p.path)})`,
+    ),
+  ];
+  return [`(deny file-write* ${rules.join(' ')})`];
+}
+
 export function sandboxArgv(
   level: SandboxLevel,
   root: string,
@@ -186,6 +335,8 @@ export function sandboxArgv(
     level === 'read-only' ? '--ro-bind' : '--bind',
     root,
     root,
+    // The repository's control files stay read-only in a writable workspace.
+    ...(level === 'workspace-write' ? bwrapGitControl(root) : []),
     // Broker network: only the host relay's socket directory and the node that bridges to it.
     ...(options.broker
       ? [
@@ -312,6 +463,8 @@ export function seatbeltProfile(
     level === 'workspace-write'
       ? `(allow file-write* (subpath ${w}) (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`
       : `(allow file-write* (subpath ${t}) ${devices} (regex #"^/dev/fd/"))`,
+    // The repository's control files stay read-only in a writable workspace.
+    ...(level === 'workspace-write' ? seatbeltGitControl(root) : []),
     `(allow file-ioctl ${devices} (regex #"^/dev/fd/"))`,
     ...(options.network ? ['(allow network*)'] : []),
     ...(options.listen && level === 'workspace-write' && !options.network

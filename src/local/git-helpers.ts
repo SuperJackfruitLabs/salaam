@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { hostGitText } from './host-git.js';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -37,12 +38,10 @@ export function gitIdentityEnv(
 ): Record<string, string> {
   const read = (key: string) => {
     try {
-      return execFileSync('git', ['config', '--get', key], {
+      return hostGitText(['config', '--get', key], {
         cwd: root,
-        encoding: 'utf8',
         timeout: 2000,
-        env: { ...env, GIT_TERMINAL_PROMPT: '0' },
-        stdio: ['ignore', 'pipe', 'ignore'],
+        baseEnv: env,
       }).trim();
     } catch {
       return '';
@@ -138,12 +137,7 @@ export function prInstruction(o: {
 
 function gitOut(root: string, args: string[]): string | null {
   try {
-    return execFileSync('git', args, {
-      cwd: root,
-      encoding: 'utf8',
-      timeout: 2000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    return hostGitText(args, { cwd: root, timeout: 2000 }).trim();
   } catch {
     return null;
   }
@@ -170,7 +164,7 @@ export function forgeTool(root: string): 'gh' | 'tea' | null {
       return null;
     }
   };
-  const url = run('git', ['remote', 'get-url', 'origin']) ?? '';
+  const url = gitOut(root, ['remote', 'get-url', 'origin']) ?? '';
   const has = (cmd: string) => run(cmd, ['--version']) !== null;
   if (/github\.com[:/]/.test(url)) return has('gh') ? 'gh' : null;
   return has('tea') ? 'tea' : has('gh') ? 'gh' : null;

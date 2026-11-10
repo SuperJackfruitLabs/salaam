@@ -1,12 +1,7 @@
 // A desk session's own controls: approval rules, the permission policy, the command reviewer,
 // hooks, background commands, and the local diff and edits.
 import { ServiceError, integer, object, readJson, string } from '../core/index.js';
-import {
-  configurePermissions,
-  localDiff,
-  permissionPolicy,
-  type LocalCoding,
-} from '../local/index.js';
+import { configurePermissions, permissionPolicy, type LocalCoding } from '../local/index.js';
 import type { Supervisor } from '../runtime/index.js';
 import type { Store } from '../store/index.js';
 import type { CommandReviewers } from './reviewers.js';
@@ -213,7 +208,7 @@ export class DeskController {
     const id = params.session;
     if (!this.s.store.localWorkspace(id))
       throw new ServiceError('local_denied', 'Local workspace required');
-    send(res, 200, { text: await localDiff(this.s.store.session(id).cwd) });
+    send(res, 200, { text: await this.s.localCoding.diff(id) });
   }
 
   /** An edit request's exact files, before and after, so an editor can show it as a diff. */

@@ -144,6 +144,21 @@ export function commandArgv(
     : toolArgv(tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
 }
 
+/** A read-only helper Salaam runs itself (no shell, no approval) under the host's sandbox at the
+ * read-only level, whatever level commands get: whatever it starts is confined like a sandboxed
+ * command. The caller checks isSandboxed first. */
+export function readOnlySandboxArgv(
+  sb: LocalSandbox,
+  root: string,
+  argv: string[],
+  tmp: string | undefined,
+): string[] {
+  const options = { network: false, readPaths: sb.readPaths ?? [] };
+  return sb.kind === 'seatbelt'
+    ? seatbeltArgv('read-only', root, tmp ?? '', argv, sb.seatbelt ?? null, options)
+    : sandboxArgv('read-only', root, argv, sb.bwrap, options);
+}
+
 /** How an approval describes where a command runs. `host` is the host's own sandbox, `sb` the one
  * this command was approved under. */
 export function sandboxText(host: LocalSandbox, sb: LocalSandbox, outside: boolean): string {
