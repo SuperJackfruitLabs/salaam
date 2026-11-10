@@ -24,6 +24,12 @@ import {
 import { localDiff } from '../../src/local/diff.js';
 import { hostGitArgs, hostGitEnv, HOST_GIT_CONFIG } from '../../src/local/host-git.js';
 import { ShadowCheckpoints } from '../../src/runtime/turn-checkpoints.js';
+import {
+  appendGitConfig,
+  commandEnv,
+  SANDBOX_GIT_CONFIG,
+  type LocalSandbox,
+} from '../../src/local/command-launch.js';
 
 // A sandboxed command can write the workspace, .git included unless the sandbox protects it, and
 // can create a repository where there was none. Every git call Salaam makes on the host, outside
@@ -185,4 +191,50 @@ test('no file in src/ spawns git except the host-git helper', () => {
     .map((f) => relative(src, f));
   expect(offenders).toEqual([]);
   expect(existsSync(join(src, 'local', 'host-git.ts'))).toBe(true);
+});
+
+describe('the git defaults sandboxed commands get', () => {
+  const sandboxed: LocalSandbox = {
+    kind: 'bwrap',
+    level: 'workspace-write',
+    bwrap: { path: '/usr/bin/bwrap', version: 'x' },
+  };
+  const unsandboxed: LocalSandbox = { kind: 'none', level: 'full-access', bwrap: null };
+  test('a sandboxed command gets them; an unsandboxed one, whose config is writable, does not', () => {
+    const env = commandEnv('/nowhere', sandboxed, null);
+    expect(env).toMatchObject({
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'branch.autoSetupMerge',
+      GIT_CONFIG_VALUE_0: 'false',
+      GIT_CONFIG_KEY_1: 'push.default',
+      GIT_CONFIG_VALUE_1: 'current',
+    });
+    expect(
+      Object.keys(commandEnv('/nowhere', unsandboxed, null)).some((k) =>
+        k.startsWith('GIT_CONFIG'),
+      ),
+    ).toBe(false);
+  });
+  test('they are appended after entries already there, never replacing them', () => {
+    const env = appendGitConfig(
+      { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.editor', GIT_CONFIG_VALUE_0: 'vi' },
+      SANDBOX_GIT_CONFIG,
+    );
+    expect(env).toEqual({
+      GIT_CONFIG_COUNT: '3',
+      GIT_CONFIG_KEY_0: 'core.editor',
+      GIT_CONFIG_VALUE_0: 'vi',
+      GIT_CONFIG_KEY_1: 'branch.autoSetupMerge',
+      GIT_CONFIG_VALUE_1: 'false',
+      GIT_CONFIG_KEY_2: 'push.default',
+      GIT_CONFIG_VALUE_2: 'current',
+    });
+  });
+  test('they never reach Salaam’s own host-side git', () => {
+    const before = { ...process.env };
+    const host = hostGitEnv({}, commandEnv('/nowhere', sandboxed, null));
+    expect(Object.keys(host).filter((k) => /^GIT_CONFIG_(COUNT|KEY|VALUE)/.test(k))).toEqual([]);
+    expect(hostGitArgs(['status']).join(' ')).not.toMatch(/autoSetupMerge|push\.default/);
+    expect(process.env).toEqual(before);
+  });
 });

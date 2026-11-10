@@ -19,7 +19,7 @@ import {
   sandboxArgv,
   seatbeltArgv,
 } from '../../src/local/command-sandbox.js';
-import type { LocalSandbox } from '../../src/local/command-launch.js';
+import { commandEnv, type LocalSandbox } from '../../src/local/command-launch.js';
 import { LocalCoding } from '../../src/local/coding.js';
 import { Store } from '../../src/store/store.js';
 import { ManagedWork } from '../../src/execution/managed.js';
@@ -81,7 +81,7 @@ function proof(prove: (sb: LocalSandbox) => void | Promise<void>): () => Promise
 }
 
 /** Runs a shell script as a sandboxed workspace-write command would run. */
-function runSandboxed(root: string, script: string) {
+function runSandboxed(root: string, script: string, env?: Record<string, string>) {
   const sh = ['/bin/sh', '-c', script];
   let argv: string[];
   let tmp: string | undefined;
@@ -95,10 +95,35 @@ function runSandboxed(root: string, script: string) {
     cwd: root,
     encoding: 'utf8',
     timeout: 30000,
-    env: { PATH: '/usr/bin:/bin', HOME: root, LANG: 'C', ...IDENTITY },
+    env: env ?? { PATH: '/usr/bin:/bin', HOME: root, LANG: 'C', ...IDENTITY },
   });
   rmSync(tmp ?? join(root, '.no-tmp'), { recursive: true, force: true });
   return { code: r.status, out: (r.stdout ?? '') + (r.stderr ?? '') };
+}
+
+/** A repository cloned from a bare remote that lives inside the workspace (excluded), so the
+ * sandbox can reach it: what is proved is git config behaviour, not the file boundary. */
+function cloned() {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'sal-gitflow-')));
+  const root = join(base, 'work'),
+    remote = join(root, '.remote.git'),
+    seed = join(base, 'seed');
+  git(base, 'init', '-q', '-b', 'main', seed);
+  writeFileSync(join(seed, 'a.txt'), 'a\n');
+  git(seed, 'add', '.');
+  git(seed, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'a');
+  git(base, 'init', '-q', '-b', 'main', root);
+  git(base, 'init', '-q', '--bare', '-b', 'main', remote);
+  writeFileSync(join(root, '.git', 'info', 'exclude'), '.remote.git/\n');
+  git(seed, 'push', '-q', remote, 'main');
+  git(root, 'remote', 'add', 'origin', './.remote.git');
+  git(root, 'fetch', '-q', 'origin');
+  git(root, 'reset', '-q', '--hard', 'origin/main');
+  git(root, 'branch', '-q', '-u', 'origin/main', 'main');
+  // The identity Salaam passes to sandboxed commands comes from the repository's config.
+  git(root, 'config', 'user.name', 'Ada Example');
+  git(root, 'config', 'user.email', 'ada@example.test');
+  return { root, remote };
 }
 
 describe(`git control files inside the sandbox (${sandbox?.kind ?? 'none'})`, () => {
@@ -142,6 +167,37 @@ describe(`git control files inside the sandbox (${sandbox?.kind ?? 'none'})`, ()
       git(f.root, 'status', '--porcelain');
       git(f.root, 'diff');
       expect(ran(f.marks)).toEqual([]);
+    }),
+  );
+
+  test(
+    'a branch from origin, a commit and a plain push work quietly with the environment Salaam gives',
+    proof((sb) => {
+      const f = cloned();
+      const before = readFileSync(join(f.root, '.git', 'config'), 'utf8');
+      const env = { ...commandEnv(f.root, sb, null) } as Record<string, string>;
+      const r = runSandboxed(
+        f.root,
+        [
+          'set -e',
+          'git switch -c feat/x origin/main',
+          'git checkout -q -b feat/y origin/main',
+          'echo y > y.txt && git add y.txt && git commit -qm y',
+          'git push -q',
+          'git switch -q feat/x',
+          'echo x > x.txt && git add x.txt && git commit -qm x',
+          'git push -q',
+        ].join('\n'),
+        env,
+      );
+      expect(`${r.out}\nexit ${r.code}`).toMatch(/\nexit 0$/);
+      expect(r.out).not.toMatch(/could not write config|error:|fatal:/);
+      expect(r.out).not.toContain('set up to track');
+      expect(git(f.remote, 'branch', '--list').split(/\s+/)).toEqual(
+        expect.arrayContaining(['feat/x', 'feat/y']),
+      );
+      expect(git(f.remote, 'log', '-1', '--format=%an', 'feat/x').trim()).toBe('Ada Example');
+      expect(readFileSync(join(f.root, '.git', 'config'), 'utf8')).toBe(before);
     }),
   );
 

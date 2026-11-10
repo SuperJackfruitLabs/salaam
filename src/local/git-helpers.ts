@@ -128,7 +128,7 @@ export function prInstruction(o: {
   return [
     `Open a pull request for ${o.branch} into ${o.base}.`,
     `Read git log ${o.base}..HEAD and git diff ${o.base}...HEAD, then draft a title and a body: what changed, why, and how it was tested.`,
-    `Push the branch with git push -u origin ${o.branch}; never use --force or any push option that rewrites the remote.`,
+    `Push the branch with git push origin ${o.branch}; never use --force or any push option that rewrites the remote.`,
     `Then open it with ${create}, writing the body to a file in the system temp directory.`,
     'Pushing and opening the pull request each ask for approval; show the drafted title and body before asking.',
     RULES,

@@ -63,11 +63,23 @@ when Salaam or you run git. So in `workspace-write`:
   project, that folder is protected the same way;
 - `.git` itself cannot be renamed, removed or replaced.
 
-Everything else in `.git` stays writable, so commit, branch, checkout, merge, stash
-and tag work as usual. What no longer works inside the sandbox is anything that
-writes git config: `git config` with a value, `git remote add`, setting an upstream
-branch, adding a submodule. Run those yourself, or for that one command outside the
-sandbox.
+Everything else in `.git` stays writable, so commit, branch, switch, checkout,
+merge, rebase, cherry-pick, stash, tag, fetch and `git worktree add` work as usual.
+
+Because the config is read-only, a sandboxed command's git runs with two settings of
+its own (set through `GIT_CONFIG_COUNT`, added after any entries already there):
+
+- `branch.autoSetupMerge=false`: a branch made from `origin/...` does not record an
+  upstream, so `git switch -c feat origin/main` works without an error;
+- `push.default=current`: a plain `git push` pushes the current branch to a branch
+  of the same name, so a branch needs no upstream to be pushed.
+
+What still does not work inside the sandbox is anything that writes git config:
+`git config` with a value, `git remote add`, `git branch -m`, an upstream set with
+`-u`, `-t` or `--set-upstream-to` (git says it set one, then reports it could not
+write the config), and adding a submodule. `git pull` on a branch without an
+upstream needs the remote and branch: `git pull origin main`. Run those yourself, or
+for that one command outside the sandbox.
 
 These are found when each command starts. On Linux a `config.worktree` or
 `commondir` that does not exist yet stays writable (a read-only mount needs a file
