@@ -49,6 +49,8 @@ import { BackgroundTasks } from './background-tasks.js';
 import { commandArgs, commandReview, type LocalArgs } from './command-request.js';
 import { decideByPolicy } from './local-approval.js';
 import { spawnHook } from './hook-runner.js';
+import { localDiff } from './diff.js';
+import { readInSandbox } from './sandbox-read.js';
 
 export type { LocalSandbox } from './command-launch.js';
 
@@ -526,6 +528,17 @@ export class LocalCoding {
     const tmp = privateTmp(sb, 'salaam-hook-');
     const argv = this.commandArgv(root, command, tmp, null, sb);
     return spawnHook(argv, root, input, timeoutMs, tmp);
+  }
+  /** The workspace diff for the diff view. When this host has a command sandbox, git runs inside
+   * it, read-only, even for a session in full access: the repository's config may have been
+   * written by a sandboxed command, and a content filter it names must run confined, not on the
+   * host. Without one, commands were never confined and git runs on the host, hardened. */
+  diff(session: string): Promise<string> {
+    const root = this.store.session(session).cwd;
+    const host = { ...this.sandbox, level: 'read-only' as const };
+    return isSandboxed(host) && (host.bwrap || host.seatbelt)
+      ? localDiff(root, (args) => readInSandbox(host, root, args))
+      : localDiff(root);
   }
   /** The process a command runs as (see commandArgv). */
   private commandArgv(

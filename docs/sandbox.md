@@ -49,6 +49,53 @@ itself and credential locations (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.npmrc`,
 On macOS, commands get the real `git` from the active developer folder. Git runs
 without your global config unless `~/.gitconfig` is listed.
 
+## Git inside the sandbox
+
+Git runs programs its configuration names: a file-system monitor, hooks, content
+filters, diff and textconv drivers. A command that could change your repository's
+configuration could leave one of those for git to run later, outside the sandbox,
+when Salaam or you run git. So in `workspace-write`:
+
+- the repository's `.git/config`, `.git/config.worktree`, `.git/commondir`,
+  `.git/hooks` and `.git/info` are read-only, and so are the same files of each
+  submodule under `.git/modules/` and `config.worktree` and `commondir` of each
+  linked worktree. When `.git` is a file pointing to a git folder inside the
+  project, that folder is protected the same way;
+- `.git` itself cannot be renamed, removed or replaced.
+
+Everything else in `.git` stays writable, so commit, branch, switch, checkout,
+merge, rebase, cherry-pick, stash, tag, fetch and `git worktree add` work as usual.
+
+Because the config is read-only, a sandboxed command's git runs with two settings of
+its own (set through `GIT_CONFIG_COUNT`, added after any entries already there):
+
+- `branch.autoSetupMerge=false`: a branch made from `origin/...` does not record an
+  upstream, so `git switch -c feat origin/main` works without an error;
+- `push.default=current`: a plain `git push` pushes the current branch to a branch
+  of the same name, so a branch needs no upstream to be pushed.
+
+What still does not work inside the sandbox is anything that writes git config:
+`git config` with a value, `git remote add`, `git branch -m`, an upstream set with
+`-u`, `-t` or `--set-upstream-to` (git says it set one, then reports it could not
+write the config), and adding a submodule. `git pull` on a branch without an
+upstream needs the remote and branch: `git pull origin main`. Run those yourself, or
+for that one command outside the sandbox.
+
+These are found when each command starts. On Linux a `config.worktree` or
+`commondir` that does not exist yet stays writable (a read-only mount needs a file
+to mount over, and an empty `commondir` breaks git); a missing `hooks` or `info`
+folder is created empty and mounted read-only. A repository a command creates, and
+repositories in subfolders, are not protected this way.
+
+Git that Salaam runs for itself outside the sandbox (the `@` file list, your commit
+identity, `/pr`, turn checkpoints) ignores whatever the repository's configuration
+says about programs: it turns off the file-system monitor, hooks, external diff,
+pager, credential helpers, transports and automatic maintenance on the command line,
+which overrides every config file and include, and drops git variables from its
+environment. The diff view reads file contents, so it runs git inside the sandbox,
+read-only: a content filter the repository names runs there, confined, not on your
+machine.
+
 ## One command outside the sandbox
 
 When the sandbox blocks something a task really needs, such as listing running apps,

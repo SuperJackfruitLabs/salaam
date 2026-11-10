@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, rmdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { ServiceError } from '../core/index.js';
+import { hostGitSync } from '../local/index.js';
 
 export interface CheckpointChange {
   path: string;
@@ -40,7 +40,8 @@ export class ShadowCheckpoints {
     if (!existsSync(join(this.dir, 'HEAD'))) {
       mkdirSync(dirname(this.dir), { recursive: true, mode: 0o700 });
       const bare = { ...this.env(), GIT_WORK_TREE: undefined, GIT_INDEX_FILE: undefined };
-      execFileSync('git', ['init', '-q', '--bare', this.dir], { env: bare, stdio: 'pipe' });
+      const setup = { cwd: this.root, baseEnv: {}, gitEnv: bare, stdio: 'pipe' as const };
+      hostGitSync(['init', '-q', '--bare', this.dir], setup);
       for (const [key, value] of [
         ['core.bare', 'false'],
         ['core.autocrlf', 'false'],
@@ -48,7 +49,7 @@ export class ShadowCheckpoints {
         ['core.symlinks', 'true'],
         ['gc.auto', '0'],
       ])
-        execFileSync('git', ['config', key!, value!], { env: bare, stdio: 'pipe' });
+        hostGitSync(['config', key!, value!], setup);
       mkdirSync(join(this.dir, 'info'), { recursive: true });
       // Salaam's own state (the journal, and these checkpoints) is never part of a checkpoint,
       // even when the service keeps it inside the folder it is working on.
@@ -60,15 +61,17 @@ export class ShadowCheckpoints {
       );
       rmSync(join(this.dir, 'hooks'), { recursive: true, force: true });
     }
-    return execFileSync('git', args, {
+    // Its own config, but hardened all the same (host-git.ts): the state folder may lie inside
+    // the workspace a sandboxed command can write.
+    return hostGitSync(args, {
       cwd: this.root,
-      env: this.env(options.index),
-      input: options.input,
-      encoding: 'utf8',
+      baseEnv: {},
+      gitEnv: this.env(options.index),
+      ...(options.input !== undefined ? { input: options.input } : {}),
       maxBuffer: 64 * 1024 * 1024,
       timeout: 30_000,
       stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    }).toString('utf8');
   }
   private env(index?: string): NodeJS.ProcessEnv {
     return {

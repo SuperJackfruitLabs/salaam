@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { ServiceError } from '../core/index.js';
+import { hostGitSync } from '../local/index.js';
 
 /** `@path` mentions attach workspace files to a desk prompt (Phase 3b). */
 export const MENTION_LIMITS = {
@@ -59,10 +59,10 @@ function inside(root: string, path: string): boolean {
 export function listWorkspaceFiles(root: string): string[] {
   let names: string[];
   try {
-    names = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
+    // Hardened: a sandboxed command may have written this repository's config (host-git.ts).
+    names = hostGitSync(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
       cwd: root,
       maxBuffer: 32 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
     })
       .toString('utf8')
       .split('\0')

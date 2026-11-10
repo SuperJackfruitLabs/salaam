@@ -12,6 +12,8 @@ export type DangerCategory =
   | 'shell-pipe'
   | 'destructive-files'
   | 'git-history'
+  /** The repository's config, hooks or attributes: git runs programs they name. */
+  | 'git-control'
   | 'publish'
   | 'credentials'
   | 'privilege'
@@ -67,6 +69,30 @@ const git = (sub: string, test: (rest: string[]) => boolean) => (args: string[])
   const [s, ...rest] = gitArgs(args);
   return s === sub && test(rest);
 };
+/** `git config` that changes a config file rather than reading one. */
+function gitConfigWrites(r: string[]): boolean {
+  if (has(r, '--add', '--unset', '--unset-all', '--replace-all', '--rename-section')) return true;
+  if (has(r, '--remove-section', '--edit') || short(r, 'e')) return true;
+  if (has(r, '--get', '--get-all', '--get-regexp', '--get-urlmatch', '--get-color', '--list'))
+    return false;
+  if (has(r, '--get-colorbool') || r.includes('-l')) return false;
+  const p = positional(r);
+  if (['set', 'unset', 'rename-section', 'remove-section', 'edit'].includes(p[0] ?? ''))
+    return true;
+  if (['get', 'list'].includes(p[0] ?? '')) return false;
+  return p.length >= 2;
+}
+/** A path git reads to decide what to run: a repository's config (and what redirects it), its
+ * hooks and info, a submodule's or linked worktree's, or `.git` itself, at any depth. */
+export function isGitControlPath(path: string): boolean {
+  return (
+    /(^|\/)\.git(\/modules\/.+)?\/(config|config\.worktree|commondir|hooks|info)(\/|$)/.test(
+      path,
+    ) ||
+    /(^|\/)\.git\/worktrees\/[^/]+\/(config\.worktree|commondir)$/.test(path) ||
+    /(^|\/)\.git\/?$/.test(path)
+  );
+}
 const sqlDestroys = (args: string[]) =>
   args.some(
     (a) => /\b(drop|truncate|alter)\b/i.test(a) || /\bdelete\s+from\b(?![\s\S]*\bwhere\b)/i.test(a),
@@ -127,6 +153,12 @@ export const DANGER_RULES: DangerRule[] = [
     test: (a) => a.slice(0, a.length - gitArgs(a).length).some((x) => x === '-c'),
     category: 'git-history',
     why: 'git -c can set a command git will run (sshCommand, hooks, aliases)',
+  },
+  {
+    commands: ['git'],
+    test: git('config', gitConfigWrites),
+    category: 'git-control',
+    why: 'changes git config, which can name programs git runs (fsmonitor, hooks, filters)',
   },
   {
     commands: ['git'],
@@ -801,6 +833,8 @@ function simple(
       return yes('credentials', `reads or writes a credential file (${r.target})`, text);
     if (r.out && !inside(p))
       return yes('outside-workspace', `writes ${r.target}, outside this workspace`, text);
+    if (r.out && isGitControlPath(p))
+      return yes('git-control', `writes ${r.target}, which can name programs git runs`, text);
   }
   let i = 0;
   for (; i < argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]!); i++)
@@ -881,6 +915,9 @@ function simple(
   if (writes) {
     const out = paths.find((p) => !inside(p));
     if (out) return yes('outside-workspace', `${cmd} writes ${out}, outside this workspace`, text);
+    const control = paths.find(isGitControlPath);
+    if (control)
+      return yes('git-control', `${cmd} writes ${control}, which can name programs git runs`, text);
   }
   return { dangerous: false };
 }

@@ -6,6 +6,15 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## [Unreleased]
 
+### Security
+
+- A sandboxed command could set `core.fsmonitor` (or a hook or filter) in the workspace's
+  `.git/config`, and git ran it outside the sandbox the next time Salaam listed files for `@` or
+  read the repository. Salaam's own git calls now ignore every program the repository's config
+  names, the diff view runs git inside the sandbox, and the sandbox keeps the repository's
+  config, hooks and `info` folder read-only. Commands that change git config now ask in full
+  access and auto mode. See [Sandbox](docs/sandbox.md#git-inside-the-sandbox).
+
 ## [0.0.8] - 2026-11-09
 
 A strict work decision now tells the board whether each file's preview is complete. Upgrade the

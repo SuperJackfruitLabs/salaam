@@ -85,13 +85,40 @@ export function privateTmp(sb: LocalSandbox, prefix: string): string | undefined
     : undefined;
 }
 
+/**
+ * Git settings a sandboxed command gets, because the sandbox keeps the repository's config
+ * read-only: a new branch from a remote-tracking branch does not try (and fail) to record its
+ * upstream, and a plain `git push` pushes the current branch to the same name. Passed as
+ * GIT_CONFIG_COUNT entries, which name no program and are read only by the command's own git;
+ * a command that sets GIT_CONFIG_COUNT itself replaces them.
+ */
+export const SANDBOX_GIT_CONFIG: readonly (readonly [string, string])[] = [
+  ['branch.autoSetupMerge', 'false'],
+  ['push.default', 'current'],
+];
+/** `env` with these config entries added after any GIT_CONFIG_COUNT entries it already has. */
+export function appendGitConfig(
+  env: Record<string, string>,
+  entries: readonly (readonly [string, string])[],
+): Record<string, string> {
+  const given = Number(env.GIT_CONFIG_COUNT ?? 0);
+  const start = Number.isSafeInteger(given) && given > 0 ? given : 0;
+  const out = { ...env };
+  entries.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${start + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${start + i}`] = value;
+  });
+  out.GIT_CONFIG_COUNT = String(start + entries.length);
+  return out;
+}
+
 /** A command's environment. Deliberately not the daemon's: no provider credentials or tokens. */
 export function commandEnv(
   root: string,
   sb: LocalSandbox,
   relay: BrokerRelay | null,
 ): Record<string, string> {
-  return {
+  const env = {
     PATH: COMMAND_PATH,
     HOME: process.env.HOME ?? root,
     LANG: 'en_US.UTF-8',
@@ -99,6 +126,7 @@ export function commandEnv(
     ...(isSandboxed(sb) ? gitIdentityEnv(root) : {}),
     ...(relay ? proxyEnv(relay.port ?? COMMAND_NETWORK_PORT) : {}),
   };
+  return isSandboxed(sb) ? appendGitConfig(env, SANDBOX_GIT_CONFIG) : env;
 }
 
 /** The process a command runs as. Under the tools user, the host-side shell reports its own
@@ -142,6 +170,21 @@ export function commandArgv(
         ...inner(script),
       ])
     : toolArgv(tools, ['/usr/bin/setsid', '-w', '/bin/sh', '-c', marker + script]);
+}
+
+/** A read-only helper Salaam runs itself (no shell, no approval) under the host's sandbox at the
+ * read-only level, whatever level commands get: whatever it starts is confined like a sandboxed
+ * command. The caller checks isSandboxed first. */
+export function readOnlySandboxArgv(
+  sb: LocalSandbox,
+  root: string,
+  argv: string[],
+  tmp: string | undefined,
+): string[] {
+  const options = { network: false, readPaths: sb.readPaths ?? [] };
+  return sb.kind === 'seatbelt'
+    ? seatbeltArgv('read-only', root, tmp ?? '', argv, sb.seatbelt ?? null, options)
+    : sandboxArgv('read-only', root, argv, sb.bwrap, options);
 }
 
 /** How an approval describes where a command runs. `host` is the host's own sandbox, `sb` the one
