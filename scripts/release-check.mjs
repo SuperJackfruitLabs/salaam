@@ -17,7 +17,7 @@ export function checkRelease(tag) {
   if (JSON.stringify(pkg.dependencies) !== JSON.stringify(lock.packages[''].dependencies))
     throw new Error('Production dependencies differ from the reviewed lockfile.');
   const notes = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
-  if (!notes.includes(`## [${pkg.version}] - `))
+  if (!notes.includes(`## v${pkg.version} — `))
     throw new Error('Add a dated CHANGELOG.md entry for this version.');
   if (tag) {
     // An arbitrary tag cannot bypass the reviewed main branch.

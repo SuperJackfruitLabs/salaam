@@ -1,83 +1,55 @@
 import { expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { ROOT } from '../../src/core/config.js';
 
-// GitHub refuses to start a workflow whose called job asks for a permission the caller does not
-// grant. release.yml calls ci.yml, so when ci.yml's `plan` job gained `pull-requests: read`
-// (2026-10-24) every release failed at startup until v0.0.4's tag found it. Read both files and
-// hold the caller to everything the called jobs ask for.
-const LEVEL: Record<string, number> = { none: 0, read: 1, write: 2 };
+// A v* tag runs the suite's shared release workflow (.github/workflows/release.yml, synced
+// byte-identical). What is Salaam's is .github/release-config.json and the scripts it names:
+// these tests hold the two together with ci.yml.
+const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
+const config: {
+  ci_workflow: string;
+  artifact: string;
+  check: string;
+  build_at_tag?: boolean;
+  publish: { script: string; environment: string; after_release: boolean };
+} = JSON.parse(read('.github/release-config.json'));
 
-/** The `permissions:` maps in a workflow, by the indentation of their `permissions:` line. */
-function permissionBlocks(
-  text: string,
-): { indent: number; line: number; grants: Map<string, string> }[] {
-  const lines = text.split('\n');
-  const blocks: { indent: number; line: number; grants: Map<string, string> }[] = [];
-  lines.forEach((line, i) => {
-    const m = /^( *)permissions:\s*$/.exec(line);
-    if (!m) return;
-    const indent = m[1]!.length;
-    const grants = new Map<string, string>();
-    for (let j = i + 1; j < lines.length; j++) {
-      const entry = /^( *)([a-z-]+):\s*(read|write|none)\s*$/.exec(lines[j]!);
-      if (!entry || entry[1]!.length <= indent) break;
-      grants.set(entry[2]!, entry[3]!);
-    }
-    blocks.push({ indent, line: i + 1, grants });
+test('the release ships the package main CI built and certified, never a rebuild', () => {
+  expect(config.ci_workflow).toBe('ci.yml');
+  expect(config.build_at_tag).toBeUndefined();
+  // The artifact the workflow downloads is the one ci.yml's package-build uploads.
+  const ci = read('.github/workflows/ci.yml');
+  expect(config.artifact).toBe('salaam-cli-{attempt}');
+  expect(ci).toContain('name: salaam-cli-${{ github.run_attempt }}');
+  // ...and the gate's check proves it is the certified, attested one before anything is drafted.
+  expect(config.check).toContain('node scripts/release-check.mjs "$TAG"');
+  expect(config.check).toContain('node scripts/release-source.mjs');
+  const source = read('scripts/release-source.mjs');
+  expect(source).toContain('process.env.CI_RUN_ID');
+  expect(source).toContain('`salaam-cli-${run.run_attempt}`');
+  expect(source).toContain("'--signer-workflow',");
+});
+
+test('npm gets the released tarball after the release, through trusted publishing', () => {
+  expect(config.publish).toEqual({
+    script: 'deploy/release/npm-publish.sh',
+    environment: 'npm',
+    after_release: true,
   });
-  return blocks;
-}
-
-test('release.yml grants every permission the ci.yml jobs it calls ask for', () => {
-  const workflows = join(ROOT, '.github/workflows');
-  const release = readFileSync(join(workflows, 'release.yml'), 'utf8');
-  const ci = readFileSync(join(workflows, 'ci.yml'), 'utf8');
-
-  // The job in release.yml that calls ci.yml, and the permissions it grants that call.
-  const lines = release.split('\n');
-  const callAt = lines.findIndex((l) => /^\s+uses: \.\/\.github\/workflows\/ci\.yml\s*$/.test(l));
-  expect(callAt).toBeGreaterThan(-1);
-  const callIndent = /^( *)/.exec(lines[callAt]!)![1]!.length;
-  const granted = permissionBlocks(lines.slice(callAt).join('\n')).find(
-    (b) => b.indent === callIndent,
-  );
-  expect(granted, 'the ci.yml call in release.yml sets its permissions').toBeTruthy();
-
-  // Every job-level permissions block in ci.yml (job blocks are indented under `jobs:`).
-  const asked = permissionBlocks(ci).filter((b) => b.indent > 0);
-  expect(asked.length).toBeGreaterThan(0);
-  const missing: string[] = [];
-  for (const block of asked)
-    for (const [scope, level] of block.grants)
-      if (LEVEL[granted!.grants.get(scope) ?? 'none']! < LEVEL[level]!)
-        missing.push(`ci.yml:${block.line} ${scope}: ${level}`);
-  expect(missing).toEqual([]);
+  expect(existsSync(join(ROOT, config.publish.script))).toBe(true);
+  expect(read(config.publish.script)).toContain('node scripts/npm-release.mjs');
+  expect(read('scripts/npm-release.mjs')).toContain('process.env.RELEASE_DIST');
 });
 
-test('a release writes its summary: release.yml calls release-summary after the release exists', () => {
-  const release = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8');
-  const job = release.slice(release.indexOf('\n  summary:\n'));
-  expect(job.length, 'release.yml has a summary job').toBeGreaterThan(20);
-  expect(job).toContain('uses: ./.github/workflows/release-summary.yml');
-  expect(job).toMatch(/needs: \[[^\]]*github-release[^\]]*\]/);
-  expect(job).toContain("needs.github-release.result == 'success'");
-  expect(job).toContain('contents: write');
-  expect(job).toContain('secrets: inherit');
-  const summary = readFileSync(join(ROOT, '.github/workflows/release-summary.yml'), 'utf8');
-  expect(summary).toMatch(/^ {2}workflow_call:/m);
-  expect(summary).toContain('node scripts/previous-tag.mjs');
-});
-
-test('the summary compares a release with the version before it', async () => {
-  // An untyped script module; the assertions below check what it returns.
-  const { previousTag } = await import(pathToFileURL(join(ROOT, 'scripts/previous-tag.mjs')).href);
-  const tags = ['v0.0.5', 'v0.0.6', 'v0.0.7', 'v0.0.8-rc.1', 'v0.0.8-rc.2', 'v0.0.10', 'junk', ''];
-  expect(previousTag('v0.0.8', tags)).toBe('v0.0.7');
-  expect(previousTag('v0.0.8-rc.2', tags)).toBe('v0.0.8-rc.1');
-  expect(previousTag('v0.0.8-rc.1', tags)).toBe('v0.0.7');
-  expect(previousTag('v0.0.11', tags)).toBe('v0.0.10');
-  expect(previousTag('v0.0.5', tags)).toBeNull();
+test('the shared workflow is the release: no stop-gap summary or publisher remains', () => {
+  const release = read('.github/workflows/release.yml');
+  expect(release).toMatch(/^# Shared release workflow for the SuperJackfruit suite\./);
+  expect(release).toContain('publish-after-release:');
+  for (const gone of [
+    '.github/workflows/release-summary.yml',
+    'scripts/github-release.mjs',
+    'scripts/previous-tag.mjs',
+  ])
+    expect(existsSync(join(ROOT, gone)) ? gone : null).toBeNull();
 });

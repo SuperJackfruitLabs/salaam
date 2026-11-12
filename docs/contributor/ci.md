@@ -48,16 +48,17 @@ current attempt's certificate and immutable artifact identities, downloads the
 certified package, verifies all checksums and source/runtime/pin bindings, and
 verifies GitHub provenance with the CI signer, main ref and exact source digest.
 
-Promotion copies the same four release files without rebuilding. The release
-retains the original build provenance and records the source run and artifact IDs
-in its workflow artifacts. GitHub and npm publishing consume that same promoted
-artifact. Existing published assets and npm versions remain immutable.
+The release (the suite's shared release workflow, with `scripts/release-source.mjs`
+as its gate check) ships that run's `salaam-cli-<attempt>` artifact without
+rebuilding, and only when it is the certified package. It attests each release file
+again, and npm publishing consumes the same tarball from the published release.
+Existing published assets and npm versions remain immutable.
 
-A missing/expired certificate or package falls back to complete CI. A mismatched
-certificate, artifact binding, checksum, source identity or signature fails the
-release rather than weakening validation. API failures are errors, not evidence
-of a passing run. Manual release retries must select the requested tag as their
-workflow ref.
+A missing/expired certificate or package, a package from an earlier attempt, a
+mismatched certificate, artifact binding, checksum, source identity or signature
+stops the release rather than weakening validation; re-run all jobs of main CI for
+the commit, then dispatch the release with its tag. API failures are errors, not
+evidence of a passing run.
 
 ## Timing evidence
 

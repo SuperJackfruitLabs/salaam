@@ -33,40 +33,46 @@ git tag -a v0.0.3 -m 'Salaam 0.0.3'
 git push origin v0.0.3
 ```
 
-`.github/workflows/release.yml` validates the tag and its main ancestry. It looks
-for successful **full main CI for the exact tagged commit**. If that run is still
-active, it waits up to 45 minutes. A reusable run must have complete macOS/Linux
-acceptance evidence, all 20 recovery rounds on each platform, package installation
-receipts for the same tarball, matching source/runtime/pin identities, and a GitHub
-build attestation signed by this repository's main CI workflow for that commit.
+`.github/workflows/release.yml` is the suite's shared release workflow; Salaam's
+settings are in `.github/release-config.json`. Its gate requires the tag to be on
+`main` and **full main CI for the exact tagged commit** to have succeeded. Then
+`scripts/release-check.mjs` validates the version, lockfile and changelog, and
+`scripts/release-source.mjs` checks that run's evidence: the current attempt's
+certificate (complete macOS/Linux acceptance evidence, all 20 recovery rounds on
+each platform, package installation receipts for the same tarball, matching
+source/runtime/pin identities), the certified package's bytes, and its GitHub
+build attestation, signed by this repository's main CI workflow for that commit.
 
-The release promotes those exact verified bytes without rebuilding. PR/quick
-runs, another commit, a fork, a failed run, a stale attempt, incomplete evidence,
-or changed bytes cannot authorize promotion. Missing/expired evidence uses the
-complete reusable CI gate instead; a certificate or provenance mismatch fails
-closed. The fallback builds one CLI tarball and tests those exact bytes on both
-platforms, including real Linux Docker execution and public site checks.
+The release ships those exact verified bytes without rebuilding. PR/quick runs,
+another commit, a fork, a failed run, a stale attempt, incomplete or expired
+evidence, or changed bytes stop the release before anything is drafted; re-run all
+jobs of main CI for the commit, then the release. A tag on a landing- or docs-only
+commit has no package, so never tag one.
 
-Only after every gate passes, a publisher downloads the checked artifact, verifies
-checksums, preserves the verified main build attestation (or attests the fresh fallback build), uploads all assets to a draft GitHub Release,
-then publishes it. Assets are the CLI tarball, `SHA256SUMS`, `release.json` and
-`install.sh`. Release metadata identifies the Git commit, package/runtime versions
-and Pi pin. The package installs from an empty npm cache with scripts disabled;
-the test runs an offline Pi turn and restarts the daemon to verify the same attempt.
+The workflow drafts the GitHub Release with the CLI tarball, `release.json` and
+`install.sh` from that CI run, a fresh `SHA256SUMS` and a build attestation for
+each file, writes the notes (a summary, this version's changelog section and the
+grouped commits), then publishes it as `Salaam vX.Y.Z`. Release metadata identifies
+the Git commit, package/runtime versions and Pi pin. After the release is published,
+`deploy/release/npm-publish.sh` publishes the same tarball to npm.
 
 Prerelease tags create prereleases and use npm's `next` dist-tag. Stable releases
-use `latest`. Existing published assets are compared by digest and never overwritten.
-A rerun may finish a draft. If a published release differs, stop and investigate;
-publish a new version rather than clobbering it.
+use `latest`. A published release is never rebuilt; npm treats an already-published
+version as success only if its bytes match. If a published release differs, stop
+and investigate; publish a new version rather than clobbering it.
 
-For manual retries, select the **same tag** in GitHub's Run workflow ref selector
-and supply it as the `tag` input. Selecting main with a historical tag fails rather
-than testing and publishing different revisions.
+To re-run a failed release, dispatch the workflow with the tag (it runs on that
+tag's commit and finishes the draft), or rewrite only the notes' summary:
+
+```sh
+gh workflow run release.yml -R SuperJackfruitLabs/salaam -f tag=v0.0.3
+gh workflow run release.yml -R SuperJackfruitLabs/salaam -f tag=v0.0.3 -f summary_only=true
+```
 
 ## npm trusted publishing: one-time account setup
 
-The GitHub Release and its installer do not require an npm token. The npm job is
-disabled until repository variable `NPM_PUBLISH_ENABLED` equals `true`.
+The GitHub Release and its installer do not require an npm token. The npm publish
+runs in the `npm` environment through OIDC.
 
 An owner of the npm `@superjackfruitlabs` scope must bootstrap `@superjackfruitlabs/salaam` if it does not exist.
 Use the existing `superjackfruitlabs` npm organization; no separate `sjl` organization
@@ -90,8 +96,8 @@ In the package's npm settings, add a GitHub Actions trusted publisher:
 | Environment       | `npm`                                |
 | Allowed actions   | Direct publishing with `npm publish` |
 
-Create/configure the GitHub `npm` environment, preferably with required reviewers,
-then enable the repository variable. No long-lived npm secret is needed. The job
+Create/configure the GitHub `npm` environment, preferably with required reviewers.
+No long-lived npm secret is needed. The job
 uses OIDC and provenance, publishes the exact verified tarball, and treats an
 already-published version as success only if its SHA-512 integrity matches.
 The initial interactive bootstrap may not have CI provenance; subsequent OIDC
@@ -117,7 +123,7 @@ to use this builder; published packages contain no lifecycle scripts.
 ## CI profiles
 
 PRs run every test on macOS and Linux plus one additional round of each recovery
-portfolio. Main, daily scheduled runs and release fallback use full acceptance:
+portfolio. Main and daily scheduled runs use full acceptance:
 the complete suite, three operator/task/job rounds, and 20 S1–S6 rounds per
 platform. Four isolated five-round jobs run the S1–S6 stress rounds in parallel.
 The evidence gate checks all test files, reports, logs, platforms and round IDs

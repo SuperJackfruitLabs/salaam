@@ -38,16 +38,16 @@ test('release validation rejects mismatched lock versions, missing notes and uns
         stdio: 'pipe',
       });
     save();
-    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.0.1] - 2026-10-18\n');
+    writeFileSync(join(dir, 'CHANGELOG.md'), '## v0.0.1 — 2026-10-18\n');
     expect(JSON.parse(run()).version).toBe('0.0.1');
     lock.packages[''].version = '0.0.9';
     save();
     expect(() => run()).toThrow('version mismatch');
     lock.packages[''].version = '0.0.1';
     save();
-    writeFileSync(join(dir, 'CHANGELOG.md'), '## [Unreleased]\n');
+    writeFileSync(join(dir, 'CHANGELOG.md'), '## Unreleased\n\n## [0.0.1] - 2026-10-18\n');
     expect(() => run()).toThrow('CHANGELOG.md');
-    writeFileSync(join(dir, 'CHANGELOG.md'), '## [0.0.1] - 2026-10-18\n');
+    writeFileSync(join(dir, 'CHANGELOG.md'), '## v0.0.1 — 2026-10-18\n');
     for (const tag of ['v0.2.0', 'v0.0.1;touch x', '0.0.1', 'v0.0.1+build'])
       expect(() => run(tag)).toThrow('exact package SemVer');
     pkg.version = '0.0.1-01';
@@ -124,59 +124,61 @@ test('installer checks the exact checksum before npm and forwards a literal pref
   }
 });
 
-test('a partial release upload never publishes a draft or overwrites published assets', () => {
-  const dir = mkdtempSync('/tmp/sal-publisher-');
+test('npm publishes only the release tarball whose bytes release.json names', () => {
+  const dir = mkdtempSync('/tmp/sal-npm-');
   try {
     const scripts = join(dir, 'scripts'),
       bin = join(dir, 'bin'),
-      assets = join(dir, '.state/release');
-    mkdirSync(scripts);
-    mkdirSync(bin);
-    mkdirSync(assets, { recursive: true });
-    for (const name of ['release-check.mjs', 'github-release.mjs'])
+      dist = join(dir, 'release-dist');
+    for (const d of [scripts, bin, dist]) mkdirSync(d);
+    for (const name of ['release-check.mjs', 'npm-release.mjs'])
       cpSync(join(ROOT, 'scripts', name), join(scripts, name));
+    const tarball = join(dist, 'salaam-cli-0.0.1.tgz');
+    writeFileSync(tarball, 'release bytes');
     const release = {
+      package: '@superjackfruitlabs/salaam',
       version: '0.0.1',
-      tag: 'v0.0.1',
-      commit: 'a'.repeat(40),
       prerelease: false,
       dirty: false,
+      package_sha256: createHash('sha256').update('release bytes').digest('hex'),
     };
-    writeFileSync(join(assets, 'release.json'), JSON.stringify(release));
-    const stub = `#!/usr/bin/env node
-const fs = require('node:fs'), path = require('node:path');
+    writeFileSync(join(dist, 'release.json'), JSON.stringify(release));
+    // Fake npm: `view` answers E404 (not published yet); every call is logged.
+    writeFileSync(
+      join(bin, 'npm'),
+      `#!/usr/bin/env node
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.SAL_TEST_LOG, JSON.stringify(args)+'\\n');
-if(args[0]==='api') console.log('a'.repeat(40));
-else if(args[1]==='view') {
-  if(process.env.SAL_TEST_PUBLISHED) console.log(JSON.stringify({isDraft:false})); else process.exit(1);
-} else if(args[1]==='upload') process.exit(5);
-else if(args[1]==='download') {
-  const dest = args[args.indexOf('--dir')+1];
-  for(const name of ['salaam-cli-0.0.1.tgz','SHA256SUMS','release.json','install.sh']) fs.writeFileSync(path.join(dest,name),'different published bytes');
-}
-`;
-    writeFileSync(join(bin, 'gh'), stub);
-    chmodSync(join(bin, 'gh'), 0o755);
+require('node:fs').appendFileSync(process.env.SAL_TEST_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'view') { process.stderr.write('npm error code E404'); process.exit(1); }
+`,
+    );
+    chmodSync(join(bin, 'npm'), 0o755);
     const log = join(dir, 'calls.jsonl');
-    const env = { ...process.env, PATH: bin + ':' + process.env.PATH, SAL_TEST_LOG: log };
-    const run = (extra = {}) =>
-      spawnSync(process.execPath, [join(scripts, 'github-release.mjs')], {
+    const run = () =>
+      spawnSync(process.execPath, [join(scripts, 'npm-release.mjs')], {
         encoding: 'utf8',
-        env: { ...env, ...extra },
+        env: {
+          ...process.env,
+          PATH: bin + ':' + process.env.PATH,
+          SAL_TEST_LOG: log,
+          RELEASE_DIST: dist,
+        },
       });
-    expect(run().status).not.toBe(0);
-    let calls = readFileSync(log, 'utf8');
-    expect(calls).toContain('upload');
-    expect(calls).not.toContain('edit');
+    expect(run().status).toBe(0);
+    const publish = readFileSync(log, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l): string[] => JSON.parse(l))
+      .find((a) => a[0] === 'publish');
+    expect(publish).toEqual(
+      expect.arrayContaining([tarball, '--provenance', '--ignore-scripts', 'latest']),
+    );
     writeFileSync(log, '');
-    for (const name of ['salaam-cli-0.0.1.tgz', 'SHA256SUMS', 'install.sh'])
-      writeFileSync(join(assets, name), 'local verified bytes');
-    expect(run({ SAL_TEST_PUBLISHED: 'true' }).stderr).toContain('refusing to replace');
-    calls = readFileSync(log, 'utf8');
-    expect(calls).toContain('download');
-    expect(calls).not.toContain('upload');
-    expect(calls).not.toContain('edit');
+    writeFileSync(tarball, 'tampered bytes');
+    const tampered = run();
+    expect(tampered.status).not.toBe(0);
+    expect(tampered.stderr).toContain('checksum mismatch');
+    expect(readFileSync(log, 'utf8')).not.toContain('publish');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
