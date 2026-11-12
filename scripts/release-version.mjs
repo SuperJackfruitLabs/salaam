@@ -21,8 +21,8 @@ const notes = readFileSync(file, 'utf8');
 writeFileSync(
   file,
   notes.replace(
-    '## [Unreleased]',
-    `## [Unreleased]\n\n## [${version}] - ${new Date().toISOString().slice(0, 10)}`,
+    '## Unreleased',
+    `## Unreleased\n\n## v${version} — ${new Date().toISOString().slice(0, 10)}`,
   ),
 );
 console.log(

@@ -4,7 +4,7 @@ Salaam uses Semantic Versioning. Before 1.0, a minor release may introduce break
 CLI or service changes; patches preserve documented behavior. State schema upgrades
 are forward-only: keep a stopped-daemon backup before upgrading.
 
-## [Unreleased]
+## Unreleased
 
 ### Security
 
@@ -15,7 +15,7 @@ are forward-only: keep a stopped-daemon backup before upgrading.
   config, hooks and `info` folder read-only. Commands that change git config now ask in full
   access and auto mode. See [Sandbox](docs/sandbox.md#git-inside-the-sandbox).
 
-## [0.0.8] - 2026-11-09
+## v0.0.8 — 2026-11-09
 
 A strict work decision now tells the board whether each file's preview is complete. Upgrade the
 board (SuperPipeline) that reads these decisions first. Nothing else you use changes.
@@ -27,7 +27,7 @@ board (SuperPipeline) that reads these decisions first. Nothing else you use cha
   content could not be read for one, and false for a whole preview or a delete. Consumers that
   check `files[]` keys exactly must accept the field before upgrading Salaam.
 
-## [0.0.7] - 2026-11-02
+## v0.0.7 — 2026-11-02
 
 Pasted images now work in every local session, and the code is reorganised into modules with
 enforced boundaries and checked by a linter. Otherwise nothing you use changes: commands, keys,
@@ -48,7 +48,7 @@ HTTP routes, ACP messages and the state database are as before.
   session takes pasted images" and sent `@` mentions as bare text. Every local session now
   attaches both; board sessions still get exactly what was typed.
 
-## [0.0.6] - 2026-11-01
+## v0.0.6 — 2026-11-01
 
 Images and network for daily work, and Zed without a terminal: paste a screenshot into the
 message, let background servers and watchers reach allowed hosts, and open Salaam in Zed with no
@@ -75,7 +75,7 @@ service running.
   CLI, editors, permissions, sandbox, rules (`AGENTS.md`), commands, hooks and troubleshooting.
   Command and key tables are generated from the code.
 
-## [0.0.5] - 2026-11-01
+## v0.0.5 — 2026-11-01
 
 Salaam as a desk-side coding driver: an interactive terminal session in your own checkout, the same
 session in Zed, and the approvals, sandbox and recovery to work in it daily.
@@ -116,7 +116,7 @@ session in Zed, and the approvals, sandbox and recovery to work in it daily.
 - A failed session shows its error; leftover background commands are stopped after a restart on
   macOS.
 
-## [0.0.4] - 2026-10-30
+## v0.0.4 — 2026-10-30
 
 Board work on a protected AgentPod station, made to match the Hermes workflow, plus a sandbox
 for local commands.
@@ -161,7 +161,7 @@ for local commands.
   or repair the sandbox, or set `unsandboxed_commands: "allow"` explicitly.
 - Release after AgentPod v0.1.118 (hub): the step output field and board reads need that hub.
 
-## [0.0.3] - 2026-10-22
+## v0.0.3 — 2026-10-22
 
 - Update the MCP SDK and optional Hermes certificate bundle to patched releases.
 - Improve local coding with direct workspace access, repository context, model and
@@ -186,7 +186,7 @@ State upgrades are forward-only. Stop the daemon and back up its private state
 before upgrading an existing installation. Broad fleet migration and additional
 substrate acceptance are not part of this release.
 
-## [0.0.2] - 2026-10-19
+## v0.0.2 — 2026-10-19
 
 - Add the complete pinned Pi provider catalog, model listing, API-key and OAuth setup, and cloud credentials.
 - Validate all ten chat APIs at dispatch, preserve provider-bound recovery and usage, and allow uncapped subscription routes for durable tasks with an explicit token-budget opt-out, while preserving request/runtime limits and rejecting unsupported token caps.
@@ -201,7 +201,7 @@ substrate acceptance are not part of this release.
 - Show native, harness and peer workers together in the Salaam terminal, with
   saved identities across disconnects and explicit recovery of uncertain work.
 
-## [0.0.1] - 2026-10-18
+## v0.0.1 — 2026-10-18
 
 Initial release preparation. A version entry is not a published release; see GitHub
 Releases for published artifacts.

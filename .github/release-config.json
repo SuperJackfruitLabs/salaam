@@ -1,0 +1,11 @@
+{
+  "product": "Salaam",
+  "ci_workflow": "ci.yml",
+  "check": "node scripts/release-check.mjs \"$TAG\" && node scripts/release-source.mjs",
+  "artifact": "salaam-cli-{attempt}",
+  "publish": {
+    "script": "deploy/release/npm-publish.sh",
+    "environment": "npm",
+    "after_release": true
+  }
+}

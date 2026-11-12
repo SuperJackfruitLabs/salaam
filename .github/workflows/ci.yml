@@ -31,8 +31,8 @@ env:
 jobs:
   # The profile, and which parts changed. A pull request or push that only touches landing/ or
   # docs-site/ runs just the sites build; anything else, the workflows themselves, a schedule, a
-  # manual run, or the release's own call (which passes a profile) runs it all. A release on such
-  # a commit finds no reusable main run, so release.yml runs these checks in full itself.
+  # manual run, or a call (which passes a profile) runs it all. A release needs a full main run
+  # with the package for its commit, so never tag a landing- or docs-only commit.
   plan:
     runs-on: ubuntu-latest
     permissions:

@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { root } from './release-check.mjs';
-const directory = join(root, '.state/release');
+// The release workflow downloads the published release's own files into RELEASE_DIST (and
+// checks them against its SHA256SUMS) before this runs; locally, the packed .state/release.
+const directory = process.env.RELEASE_DIST || join(root, '.state/release');
 const release = JSON.parse(readFileSync(join(directory, 'release.json')));
 if (release.dirty !== false)
   throw new Error('Refusing to publish an artifact from uncommitted source.');

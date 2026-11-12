@@ -1,13 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-  appendFileSync,
-  cpSync,
-  rmSync,
-} from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -87,16 +79,17 @@ export function validatePromotion(certificate, run, artifacts, expected) {
   return pkg;
 }
 const root = fileURLToPath(new URL('..', import.meta.url));
+// The release gate's own check (`check` in .github/release-config.json), run by the suite's
+// shared release workflow at the tag after it found main CI's successful run for the tag's
+// commit (CI_RUN_ID, attempt CI_RUN_ATTEMPT). It fails closed: the release ships that run's
+// `salaam-cli-<attempt>` artifact only when this proves it is the certified, attested package.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const repository = process.env.GITHUB_REPOSITORY;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? '')) throw Error('Missing repository identity');
   const identity = sourceIdentity(root);
   if (identity.working_tree_dirty) throw Error('Release checkout is dirty');
-  if (
-    process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' &&
-    identity.git_commit !== process.env.GITHUB_SHA
-  )
-    throw Error('Select the requested tag as the workflow ref');
+  if (process.env.RELEASE_SHA && identity.git_commit !== process.env.RELEASE_SHA)
+    throw Error('The checkout is not the tagged commit');
   const pkg = JSON.parse(readFileSync(join(root, 'package.json')));
   const expected = {
     repository,
@@ -111,108 +104,87 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const gh = (...args) =>
     execFileSync('gh', args, { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   const api = (path) => JSON.parse(gh('api', path));
-  const run = await findMainRun({ api, repository, commit: expected.commit });
-  let reused = false;
-  if (run) {
-    const pages = JSON.parse(
-      gh(
-        'api',
-        '--paginate',
-        '--slurp',
-        `repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100`,
-      ),
-    );
-    const artifacts = pages.flatMap((p) => p.artifacts);
-    const artifact = selectCertificateArtifact(artifacts, run);
-    if (artifact) {
-      const temp = mkdtempSync(join(tmpdir(), 'sal-promote-'));
-      try {
-        gh(
-          'run',
-          'download',
-          String(run.id),
-          '--repo',
-          repository,
-          '--name',
-          artifact.name,
-          '--dir',
-          join(temp, 'certificate'),
-        );
-        const certificate = JSON.parse(
-          readFileSync(join(temp, 'certificate/ci-release-evidence.json')),
-        );
-        const packageArtifact = validatePromotion(certificate, run, artifacts, expected);
-        if (packageArtifact) {
-          gh(
-            'run',
-            'download',
-            String(run.id),
-            '--repo',
-            repository,
-            '--name',
-            packageArtifact.name,
-            '--dir',
-            join(temp, 'package'),
-          );
-          const actual = validatePackage(join(temp, 'package'), expected);
-          for (const key of ['sha256', 'metadata_sha256', 'installer_sha256'])
-            if (actual[key] !== certificate.package[key])
-              throw Error('Certified release bytes changed');
-          gh(
-            'attestation',
-            'verify',
-            join(temp, 'package', `salaam-cli-${expected.version}.tgz`),
-            '--repo',
-            repository,
-            '--signer-workflow',
-            `${repository}/.github/workflows/ci.yml`,
-            '--source-digest',
-            expected.commit,
-            '--source-ref',
-            'refs/heads/main',
-            '--deny-self-hosted-runners',
-          );
-          mkdirSync(join(root, '.state/release'), { recursive: true });
-          for (const name of [
-            `salaam-cli-${expected.version}.tgz`,
-            'release.json',
-            'SHA256SUMS',
-            'install.sh',
-          ])
-            cpSync(join(temp, 'package', name), join(root, '.state/release', name));
-          writeFileSync(
-            join(root, '.state/release-promotion.json'),
-            JSON.stringify(
-              {
-                schema_version: 1,
-                repository,
-                commit: expected.commit,
-                source_run_id: run.id,
-                source_run_attempt: run.run_attempt,
-                certificate_artifact_id: artifact.id,
-                package_artifact_id: packageArtifact.id,
-                package_sha256: actual.sha256,
-              },
-              null,
-              2,
-            ) + '\n',
-          );
-          reused = true;
-        }
-      } finally {
-        rmSync(temp, { recursive: true, force: true });
-      }
-    }
-  }
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `reused=${reused}\n`);
-  console.log(
-    JSON.stringify({
-      reused,
-      commit: expected.commit,
-      source_run_id: reused ? run.id : null,
-      reason: reused
-        ? 'Verified full main CI and build provenance'
-        : 'No reusable full main evidence; run the complete gate',
-    }),
+  const rerun = `Re-run all jobs of main CI for ${expected.commit}, then the release (gh workflow run release.yml -f tag=v${expected.version}).`;
+  const run = process.env.CI_RUN_ID
+    ? api(`repos/${repository}/actions/runs/${process.env.CI_RUN_ID}`)
+    : await findMainRun({ api, repository, commit: expected.commit });
+  if (!run) throw Error(`No successful full main CI run for this commit. ${rerun}`);
+  if (process.env.CI_RUN_ATTEMPT && String(run.run_attempt) !== process.env.CI_RUN_ATTEMPT)
+    throw Error('Main CI was re-run while the release checked it. Run the release again.');
+  const pages = JSON.parse(
+    gh(
+      'api',
+      '--paginate',
+      '--slurp',
+      `repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100`,
+    ),
   );
+  const artifacts = pages.flatMap((p) => p.artifacts);
+  const artifact = selectCertificateArtifact(artifacts, run);
+  if (!artifact) throw Error(`Main CI's release certificate is missing or expired. ${rerun}`);
+  const temp = mkdtempSync(join(tmpdir(), 'sal-promote-'));
+  try {
+    gh(
+      'run',
+      'download',
+      String(run.id),
+      '--repo',
+      repository,
+      '--name',
+      artifact.name,
+      '--dir',
+      join(temp, 'certificate'),
+    );
+    const certificate = JSON.parse(
+      readFileSync(join(temp, 'certificate/ci-release-evidence.json')),
+    );
+    const packageArtifact = validatePromotion(certificate, run, artifacts, expected);
+    if (!packageArtifact) throw Error(`The certified package is missing or expired. ${rerun}`);
+    // The workflow ships `salaam-cli-<attempt>` of this run: it must be the certified one.
+    if (packageArtifact.name !== `salaam-cli-${run.run_attempt}`)
+      throw Error(
+        `The certified package is ${packageArtifact.name}, from an earlier attempt. ${rerun}`,
+      );
+    gh(
+      'run',
+      'download',
+      String(run.id),
+      '--repo',
+      repository,
+      '--name',
+      packageArtifact.name,
+      '--dir',
+      join(temp, 'package'),
+    );
+    const actual = validatePackage(join(temp, 'package'), expected);
+    for (const key of ['sha256', 'metadata_sha256', 'installer_sha256'])
+      if (actual[key] !== certificate.package[key]) throw Error('Certified release bytes changed');
+    gh(
+      'attestation',
+      'verify',
+      join(temp, 'package', `salaam-cli-${expected.version}.tgz`),
+      '--repo',
+      repository,
+      '--signer-workflow',
+      `${repository}/.github/workflows/ci.yml`,
+      '--source-digest',
+      expected.commit,
+      '--source-ref',
+      'refs/heads/main',
+      '--deny-self-hosted-runners',
+    );
+    console.log(
+      JSON.stringify({
+        verified: true,
+        commit: expected.commit,
+        source_run_id: run.id,
+        source_run_attempt: run.run_attempt,
+        certificate_artifact_id: artifact.id,
+        package_artifact: packageArtifact.name,
+        package_sha256: actual.sha256,
+      }),
+    );
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 }
