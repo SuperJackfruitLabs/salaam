@@ -1,5 +1,5 @@
 #!/bin/sh
-# The release's npm publish (`publish` in .github/release-config.json, after the release): the
+# The release's npm publish (the .github/release/publish.sh hook, after the release): the
 # exact tarball the GitHub release carries (RELEASE_DIST, checked against its SHA256SUMS by the
 # workflow), through npm trusted publishing (OIDC, environment `npm`, with provenance). An
 # identical version already on npm is success; different bytes under that version fail.
