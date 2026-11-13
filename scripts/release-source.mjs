@@ -79,7 +79,7 @@ export function validatePromotion(certificate, run, artifacts, expected) {
   return pkg;
 }
 const root = fileURLToPath(new URL('..', import.meta.url));
-// The release gate's own check (`check` in .github/release-config.json), run by the suite's
+// The release gate's own check (the .github/release/check.sh hook), run by the suite's
 // shared release workflow at the tag after it found main CI's successful run for the tag's
 // commit (CI_RUN_ID, attempt CI_RUN_ATTEMPT). It fails closed: the release ships that run's
 // `salaam-cli-<attempt>` artifact only when this proves it is the certified, attested package.

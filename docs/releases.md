@@ -34,7 +34,8 @@ git push origin v0.0.3
 ```
 
 `.github/workflows/release.yml` is the suite's shared release workflow; Salaam's
-settings are in `.github/release-config.json`. Its gate requires the tag to be on
+settings are in `.github/release-config.json`, and its commands in the hooks
+`.github/release/check.sh` and `.github/release/publish.sh`. Its gate requires the tag to be on
 `main` and **full main CI for the exact tagged commit** to have succeeded. Then
 `scripts/release-check.mjs` validates the version, lockfile and changelog, and
 `scripts/release-source.mjs` checks that run's evidence: the current attempt's
