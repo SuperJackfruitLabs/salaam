@@ -17,6 +17,9 @@ there is no second copy to maintain. The sidebar in `astro.config.mjs` uses the 
 (Start, Use it, Build on it, Run it, Reference); the theme warns at build time when a top-level
 group is anything else.
 
+The home is the theme's `BentoHome`, in `src/home.mdx`, above the text of `docs/index.md`. The
+home is built as MDX, so `docs/index.md` must parse as MDX too: no bare `{` or `<` outside code.
+
 Use the pinned repository Node/npm versions. `npm ci --ignore-scripts`, then
 `npm run dev` (port 4342) or `npm run build`.
 
