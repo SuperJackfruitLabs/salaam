@@ -118,6 +118,12 @@ No factual change was made silently.
 | `sites.md`             | The page said the docs used the TUI's Night/Paper colours.                                                                                                                                                    | The page says the docs use the shared suite theme with Salaam pink.                                                                                          | Theme dependency: `docs-site/package.json:1-23`; shared components imported by `docs-site/src/home.mdx:1-67`; theme schema in `docs-site/src/content.config.ts:1-8`; base commit is the merge of suite-theme PR #131. |
 | `mcp.md`               | The draft voice payoff said `sal mcp list` confirms the declaration digest the running service actually loaded.                                                                                               | The page now distinguishes the file view from the running service: `sal mcp list` shows the file's digests; `sal service status` confirms the loaded digest. | `src/cli/mcp-commands.ts:50-67` reads and renders the declaration file; `src/service/system.ts:107-113` returns the loaded service configuration and digest.                                                          |
 
+### Final review (pull request)
+
+This change is placement only. No fact changed.
+
+- `providers.md`: the draft's payoff ("That boundary keeps each request on the route you reviewed…") was inserted inside the base paragraph on credentials. It split "change credentials at an idle work boundary." from the next sentence, "Switching between capped and uncapped authentication requires a new local session…", and with no blank line the payoff ran into that sentence as one paragraph. The base paragraph is now whole again and the payoff follows it as its own paragraph. The advisory CI review on the pull request found this.
+
 ## Mechanical claims ratchet
 
 No new checker was needed for facts introduced by this rollout:

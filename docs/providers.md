@@ -135,10 +135,10 @@ private bridge before a request. Keys and refresh tokens are absent from worker
 configuration JSON, arguments, journal events, and operator responses. Global Pi
 settings and unrelated credentials remain excluded. Updated credentials are
 resolved for subsequent requests; change credentials at an idle work boundary.
+Switching between capped and uncapped authentication requires a new local session, or a service restart for service-routed sessions, so the visible capability warning cannot become stale. Logout removes stored credentials; external environment credentials remain active.
 
 That boundary keeps each request on the route you reviewed, even when several
 sessions use different providers through the same daemon.
-Switching between capped and uncapped authentication requires a new local session, or a service restart for service-routed sessions, so the visible capability warning cannot become stale. Logout removes stored credentials; external environment credentials remain active.
 
 Salaam validates the serialized model, output controls, tool inventory and actual
 task-context frame before durable request admission and network dispatch. SDK
