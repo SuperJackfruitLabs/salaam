@@ -1,6 +1,11 @@
 # Task context and compaction
 
-The singular `task` commands below manage session facts. The plural `tasks` commands manage a separate durable task/step ledger under `sal tasks`; see [durable tasks](durable-tasks.md). Both feed the managed context frame, while only explicit operator task actions change the step ledger.
+Salaam keeps the facts you mean to preserve separate from whatever a long
+conversation happens to imply. The singular `task` commands below manage those
+session facts. The plural `tasks` commands manage a separate durable task/step
+ledger under `sal tasks`; see [durable tasks](durable-tasks.md). Both feed the
+managed context frame, while only explicit operator task actions change the step
+ledger.
 
 Task facts are explicit operator state stored outside Pi's conversation summary. Supported kinds are `objective`, `constraint`, `completed`, `outstanding` and `evidence`. They retain the original text, source request, task version and supersession links. Salaam does not automatically extract corrections from prose.
 
@@ -16,6 +21,9 @@ sal task update SESSION_ID --task-version 2 --kind constraint \
 sal task update SESSION_ID --task-version 3 --kind completed --text 'Build the package'
 sal task update SESSION_ID --task-version 4 --kind outstanding --text 'Review staging evidence'
 ```
+
+The session now carries an explicit, revisioned account of what matters and which
+earlier fact a correction replaced.
 
 The expected task version is independent of the session revision and appears in `task inspect`. A correction must target a current fact from this session; a new objective must supersede the current objective. Completing outstanding work can explicitly supersede that outstanding fact. Repeating a `--request-id` with identical logical input returns the saved result, including after its lease/version becomes stale. A changed input conflicts. New requests require a current controller and an idle ready parent; use `--takeover` only when intentionally replacing another controller.
 
@@ -33,6 +41,9 @@ sal history read SESSION_ID --artifact-id ARTIFACT_ID --offset 8192
 sal history read SESSION_ID
 sal history read SESSION_ID --entry-id ENTRY_ID
 ```
+
+The evidence now has a session-bound artifact ID, and bounded reads can recover
+the exact text without inflating every future prompt.
 
 Text uploads are capped at 256 Ki characters. Artifact references belong to their session and are content-checked when read. History reads return up to 8192 characters, or an index page of up to 32 entries. They include older imported Pi entries even after compaction. The managed `salaam_history` tool exposes the same read-only, session-scoped retrieval to the parent model. Child artifacts are consumed through the child-result tools/API.
 
