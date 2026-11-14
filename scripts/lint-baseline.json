@@ -4,7 +4,7 @@
   "eslint(no-shadow)": 83,
   "eslint(no-underscore-dangle)": 39,
   "eslint(no-unused-expressions)": 3,
-  "eslint(no-unused-vars)": 41,
+  "eslint(no-unused-vars)": 40,
   "import(no-named-as-default-member)": 4,
   "oxc(only-used-in-recursion)": 2,
   "promise(always-return)": 10,

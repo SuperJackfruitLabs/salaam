@@ -29,7 +29,10 @@ function walk(directory, build) {
     pages++;
     const content = readFileSync(file, 'utf8');
     if (!/<title>[^<]+<\/title>/.test(content)) failures.push(`${file}: missing title`);
-    for (const match of content.matchAll(/(?:href|src)="([^"]+)"/g)) {
+    // Links in the markup, not in inline scripts: a script builds its own (the docs home's Ask
+    // box writes `href="${...}"` into a template string).
+    const markup = content.replace(/(<script\b[^>]*>)[\s\S]*?<\/script>/g, '$1</script>');
+    for (const match of markup.matchAll(/(?:href|src)="([^"]+)"/g)) {
       const href = match[1].replaceAll('&amp;', '&');
       if (/^(?:data:|mailto:|javascript:)/.test(href)) continue;
       const pageUrl = new URL(file.slice(build.path.length).replace(/index\.html$/, ''), build.url);

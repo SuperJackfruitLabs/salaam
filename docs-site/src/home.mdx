@@ -1,0 +1,67 @@
+---
+title: Salaam
+description: A coding agent for your terminal and editor, built on Pi, that keeps working when you close them.
+template: splash
+---
+
+import BentoHome from '@superjackfruit/docs-theme/components/BentoHome.astro';
+import FlowSteps from '@superjackfruit/docs-theme/components/FlowSteps.astro';
+
+<BentoHome
+  claim="Close the terminal. The work stays."
+  sub="Salaam is a coding agent for your terminal and your editor, built on Pi. A small service on your machine owns every session: its conversation, approvals, checkpoints and results. Close the terminal, open it again tomorrow or pick the session up in Zed, and nothing is lost. It does ask before every edit and command. Every time, until you tell it you trust it."
+  actions={[
+    { text: 'Install', link: '/install/' },
+    { text: 'Try it offline', link: '/quickstart/', variant: 'secondary' },
+  ]}
+  quickstart={{
+    command:
+      'sal service start --state /tmp/salaam-try && sal session create --cwd "$PWD" --state /tmp/salaam-try',
+    label: 'Quick start: a session offline, no provider account',
+    note: 'Once Salaam is installed. Nothing here calls a model or costs anything. Attach with sal attach SESSION_ID --state /tmp/salaam-try (the id the second command prints), type an instruction, and the offline provider answers "Offline reply: …". Stop it with sal service stop --state /tmp/salaam-try.',
+  }}
+  agent={{
+    task: 'Then help me install Salaam, connect a provider and start a session in this repository, and tell me which permission mode suits the change I am about to make.',
+  }}
+  ask={{
+    examples: [
+      "How do I pick up yesterday's session in Zed?",
+      'What can a command touch inside the sandbox?',
+      "How do I undo the agent's last turn?",
+      'Can I try Salaam without a provider account?',
+    ],
+  }}
+  flowTitle="A session, start to finish (step through it; it waits for you)"
+>
+  <FlowSteps
+    label="Session step"
+    steps={[
+      {
+        label: 'Start',
+        body: "You run salaam code in a project. It starts the service if it is not running and opens this folder's latest session, or a new one, with the repository's AGENTS.md (or CLAUDE.md) already read.",
+        items: [{ text: 'salaam code', card: true }],
+      },
+      {
+        label: 'Work',
+        body: 'The agent reads, edits and runs commands under the mode you picked with Shift+Tab: Review, Accept edits or Auto. Commands run in the OS sandbox (Seatbelt on macOS, bubblewrap on Linux): they write only inside the project and a private temporary folder, with no network unless the host allows it.',
+        items: [
+          { text: 'write in the project', win: true },
+          { text: 'write outside it', out: true },
+        ],
+      },
+      {
+        label: 'Ask',
+        body: 'Anything the mode does not cover asks first, with the diff or the exact command. y approves once, s for the rest of the session, f denies with a reason the agent reads. Close the terminal meanwhile and the approval waits with the session; Ctrl+O reviews it when you are back.',
+        items: [
+          { text: 'approval waiting', card: true },
+          { text: 'y · s · f', win: true },
+        ],
+      },
+      {
+        label: 'Result',
+        body: 'Salaam checkpoints the folder before every turn in its own shadow repository, so your .git is never touched. /rewind puts the files back to before any turn, /undo reverses the last edit, and salaam -c brings you back to this folder tomorrow.',
+        items: [{ text: 'checkpoint per turn', win: true }],
+      },
+    ]}
+  />
+</BentoHome>

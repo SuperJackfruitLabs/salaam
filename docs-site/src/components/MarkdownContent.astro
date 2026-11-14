@@ -17,14 +17,16 @@ import DefaultContent from '@astrojs/starlight/components/MarkdownContent.astro'
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'base',
+        // The docs theme's light values for Salaam (vibekit's pink and the suite's greys). The
+        // figure stays light in both themes, since Mermaid takes fixed colours.
         themeVariables: {
-          primaryColor: '#dce9de',
-          primaryTextColor: '#253b35',
-          primaryBorderColor: '#216b52',
-          lineColor: '#52695e',
-          secondaryColor: '#edeee5',
-          tertiaryColor: '#f7f5ed',
-          fontFamily: 'system-ui, sans-serif',
+          primaryColor: '#ffeaee',
+          primaryTextColor: '#26252b',
+          primaryBorderColor: '#b04568',
+          lineColor: '#5e5b66',
+          secondaryColor: '#efece6',
+          tertiaryColor: '#f7f6f3',
+          fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
         },
       });
       await mermaid.run({ nodes });
@@ -41,8 +43,8 @@ import DefaultContent from '@astrojs/starlight/components/MarkdownContent.astro'
     padding: 1.5rem;
     border: 1px solid var(--sl-color-hairline);
     border-radius: 0.5rem;
-    background: #f7f5ed;
-    color: #253b35;
+    background: #f7f6f3;
+    color: #26252b;
     overflow-x: auto;
   }
   .salaam-diagram pre {
