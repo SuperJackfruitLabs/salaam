@@ -1,8 +1,9 @@
 # Commands
 
-A custom command is a saved prompt. Put a Markdown file in `.salaam/commands/` in the repository,
-or in `~/.config/salaam/commands/` for your own, and type `/name args`. The format follows Claude
-Code's command files:
+A custom command turns a prompt you repeat into one name you can remember. Put a
+Markdown file in `.salaam/commands/` for the repository, or in
+`~/.config/salaam/commands/` for yourself, and type `/name args`. The format
+follows Claude Code's command files:
 
 ```markdown
 ---
@@ -28,3 +29,6 @@ Fix issue $ARGUMENTS, add a test, and run it.
   included).
 
 Custom commands appear in `/` completion and `/help`.
+
+Your saved prompt is now discoverable where built-in commands live, but it still
+has exactly the authority of ordinary text—not a secret side door to tools.

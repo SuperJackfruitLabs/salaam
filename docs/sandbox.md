@@ -1,7 +1,8 @@
 # Sandbox
 
-Commands the agent runs in your project go through the operating system's sandbox:
-Seatbelt on macOS, bubblewrap on Linux. Edits are separate and go through
+When the agent runs a command, we give it enough room to work—not the keys to the
+whole machine. Commands go through the operating system's sandbox: Seatbelt on
+macOS, bubblewrap on Linux. Edits are separate and go through
 [permissions](permissions.md).
 
 ## What a sandboxed command can do
@@ -28,6 +29,9 @@ salaam service start --local-sandbox read-only         # writes nothing
 salaam service start --local-sandbox full-access       # no sandbox
 ```
 
+The service now advertises the boundary you selected, so every new local command
+is admitted against that level rather than an invisible default.
+
 The same choice is `SALAAM_LOCAL_SANDBOX`. In a session, `/full-access` and `/yolo`
 turn the sandbox off for that session only (see [Permissions](permissions.md)).
 
@@ -40,6 +44,9 @@ read-only:
 salaam service start --local-sandbox-read toolchain
 salaam service start --local-sandbox-read "$HOME/.cache/pip,$HOME/.gradle"
 ```
+
+Those toolchains are now readable to sandboxed commands, while the listed paths
+and the credential locations remain unwritable.
 
 `toolchain` adds the Node running Salaam and, where they exist, `~/.npm`, `~/.nvm`,
 `~/.cargo`, `~/.rustup`, `~/go`, `~/.gitconfig` and `~/.config/git`. Your home folder
