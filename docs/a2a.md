@@ -1,8 +1,9 @@
 # Peer specialists with A2A
 
-Salaam can delegate bounded analysis to an authenticated A2A peer and expose an
-operator-prepared native analysis assignment to a peer. Both directions use the
-existing task and specialist records. Remote output is unverified analysis; it
+An A2A peer can contribute analysis without borrowing your local authority. Salaam
+can delegate bounded analysis to an authenticated peer, or expose an
+operator-prepared native analysis assignment to one. Both directions use the
+existing task and specialist records. Remote output stays unverified analysis: it
 cannot approve operations, integrate a proposal or complete a checked local task.
 
 The supported wire subset is A2A 1.0 JSON-RPC: `SendMessage`, `GetTask`,
@@ -18,6 +19,9 @@ JSON file and prints its path and digest without printing its token:
 ```sh
 sal a2a credential reviewer --file "$HOME/.config/salaam/peers/reviewer.json"
 ```
+
+You now have a peer-specific credential file and its digest, while the token
+itself stays out of terminal output.
 
 Configure the corresponding token on the intended peer through its own secret
 settings. Provider API keys stay in Salaam's provider credential store.
@@ -64,6 +68,9 @@ Start the [coding-enabled service](coding.md) with `--a2a-config REGISTRY.json`,
 alongside its existing coding root and executor options. Inspect available peers
 with `sal a2a peers`.
 
+The service now knows the exact card, skill, tenant and file disclosure you
+reviewed; a later DNS or card change cannot silently widen that pin.
+
 The peer receives the assigned instruction, admitted profile context and only the
 repository files listed in its pin. File bytes come from the immutable admitted
 snapshot. Parent conversation history, other repository files and local
@@ -81,6 +88,9 @@ sal team assign TASK_ID --step STEP_ID --profile salaam/reviewer \
 sal team run TASK_ID --assignment ASSIGNMENT_ID --generation 0 --revision N
 sal a2a inspect CHILD_ID
 ```
+
+The peer now has one bounded analysis assignment and only the disclosed snapshot;
+its result still needs local review and local checks.
 
 Native `requests` still count native model requests. Peer internal model usage,
 token spending and process execution remain unobserved. A peer consumes one

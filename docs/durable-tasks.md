@@ -1,6 +1,10 @@
 # Durable tasks, verification and bounded progression
 
-A task belongs to one persistent session and owns stable step IDs, an objective, constraints and a revisioned plan. Session, task, step, attempt and worker epoch remain separate identities. One task per parent session is supported; ordinary conversation sessions remain available without a task.
+A durable task gives us more than a long conversation and good intentions. It
+belongs to one persistent session and owns stable step IDs, an objective,
+constraints and a revisioned plan. Session, task, step, attempt and worker epoch
+remain separate identities. One task per parent session is supported; ordinary
+conversation sessions remain available without a task.
 
 Creating or revising a plan does not dispatch work. By default, an operator starts each step and reviews the settled attempt. Explicit bounded progression can admit future steps, but only within the reviewed plan, workspace, execution environment and task budget. A model answer alone never completes a step or task.
 
@@ -52,6 +56,9 @@ sal tasks complete TASK_ID --step STEP_ID --revision N \
   --request-id review-step-1
 ```
 
+You now have an admitted attempt tied to the reviewed plan and, after inspection,
+a separate operator disposition. Neither transition quietly claims verification.
+
 Revision zero is the create precondition, meaning this session has no task. Later mutations use the task's current revision, independently of session revisions and controller epochs. Each transition can advance it; inspect before issuing a new mutation. Reuse the **same request ID and input** after a lost response. Saved responses are checked before lease and revision preconditions, including after daemon recovery revokes the old controller.
 
 `run` admits one durable submission and attempt with its task/step/plan binding in the same SQLite transaction. A stopped worker needs a separate `sal session resume SESSION_ID`. An accepted step may dispatch after readiness; the dispatcher only executes the instruction already admitted by the operator. Without an explicit progression grant it does not choose or start another step.
@@ -69,6 +76,9 @@ sal tasks run TASK_ID --step STEP_ID --revision N \
   --text 'Inspect the interrupted result, then continue with this new instruction.' \
   --request-id continue-step-1
 ```
+
+The correction keeps the original attempt in history and gives the continuation a
+new identity, so recovery does not rewrite what already happened.
 
 Plans accept up to 32 uniquely keyed steps with dependencies on earlier steps and up to 16 constraints, within the existing mandatory-context byte limit. Active plans are supplied through the managed task-context frame and checked by existing provider admission. A plan does not expand tool authority. Existing steps cannot be removed or reordered. Unattempted instructions can be corrected; an attempted step's definition is immutable, so append a correction step instead. Objective/constraint corrections and previous plan documents retain their request provenance. Plan edits require an idle session without unresolved interrupted work.
 
@@ -92,6 +102,9 @@ sal tasks verify TASK_ID --check suite --step STEP_ID --revision N --request-id 
 sal tasks finish TASK_ID --revision N --request-id finish-task-1
 ```
 
+The check receipt now records what actually ran against which workspace revision;
+`finish` can use it only while that evidence remains fresh.
+
 Per-step `checks` permit machine-verified step completion. Steps without checks require explicit operator review. Final success requires every step completed, configured global checks freshly passed, configured deliverable files present with recorded hashes, and no unresolved work or uncertain effects. The service rechecks the workspace before committing the final evidence. Tool/model text saying “done” cannot replace these receipts.
 
 Where machine verification is unavailable, `finish --exception-reason TEXT --evidence-artifact ID` records an explicit operator attestation using an artifact belonging to the same session. Its outcome is `succeeded_with_exception`, with `verified: false` and missing requirements recorded. It is distinct from verified success.
@@ -103,6 +116,9 @@ sal tasks auto TASK_ID --revision N --max-steps 3 --compact --request-id bounded
 sal tasks pause TASK_ID --revision N --request-id pause-1
 sal tasks cancel TASK_ID --revision N --request-id cancel-1
 ```
+
+The grant now has a visible step ceiling, and pause or cancel changes future
+authority without pretending to undo effects that may already exist.
 
 A progression grant starts at most the declared number of new steps (maximum 32). It binds the plan, owned workspace and proven executor. Fresh step verification advances that binding. Human edits or executor changes stop future admissions. Persisted grants and request IDs prevent duplicate attempts after lost replies and daemon restart. Interrupted dispatched work requires an operator continuation; it is never blindly resubmitted. Reconfiguring progression creates a new authority epoch and revokes unaccepted old grants without resetting spending.
 
@@ -150,5 +166,8 @@ sal tasks restore TASK_ID --checkpoint CHECKPOINT_ID --revision N \
   --workspace-revision W --workspace-digest DIGEST --request-id restore-1
 sal tasks restores TASK_ID
 ```
+
+You now have a content-bound checkpoint and a restoration receipt that names both
+the bytes Salaam restored and the conflicts it deliberately left alone.
 
 A checkpoint captures the owned tree, including dirty work that predates the task. Restoration compares the task's recorded before/after mutations with the current reviewed tree. It restores only changes still owned by that mutation chain. Newer human edits, interrupted ownership chains and unrelated files remain intact and appear as conflicts or partial restoration. A durable intent precedes filesystem publication; recovery reconciles the existing mutation receipt rather than replaying a restore over newer bytes. Restoring pauses progression and requires new verification. External effects are never rolled back by a workspace checkpoint.

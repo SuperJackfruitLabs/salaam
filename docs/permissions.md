@@ -1,7 +1,9 @@
 # Permissions
 
-Salaam asks before it edits a file or runs a command. The session's **mode** decides
-what may run without asking, and **approval rules** remember your answers.
+You should be able to reduce repeated prompts without signing a blank cheque.
+Salaam asks before it edits a file or runs a command; the session's **mode**
+decides what may run without asking, and **approval rules** remember only the
+answers you chose to keep.
 
 ## Modes
 
@@ -19,6 +21,9 @@ wants to listen for connections, and a command that asks to run outside the sand
 
 New sessions start in review. In an editor, the same modes are in the mode picker
 (see [Editors](editors.md)).
+
+The status line now tells you the active trade-off at a glance, while the stricter
+exceptions still ask in every mode that preserves approvals.
 
 ## Full access
 
@@ -86,6 +91,9 @@ opens every pending approval.
 
 A repository's rules (made with `a`) cannot approve a dangerous command, a push or a
 command outside the sandbox. Your own rules and session rules can.
+
+The saved rule now removes only the prompt you reviewed; matching precedence and
+the danger boundary still decide whether it can apply.
 
 ## Command reviewer
 

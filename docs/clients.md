@@ -1,6 +1,9 @@
 # ACP and SSH reference
 
-All clients connect to one host-local Salaam service. They share session IDs, accepted attempts, approvals, child results and event history. Closing a client detaches it; explicit cancellation and service shutdown are separate commands.
+Your terminal, editor and SSH connection are windows onto one host-local Salaam
+service, not competing owners of the session. They share session IDs, accepted
+attempts, approvals, child results and event history. Closing a client detaches
+it; explicit cancellation and service shutdown remain separate commands.
 
 ## Terminal and SSH
 
@@ -15,6 +18,9 @@ sal attach SESSION_ID --observe
 sal attach SESSION_ID --takeover
 ```
 
+You can now observe the same committed session from a second terminal or move its
+controller lease explicitly, without creating another attempt.
+
 Ctrl-C or Ctrl-D detaches the interactive attachment. A hard-killed controller's lease lasts up to 15 seconds; wait for expiry or use explicit takeover. Approvals can be answered by an observer from the same trusted OS account. CLI text is sanitized for terminal control characters; model text is not executable authorization.
 
 For another computer, install the pinned checkout and CLI on the execution host, configure its provider there and start its service. SSH reaches that same host/account and state directory:
@@ -24,6 +30,9 @@ sal remote USER@HOST --remote-bin /absolute/path/to/sal \
   --session SESSION_ID --state /absolute/path/to/salaam-state
 ssh USER@HOST 'sal session inspect SESSION_ID --state /absolute/path/to/salaam-state'
 ```
+
+The remote client now follows the session where it actually lives; no public Salaam
+listener or copied state directory is hiding behind the connection.
 
 Use an absolute installed `sal` path if the remote noninteractive shell does not include its npm bin directory in `PATH`. Workspace and state paths are on the execution host. Copying a state directory to another computer does not connect to its existing worker. This path uses SSH authentication and no public Salaam listener.
 

@@ -1,6 +1,10 @@
 # Durable jobs and schedules
 
-A job binds an existing reviewed task to one deliberate logical occurrence. Creating a definition stays idle. Triggering it atomically records the occurrence and the task's bounded progression grant. Session, job, occurrence, task, step, attempt and worker IDs remain distinct across reconnect and daemon replacement.
+A job is how we make “run this reviewed task once” durable instead of merely
+hopeful. It binds an existing reviewed task to one deliberate logical occurrence.
+Creating a definition stays idle. Triggering it atomically records the occurrence
+and the task's bounded progression grant. Session, job, occurrence, task, step,
+attempt and worker IDs remain distinct across reconnect and daemon replacement.
 
 One-shot jobs are the admission primitive. Recurring definitions capture immutable plan/workspace templates and create a fresh session, task and job for each occurrence. Schedules, host supervision and the durable shared operator inbox are enabled when an executor is configured. Public trigger gateways remain disabled.
 
@@ -20,6 +24,9 @@ sal jobs run JOB_ID --key repair-2026-10-18 --revision JOB_REVISION --request-id
 sal jobs occurrence OCCURRENCE_ID
 sal jobs inspect JOB_ID
 ```
+
+The occurrence now has one stable identity you can inspect and retry without
+turning a lost response into a second run.
 
 `--revision` refers to the task when creating a definition and to the job for later mutations. `inspect` returns the reviewed binding digest, current job/occurrence projection and task state. Listing is bounded to 32 records with `next_offset`; use `--offset N` for the next page. All mutating CLI commands accept `--request-id` and `--takeover`.
 
@@ -41,6 +48,9 @@ The same controls work through the existing `sal remote SSH_HOST --remote-bin /a
 sal jobs cancel JOB_ID --revision JOB_REVISION --request-id CANCEL_REQUEST_ID
 ```
 
+Cancellation now fences future job authority and records any uncertain effects;
+it does not paint “undone” over work the outside world may already have accepted.
+
 Cancelling a definition before triggering revokes only that job. Cancelling an admitted job commits cancellation of its occurrence and task grant together, then aborts owned work. Recovery drains that committed cancellation if the daemon died before physical abort. Cancellation leaves uncertain external outcomes visible; it does not compensate effects. Cancelling a task through its existing controls is also reflected in the job.
 
 - Crash before occurrence commit: acceptance, runtime start, grant and events roll back together. No work is reconstructed from an uncommitted trigger.
@@ -61,6 +71,9 @@ sal schedules occurrences DEFINITION_ID
 sal schedules run DEFINITION_ID --key intentional-run-1 --revision 1 --request-id REQUEST_ID
 sal schedules update DEFINITION_ID --revision 1 --status paused --schedule schedule.json
 ```
+
+The template and its timing now have separate reviewed identities, so a calendar
+edit cannot silently change the work future occurrences will receive.
 
 Omit `--schedule` for explicit recurring triggers only. The checked task must be unstarted. Capture stores an fsynced workspace artifact and immutable normalized plan, task limits, provider route, policy, connector, engine/profile and progression bound. Changes to the original source cannot change future occurrences. Revise a schedule to change timing; create a new reviewed template to change its work.
 
@@ -107,6 +120,9 @@ sal inbox list
 sal inbox inspect ITEM_ID
 sal inbox ack ITEM_ID --revision REVIEWED_REVISION --request-id REQUEST_ID
 ```
+
+Acknowledgement now clears the attention item you reviewed—nothing more. The
+underlying permission, retry or success decision keeps its own control.
 
 Attention includes approvals/expiry, unknown effects/commands, infrastructure failures, failed verification, blocked tasks and results. Its source key and acknowledgement revision survive controller, client and daemon replacement. Changed source evidence reopens attention; settled sources resolve it. Acknowledgement never approves an operation, retries a command or marks success. Each acknowledgement requires the current controller for the source session and exact reviewed revision.
 

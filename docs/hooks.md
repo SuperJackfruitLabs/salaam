@@ -1,7 +1,8 @@
 # Hooks
 
-Hooks run your own commands when something happens in a desk session. The format is Claude
-Code's:
+Hooks let your own commands react to a desk session. We keep that convenience on
+the same permission boundary as the rest of the workspace, rather than treating a
+JSON file as automatic trust. The format is Claude Code's:
 
 ```json
 {
@@ -28,6 +29,9 @@ Yours are in `~/.config/salaam/hooks.json` (or `$SALAAM_HOOKS_FILE`) and always 
 repository's `.salaam/hooks.json` does **not** run until you review it with `/hooks trust`, which
 shows every command and records the file's SHA-256. Any change to the file needs trusting again.
 `/hooks revoke` stops it; `/hooks` lists both files and their state.
+
+After trust, the reviewed bytes can react to matching events. Change the file and
+the old decision no longer follows along.
 
 ## Events and matchers
 

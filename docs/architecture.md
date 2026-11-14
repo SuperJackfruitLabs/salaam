@@ -1,8 +1,9 @@
 # How Salaam keeps your work
 
-Salaam separates the lifetime of your terminal from the lifetime of your agent's
-work. Clients connect to a service on your machine or execution host. That service
-keeps the durable record and supervises a pinned Pi worker for each session.
+The useful trick behind Salaam is also the simplest to state: your terminal and
+your agent's work do not share a lifetime. Clients connect to a service on your
+machine or execution host. That service keeps the durable record and supervises a
+pinned Pi worker for each session.
 
 ```mermaid
 flowchart TB
@@ -25,6 +26,9 @@ flowchart TB
 SSH runs the client on the execution host. It does not expose a public Salaam
 listener or move the session to your laptop. A second client sees the same
 session IDs, task steps, approvals and results.
+
+That separation is why you can close one client, open another and keep following
+the same admitted work instead of reconstructing it from chat text.
 
 ## Who owns what
 

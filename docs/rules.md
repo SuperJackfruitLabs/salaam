@@ -1,14 +1,18 @@
 # Rules
 
-Give the agent standing instructions in an `AGENTS.md` file: how to build and test the
-project, its conventions, what to avoid. Salaam reads these files automatically in
-interactive sessions, the same convention other coding agents use.
+You should not have to repeat the project's house rules at the start of every
+session. Put them in `AGENTS.md`: how to build and test, which conventions matter,
+and what to avoid. Salaam reads these files automatically in interactive sessions,
+using the same convention as other coding agents.
 
 ## Create one
 
 Run `/init` in a session. The agent reads the repository and drafts an `AGENTS.md`;
 the edit asks for approval like any other. Commit it so everyone working on the
 project shares it.
+
+The repository now carries its own reviewed instructions, so the next session can
+start with context instead of an oral tradition.
 
 ## Which files are read
 

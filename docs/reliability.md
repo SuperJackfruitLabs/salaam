@@ -1,8 +1,10 @@
 # Reliability and support
 
-Salaam records accepted instructions, task state, approvals and operation receipts
-in a host-local journal. Client reconnects and service restarts have different
-recovery rules. Understand that distinction before leaving work unattended.
+Reliable recovery begins by separating “the window closed” from “the worker
+died.” Salaam records accepted instructions, task state, approvals and operation
+receipts in a host-local journal, but client reconnects and service restarts have
+different recovery rules. Keep that distinction in view before leaving work
+unattended.
 
 ## What reconnecting preserves
 

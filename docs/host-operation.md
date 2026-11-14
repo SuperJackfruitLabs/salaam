@@ -1,6 +1,11 @@
 # Salaam host operation
 
-Use an already provisioned host with Node 26.7.0, npm 11.19.0, the locked Pi 1.3.0 dependencies, and the proven pinned Docker images/backend. The private operator and bridge sockets remain host-local; SSH is the remote boundary. Set up a dedicated service account and private directories. Keep the credential home, service state and source/build outside the coding root.
+We operate Salaam from a reviewed host boundary, not from a pile of “works on my
+machine” assumptions. Use an already provisioned host with Node 26.7.0, npm
+11.19.0, the locked Pi 1.3.0 dependencies, and the proven pinned Docker
+images/backend. The private operator and bridge sockets remain host-local; SSH is
+the remote boundary. Set up a dedicated service account and private directories.
+Keep credential home, service state and source/build outside the coding root.
 
 ```json
 {
@@ -20,6 +25,9 @@ sal host unit --manifest host-manifest.json --platform systemd > salaam.service
 sal host unit --manifest host-manifest.json --platform launchd > dev.salaam.host.plist
 sal host run --manifest host-manifest.json
 ```
+
+You now have a manifest and native unit that bind the runtime and backend you
+inspected; generating them has not installed a service behind your back.
 
 Planning probes the actual executor and pins its engine/profile, the exact runtime path/version, source/build/Pi digests and provider route. Review the manifest and generated native unit before installing it using the host service manager. Linux output is a user unit; use `systemctl --user` and explicitly configure login persistence if required. macOS output is a launch agent; its lifetime follows that user's launchd domain. The tooling emits configuration and supervises the daemon; it never installs/enables native units implicitly. Install and enable the reviewed unit explicitly through your OS service manager.
 

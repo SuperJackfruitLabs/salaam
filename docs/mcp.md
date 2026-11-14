@@ -1,7 +1,7 @@
 # MCP servers
 
-Salaam sessions can use MCP servers that **you, the operator,** declare for the
-service. A repository cannot add one: Pi runs with `--no-mcp` and
+You can give a Salaam session an MCP server without letting the repository give
+itself one. **You, the operator,** declare servers for the service. Pi runs with `--no-mcp` and
 `--no-extensions`, so a workspace `.pi/mcp.json`, `.pi/config.json` or any other
 file in the working directory never gives the agent a tool. AgentPod is not
 needed; when Salaam is also attached to AgentPod, its assigned servers sit next to
@@ -23,11 +23,18 @@ sal mcp list
 sal mcp rm docs
 ```
 
+The declaration now names exactly how the daemon may reach each server; it still
+contains references, not resolved secret values.
+
 Declarations live in `$XDG_CONFIG_HOME/salaam/mcp.json` (by default
 `~/.config/salaam/mcp.json`), written with mode `0600`. `--config PATH` on
 `sal mcp` and `--mcp-config PATH` on `sal service start` choose another file.
 Changes apply at the next `sal service start`; stop the service first. A running
 service started from a different declaration says so.
+
+Before restart, `sal mcp list` shows the declaration digests in the file. After
+restart, `sal service status` lets you confirm the digest the service actually
+loaded before a session uses it.
 
 The file is a list, so duplicate names are caught:
 

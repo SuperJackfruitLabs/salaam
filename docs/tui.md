@@ -1,7 +1,8 @@
 # Terminal
 
-The terminal app is where you talk to the agent, review its changes and answer its
-approvals. It connects to the Salaam service, so closing it never stops work.
+The terminal app keeps the conversation close without pretending the window owns
+the work. You talk to the agent, review its changes and answer approvals here; the
+Salaam service keeps the session running when this client closes.
 
 ## Launch
 
@@ -16,6 +17,9 @@ salaam attach SESSION_ID --observe   # watch without taking control
 
 `--theme night|paper` picks the palette. A piped attachment, or `--plain`, uses a
 line interface for scripts.
+
+Whichever launch path you choose, you arrive at the same durable session rather
+than a terminal-sized copy of it.
 
 Sessions made with `/coding` or `salaam code` edit files and run commands in the folder
 itself, each under [permissions](permissions.md) and the [sandbox](sandbox.md).
@@ -85,6 +89,9 @@ Shift+Tab (or `/mode`) cycles a coding session through review, accept edits and 
 A command with shell features (pipes, redirects) can never become an approval rule, so its prompt offers only Approve once and Deny. If a terminal is killed while holding control, the next `salaam code` waits out its lease (at most 15 s). A terminal that is still alive keeps control; press Ctrl+K and choose Take control to take it.
 
 ## Rewind and undo
+
+When a turn takes the scenic route, you can move the files, the conversation or
+both back to a point you reviewed.
 
 `/rewind` lists the session's turns, newest first. Each turn checkpoints the folder before it starts, in a shadow Git repository under Salaam's state directory; the folder's own `.git` is never read or written, and `.gitignore`d files, `node_modules`, `.env*`, key files and Salaam's own state are not captured. Choose files, conversation or both, read the summary of what restoring does, and confirm once. Files are restored only if the folder is still exactly the tree you reviewed; otherwise nothing is written and you review again. A conversation rewind never cuts history: it forks a new session from before that turn, the old session stays as it was, and the turn's instruction comes back into the message box to edit. Commands and effects outside the folder are not undone. When files are written as a separate tools user, only the conversation can be rewound.
 
@@ -253,6 +260,9 @@ Commands run as you inside the OS sandbox; [Sandbox](sandbox.md) covers what the
 Results appear in the conversation, the Changes/Commands tabs and durable operation receipts. The Commands tab shows recorded commands and outcomes; Changes reviews the folder itself against its checkpoints. A nonzero exit, timeout or cancellation is not reported as success. A controller restart during execution leaves an uncertain operation for inspection and explicit operator resolution; it never automatically repeats the command. Detaching from the TUI does not cancel work. The isolated executor profile retains its separate snapshot-based views.
 
 ## Git helpers
+
+The helpers take care of git's choreography, but they do not take its authority:
+you still see and approve the commands that publish work.
 
 In a coding session, `/commit`, `/branch <name>` and `/pr [base]` ask the model to do the git work, and every git command it runs goes through the session's normal command approval and sandbox. Nothing runs git behind your back.
 

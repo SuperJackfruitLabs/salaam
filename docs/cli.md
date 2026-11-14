@@ -1,9 +1,9 @@
 # CLI
 
-`salaam` (or `sal`) opens the terminal app with no arguments. With a command, it
-scripts the same service: everything the terminal and editors do is also a CLI
-command. `salaam COMMAND --help` prints a command's usage without starting the service
-or calling a model.
+Use `salaam` or its shorter twin, `sal`, when you want the terminal app. Add a
+command when you want the same service to behave predictably in a script. Nothing
+is hidden behind the interface: `salaam COMMAND --help` prints usage without
+starting the service or calling a model.
 
 ## Everyday commands
 
@@ -56,6 +56,9 @@ salaam approvals approve APPROVAL_ID --digest DIGEST --revision N
 run commands in the folder, or `--coding` for a [container](coding.md). An approval is
 answered with the digest and revision `approvals inspect` shows, so you approve exactly
 what you reviewed.
+
+The returned IDs now give your script stable handles for the session, attempt and
+approval instead of asking it to interpret terminal prose.
 
 ## All commands
 

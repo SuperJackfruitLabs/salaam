@@ -1,6 +1,9 @@
 # Coding in a container
 
-File tools are available in explicitly created coding sessions. Commands require the configured executor to pass its startup proof. Ordinary sessions and read-only children do not receive these coding tools.
+Use a coding session when you want the agent to work in a guarded copy rather than
+your checkout. File tools appear only in explicitly created coding sessions, and
+commands appear only after the configured executor passes its startup proof.
+Ordinary sessions and read-only children do not receive either authority.
 
 Most work happens in your own checkout with `salaam code`, under
 [permissions](permissions.md) and the [sandbox](sandbox.md). This page covers the
@@ -22,6 +25,9 @@ sal service start --state "$HOME/.local/state/salaam-coding" \
 sal session create --state "$HOME/.local/state/salaam-coding" --cwd /path/to/project --coding
 sal attach SESSION_ID --state "$HOME/.local/state/salaam-coding"
 ```
+
+You are now attached to an owned coding copy backed by the proven executor; the
+original project remains outside the container's writable view.
 
 The existing local Claude credential is used by the provider worker and stays outside command containers. The separate state path above preserves another running daemon/session.
 
@@ -54,6 +60,9 @@ sal workspace refresh SESSION_ID --state STATE_DIR \
   --revision CURRENT_REVISION --digest REVIEWED_OBSERVED_DIGEST
 ```
 
+The refresh now records the exact outside edit you reviewed as a new workspace
+revision instead of silently replacing the service's current root.
+
 The diff compares the initial import with the current revision and emits whole-file unified text hunks, including missing-final-newline markers. Binary/control-character changes are identified without printing terminal controls. Review this result before applying it to the original checkout using your normal Git workflow. Salaam leaves that checkout unchanged.
 
 ## Durable commands
@@ -68,6 +77,9 @@ sal commands logs SESSION_ID --state STATE_DIR --run-id RUN_ID --offset 0
 sal commands cancel SESSION_ID --state STATE_DIR --run-id RUN_ID
 sal commands reconcile SESSION_ID --state STATE_DIR --run-id RUN_ID
 ```
+
+The stable run ID now lets you inspect logs, cancel or reconcile this command
+without guessing whether an interrupted request started twice.
 
 A session-scoped step key binds command, relative cwd and workspace revision. A duplicate returns the original run ID/outcome across reconnect. Changed arguments under that key are rejected; new intended work uses a new key.
 

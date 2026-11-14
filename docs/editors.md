@@ -1,9 +1,10 @@
 # Editors
 
-Salaam speaks the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1),
-so editors such as Zed can run it as an agent. An editor thread is the same session
-`salaam` opens in a terminal in that folder: the same approvals, rules, sandbox and
-checkpoints, and you can switch between the two at any time.
+Your editor does not need a second, disposable version of the agent. Salaam speaks
+the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1), so editors
+such as Zed can open the same session `salaam` uses in that folder—with the same
+approvals, rules, sandbox and checkpoints. You can switch between the two clients
+without switching the work underneath them.
 
 ## Zed
 
@@ -31,6 +32,9 @@ Open the agent panel and choose **Salaam**. A new thread starts a session in the
 project folder Zed has open, using the model a new terminal session would use. From
 0.0.6 the adapter starts the service if it is not running.
 
+The new editor thread is now attached to a durable Salaam session in the project
+you opened, ready to continue from the terminal later.
+
 ## What works in the editor
 
 - **Modes.** The mode picker offers Review, Accept edits, Auto and Full access.
@@ -49,6 +53,9 @@ project folder Zed has open, using the model a new terminal session would use. F
 
 From the project folder, `salaam -c` opens the session the editor was using. Closing
 the editor leaves running work running.
+
+That is the handoff: one session, two clients, and no copy-and-paste migration in
+the middle.
 
 ## MCP servers from the editor
 
