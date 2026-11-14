@@ -33,6 +33,11 @@ jobs:
   # docs-site/ runs just the sites build; anything else, the workflows themselves, a schedule, a
   # manual run, or a call (which passes a profile) runs it all. A release needs a full main run
   # with the package for its commit, so never tag a landing- or docs-only commit.
+  #
+  # A pull request whose every changed path is a root README / README.* or under docs/ or
+  # docs-site/ is docs-only (scripts/ci-docs-only.mjs): it runs `sites` and `docs-checks` and no
+  # application job. Any other path, any doubt (empty diff, missing merge base, failed diff,
+  # classifier error) and every other event keep the plan below unchanged.
   plan:
     runs-on: ubuntu-latest
     permissions:
@@ -42,6 +47,7 @@ jobs:
       profile: ${{ steps.profile.outputs.value }}
       app: ${{ steps.changes.outputs.app }}
       sites: ${{ steps.changes.outputs.sites }}
+      docs_only: ${{ steps.changes.outputs.docs_only }}
     steps:
       - id: profile
         run: |
@@ -50,6 +56,23 @@ jobs:
             *) exit 1 ;;
           esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge base has to be in the clone for the docs-only diff. Trees only: the diff
+          # reads names, never contents.
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      # Whether this pull request is docs-only, from the git clone rather than the API, so the
+      # path set cannot be truncated. If this step fails at all, docs_only is not 'true' and the
+      # plan below is the one it always was.
+      - name: Docs-only?
+        id: docs
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci-docs-only.mjs plan
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -71,6 +94,7 @@ jobs:
           APP: ${{ steps.filter.outputs.app }}
           WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           SITES: ${{ steps.filter.outputs.sites }}
+          DOCS_ONLY: ${{ steps.docs.outputs.docs_only }}
         run: |
           app=false
           case "$EVENT" in push|pull_request) ;; *) app=true ;; esac
@@ -78,8 +102,15 @@ jobs:
           if [ -n "$CALLED" ] || [ "$APP" = true ] || [ "$WORKFLOWS" = true ]; then app=true; fi
           sites=$SITES
           if [ "$app" = true ]; then sites=true; fi
-          { echo "app=$app"; echo "sites=$sites"; } >> "$GITHUB_OUTPUT"
-          echo "app=$app sites=$sites"
+          # A docs-only pull request runs the sites build and the docs checks and nothing else.
+          # Only the exact string 'true' on an uncalled pull_request counts; anything else leaves
+          # the plan above as it is.
+          docs_only=false
+          if [ "$EVENT" = pull_request ] && [ -z "$CALLED" ] && [ "$DOCS_ONLY" = true ]; then
+            docs_only=true; app=false; sites=true
+          fi
+          { echo "app=$app"; echo "sites=$sites"; echo "docs_only=$docs_only"; } >> "$GITHUB_OUTPUT"
+          echo "app=$app sites=$sites docs_only=$docs_only"
   package-build:
     name: Build release package
     needs: plan
@@ -158,6 +189,27 @@ jobs:
             landing/dist/
             docs-site/dist/
           retention-days: 14
+  # The docs checks that otherwise run inside `service` (the acceptance baseline), for docs-only
+  # pull requests, which skip `service`: prettier over the whole tree (the same `npm run
+  # format:check`) and the docs-reference test (generated tables are current; every command,
+  # option, variable and file the docs and README name exists). On every other plan `service`
+  # runs both, so this job is skipped there.
+  docs-checks:
+    name: Check documentation
+    needs: plan
+    if: needs.plan.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install --global npm@11.19.0 --ignore-scripts
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npx vitest run test/unit/docs-reference.test.ts
   execution-boundary:
     needs: package-build
     runs-on: ubuntu-latest
@@ -442,3 +494,36 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh root@"$HOST" salaam "$GITHUB_SHA"
+  # The run's verdict (scripts/ci-docs-only.mjs aggregate): passes only when `plan` succeeded and
+  # every job below ended the way its plan selected it, success if selected and skipped if not.
+  # A failed, cancelled, missing or unplanned job fails it. The release gate does not read it;
+  # it reads ci-gate's evidence from main's push run, which this does not change.
+  check:
+    name: check
+    needs:
+      [
+        plan,
+        package-build,
+        package-install,
+        sites,
+        docs-checks,
+        execution-boundary,
+        a2a-peer-interop,
+        service,
+        tool-user,
+        stress,
+        ci-gate,
+      ]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: Aggregate
+        env:
+          EVENT: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-docs-only.mjs aggregate
