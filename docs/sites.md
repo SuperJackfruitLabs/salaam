@@ -1,8 +1,8 @@
 # Landing page and documentation site
 
-Salaam follows the org's supertoolkit, SuperWitness and SuperPipeline pattern:
-a separate Astro landing project, a Starlight docs project, matching product
-branding, Markdown source docs, and asset-only Cloudflare Workers.
+Salaam keeps public presentation separate from product execution. The repository
+contains an Astro landing project, a Starlight docs project on the shared suite
+theme, canonical Markdown source and asset-only Cloudflare Workers.
 
 - `landing/` builds `https://salaam.sh`.
 - Its build and dev hooks copy the canonical root `install.sh` to the ignored
@@ -15,9 +15,10 @@ branding, Markdown source docs, and asset-only Cloudflare Workers.
   to these original documents, not generated files.
 - `site.config.mjs` defines canonical/cross-site URLs. Environment variables
   `SALAAM_SITE_URL` and `SALAAM_DOCS_URL` override them for a deliberate staging build.
-- The Night/Paper colors come from Salaam's existing TUI. The mark comes from the suite’s translucent-v2 Salaam Nod assets (provisional
-  in the brand handoff); the static illustrative terminal is source HTML; the larger screenshot is an
-  actual offline acceptance fixture, labelled as such.
+- The documentation uses the shared suite theme with Salaam pink. The mark comes
+  from the suite's translucent-v2 Salaam Nod assets (provisional in the brand
+  handoff); the static illustrative terminal is source HTML; the larger screenshot
+  is an actual offline acceptance fixture, labelled as such.
 
 ## Build and preview
 
@@ -34,6 +35,9 @@ npm --prefix landing run dev
 npm --prefix docs-site run dev
 ```
 
+Both sites now build from their pinned lockfiles, and the two local previews let
+you check their shared navigation before anything is deployed.
+
 The previews use ports 4341 and 4342. To keep cross-site navigation local, set
 `SALAAM_SITE_URL=http://localhost:4341` and
 `SALAAM_DOCS_URL=http://localhost:4342` for both processes.
@@ -49,6 +53,9 @@ The README stays short; detailed commands and recovery guidance live in docs.
 node scripts/deploy-sites.mjs --dry-run
 node scripts/deploy-sites.mjs
 ```
+
+The first command proves the deployment configuration without claiming a live
+site; the second publishes only after the repository's build and checks pass.
 
 Use the operator's existing `wrangler login`. The checked-in configs declare only
 `salaam.sh/*` and `docs.salaam.sh/*`, with host-specific Worker routes, static asset directories and

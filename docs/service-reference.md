@@ -1,8 +1,9 @@
 # Session service reference
 
-Detailed host-local session controls, approvals, recovery and wire behavior. For
-installation, see [install and upgrade](../install.md); for a first session, see
-[quickstart](../quickstart.md).
+This is the control-room view of Salaam's host-local sessions: approvals,
+recovery, durable identities and wire behavior. If you want to get moving first,
+use [install and upgrade](install.md) and the [quickstart](quickstart.md), then come
+back here when you need the exact boundary.
 
 To keep a service running:
 
@@ -19,6 +20,9 @@ salaam session probe SESSION_ID --state /tmp/salaam-dev
 salaam service stop --state /tmp/salaam-dev
 ```
 
+That sequence gives you a running service, one durable session, two views of it and
+a clean shutdown path—all bound to the same explicit state directory.
+
 Wait until inspection reports `ready` before running a probe. `service start` detaches the daemon from the calling terminal. Add `--foreground` to run it under a process supervisor. Without `--state`, the default is `~/.local/state/salaam`. Both `salaam` and `sal` are installed executable names for the same CLI. `salaam --help`, `salaam service --help` and `sal --version` work from any directory after setup.
 
 In the TUI, type an instruction and press Enter. Ctrl+K opens actions, Ctrl+P switches sessions, Ctrl+O reviews approvals and Ctrl+G opens changes. Use `attach --plain` for the older line interface. Ctrl-D or Ctrl-C detaches; the worker continues. Reattaching restores recent history and follows committed results. One terminal holds a 15-second controller lease, renewed every five seconds. Other terminals can use `--observe`; `--takeover` explicitly revokes the previous controller. After a killed terminal, wait for lease expiry or take over. A lease coordinates clients of the same trusted OS account.
@@ -33,6 +37,9 @@ salaam session resume SESSION_ID --state /tmp/salaam-dev
 salaam session continue SESSION_ID --attempt INTERRUPTED_ATTEMPT_ID \
   --text 'Inspect the interrupted result, then follow this new instruction' --state /tmp/salaam-dev
 ```
+
+The service now knows whether you meant to resume queued work or create a new,
+explicit continuation of one interrupted attempt.
 
 Service restart expires controller leases and marks prompts already handed toward Pi as `interrupted`. Those prompts are never automatically replayed, even if Pi's transcript contains a final answer. An unresolved interruption holds later queued work. Explicit continuation creates a **new instruction and attempt**, links it to the interruption, and runs before previously queued work. `resume` provisions the same recorded Pi session and dispatches safe queued work after readiness.
 

@@ -1,6 +1,7 @@
 # Recovery and limitations
 
-Salaam is early software. These boundaries apply to the current implementation.
+Salaam is early software, so we name the edges instead of asking you to discover
+them during recovery. These boundaries apply to the current implementation.
 
 ## One trusted operator account
 

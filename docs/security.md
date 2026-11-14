@@ -1,9 +1,10 @@
 # Security and isolation
 
-Salaam is designed for one trusted OS account. Private Unix sockets and
-permission-protected state directories separate its host-local control surface
-from other accounts. They do not isolate hostile programs running as the same
-user. There is no public multi-tenant listener.
+Start with the boundary Salaam can actually defend. It is designed for one trusted
+OS account. Private Unix sockets and permission-protected state directories
+separate its host-local control surface from other accounts; they do not isolate
+hostile programs running as the same user. There is no public multi-tenant
+listener.
 
 ## Credentials and providers
 
@@ -26,6 +27,9 @@ user:
 ```sh
 salaam service start --tools-user salaam-tools   # or SALAAM_TOOLS_USER=salaam-tools
 ```
+
+Approved local tools now run under the separate account, while provider calls,
+credentials and the daemon's private state stay with the service user.
 
 Every local command (`sudo -n -u salaam-tools -- setsid -w /bin/sh -c ...`),
 reviewed edit and undo then runs as that user. The daemon, Pi worker, provider
