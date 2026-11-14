@@ -1,8 +1,8 @@
 # Providers and credentials
 
-Salaam uses the provider registry shipped with its pinned Pi runtime. The default
-is offline. List provider IDs, authentication methods, and chat models without
-making a network request:
+You can inspect Salaam's entire pinned provider menu before choosing who gets a
+request. The default is offline, and these commands list provider IDs,
+authentication methods and chat models without making a network request:
 
 ```sh
 sal providers list
@@ -14,6 +14,9 @@ The registry contains 42 providers. All 41 providers with chat models can run
 interactive sessions. Typesafe is classifier-only and has no chat route. Image
 and classifier operations are outside the session chat interface. A catalog entry
 does not establish availability, pricing, or access for your account.
+
+You now know what this installed runtime can route; your provider still decides
+what your account may actually use.
 
 | Family                    | Provider IDs                                                                                                                                                                                                                                                                        |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,6 +40,9 @@ sal session create --local --cwd "$PWD" --provider anthropic --model claude-sonn
 
 The service must already be running. Managed sessions without `--local` retain the service-configured route.
 
+The returned session is now bound to the provider and model you selected, while
+existing sessions keep their original routes.
+
 ## API keys
 
 Use the hidden prompt to keep a key out of shell history and process arguments:
@@ -51,6 +57,9 @@ sal attach SESSION_ID --state "$HOME/.local/state/salaam-openai"
 Choose `MODEL_ID` from `sal models list openai`. Replace `SESSION_ID` with the ID
 returned by creation. Provider prompts may be billable. Readiness makes no model
 request and does not validate your account's billing or model access.
+
+The new session is configured and ready to try; the first prompt, not readiness,
+is where provider authentication and billing become real.
 
 For Anthropic, `sal auth set anthropic` remains compatible. Its default model is
 `claude-sonnet-5-5`; other providers require an explicit `--model`. All chat models
@@ -81,6 +90,9 @@ sal auth login github-copilot --oauth
 sal auth status
 sal auth logout openai
 ```
+
+These commands leave you with non-secret status you can inspect and a credential
+flow owned by the selected provider rather than copied into a command argument.
 
 OAuth is available for Anthropic, OpenAI, legacy OpenAI Codex, GitHub Copilot,
 Kimi Coding, Meta, OpenRouter, Radius, and xAI. `sal providers list` reports the
@@ -123,6 +135,9 @@ private bridge before a request. Keys and refresh tokens are absent from worker
 configuration JSON, arguments, journal events, and operator responses. Global Pi
 settings and unrelated credentials remain excluded. Updated credentials are
 resolved for subsequent requests; change credentials at an idle work boundary.
+
+That boundary keeps each request on the route you reviewed, even when several
+sessions use different providers through the same daemon.
 Switching between capped and uncapped authentication requires a new local session, or a service restart for service-routed sessions, so the visible capability warning cannot become stale. Logout removes stored credentials; external environment credentials remain active.
 
 Salaam validates the serialized model, output controls, tool inventory and actual

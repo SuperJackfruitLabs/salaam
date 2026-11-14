@@ -1,8 +1,10 @@
 # Install and upgrade Salaam
 
-Use Node **26.7.0** and npm **11.19.0**. The Node version is intentionally exact:
-Salaam uses built-in SQLite and proves process behavior against this runtime.
-macOS and Linux are supported; Windows is untested. No database server is needed.
+We will install the runtime Salaam actually proves, not a nearby version that
+looks friendly enough. Use Node **26.7.0** and npm **11.19.0**. The Node version is
+intentionally exact because Salaam uses built-in SQLite and proves process
+behavior against this runtime. macOS and Linux are supported; Windows is untested.
+No database server is needed.
 
 With nvm installed, run `nvm install 26.7.0`, `nvm use 26.7.0`, and
 `npm install --global npm@11.19.0 --ignore-scripts`.
@@ -30,12 +32,18 @@ Installation leaves services, state and credentials untouched. The installer for
 a particular release is also available from its
 [GitHub Release assets](https://github.com/SuperJackfruitLabs/salaam/releases).
 
+At this point the selected release is installed under the prefix you chose, and
+the version check tells you exactly which one answered.
+
 The script requires `node`, `npm` and `curl`, enforces Node's version, downloads
 the tarball and `SHA256SUMS` over HTTPS, checks the exact asset's hash, then installs
 offline with lifecycle scripts disabled. A mismatch aborts before npm runs.
 Checksums detect corruption; they are not an independent trust root if the same
 release account is compromised. Build attestations can be checked with
 `gh attestation verify TARBALL --repo SuperJackfruitLabs/salaam`.
+
+That sequence leaves you with a hash-checked package and, when you verify the
+attestation, a separate provenance check rather than one large leap of faith.
 
 ## Direct tarball installation
 
@@ -46,6 +54,9 @@ macOS), then install:
 ```sh
 npm install --global --ignore-scripts --offline --no-audit --no-fund ./salaam-cli-0.0.2.tgz
 ```
+
+The reviewed tarball is now installed without reaching the registry or running
+package lifecycle scripts.
 
 Production dependencies are bundled from the reviewed lockfile. The package includes
 compiled code, source for host manifest hashing, the Pi pin, a shrinkwrap, licenses
@@ -59,6 +70,9 @@ Install a specific published version:
 ```sh
 npm install --global @superjackfruitlabs/salaam@0.0.2 --ignore-scripts
 ```
+
+This pins the registry install to the version you named instead of drifting to a
+later release.
 
 ## Private runtime packet (Linux x64)
 
@@ -90,6 +104,10 @@ host manifest with this installed launcher and its final installation path, then
 use the normal `host start MANIFEST` command. Installing never starts a daemon
 or authorizes a managed operation.
 
+The private launcher now uses its bundled runtime from the dedicated prefix; it
+has not started work or inherited the ambient provider keys we deliberately left
+outside.
+
 To replace an installed runtime, stop the service, back up the stopped state,
 and provide its actual SQLite database path:
 
@@ -119,6 +137,9 @@ pointer for inspection. Recreate host manifests after switching versions. Do not
 manually repoint `current` to bypass compatibility checks. A matching schema
 number alone cannot prove semantic compatibility of an arbitrary old package.
 
+When activation succeeds, the pointer changes only after the stopped state and
+schema checks pass. If any owner is still live, the old runtime stays current.
+
 Installation serialization also uses an OS-backed SQLite lock. Process death
 releases these locks without stale-PID or timeout guesses. Each attempt owns a
 fresh staging directory and pointer; leftovers from a killed attempt do not
@@ -141,6 +162,9 @@ State migrations are forward-only. Rollback means restoring the stopped pre-upgr
 backup with its matching runtime and package, not opening upgraded state with an
 older binary.
 
+The restart now runs one reviewed package against the state it understands, with
+the pre-upgrade pair still available for a real rollback.
+
 ## Source install and removal
 
 ```sh
@@ -150,6 +174,9 @@ nvm use
 npm ci --ignore-scripts
 npm run setup:cli
 ```
+
+Both CLI aliases now point at this checkout, ready for development without moving
+or deleting your saved credentials and service state.
 
 This links aliases to the checkout. Rebuild after edits; repeat setup after moving
 it or changing Node. Remove a release package with

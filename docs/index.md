@@ -1,9 +1,9 @@
 # Intro
 
-Salaam is a coding agent for your terminal and editor that keeps working when you
-close them. A small local service owns each session: its conversation, approvals,
-checkpoints and results. Close the terminal, open it again tomorrow, or pick up the
-same session in Zed, and nothing is lost.
+Salaam is a coding agent that does not confuse a closed terminal with a finished
+job. You work from your terminal or editor; a small local service keeps each
+session's conversation, approvals, checkpoints and results. Close the terminal,
+come back tomorrow, or pick up the same session in Zed: your work is still there.
 
 ## Prerequisites
 
@@ -23,6 +23,9 @@ The installer checks the release's checksum before installing. `salaam` and `sal
 are the same command. For npm, tarballs, upgrades and removal, see
 [Install and upgrade](install.md).
 
+You now have both command names on your path and a version you can identify before
+we connect anything billable.
+
 ## Connect a provider
 
 Set an API key at a hidden prompt:
@@ -40,6 +43,9 @@ salaam auth login openai-codex
 Salaam ships with 41 chat providers. `salaam providers list` shows them, and
 [Providers](providers.md) covers keys, OAuth and cloud accounts.
 
+That gives your next session a real model route; until then, Salaam stays safely
+offline.
+
 ## Start in a project
 
 ```sh
@@ -54,6 +60,9 @@ Anthropic key; `/model` picks any other provider and model.
 Salaam reads `AGENTS.md` (or `CLAUDE.md`) from the repository automatically. Run
 `/init` to have it draft one for you. See [Rules](rules.md).
 
+You are now in a durable project session: closing this client will not throw the
+session away.
+
 ## Ask questions
 
 Type a question and press Enter:
@@ -64,6 +73,9 @@ How does authentication work in src/server?
 
 Type `@` to attach a file by name. Press Ctrl+X to see every tool call and its
 output.
+
+The answer arrives with the tool trail still available, so you can inspect how it
+got there instead of taking a polished sentence on faith.
 
 ## Make changes
 
@@ -82,6 +94,9 @@ When you trust the direction, press **Shift+Tab** to change the mode:
 Commands run in an OS sandbox: they write only inside the project and have no
 network. See [Permissions](permissions.md) and [Sandbox](sandbox.md).
 
+You choose the pace: keep every action reviewable, or remove repeated prompts
+without quietly removing the boundary around the project.
+
 ## Undo changes
 
 `/rewind` lists your turns. Pick one to put the files back as they were before it,
@@ -89,6 +104,9 @@ go back in the conversation, or both. Salaam checkpoints the folder before every
 in its own shadow repository, so your `.git` is never touched.
 
 `/undo` reverses just the last edit.
+
+The files are back where you chose, while the original conversation remains
+available for comparison.
 
 ## Come back later
 
@@ -101,6 +119,9 @@ salaam -c
 
 The session picker (`salaam code --resume`, or Ctrl+P) lists every session, this
 folder's first. To work in an editor, see [Editors](editors.md).
+
+There it is: the same session after the terminal went away. The service, not the
+window, was keeping the chair warm.
 
 ## Customize
 

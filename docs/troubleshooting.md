@@ -1,6 +1,7 @@
 # Troubleshooting
 
-Start with these two commands. Neither makes a model request.
+When Salaam is quiet in the wrong way, start with two facts instead of a dramatic
+reinstall. Neither command makes a model request:
 
 ```sh
 salaam service status
@@ -10,6 +11,9 @@ salaam auth status
 The service writes its log to `service.log` in its state directory
 (`~/.local/state/salaam` unless you set `--state` or `SALAAM_STATE_DIR`).
 
+Together, the status output and this log usually tell us whether the problem is
+the service, the selected provider or the next boundary in between.
+
 ## `connect ENOENT …/operator.sock`
 
 The service is not running. `salaam code` and `salaam` start it for you; scripted
@@ -18,6 +22,9 @@ commands such as `salaam session create` do not. Start it with:
 ```sh
 salaam service start
 ```
+
+The operator socket now has a service behind it, so scripted session commands can
+connect again.
 
 From 0.0.6, the editor adapter started with `acp --local` also starts the service.
 
@@ -69,6 +76,9 @@ salaam service stop
 salaam code
 ```
 
+The reopened client now talks to the newly installed daemon; your saved sessions
+remain in the state directory.
+
 Sessions created before an upgrade keep their original abilities; start a new
 session to get new ones.
 
@@ -78,6 +88,8 @@ Unix socket paths have a short length limit on macOS. Use a short `--state` path
 as `~/.local/state/salaam`. Also check `node --version` prints exactly `v26.7.0`.
 
 ## Still stuck
+
+If the usual suspects have alibis, keep the evidence and widen the search:
 
 - [Recovery and limitations](limitations.md) explains interrupted work and outcomes
   Salaam could not confirm.
