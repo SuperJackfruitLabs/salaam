@@ -1,9 +1,10 @@
 # Specialists and teams
 
-Specialists run in separate persistent sessions with explicit profiles, tools and
-request limits. The session service owns their identities, dispatch and results.
-Closing a terminal leaves admitted work running. Reconnecting shows the same child
-and result IDs.
+Specialists let us divide the work without blurring who was allowed to do what.
+Each runs in a separate persistent session with an explicit profile, tools and
+request limit. The session service owns its identity, dispatch and result, so
+closing a terminal leaves admitted work running and reconnecting shows the same
+child and result IDs.
 
 ## Admit a profile
 
@@ -16,6 +17,9 @@ sal agents inspect salaam/explorer --session SESSION_ID
 sal agents admit salaam/explorer --session SESSION_ID --digest REVIEWED_DIGEST
 sal agents admit salaam/reviewer --session SESSION_ID --digest REVIEWED_DIGEST
 ```
+
+The reviewed profile is now an explicit grant for this session; discovery alone
+still has no tool authority.
 
 The built-in explorer reads an immutable repository snapshot. The reviewer also
 inspects its diff and records findings with checked file, line and source evidence.
@@ -55,6 +59,9 @@ sal team assign TASK_ID --step STEP_ID --profile salaam/explorer --requests 4 --
 sal team show TASK_ID
 sal team run TASK_ID --assignment ASSIGNMENT_ID --generation 0 --revision N --request-id investigate-1
 ```
+
+The pending step now has a durable assignment and one admitted generation you can
+inspect without redispatching it after a lost reply.
 
 Inspect the current task revision before each new mutation. Reuse the same request
 ID and arguments after a lost response. A saved run returns its original claim and
@@ -118,6 +125,9 @@ sal workers integrate CHILD_ID --revision WORKSPACE_REVISION \
   --root-digest ROOT_DIGEST --patch-digest PROPOSAL_DIGEST --request-id integrate-1
 sal workers integration RECEIPT_ID
 ```
+
+The receipt now says whether the exact reviewed proposal reached the current root;
+fresh task checks, not the patch application, decide whether the work passes.
 
 Integration checks each changed file against the worker's original baseline.
 Disjoint edits can merge; overlapping root or human edits cause a conflict and

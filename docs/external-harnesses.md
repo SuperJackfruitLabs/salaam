@@ -1,8 +1,9 @@
 # External harness workers
 
-Salaam can assign a task step to a pinned external coding harness. The daemon owns
-its dispatch, private draft, approvals and result. Terminal disconnects do not
-create another invocation. Integration into the parent workspace remains explicit.
+An external coding harness can help with a step without becoming a mysterious
+second operator. Salaam pins the harness, and the daemon owns its dispatch,
+private draft, approvals and result. A disconnected terminal does not create
+another invocation; integration into the parent workspace remains explicit.
 
 | Harness            | Pinned version                                        | Interface                           |
 | ------------------ | ----------------------------------------------------- | ----------------------------------- |
@@ -49,6 +50,9 @@ sal service start --coding-root /PRIVATE_SHARED_PATH/owned --coding-socket /PATH
 sal harness list
 ```
 
+The list now shows the exact prepared runtime and backend route that passed startup
+proof, rather than merely confirming that a registry file parsed.
+
 Startup runs actual filesystem, network, privilege, Bash and descendant-stop
 probes. A registry file or successful protocol negotiation alone grants no work.
 The source checkout, sibling drafts, host credential home and daemon sockets are
@@ -84,6 +88,9 @@ sal agents admit salaam/builder --session SESSION_ID --digest REVIEWED_DIGEST
 sal team assign TASK_ID --step STEP_ID --profile salaam/builder --runtime gemini-acp --invocations 1 --revision N
 sal team run TASK_ID --assignment ASSIGNMENT_ID --generation 0 --revision N --request-id repair-1
 ```
+
+The step now owns one charged external invocation and one private draft; the parent
+workspace remains unchanged until you review and integrate a proposal.
 
 The harness receives its admitted profile, instruction and explicitly selected
 facts. Its model-visible tool inventory is narrowed to the profile's file and
