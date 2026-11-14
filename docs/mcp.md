@@ -32,8 +32,9 @@ Declarations live in `$XDG_CONFIG_HOME/salaam/mcp.json` (by default
 Changes apply at the next `sal service start`; stop the service first. A running
 service started from a different declaration says so.
 
-After restart, `sal mcp list` lets you confirm the declaration digest the service
-actually loaded before a session uses it.
+Before restart, `sal mcp list` shows the declaration digests in the file. After
+restart, `sal service status` lets you confirm the digest the service actually
+loaded before a session uses it.
 
 The file is a list, so duplicate names are caught:
 
