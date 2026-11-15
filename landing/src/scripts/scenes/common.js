@@ -1,7 +1,7 @@
 // Shared by the scenes' small loader and the lazy world: which sun phase to light, the product
 // accent as a colour, whether motion is allowed, and how far a stage has scrolled. Phase and accent
 // come from vibekit's plain (no Svelte) entry, so the scenes follow the same day as the apps.
-import { ACCENTS, ACCENT_HUES, PHASES, phaseAt } from '@superjackfruit/vibekit/appearance';
+import { ACCENTS, ACCENT_HUES, PHASES, phaseAt } from '@superjackfruitlabs/vibekit-ui/appearance';
 
 // vibekit's PRODUCT_ACCENTS has no entry for Salaam, so its own colour is the page's --accent
 // (#ff7aa5), whose OKLCH hue is 2°. A visitor's chosen vibekit accent still wins.
