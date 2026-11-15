@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import sjlDocs from '@superjackfruit/docs-theme';
+import sjlDocs from '@superjackfruitlabs/vibekit-docs';
 import { docs, repo, description } from '../site.config.mjs';
 
 // llms.txt lists every published page, in pages.json order, by its docs/*.md title.
@@ -20,7 +20,7 @@ export default defineConfig({
       title: 'Salaam',
       description,
       // The suite's docs theme: vibekit's pink, the faces, the street, status badges, the footers,
-      // the 404 and llms.txt. See @superjackfruit/docs-theme's README.
+      // the 404 and llms.txt. See @superjackfruitlabs/vibekit-docs's README.
       plugins: [
         sjlDocs({
           product: 'salaam',
