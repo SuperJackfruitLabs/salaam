@@ -1,7 +1,7 @@
 # Salaam documentation
 
 Astro + Starlight, with local search, light/dark themes and llms.txt exports. It wears the
-suite's docs theme, `@superjackfruit/docs-theme` (vendored under `vendor/` with the frontdoor
+suite's docs theme, `@superjackfruitlabs/vibekit-docs` (vendored under `vendor/` with the frontdoor
 and vibekit tarballs it needs, as the landing page vendors its own). The whole design config is
 `sjlDocs({ product: 'salaam', status: 'half-lit' })` in `astro.config.mjs`: vibekit's pink, the
 suite's faces (self-hosted), the street, status badges, Copy Markdown and `<page>.md`, the suite
