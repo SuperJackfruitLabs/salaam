@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
-    "@superjackfruitlabs/vibekit-frame": "^0.0.16",
-    "@superjackfruitlabs/vibekit-ui": "^0.0.18",
+    "@superjackfruitlabs/vibekit-frame": "^0.0.17",
+    "@superjackfruitlabs/vibekit-ui": "^0.0.19",
     "astro": "7.4.0",
     "three": "^0.186.1"
   }
