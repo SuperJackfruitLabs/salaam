@@ -14,7 +14,7 @@
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
     "@superjackfruitlabs/vibekit-frame": "^0.0.18",
-    "@superjackfruitlabs/vibekit-ui": "^0.0.19",
+    "@superjackfruitlabs/vibekit-ui": "^0.0.20",
     "astro": "7.4.0",
     "three": "^0.186.1"
   }
