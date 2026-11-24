@@ -1,0 +1,1833 @@
+{
+  "corpus": "agentpod-evidence",
+  "version": 1,
+  "howToRead": {
+    "source": "AgentPod's execution corpora (packages/contract/src/fixtures/execution-{export,evidence,artifacts}-v1.json, version 1), moved here as cases: each `success` row is a valid case and each `rejection` row an invalid one, under the row's `name`.",
+    "schemas": "schemas.<name> holds the cases of schemas/agentpod/<name>.json.",
+    "parity": "AgentPod's zod refuses some values a JSON Schema cannot (its refinements); every invalid case here is one the schema refuses too."
+  },
+  "schemas": {
+    "execution-export.v1": {
+      "valid": {
+        "committed-manifest": {
+          "schema_version": "agentpod-execution-export/v1",
+          "export_id": "22222222-2222-4222-8222-222222222222",
+          "external_source": "superpipeline",
+          "external_run_id": "run_abcdef",
+          "board_id": "brd_abcdef",
+          "card_id": "card_abcdef",
+          "stage_key": "build",
+          "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+          "run_epoch": 1,
+          "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+          "manifest_bytes": 1371,
+          "artifact_kind": "execution-metadata-manifest",
+          "library": {
+            "item_id": "itm_fixture",
+            "version": 1,
+            "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "bytes": 1371,
+            "entry": "execution-evidence.json"
+          },
+          "artifact_files": [],
+          "verification": "download-sha256-verified"
+        },
+        "committed-artifact-bundle": {
+          "schema_version": "agentpod-execution-export/v1",
+          "export_id": "44444444-4444-4444-8444-444444444444",
+          "external_source": "superpipeline",
+          "external_run_id": "run_abcdef",
+          "board_id": "brd_abcdef",
+          "card_id": "card_abcdef",
+          "stage_key": "build",
+          "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+          "run_epoch": 1,
+          "manifest_sha256": "38bfa0105691557544427a9d27a4760bbd8ffd02c4a7480fcdcf3cf7967b989b",
+          "manifest_bytes": 1942,
+          "artifact_kind": "execution-artifact-bundle",
+          "library": {
+            "item_id": "itm_fixture",
+            "version": 1,
+            "sha256": "c8b0d8fd8f9c2fcc50a5a9e3343030dfcddb01679ab4c4ba395bfd6c25df57ec",
+            "bytes": 1975,
+            "entry": "execution-manifest.json"
+          },
+          "artifact_files": [
+            {
+              "artifact_id": "33333333-3333-4333-8333-333333333333",
+              "file_id": {
+                "item_id": "itm_fixture",
+                "version": 1,
+                "path": "artifacts/33333333-3333-4333-8333-333333333333.json"
+              },
+              "path": "artifacts/33333333-3333-4333-8333-333333333333.json",
+              "sha256": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+              "bytes": 33,
+              "disposition": "produced"
+            }
+          ],
+          "verification": "download-sha256-verified"
+        }
+      },
+      "invalid": [
+        {
+          "why": "unknown-version",
+          "body": {
+            "schema_version": "v2",
+            "export_id": "22222222-2222-4222-8222-222222222222",
+            "external_source": "superpipeline",
+            "external_run_id": "run_abcdef",
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "run_epoch": 1,
+            "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "manifest_bytes": 1371,
+            "artifact_kind": "execution-metadata-manifest",
+            "library": {
+              "item_id": "itm_abcdef",
+              "version": 1,
+              "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+              "bytes": 1371,
+              "entry": "execution-evidence.json"
+            },
+            "verification": "download-sha256-verified",
+            "artifact_files": []
+          }
+        },
+        {
+          "why": "unknown-field",
+          "body": {
+            "schema_version": "agentpod-execution-export/v1",
+            "export_id": "22222222-2222-4222-8222-222222222222",
+            "external_source": "superpipeline",
+            "external_run_id": "run_abcdef",
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "run_epoch": 1,
+            "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "manifest_bytes": 1371,
+            "artifact_kind": "execution-metadata-manifest",
+            "library": {
+              "item_id": "itm_abcdef",
+              "version": 1,
+              "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+              "bytes": 1371,
+              "entry": "execution-evidence.json"
+            },
+            "verification": "download-sha256-verified",
+            "url": "https://untrusted.test",
+            "artifact_files": []
+          }
+        },
+        {
+          "why": "unverified-receipt",
+          "body": {
+            "schema_version": "agentpod-execution-export/v1",
+            "export_id": "22222222-2222-4222-8222-222222222222",
+            "external_source": "superpipeline",
+            "external_run_id": "run_abcdef",
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "run_epoch": 1,
+            "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "manifest_bytes": 1371,
+            "artifact_kind": "execution-metadata-manifest",
+            "library": {
+              "item_id": "itm_abcdef",
+              "version": 1,
+              "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+              "bytes": 1371,
+              "entry": "execution-evidence.json"
+            },
+            "verification": "unverified",
+            "artifact_files": []
+          }
+        },
+        {
+          "why": "foreign-run-namespace",
+          "body": {
+            "schema_version": "agentpod-execution-export/v1",
+            "export_id": "22222222-2222-4222-8222-222222222222",
+            "external_source": "salaam",
+            "external_run_id": "run_abcdef",
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "run_epoch": 1,
+            "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "manifest_bytes": 1371,
+            "artifact_kind": "execution-metadata-manifest",
+            "library": {
+              "item_id": "itm_abcdef",
+              "version": 1,
+              "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+              "bytes": 1371,
+              "entry": "execution-evidence.json"
+            },
+            "verification": "download-sha256-verified",
+            "artifact_files": []
+          }
+        },
+        {
+          "why": "zero-library-version",
+          "body": {
+            "schema_version": "agentpod-execution-export/v1",
+            "export_id": "22222222-2222-4222-8222-222222222222",
+            "external_source": "superpipeline",
+            "external_run_id": "run_abcdef",
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "run_epoch": 1,
+            "manifest_sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+            "manifest_bytes": 1371,
+            "artifact_kind": "execution-metadata-manifest",
+            "library": {
+              "item_id": "itm_abcdef",
+              "version": 0,
+              "sha256": "c5c6a2f3119798e0e273c6d4e8f74094b70d307f28075defd0adcd8c71afa2c0",
+              "bytes": 1371,
+              "entry": "execution-evidence.json"
+            },
+            "verification": "download-sha256-verified",
+            "artifact_files": []
+          }
+        }
+      ]
+    },
+    "execution-evidence.v1": {
+      "valid": {
+        "empty-unreported": {
+          "schema_version": "salaam-execution-evidence/v1",
+          "source": "salaam",
+          "as_of": "2026-10-21T00:00:00.000Z",
+          "binding": {
+            "version": 1,
+            "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "node_id": "node_1",
+            "station_id": "station_1",
+            "station_key": "salaam:aaaaaaaaaaaaaaaa",
+            "occupancy_epoch": 1,
+            "hub_session_id": "session_hub",
+            "run": {
+              "source": "superpipeline",
+              "id": "run_abcdef",
+              "epoch": 1
+            }
+          },
+          "task": {
+            "task_id": "11111111-1111-4111-8111-111111111111",
+            "request_id": "11111111-1111-4111-8111-111111111111",
+            "session_id": "11111111-1111-4111-8111-111111111111",
+            "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state": "accepted",
+            "plan_revision": 1,
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build"
+          },
+          "attempts": [],
+          "children": [],
+          "tools": [],
+          "checks": [],
+          "integrations": [],
+          "artifacts": [],
+          "usage": {
+            "version": 1,
+            "recorded_by": "salaam-usage-ledger",
+            "session_id": "11111111-1111-4111-8111-111111111111",
+            "includes_children": true,
+            "status": "unreported",
+            "coverage": {
+              "observations": 0,
+              "recorded": 0,
+              "unknown": 0,
+              "estimated": 0
+            },
+            "recorded_subtotal": null,
+            "cost_provenance": "unknown",
+            "truncated": false,
+            "observations": []
+          },
+          "contributors": {
+            "principal_ids": [],
+            "closure": "unknown"
+          },
+          "coverage": {
+            "truncated": [],
+            "unavailable": [
+              "fingerprints"
+            ]
+          },
+          "fingerprints": []
+        },
+        "joined-child-receipts-proposed-not-integrated": {
+          "schema_version": "salaam-execution-evidence/v1",
+          "source": "salaam",
+          "as_of": "2026-10-21T00:00:00.000Z",
+          "binding": {
+            "version": 1,
+            "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "node_id": "node_1",
+            "station_id": "station_1",
+            "station_key": "salaam:aaaaaaaaaaaaaaaa",
+            "occupancy_epoch": 1,
+            "hub_session_id": "session_hub",
+            "run": {
+              "source": "superpipeline",
+              "id": "run_abcdef",
+              "epoch": 1
+            }
+          },
+          "task": {
+            "task_id": "00000002-1111-4111-8111-111111111111",
+            "request_id": "00000003-1111-4111-8111-111111111111",
+            "session_id": "00000001-1111-4111-8111-111111111111",
+            "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state": "running",
+            "plan_revision": 1,
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build"
+          },
+          "attempts": [
+            {
+              "id": "00000004-1111-4111-8111-111111111111",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "worker_epoch": 1,
+              "state": "completed"
+            },
+            {
+              "id": "00000007-1111-4111-8111-111111111111",
+              "session_id": "00000006-1111-4111-8111-111111111111",
+              "worker_epoch": null,
+              "state": "accepted"
+            }
+          ],
+          "children": [
+            {
+              "id": "00000005-1111-4111-8111-111111111111",
+              "parent_session": "00000001-1111-4111-8111-111111111111",
+              "parent_attempt": "00000004-1111-4111-8111-111111111111",
+              "child_session": "00000006-1111-4111-8111-111111111111",
+              "child_attempt": "00000007-1111-4111-8111-111111111111",
+              "state": "completed",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "artifact_id": "00000008-1111-4111-8111-111111111111",
+              "contributor_principal_id": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "00000010-1111-4111-8111-111111111111",
+              "source": "operation",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "attempt_id": "00000004-1111-4111-8111-111111111111",
+              "task_check_id": null,
+              "tool_call_id": "call/1",
+              "kind": "http",
+              "state": "confirmed",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "operation_id": null,
+              "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "resolution": "confirmed",
+              "resolution_evidence": null
+            },
+            {
+              "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "source": "managed-http",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "attempt_id": "00000004-1111-4111-8111-111111111111",
+              "task_check_id": null,
+              "tool_call_id": "call/1",
+              "kind": "http",
+              "state": "returned",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "operation_id": "00000010-1111-4111-8111-111111111111",
+              "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "resolution": null,
+              "resolution_evidence": null
+            }
+          ],
+          "checks": [
+            {
+              "id": "00000009-1111-4111-8111-111111111111",
+              "task_id": "00000002-1111-4111-8111-111111111111",
+              "step_id": null,
+              "plan_revision": 1,
+              "workspace_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "engine_id": "acceptance",
+              "state": "passed",
+              "artifact_id": "00000008-1111-4111-8111-111111111111"
+            }
+          ],
+          "integrations": [
+            {
+              "id": "00000011-1111-4111-8111-111111111111",
+              "parent_session": "00000001-1111-4111-8111-111111111111",
+              "child_id": "00000005-1111-4111-8111-111111111111",
+              "patch_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "before_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "after_artifact": null,
+              "state": "proposed",
+              "mutation_id": null
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "00000008-1111-4111-8111-111111111111",
+              "session_id": "00000006-1111-4111-8111-111111111111",
+              "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "bytes": 32,
+              "disposition": "produced"
+            }
+          ],
+          "usage": {
+            "version": 1,
+            "recorded_by": "salaam-usage-ledger",
+            "session_id": "00000001-1111-4111-8111-111111111111",
+            "includes_children": true,
+            "status": "unreported",
+            "coverage": {
+              "observations": 0,
+              "recorded": 0,
+              "unknown": 0,
+              "estimated": 0
+            },
+            "recorded_subtotal": null,
+            "cost_provenance": "unknown",
+            "truncated": false,
+            "observations": []
+          },
+          "contributors": {
+            "principal_ids": [
+              "prn_aaaaaaaaaaaaaaaaaaaa"
+            ],
+            "closure": "incomplete"
+          },
+          "coverage": {
+            "truncated": [],
+            "unavailable": [
+              "fingerprints"
+            ]
+          },
+          "fingerprints": []
+        },
+        "operator-attestation-retains-native-uncertainty": {
+          "schema_version": "salaam-execution-evidence/v1",
+          "source": "salaam",
+          "as_of": "2026-10-21T00:00:00.000Z",
+          "binding": {
+            "version": 1,
+            "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+            "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+            "node_id": "node_1",
+            "station_id": "station_1",
+            "station_key": "salaam:aaaaaaaaaaaaaaaa",
+            "occupancy_epoch": 1,
+            "hub_session_id": "session_hub",
+            "run": {
+              "source": "superpipeline",
+              "id": "run_abcdef",
+              "epoch": 1
+            }
+          },
+          "task": {
+            "task_id": "00000002-1111-4111-8111-111111111111",
+            "request_id": "00000003-1111-4111-8111-111111111111",
+            "session_id": "00000001-1111-4111-8111-111111111111",
+            "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state": "running",
+            "plan_revision": 1,
+            "board_id": "brd_abcdef",
+            "card_id": "card_abcdef",
+            "stage_key": "build"
+          },
+          "attempts": [
+            {
+              "id": "00000004-1111-4111-8111-111111111111",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "worker_epoch": 1,
+              "state": "completed"
+            },
+            {
+              "id": "00000007-1111-4111-8111-111111111111",
+              "session_id": "00000006-1111-4111-8111-111111111111",
+              "worker_epoch": null,
+              "state": "accepted"
+            }
+          ],
+          "children": [
+            {
+              "id": "00000005-1111-4111-8111-111111111111",
+              "parent_session": "00000001-1111-4111-8111-111111111111",
+              "parent_attempt": "00000004-1111-4111-8111-111111111111",
+              "child_session": "00000006-1111-4111-8111-111111111111",
+              "child_attempt": "00000007-1111-4111-8111-111111111111",
+              "state": "completed",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "artifact_id": "00000008-1111-4111-8111-111111111111",
+              "contributor_principal_id": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "00000010-1111-4111-8111-111111111111",
+              "source": "operation",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "attempt_id": "00000004-1111-4111-8111-111111111111",
+              "task_check_id": null,
+              "tool_call_id": "call/1",
+              "kind": "http",
+              "state": "confirmed",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "operation_id": null,
+              "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "resolution": "confirmed",
+              "resolution_evidence": null
+            },
+            {
+              "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "source": "managed-toolkit",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "attempt_id": "00000004-1111-4111-8111-111111111111",
+              "task_check_id": null,
+              "tool_call_id": "call/1",
+              "kind": "http",
+              "state": "outcome_unknown",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "operation_id": "00000010-1111-4111-8111-111111111111",
+              "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "resolution": null,
+              "resolution_evidence": {
+                "resolution_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "call_revision": 2,
+                "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "source": "operator-attestation",
+                "outcome": "succeeded",
+                "evidence_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "native_state": "outcome_acknowledged",
+                "native_receipt_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "authority": false,
+                "product_effect_verified": false
+              }
+            }
+          ],
+          "checks": [
+            {
+              "id": "00000009-1111-4111-8111-111111111111",
+              "task_id": "00000002-1111-4111-8111-111111111111",
+              "step_id": null,
+              "plan_revision": 1,
+              "workspace_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "engine_id": "acceptance",
+              "state": "passed",
+              "artifact_id": "00000008-1111-4111-8111-111111111111"
+            }
+          ],
+          "integrations": [
+            {
+              "id": "00000011-1111-4111-8111-111111111111",
+              "parent_session": "00000001-1111-4111-8111-111111111111",
+              "child_id": "00000005-1111-4111-8111-111111111111",
+              "patch_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "before_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "after_artifact": null,
+              "state": "proposed",
+              "mutation_id": null
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "00000008-1111-4111-8111-111111111111",
+              "session_id": "00000006-1111-4111-8111-111111111111",
+              "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "bytes": 32,
+              "disposition": "produced"
+            }
+          ],
+          "usage": {
+            "version": 1,
+            "recorded_by": "salaam-usage-ledger",
+            "session_id": "00000001-1111-4111-8111-111111111111",
+            "includes_children": true,
+            "status": "unreported",
+            "coverage": {
+              "observations": 0,
+              "recorded": 0,
+              "unknown": 0,
+              "estimated": 0
+            },
+            "recorded_subtotal": null,
+            "cost_provenance": "unknown",
+            "truncated": false,
+            "observations": []
+          },
+          "contributors": {
+            "principal_ids": [
+              "prn_aaaaaaaaaaaaaaaaaaaa"
+            ],
+            "closure": "incomplete"
+          },
+          "coverage": {
+            "truncated": [],
+            "unavailable": [
+              "fingerprints"
+            ]
+          },
+          "fingerprints": []
+        }
+      },
+      "invalid": [
+        {
+          "why": "unknown-version",
+          "body": {
+            "schema_version": "v2",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "workspace-leak",
+          "body": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              },
+              "workspace": "/private"
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "unknown-root-field",
+          "body": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "credentials": "secret",
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "foreign-attempt-id",
+          "body": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [
+              {
+                "id": "attempt_123",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "worker_epoch": 1,
+                "state": "running"
+              }
+            ],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "implicit-version",
+          "body": {
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "attestation-on-non-toolkit-receipt",
+          "body": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "00000002-1111-4111-8111-111111111111",
+              "request_id": "00000003-1111-4111-8111-111111111111",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "running",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [
+              {
+                "id": "00000004-1111-4111-8111-111111111111",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "worker_epoch": 1,
+                "state": "completed"
+              },
+              {
+                "id": "00000007-1111-4111-8111-111111111111",
+                "session_id": "00000006-1111-4111-8111-111111111111",
+                "worker_epoch": null,
+                "state": "accepted"
+              }
+            ],
+            "children": [
+              {
+                "id": "00000005-1111-4111-8111-111111111111",
+                "parent_session": "00000001-1111-4111-8111-111111111111",
+                "parent_attempt": "00000004-1111-4111-8111-111111111111",
+                "child_session": "00000006-1111-4111-8111-111111111111",
+                "child_attempt": "00000007-1111-4111-8111-111111111111",
+                "state": "completed",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "artifact_id": "00000008-1111-4111-8111-111111111111",
+                "contributor_principal_id": null
+              }
+            ],
+            "tools": [
+              {
+                "id": "00000010-1111-4111-8111-111111111111",
+                "source": "operation",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "attempt_id": "00000004-1111-4111-8111-111111111111",
+                "task_check_id": null,
+                "tool_call_id": "call/1",
+                "kind": "http",
+                "state": "confirmed",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "operation_id": null,
+                "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "resolution": "confirmed",
+                "resolution_evidence": null
+              },
+              {
+                "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "source": "managed-http",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "attempt_id": "00000004-1111-4111-8111-111111111111",
+                "task_check_id": null,
+                "tool_call_id": "call/1",
+                "kind": "http",
+                "state": "outcome_unknown",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "operation_id": "00000010-1111-4111-8111-111111111111",
+                "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "resolution": null,
+                "resolution_evidence": {
+                  "resolution_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "call_revision": 2,
+                  "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "source": "operator-attestation",
+                  "outcome": "succeeded",
+                  "evidence_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "native_state": "outcome_acknowledged",
+                  "native_receipt_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "authority": false,
+                  "product_effect_verified": false
+                }
+              }
+            ],
+            "checks": [
+              {
+                "id": "00000009-1111-4111-8111-111111111111",
+                "task_id": "00000002-1111-4111-8111-111111111111",
+                "step_id": null,
+                "plan_revision": 1,
+                "workspace_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "engine_id": "acceptance",
+                "state": "passed",
+                "artifact_id": "00000008-1111-4111-8111-111111111111"
+              }
+            ],
+            "integrations": [
+              {
+                "id": "00000011-1111-4111-8111-111111111111",
+                "parent_session": "00000001-1111-4111-8111-111111111111",
+                "child_id": "00000005-1111-4111-8111-111111111111",
+                "patch_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "before_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "after_artifact": null,
+                "state": "proposed",
+                "mutation_id": null
+              }
+            ],
+            "artifacts": [
+              {
+                "id": "00000008-1111-4111-8111-111111111111",
+                "session_id": "00000006-1111-4111-8111-111111111111",
+                "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bytes": 32,
+                "disposition": "produced"
+              }
+            ],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [
+                "prn_aaaaaaaaaaaaaaaaaaaa"
+              ],
+              "closure": "incomplete"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        },
+        {
+          "why": "attestation-is-not-product-effect-proof",
+          "body": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "00000002-1111-4111-8111-111111111111",
+              "request_id": "00000003-1111-4111-8111-111111111111",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "running",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [
+              {
+                "id": "00000004-1111-4111-8111-111111111111",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "worker_epoch": 1,
+                "state": "completed"
+              },
+              {
+                "id": "00000007-1111-4111-8111-111111111111",
+                "session_id": "00000006-1111-4111-8111-111111111111",
+                "worker_epoch": null,
+                "state": "accepted"
+              }
+            ],
+            "children": [
+              {
+                "id": "00000005-1111-4111-8111-111111111111",
+                "parent_session": "00000001-1111-4111-8111-111111111111",
+                "parent_attempt": "00000004-1111-4111-8111-111111111111",
+                "child_session": "00000006-1111-4111-8111-111111111111",
+                "child_attempt": "00000007-1111-4111-8111-111111111111",
+                "state": "completed",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "artifact_id": "00000008-1111-4111-8111-111111111111",
+                "contributor_principal_id": null
+              }
+            ],
+            "tools": [
+              {
+                "id": "00000010-1111-4111-8111-111111111111",
+                "source": "operation",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "attempt_id": "00000004-1111-4111-8111-111111111111",
+                "task_check_id": null,
+                "tool_call_id": "call/1",
+                "kind": "http",
+                "state": "confirmed",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "operation_id": null,
+                "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "resolution": "confirmed",
+                "resolution_evidence": null
+              },
+              {
+                "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "source": "managed-toolkit",
+                "session_id": "00000001-1111-4111-8111-111111111111",
+                "attempt_id": "00000004-1111-4111-8111-111111111111",
+                "task_check_id": null,
+                "tool_call_id": "call/1",
+                "kind": "http",
+                "state": "outcome_unknown",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "operation_id": "00000010-1111-4111-8111-111111111111",
+                "operation_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "receipt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "resolution": null,
+                "resolution_evidence": {
+                  "resolution_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "call_revision": 2,
+                  "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "source": "operator-attestation",
+                  "outcome": "succeeded",
+                  "evidence_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "native_state": "outcome_acknowledged",
+                  "native_receipt_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "authority": false,
+                  "product_effect_verified": true
+                }
+              }
+            ],
+            "checks": [
+              {
+                "id": "00000009-1111-4111-8111-111111111111",
+                "task_id": "00000002-1111-4111-8111-111111111111",
+                "step_id": null,
+                "plan_revision": 1,
+                "workspace_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "engine_id": "acceptance",
+                "state": "passed",
+                "artifact_id": "00000008-1111-4111-8111-111111111111"
+              }
+            ],
+            "integrations": [
+              {
+                "id": "00000011-1111-4111-8111-111111111111",
+                "parent_session": "00000001-1111-4111-8111-111111111111",
+                "child_id": "00000005-1111-4111-8111-111111111111",
+                "patch_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "before_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "after_artifact": null,
+                "state": "proposed",
+                "mutation_id": null
+              }
+            ],
+            "artifacts": [
+              {
+                "id": "00000008-1111-4111-8111-111111111111",
+                "session_id": "00000006-1111-4111-8111-111111111111",
+                "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bytes": 32,
+                "disposition": "produced"
+              }
+            ],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "00000001-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [
+                "prn_aaaaaaaaaaaaaaaaaaaa"
+              ],
+              "closure": "incomplete"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          }
+        }
+      ]
+    },
+    "execution-artifacts.v1": {
+      "valid": {
+        "immutable-produced-bytes": {
+          "schema_version": "salaam-execution-artifacts/v1",
+          "evidence": {
+            "schema_version": "salaam-execution-evidence/v1",
+            "source": "salaam",
+            "as_of": "2026-10-21T00:00:00.000Z",
+            "binding": {
+              "version": 1,
+              "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+              "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+              "node_id": "node_1",
+              "station_id": "station_1",
+              "station_key": "salaam:aaaaaaaaaaaaaaaa",
+              "occupancy_epoch": 1,
+              "hub_session_id": "session_hub",
+              "run": {
+                "source": "superpipeline",
+                "id": "run_abcdef",
+                "epoch": 1
+              }
+            },
+            "task": {
+              "task_id": "11111111-1111-4111-8111-111111111111",
+              "request_id": "11111111-1111-4111-8111-111111111111",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted",
+              "plan_revision": 1,
+              "board_id": "brd_abcdef",
+              "card_id": "card_abcdef",
+              "stage_key": "build"
+            },
+            "attempts": [],
+            "children": [],
+            "tools": [],
+            "checks": [],
+            "integrations": [],
+            "artifacts": [
+              {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                "bytes": 33,
+                "disposition": "produced"
+              }
+            ],
+            "usage": {
+              "version": 1,
+              "recorded_by": "salaam-usage-ledger",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "includes_children": true,
+              "status": "unreported",
+              "coverage": {
+                "observations": 0,
+                "recorded": 0,
+                "unknown": 0,
+                "estimated": 0
+              },
+              "recorded_subtotal": null,
+              "cost_provenance": "unknown",
+              "truncated": false,
+              "observations": []
+            },
+            "contributors": {
+              "principal_ids": [],
+              "closure": "unknown"
+            },
+            "coverage": {
+              "truncated": [],
+              "unavailable": [
+                "fingerprints"
+              ]
+            },
+            "fingerprints": []
+          },
+          "artifacts": [
+            {
+              "id": "33333333-3333-4333-8333-333333333333",
+              "session_id": "11111111-1111-4111-8111-111111111111",
+              "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+              "bytes": 33,
+              "disposition": "produced",
+              "content_base64": "dmVyaWZpZWQgaW1tdXRhYmxlIHBhdGNoIHJlY2VpcHQK"
+            }
+          ]
+        }
+      },
+      "invalid": [
+        {
+          "why": "implicit-version",
+          "body": {
+            "evidence": {
+              "schema_version": "salaam-execution-evidence/v1",
+              "source": "salaam",
+              "as_of": "2026-10-21T00:00:00.000Z",
+              "binding": {
+                "version": 1,
+                "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+                "node_id": "node_1",
+                "station_id": "station_1",
+                "station_key": "salaam:aaaaaaaaaaaaaaaa",
+                "occupancy_epoch": 1,
+                "hub_session_id": "session_hub",
+                "run": {
+                  "source": "superpipeline",
+                  "id": "run_abcdef",
+                  "epoch": 1
+                }
+              },
+              "task": {
+                "task_id": "11111111-1111-4111-8111-111111111111",
+                "request_id": "11111111-1111-4111-8111-111111111111",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "state": "accepted",
+                "plan_revision": 1,
+                "board_id": "brd_abcdef",
+                "card_id": "card_abcdef",
+                "stage_key": "build"
+              },
+              "attempts": [],
+              "children": [],
+              "tools": [],
+              "checks": [],
+              "integrations": [],
+              "artifacts": [
+                {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "session_id": "11111111-1111-4111-8111-111111111111",
+                  "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                  "bytes": 33,
+                  "disposition": "produced"
+                }
+              ],
+              "usage": {
+                "version": 1,
+                "recorded_by": "salaam-usage-ledger",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "includes_children": true,
+                "status": "unreported",
+                "coverage": {
+                  "observations": 0,
+                  "recorded": 0,
+                  "unknown": 0,
+                  "estimated": 0
+                },
+                "recorded_subtotal": null,
+                "cost_provenance": "unknown",
+                "truncated": false,
+                "observations": []
+              },
+              "contributors": {
+                "principal_ids": [],
+                "closure": "unknown"
+              },
+              "coverage": {
+                "truncated": [],
+                "unavailable": [
+                  "fingerprints"
+                ]
+              },
+              "fingerprints": []
+            },
+            "artifacts": [
+              {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                "bytes": 33,
+                "disposition": "produced",
+                "content_base64": "dmVyaWZpZWQgaW1tdXRhYmxlIHBhdGNoIHJlY2VpcHQK"
+              }
+            ]
+          }
+        },
+        {
+          "why": "unsupported-version",
+          "body": {
+            "schema_version": "salaam-execution-artifacts/v99",
+            "evidence": {
+              "schema_version": "salaam-execution-evidence/v1",
+              "source": "salaam",
+              "as_of": "2026-10-21T00:00:00.000Z",
+              "binding": {
+                "version": 1,
+                "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+                "node_id": "node_1",
+                "station_id": "station_1",
+                "station_key": "salaam:aaaaaaaaaaaaaaaa",
+                "occupancy_epoch": 1,
+                "hub_session_id": "session_hub",
+                "run": {
+                  "source": "superpipeline",
+                  "id": "run_abcdef",
+                  "epoch": 1
+                }
+              },
+              "task": {
+                "task_id": "11111111-1111-4111-8111-111111111111",
+                "request_id": "11111111-1111-4111-8111-111111111111",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "state": "accepted",
+                "plan_revision": 1,
+                "board_id": "brd_abcdef",
+                "card_id": "card_abcdef",
+                "stage_key": "build"
+              },
+              "attempts": [],
+              "children": [],
+              "tools": [],
+              "checks": [],
+              "integrations": [],
+              "artifacts": [
+                {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "session_id": "11111111-1111-4111-8111-111111111111",
+                  "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                  "bytes": 33,
+                  "disposition": "produced"
+                }
+              ],
+              "usage": {
+                "version": 1,
+                "recorded_by": "salaam-usage-ledger",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "includes_children": true,
+                "status": "unreported",
+                "coverage": {
+                  "observations": 0,
+                  "recorded": 0,
+                  "unknown": 0,
+                  "estimated": 0
+                },
+                "recorded_subtotal": null,
+                "cost_provenance": "unknown",
+                "truncated": false,
+                "observations": []
+              },
+              "contributors": {
+                "principal_ids": [],
+                "closure": "unknown"
+              },
+              "coverage": {
+                "truncated": [],
+                "unavailable": [
+                  "fingerprints"
+                ]
+              },
+              "fingerprints": []
+            },
+            "artifacts": [
+              {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                "bytes": 33,
+                "disposition": "produced",
+                "content_base64": "dmVyaWZpZWQgaW1tdXRhYmxlIHBhdGNoIHJlY2VpcHQK"
+              }
+            ]
+          }
+        },
+        {
+          "why": "observed-baseline",
+          "body": {
+            "schema_version": "salaam-execution-artifacts/v1",
+            "evidence": {
+              "schema_version": "salaam-execution-evidence/v1",
+              "source": "salaam",
+              "as_of": "2026-10-21T00:00:00.000Z",
+              "binding": {
+                "version": 1,
+                "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+                "node_id": "node_1",
+                "station_id": "station_1",
+                "station_key": "salaam:aaaaaaaaaaaaaaaa",
+                "occupancy_epoch": 1,
+                "hub_session_id": "session_hub",
+                "run": {
+                  "source": "superpipeline",
+                  "id": "run_abcdef",
+                  "epoch": 1
+                }
+              },
+              "task": {
+                "task_id": "11111111-1111-4111-8111-111111111111",
+                "request_id": "11111111-1111-4111-8111-111111111111",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "state": "accepted",
+                "plan_revision": 1,
+                "board_id": "brd_abcdef",
+                "card_id": "card_abcdef",
+                "stage_key": "build"
+              },
+              "attempts": [],
+              "children": [],
+              "tools": [],
+              "checks": [],
+              "integrations": [],
+              "artifacts": [
+                {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "session_id": "11111111-1111-4111-8111-111111111111",
+                  "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                  "bytes": 33,
+                  "disposition": "produced"
+                }
+              ],
+              "usage": {
+                "version": 1,
+                "recorded_by": "salaam-usage-ledger",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "includes_children": true,
+                "status": "unreported",
+                "coverage": {
+                  "observations": 0,
+                  "recorded": 0,
+                  "unknown": 0,
+                  "estimated": 0
+                },
+                "recorded_subtotal": null,
+                "cost_provenance": "unknown",
+                "truncated": false,
+                "observations": []
+              },
+              "contributors": {
+                "principal_ids": [],
+                "closure": "unknown"
+              },
+              "coverage": {
+                "truncated": [],
+                "unavailable": [
+                  "fingerprints"
+                ]
+              },
+              "fingerprints": []
+            },
+            "artifacts": [
+              {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                "bytes": 33,
+                "disposition": "observed",
+                "content_base64": "dmVyaWZpZWQgaW1tdXRhYmxlIHBhdGNoIHJlY2VpcHQK"
+              }
+            ]
+          }
+        },
+        {
+          "why": "empty-selection",
+          "body": {
+            "schema_version": "salaam-execution-artifacts/v1",
+            "evidence": {
+              "schema_version": "salaam-execution-evidence/v1",
+              "source": "salaam",
+              "as_of": "2026-10-21T00:00:00.000Z",
+              "binding": {
+                "version": 1,
+                "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+                "node_id": "node_1",
+                "station_id": "station_1",
+                "station_key": "salaam:aaaaaaaaaaaaaaaa",
+                "occupancy_epoch": 1,
+                "hub_session_id": "session_hub",
+                "run": {
+                  "source": "superpipeline",
+                  "id": "run_abcdef",
+                  "epoch": 1
+                }
+              },
+              "task": {
+                "task_id": "11111111-1111-4111-8111-111111111111",
+                "request_id": "11111111-1111-4111-8111-111111111111",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "state": "accepted",
+                "plan_revision": 1,
+                "board_id": "brd_abcdef",
+                "card_id": "card_abcdef",
+                "stage_key": "build"
+              },
+              "attempts": [],
+              "children": [],
+              "tools": [],
+              "checks": [],
+              "integrations": [],
+              "artifacts": [
+                {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "session_id": "11111111-1111-4111-8111-111111111111",
+                  "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                  "bytes": 33,
+                  "disposition": "produced"
+                }
+              ],
+              "usage": {
+                "version": 1,
+                "recorded_by": "salaam-usage-ledger",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "includes_children": true,
+                "status": "unreported",
+                "coverage": {
+                  "observations": 0,
+                  "recorded": 0,
+                  "unknown": 0,
+                  "estimated": 0
+                },
+                "recorded_subtotal": null,
+                "cost_provenance": "unknown",
+                "truncated": false,
+                "observations": []
+              },
+              "contributors": {
+                "principal_ids": [],
+                "closure": "unknown"
+              },
+              "coverage": {
+                "truncated": [],
+                "unavailable": [
+                  "fingerprints"
+                ]
+              },
+              "fingerprints": []
+            },
+            "artifacts": []
+          }
+        },
+        {
+          "why": "private-control-path",
+          "body": {
+            "schema_version": "salaam-execution-artifacts/v1",
+            "evidence": {
+              "schema_version": "salaam-execution-evidence/v1",
+              "source": "salaam",
+              "as_of": "2026-10-21T00:00:00.000Z",
+              "binding": {
+                "version": 1,
+                "organization_id": "org_aaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "prn_aaaaaaaaaaaaaaaaaaaa",
+                "node_id": "node_1",
+                "station_id": "station_1",
+                "station_key": "salaam:aaaaaaaaaaaaaaaa",
+                "occupancy_epoch": 1,
+                "hub_session_id": "session_hub",
+                "run": {
+                  "source": "superpipeline",
+                  "id": "run_abcdef",
+                  "epoch": 1
+                }
+              },
+              "task": {
+                "task_id": "11111111-1111-4111-8111-111111111111",
+                "request_id": "11111111-1111-4111-8111-111111111111",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "state": "accepted",
+                "plan_revision": 1,
+                "board_id": "brd_abcdef",
+                "card_id": "card_abcdef",
+                "stage_key": "build"
+              },
+              "attempts": [],
+              "children": [],
+              "tools": [],
+              "checks": [],
+              "integrations": [],
+              "artifacts": [
+                {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "session_id": "11111111-1111-4111-8111-111111111111",
+                  "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                  "bytes": 33,
+                  "disposition": "produced"
+                }
+              ],
+              "usage": {
+                "version": 1,
+                "recorded_by": "salaam-usage-ledger",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "includes_children": true,
+                "status": "unreported",
+                "coverage": {
+                  "observations": 0,
+                  "recorded": 0,
+                  "unknown": 0,
+                  "estimated": 0
+                },
+                "recorded_subtotal": null,
+                "cost_provenance": "unknown",
+                "truncated": false,
+                "observations": []
+              },
+              "contributors": {
+                "principal_ids": [],
+                "closure": "unknown"
+              },
+              "coverage": {
+                "truncated": [],
+                "unavailable": [
+                  "fingerprints"
+                ]
+              },
+              "fingerprints": []
+            },
+            "artifacts": [
+              {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "digest": "2de657a2eacded6e94ac4c32bf02ec0393eb89612392534c4faa7d6c06356688",
+                "bytes": 33,
+                "disposition": "produced",
+                "content_base64": "dmVyaWZpZWQgaW1tdXRhYmxlIHBhdGNoIHJlY2VpcHQK"
+              }
+            ],
+            "workspace": "/private/fixture-control"
+          }
+        }
+      ]
+    }
+  }
+}

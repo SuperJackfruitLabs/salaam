@@ -6,6 +6,13 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## Unreleased
 
+### Changed
+
+- AgentPod's execution evidence and artifact bundle schemas, and their cases, are vendored from
+  treaty 0.0.19 (`agentpod.evidence`) under `vendor/treaty/`, in place of the copies under
+  `test/fixtures/`. `treaty.json` pins the release and CI runs `./scripts/treaty.sh verify`. See
+  [Execution evidence](docs/contributor/execution-evidence.md).
+
 ### Security
 
 - A sandboxed command could set `core.fsmonitor` (or a hook or filter) in the workspace's

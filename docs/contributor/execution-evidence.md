@@ -6,10 +6,11 @@ Each read authenticates the original organization, principal, station occupancy,
 session and run epoch. A revoked execution can retain historical data access.
 
 `POST /v1/agentpod/work-evidence` accepts only `binding` and
-`schema_version: "salaam-execution-evidence/v1"`. The canonical schema and shared
-success/rejection corpus live in AgentPod's contract package; Salaam mirrors the
-JSON Schema and corpus in `test/fixtures`. Existing unversioned evidence APIs are
-unchanged. Consumers must explicitly negotiate the new version.
+`schema_version: "salaam-execution-evidence/v1"`. The schema and its valid and
+invalid cases are treaty's `agentpod.evidence` contract. Salaam vendors them under
+`vendor/treaty/` at the release `treaty.json` pins; `./scripts/treaty.sh verify`
+checks the copies and `./scripts/treaty.sh sync` rewrites them. Existing unversioned
+evidence APIs are unchanged. Consumers must explicitly negotiate the new version.
 
 The projection reads a single SQLite snapshot. It joins source-owned task,
 attempt, child, operation, native tool, check, integration and artifact identities.

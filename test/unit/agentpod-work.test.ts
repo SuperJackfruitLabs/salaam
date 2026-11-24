@@ -29,45 +29,46 @@ vi.mock('node:crypto', async (importOriginal) => {
 });
 characterizeEvidence();
 
-const executionSchema = JSON.parse(
-  readFileSync(new URL('../fixtures/execution-evidence-v1.schema.json', import.meta.url), 'utf8'),
-);
+// AgentPod's evidence contract (agentpod.evidence), vendored from treaty at the release treaty.json
+// pins: `./scripts/treaty.sh verify` keeps these copies byte-identical to it.
+const vendored = (path: string) =>
+  JSON.parse(readFileSync(new URL('../../vendor/treaty/' + path, import.meta.url), 'utf8'));
 
 const evidenceAjv = new Ajv2020({ strict: false });
 
 addFormats.default(evidenceAjv);
 
-const validateEvidence = evidenceAjv.compile(executionSchema);
+const validateEvidence = evidenceAjv.compile(
+  vendored('schemas/agentpod/execution-evidence.v1.json'),
+);
 
 const validateArtifacts = evidenceAjv.compile(
-  JSON.parse(
-    readFileSync(
-      new URL('../fixtures/execution-artifacts-v1.schema.json', import.meta.url),
-      'utf8',
-    ),
-  ),
+  vendored('schemas/agentpod/execution-artifacts.v1.json'),
 );
+
+/** Treaty's valid and invalid cases for one of AgentPod's evidence schemas, never empty. */
+const evidenceCases = (schema: string) => {
+  const cases: { valid: Record<string, unknown>; invalid: { why: string; body: unknown }[] } =
+    vendored('fixtures/agentpod-evidence/examples.json').schemas[schema];
+  if (!Object.keys(cases.valid).length || !cases.invalid.length)
+    throw new Error(schema + ' has no valid or no invalid case in the vendored corpus');
+  return cases;
+};
 
 const assertEvidence = (value: unknown) =>
   expect(validateEvidence(value), JSON.stringify(validateEvidence.errors)).toBe(true);
 
-test('source evidence uses the canonical AgentPod versioned success/rejection corpus', () => {
-  const corpus = JSON.parse(
-    readFileSync(new URL('../fixtures/execution-evidence-v1.json', import.meta.url), 'utf8'),
-  );
-  for (const example of corpus.success) assertEvidence(example.value);
-  for (const example of corpus.rejection)
-    expect(validateEvidence(example.value), example.name).toBe(false);
+test("source evidence uses treaty's AgentPod execution evidence cases", () => {
+  const cases = evidenceCases('execution-evidence.v1');
+  for (const value of Object.values(cases.valid)) assertEvidence(value);
+  for (const { why, body } of cases.invalid) expect(validateEvidence(body), why).toBe(false);
 });
 
-test('selected source bytes conform to the shared artifact bundle success/rejection corpus', () => {
-  const corpus = JSON.parse(
-    readFileSync(new URL('../fixtures/execution-artifacts-v1.json', import.meta.url), 'utf8'),
-  );
-  for (const example of corpus.success)
-    expect(validateArtifacts(example.value), JSON.stringify(validateArtifacts.errors)).toBe(true);
-  for (const example of corpus.rejection)
-    expect(validateArtifacts(example.value), example.name).toBe(false);
+test("selected source bytes conform to treaty's AgentPod artifact bundle cases", () => {
+  const cases = evidenceCases('execution-artifacts.v1');
+  for (const value of Object.values(cases.valid))
+    expect(validateArtifacts(value), JSON.stringify(validateArtifacts.errors)).toBe(true);
+  for (const { why, body } of cases.invalid) expect(validateArtifacts(body), why).toBe(false);
 });
 
 test('work trace preserves the original parent across reconnect without renewing execution or charging usage', () => {

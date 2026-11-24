@@ -321,6 +321,11 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.19.0 --ignore-scripts
       - run: npm ci --ignore-scripts
+      # vendor/treaty/ holds copies of treaty's data, which the tests read. `treaty verify` checks
+      # treaty.json against the release it pins and that every copy is byte-identical to it.
+      - name: treaty.json and the vendored copies match the pinned treaty release
+        if: runner.os == 'Linux'
+        run: ./scripts/treaty.sh verify
       # Item 10: the local command sandbox proof runs for real on Linux, never skipped.
       - if: runner.os == 'Linux'
         run: |
