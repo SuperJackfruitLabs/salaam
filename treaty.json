@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/product-manifest.v1.json",
+  "product": "salaam",
+  "treaty": "0.0.19",
+  "produces": [],
+  "consumes": ["agentpod.evidence"],
+  "vendored": [
+    {
+      "path": "vendor/treaty/schemas/agentpod/execution-evidence.v1.json",
+      "source": "schemas/agentpod/execution-evidence.v1.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/agentpod/execution-artifacts.v1.json",
+      "source": "schemas/agentpod/execution-artifacts.v1.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/agentpod-evidence/examples.json",
+      "source": "fixtures/agentpod-evidence/examples.json"
+    }
+  ]
+}
