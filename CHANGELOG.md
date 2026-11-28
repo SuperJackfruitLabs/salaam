@@ -21,6 +21,9 @@ are forward-only: keep a stopped-daemon backup before upgrading.
   names, the diff view runs git inside the sandbox, and the sandbox keeps the repository's
   config, hooks and `info` folder read-only. Commands that change git config now ask in full
   access and auto mode. See [Sandbox](docs/sandbox.md#git-inside-the-sandbox).
+- The package now bundles undici 8.12.4 in place of 8.10.2, which has published high-severity
+  advisories. Pi 1.3.0 pins the older version exactly, so `package.json` overrides it, and a test
+  fails if a bundled undici falls back into an affected range.
 
 ## v0.0.8 — 2026-11-09
 
