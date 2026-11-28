@@ -6,6 +6,13 @@ are forward-only: keep a stopped-daemon backup before upgrading.
 
 ## Unreleased
 
+## v0.0.9 — 2026-11-28
+
+A security release: upgrade from 0.0.8 or earlier. Those versions let a sandboxed command change
+the workspace's git config so that git ran a program outside the sandbox, and they bundle an
+undici with known high-severity advisories. Commands, keys, HTTP routes, ACP messages and the
+state database are as before.
+
 ### Changed
 
 - AgentPod's execution evidence and artifact bundle schemas, and their cases, are vendored from
