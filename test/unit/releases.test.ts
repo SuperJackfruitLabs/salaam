@@ -183,3 +183,28 @@ if (args[0] === 'view') { process.stderr.write('npm error code E404'); process.e
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('no shipped undici is in a range with a known high advisory', () => {
+  // Pi pins undici exactly, so package.json overrides it. Every non-dev lockfile entry is
+  // bundled into the published package (release-pack copies this lockfile as the shrinkwrap).
+  const lock: { packages: Record<string, { version: string; dev?: boolean }> } = JSON.parse(
+    readFileSync(join(ROOT, 'package-lock.json'), 'utf8'),
+  );
+  const shipped = Object.entries(lock.packages).filter(
+    ([path, entry]) => path.endsWith('node_modules/undici') && !entry.dev,
+  );
+  expect(shipped.length).toBeGreaterThan(0);
+  // The advisories cover 7.0.0 up to 7.30.1 and 8.0.0 up to 8.12.2, the first fixed releases.
+  const fixed = new Map([
+    [7, [30, 1]],
+    [8, [12, 2]],
+  ]);
+  for (const [path, entry] of shipped) {
+    const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(entry.version)?.slice(1).map(Number) ?? [];
+    expect(parts.length, `${path}@${entry.version}`).toBe(3);
+    const [major = 0, minor = 0, patch = 0] = parts;
+    const [fixedMinor = 0, fixedPatch = 0] = fixed.get(major) ?? [];
+    const affected = minor < fixedMinor || (minor === fixedMinor && patch < fixedPatch);
+    expect(affected, `${path}@${entry.version}`).toBe(false);
+  }
+});
